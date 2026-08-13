@@ -751,8 +751,8 @@ the `started` flag + self-re-arm are gone); `augmentMsg` threads the CANONICAL
 | Msg | Writes | Emits | Purity |
 |---|---|---|---|
 | *(content gate)* | — | — | a placed pane (`slice.paneId != null`) `return slice` for content Msgs — but nav/key/`item_action` are handled ABOVE it (per-pane), so a placed pane still drives its own selection/actions¹ |
-| `key{focusKind,items}` | — | maps `msg.key` via the declared `_itemActions` list → `_itemActionCmds` (below) | shell² |
-| `item_action{action,item}` | — | inspect→`dockerExec{inspect}` · logs→`dockerExec{logs}` · shell→`dockerShell` · stop/restart/kill→`run_action{docker <verb> <item>, confirm}` (the shared confirm gate). The action bar click; `item` resolved at dispatch time | shell² |
+| `key{focusKind,items}` | — | maps `msg.key` via the declared `_itemActions` list (`i`nspect·`L`ogs·`s`hell·`S`top·`R`estart·`K`ill; `label[0]` is the key) → `_itemActionCmds` (below) | shell² |
+| `item_action{action,item}` | — | inspect→`dockerExec{inspect}` · logs→`dockerExec{logs}` · shell→`dockerShell` · stop/restart/kill→`run_action{docker <verb> <item>, confirm}` (the shared confirm gate). The action bar click OR the keyboard; `item` resolved at dispatch time | shell² |
 | `refresh` / `dockerPoll` | — | `dockerFetch` (inFlight-guarded) | ✓ |
 | `dockerResult{status,stats}` | `status`, `stats`, `inFlight→false` | `render` | ✓ |
 | `set_refresh_ms{dir\|ms}` | `refreshMs` (owner-only; ladder step or clamp) | `render` | ✓ — re-arms the `interval` Sub (keyed `${id}:${ms}`); the sub-gate keys on `dockerRefresh` (state.js). No-op at a ladder end returns the same slice ref |

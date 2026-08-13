@@ -158,12 +158,12 @@ describe('[4] dockerResult folds maps + clears the guard', () => {
   });
 });
 
-describe('[5] i/t/s key Msgs emit stream/shell effects on the focused row', () => {
-  it('i → inspect, t → logs, s → shell, targeting the selected container', () => {
+describe('[5] item-action key Msgs emit the right effects on the focused row', () => {
+  it('i inspect / L logs / s shell → stream/shell effects; S/R/K → confirmed run_action', () => {
     setup(['c1', 'c2']);
     // Pure key arm: the cursor comes from the passed slice.nav and
     // focusKind from the Msg (as dispatchKeyToFocused threads it) — not
-    // from the global registry.
+    // from the global registry. Keys are the declared _itemActions list.
     const mnav = require('../leaves/wm/nav');
     const focused = { ...slice0(), nav: { ...mnav.init(), cursor: 1 } };  // c2 selected
     const km = (key) => ({ type: 'key', key, focusKind: 'containers' });
@@ -171,11 +171,19 @@ describe('[5] i/t/s key Msgs emit stream/shell effects on the focused row', () =
     eq(i.effects[0].type, 'dockerExec');
     eq(i.effects[0].mode, 'inspect');
     eq(i.effects[0].item, 'c2');
-    const t = step(km('t'), focused);
-    eq(t.effects[0].mode, 'logs');
+    const l = step(km('L'), focused);   // logs is L now (t was never in the word; l = focus-right nav)
+    eq(l.effects[0].mode, 'logs');
     const s = step(km('s'), focused);
     eq(s.effects[0].type, 'dockerShell');
     eq(s.effects[0].item, 'c2');
+    // Shift keys → the destructive verbs, via the confirm-gated run_action.
+    for (const [key, verb] of [['S', 'stop'], ['R', 'restart'], ['K', 'kill']]) {
+      const r = step(km(key), focused);
+      eq(r.effects[0].type, 'run_action');
+      assert(r.effects[0].action.script.includes(`docker ${verb} `), `${key} → docker ${verb}`);
+      assert(/container "c2"\?$/.test(r.effects[0].action.confirm), `${key} confirm prompt`);
+    }
+    eq(step(km('t'), focused).effects.length, 0, 't is no longer bound');
   });
   it('keys are ignored when the containers panel is not focused', () => {
     setup();

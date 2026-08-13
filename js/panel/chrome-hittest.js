@@ -111,7 +111,7 @@ function hitTestBorderControls(mx, my) {
     // fire a phantom control (incl. a destructive `kill` confirm). The collapse/
     // close glyph hit-tests DON'T skip collapsed panes — `[+]` must stay clickable.
     if (p.collapsed) continue;
-    const pane = { paneId: p.paneId, type: p.type, focused: mpane.paneMatchesFocus(p, focus) };
+    const pane = { paneId: p.paneId, type: p.type, focused: mpane.paneMatchesFocus(p, focus), innerW: b.w - 2 };
     const controls = borderControlsFor(pane, model);
     if (!controls.length) continue;
 
@@ -122,7 +122,7 @@ function hitTestBorderControls(mx, my) {
       if (bc.fits(b.w - 2, GLYPH_W, visibleWs)) {
         const x0s = bc.placeX0s(visibleWs, _collapseGlyphX0(b));
         for (let i = 0; i < top.length; i++) {
-          for (const r of top[i].spec.regions(x0s[i], b.y, top[i].visibleW)) {
+          for (const r of top[i].spec.regions(x0s[i], b.y, top[i].visibleW, pane)) {
             if (my === r.y && mx >= r.x0 && mx <= r.x1) return top[i].spec.dispatch(r.action, pane);
           }
         }
@@ -133,7 +133,7 @@ function hitTestBorderControls(mx, my) {
     const bottom = controls.find(c => (c.spec.slot || 'top') === 'bottom');
     if (bottom && bc.bottomFits(b.w - 2, bottom.visibleW)) {
       const y = b.y + b.h - 1;
-      for (const r of bottom.spec.regions(bc.bottomX0(b.x), y, bottom.visibleW)) {
+      for (const r of bottom.spec.regions(bc.bottomX0(b.x), y, bottom.visibleW, pane)) {
         if (my === r.y && mx >= r.x0 && mx <= r.x1) {
           const hit = bottom.spec.dispatch(r.action, pane);
           if (hit) return hit;   // null = nothing selected → fall through (harmless)

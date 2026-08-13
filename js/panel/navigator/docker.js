@@ -611,7 +611,7 @@ function render(panel, width, height, _slice, opts) {
       // free-config; the action bar shows on the focused pane only). Partition by
       // slot: the top strip (refresh + sort, right-anchored) and the bottom
       // legend (item-action bar, left-anchored).
-      const ctl = borderControlsFor({ paneId: panel.paneId, type: 'containers', focused: isFocused }, m);
+      const ctl = borderControlsFor({ paneId: panel.paneId, type: 'containers', focused: isFocused, innerW: width - 2 }, m);
       return {
         borderControls: ctl.filter(c => (c.spec.slot || 'top') !== 'bottom').map(c => c.text),
         bottomControls: ctl.filter(c => (c.spec.slot || 'top') === 'bottom').map(c => c.text),
@@ -751,17 +751,20 @@ const _sortKeys = [
 ];
 
 // Per-container actions for the bottom action bar (btop-style) + the keyboard.
-// The bar renders `label`s (order = display order); `key` (when set) also binds
-// it on the keyboard. inspect/logs/shell keep their existing effects; the
-// destructive stop/restart/kill run through the confirm gate (see _itemActionCmds).
-// ONE list — bar + keybind read it, so a click and a keypress can't drift.
+// The bar renders each `label` with its trigger key highlighted IN the word
+// (btop-style), so `label[0]` IS the `key` (case-sensitive: an uppercase key is
+// a Shift chord). Keys: `i`nspect · `L`ogs (not `l` — that's focus-right nav) ·
+// `s`hell · `S`top · `R`estart · `K`ill (upper so they don't collide with nav or
+// each other). inspect/logs/shell keep their effects; destructive stop/restart/
+// kill go through the confirm gate (_itemActionCmds). ONE list — bar + keybind
+// read it, so a click and a keypress can't drift.
 const _itemActions = [
   { id: 'inspect', label: 'inspect', key: 'i' },
-  { id: 'logs',    label: 'logs',    key: 't' },
+  { id: 'logs',    label: 'Logs',    key: 'L' },
   { id: 'shell',   label: 'shell',   key: 's' },
-  { id: 'stop',    label: 'stop' },
-  { id: 'restart', label: 'restart' },
-  { id: 'kill',    label: 'kill' },
+  { id: 'stop',    label: 'Stop',    key: 'S' },
+  { id: 'restart', label: 'Restart', key: 'R' },
+  { id: 'kill',    label: 'Kill',    key: 'K' },
 ];
 
 module.exports = {
@@ -798,7 +801,7 @@ module.exports = {
       getItems: (slice) => _getItems(slice),
       getInfo,
       copyOptions,
-      keyHints: 'i inspect | t logs | s shell',
+      keyHints: 'i inspect | L logs | s shell | S stop | R restart | K kill',
       filterable: true,
       filterText: name => name,
       idOf: name => name,
