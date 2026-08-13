@@ -366,8 +366,10 @@ function _itemActionCmds(actionId, item) {
 // same container the cursor is visually on once a filter or sort is active (the
 // selection index is against the rendered, ordered list). `slice.paneId` is the
 // focused pane; the service/primary instance (undefined paneId) falls back to the
-// type key. Only the key arm reads msg.items; always attaching is cheap.
+// type key. ONLY the `key` arm reads msg.items, so skip the (now filter+sort)
+// work on every other docker Msg (the 10s poll's dockerResult, nav, item_action).
 function augmentMsg(msg, model, slice) {
+  if (msg.type !== 'key') return msg;
   return { ...msg, items: apiGetItems((slice && slice.paneId) || 'containers') };
 }
 

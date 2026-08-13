@@ -563,4 +563,39 @@ describe('[15] item-action bar: reducer Cmds, confirm on destructive, focused bo
   });
 });
 
+describe('[16] a collapsed docker pane paints NO border controls → clicks miss (no phantom kill)', () => {
+  const { hitTestBorderControls } = require('../panel/chrome-hittest');
+  const arrange = (collapsed, h) => {
+    const ls = getInstanceSlice('layout');
+    ls.arrange = { columns: [{ panels: [{ type: 'containers', paneId: 'containers', title: 'C', columnIndex: 0, collapsed }] }], detailHeightPct: 60 };
+    ls.paneBounds = { containers: { x: 0, y: 0, w: 60, h } };   // w=60: refresh `-` at x=43 when expanded
+    ls.freeConfig = null;
+    getModel().modes = {};
+    api.dispatchMsg(api.wrap('docker', { type: 'set_refresh_ms', ms: 2000 }));
+  };
+  it('EXPANDED at w=60: the refresh `-` at (43,0) hits — the control IS present', () => {
+    setup(['c1', 'c2']); arrange(false, 8);
+    eq(hitTestBorderControls(43, 0), { owner: 'docker', msg: { type: 'set_refresh_ms', dir: -1 } });
+  });
+  it('COLLAPSED (1-row bar): the SAME cell + the sort/legend cells all miss', () => {
+    setup(['c1', 'c2']); arrange(true, 1);
+    eq(hitTestBorderControls(43, 0), null);   // refresh — suppressed
+    eq(hitTestBorderControls(50, 0), null);   // sort selector — suppressed
+    eq(hitTestBorderControls(2, 0), null);    // bottom legend (row 0 when h=1) — suppressed
+  });
+});
+
+describe('[17] augmentMsg threads the canonical list only for key Msgs, keyed on the pane', () => {
+  it('key Msg → the pane\'s filtered+sorted items; non-key Msg → untouched (skips the sort)', () => {
+    setup(['b', 'a']);
+    api.dispatchMsg(api.wrap('docker', { type: 'set_sort', panel: 'containers', key: 'name' }));
+    const keyMsg = docker.augmentMsg({ type: 'key', key: 'i' }, getModel(), { paneId: 'containers' });
+    eq(keyMsg.items, ['a', 'b']);                       // sorted, not config order
+    eq(keyMsg.items, api.getItems('containers'));       // exactly the canonical list
+    const pollMsg = docker.augmentMsg({ type: 'dockerResult' }, getModel(), { paneId: 'containers' });
+    assert(pollMsg.items === undefined, 'a non-key Msg carries no items');
+    api.dispatchMsg(api.wrap('docker', { type: 'set_sort', panel: 'containers', key: null }));   // cleanup
+  });
+});
+
 report();

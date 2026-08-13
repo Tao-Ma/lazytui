@@ -106,6 +106,11 @@ function hitTestBorderControls(mx, my) {
   const model = getModel();
   const focus = getFocus();
   for (const { p, b } of targets) {
+    // A collapsed pane is a 1-row title bar (paint._renderCollapsed) that paints
+    // NO border controls — mirror that here so a click on its header dashes can't
+    // fire a phantom control (incl. a destructive `kill` confirm). The collapse/
+    // close glyph hit-tests DON'T skip collapsed panes — `[+]` must stay clickable.
+    if (p.collapsed) continue;
     const pane = { paneId: p.paneId, type: p.type, focused: mpane.paneMatchesFocus(p, focus) };
     const controls = borderControlsFor(pane, model);
     if (!controls.length) continue;
