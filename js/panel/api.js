@@ -103,6 +103,19 @@ function getFilter(panelType) {
  *  by renderFooter to paint the `/text │` prompt. */
 function filterCurrentText() { return getModel().modal.filter.text; }
 
+/** Committed sort `{ key, dir }` for a panel (paneId or panel-type), read from
+ *  its per-pane nav entry. `key` null = the pane's native order; `dir` 1 asc /
+ *  -1 desc. Used by getItems (to order rows) + the sort border control (to label
+ *  the current column). Unlike getFilter there's no live-draft branch — a sort
+ *  click commits immediately. */
+function getSort(panelType) {
+  const compName = route.componentForPanel(panelType);
+  if (!compName) return { key: null, dir: 1 };
+  const typeKey = route.paneTypeOf(panelType) || panelType;
+  const entry = mnav.entryOf(route.sliceForPane(panelType, compName), typeKey);
+  return (entry && entry.sort) || { key: null, dir: 1 };
+}
+
 // panel→dispatch / panel→overlay calls are inverted through the panel-host
 // seam (wired at boot) so panel stays a clean lower layer than dispatch.
 // See hosts/panel-host.js + docs/v0.6.5-render-exit.md "Domain detangle".
@@ -402,17 +415,19 @@ function paneBorderControlSpecs(type) {
   return [];
 }
 
-// Resolve a panel type's border controls against the live model: each spec's
-// `render(model)` → `{ text, visibleW }`, or null to hide it this frame (e.g. the
-// refresh control suppresses itself in free-config). Returns the VISIBLE controls
-// in registration order, each carrying its spec (for `regions`/`dispatch` in the
+// Resolve a pane's border controls against the live model: each spec's
+// `render(model, pane)` → `{ text, visibleW }`, or null to hide it this frame
+// (e.g. the refresh control suppresses itself in free-config). `pane` is
+// `{ paneId, type }` — host-global controls (refresh) ignore it; per-pane
+// controls (sort) key off `pane.paneId`. Returns the VISIBLE controls in
+// registration order, each carrying its spec (for `regions`/`dispatch` in the
 // hit-test). The SINGLE source both the render decision (navigator render →
-// renderPanel `borderControls`) and the click routing (panel/chrome-hittest) read,
-// so paint and hit-test can't drift.
-function borderControlsFor(type, model) {
+// renderPanel `borderControls`) and the click routing (panel/chrome-hittest)
+// read, so paint and hit-test can't drift.
+function borderControlsFor(pane, model) {
   const out = [];
-  for (const spec of paneBorderControlSpecs(type)) {
-    const r = spec.render(model);
+  for (const spec of paneBorderControlSpecs(pane && pane.type)) {
+    const r = spec.render(model, pane);
     if (r) out.push({ spec, text: r.text, visibleW: r.visibleW });
   }
   return out;
@@ -468,18 +483,20 @@ function getPanelDef(id) {
 }
 
 /**
- * Canonical filtered item list for a panel. The owning Component's
- * `getItems(slice)` returns the raw rows; the framework applies the
- * active filter using `panelDef.filterText(item)` (defaults to
- * `String(item)`). This is THE single source of items for renderers,
- * navigation, mouse hit-testing, detail info, and copy options — no
- * caller may filter independently, which would desync the selection
- * index vs the rendered list.
+ * Canonical filtered + sorted item list for a panel. The owning Component's
+ * `getItems(slice)` returns the raw rows; the framework applies the active
+ * FILTER (`panelDef.filterText(item)`, default `String(item)`) then the active
+ * SORT (`panelDef.sortKeys` + the per-pane `nav.sort`). This is THE single
+ * source of items for renderers, navigation, mouse hit-testing, detail info,
+ * and copy options — no caller may filter/sort independently, which would
+ * desync the selection index vs the rendered list.
  *
- * `customFilter: true` means the Component's `getItems` already honored
- * the filter text itself (regex match, fuzzy match, anything beyond
- * substring); skip the framework's substring filter so we don't
- * double-filter.
+ * `customFilter: true` means the Component's `getItems` already honored the
+ * filter text itself (regex/fuzzy/etc); skip the framework substring filter so
+ * we don't double-filter. Sort still applies on top.
+ *
+ * Sort is STABLE and non-destructive (never mutates `raw`): a null `sort.key`
+ * leaves the native order untouched (returns the same list ref → no churn).
  */
 function getItems(panelType) {
   const def = getPanelDef(panelType);
@@ -488,18 +505,41 @@ function getItems(panelType) {
   // v0.6.4 Theme A Phase 5 — per-pane slice (panelType may be a paneId).
   const slice = sliceForPane(panelType, compName);
   const raw = def.getItems(slice);
-  if (!def.filterable) return raw;
-  if (def.customFilter) return raw;
   const mnav = require('../leaves/wm/nav');
-  // v0.6.3 post-arch-arc — translate paneId → panel-type for the
-  // nav lookup (multi-panel files Component keys slice.nav by type).
+  // v0.6.3 post-arch-arc — translate paneId → panel-type for the nav lookup
+  // (multi-panel files Component keys slice.nav by type).
   const typeKey = route.paneTypeOf(panelType) || panelType;
   const navEntry = mnav.entryOf(slice, typeKey);
-  const filterText = (navEntry && navEntry.filter) || '';
-  if (!filterText) return raw;
-  const lc = filterText.toLowerCase();
-  const fieldOf = typeof def.filterText === 'function' ? def.filterText : String;
-  return raw.filter(item => fieldOf(item).toLowerCase().includes(lc));
+
+  // --- Filter (framework substring, unless the Component filtered its own rows) ---
+  let list = raw;
+  if (def.filterable && !def.customFilter) {
+    const filterText = (navEntry && navEntry.filter) || '';
+    if (filterText) {
+      const lc = filterText.toLowerCase();
+      const fieldOf = typeof def.filterText === 'function' ? def.filterText : String;
+      list = raw.filter(item => fieldOf(item).toLowerCase().includes(lc));
+    }
+  }
+
+  // --- Sort (declared columns; per-pane key/dir; null key = native order) ---
+  if (def.sortable && Array.isArray(def.sortKeys) && def.sortKeys.length) {
+    const sort = (navEntry && navEntry.sort) || null;
+    if (sort && sort.key) {
+      const col = def.sortKeys.find(k => k.key === sort.key);
+      if (col && typeof col.value === 'function') {
+        const dir = sort.dir < 0 ? -1 : 1;
+        // Decorate with the original index → break ties on it, so equal keys
+        // keep their pre-sort (filtered) order (stable) and `raw` is never mutated.
+        list = list.map((item, i) => [item, i]).sort((A, B) => {
+          const a = col.value(A[0]), b = col.value(B[0]);
+          const c = a < b ? -1 : a > b ? 1 : 0;
+          return c !== 0 ? c * dir : A[1] - B[1];
+        }).map(pair => pair[0]);
+      }
+    }
+  }
+  return list;
 }
 
 // infoLinesFromFocus + selectedOrFocused relocated to ./nav-state (v0.6.5
@@ -686,7 +726,7 @@ module.exports = {
   // nav-state (read helpers — Components write via wrapped Msgs into their own slice)
   getSel, getScroll, isMultiSel,
   // filter
-  getFilter, filterCurrentText,
+  getFilter, filterCurrentText, getSort,
   // exec
   execAsync,
   // stream / render scheduling — host capabilities a Component may invoke

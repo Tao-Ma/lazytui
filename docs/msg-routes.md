@@ -491,6 +491,8 @@ it). Writes `slice.nav` (single-panel Component) or `slice.nav[panel]`
 | `multisel_clear{panel?}` | `nav.multiSel→∅` (skips alloc if empty) | escape / group reset / filter entry | ✓ |
 | `set_filter{panel?,text}` | `nav.filter` | committed filter text | ✓ |
 | `clear_filter{panel?}` | `nav.filter→''` | filter exit / group reset | ✓ |
+| `set_sort{panel?,key}` | `nav.sort{key,dir}` | sort column (null = native order); a new column resets dir→asc. Applied in `api.getItems`; from the `‹ col ›` border control | ✓ |
+| `sort_reverse{panel?}` | `nav.sort.dir` (flip) | no-op while unsorted (no churn); from the sort control's label | ✓ |
 
 **Verdict (§7.2): pure TEA.** The whole shared nav layer is a pure leaf. This is
 why `actions`/`history` need zero local `update` cases — `mnav.apply` IS their

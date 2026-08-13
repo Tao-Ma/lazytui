@@ -43,12 +43,13 @@ const {
   leaveTerminalMode,
   getItems: apiGetItems, selectedOrFocused,
   serviceSlice,
-  borderControlsFor,
+  borderControlsFor, getSort,
   hub,
 } = require('../api');
 const { getModel } = require('../../model/store');
 const mnav = require('../../leaves/wm/nav');
 const { clampRefreshMs, stepRefreshMs, normalizeLadder, refreshControlSpec } = require('../../leaves/render/monitor-control');
+const { sortControlSpec } = require('../../leaves/render/sort-control');
 
 // The `containers` pane's resolved plugin config (`refresh_ms` / `refresh_ladder`
 // live here). parse() folds `panels:` into `config.layout.pool[id]` with each
@@ -330,10 +331,15 @@ function _handleKey(msg, slice) {
 }
 
 // Msg-enrichment hook (dispatch/runtime/loop _runInstance / dispatchKeyToFocused). The
-// impure shell threads the active group's container names so _handleKey stays
-// pure of getModel(). Only the key arm reads msg.items; always attaching is cheap.
-function augmentMsg(msg, model) {
-  return { ...msg, items: _itemsFromModel(model) };
+// impure shell threads the focused pane's item list so _handleKey stays pure of
+// getModel(). It uses the CANONICAL apiGetItems (filtered + sorted) keyed on the
+// focused pane, NOT raw _itemsFromModel — so a keyboard action (i/t/s) hits the
+// same container the cursor is visually on once a filter or sort is active (the
+// selection index is against the rendered, ordered list). `slice.paneId` is the
+// focused pane; the service/primary instance (undefined paneId) falls back to the
+// type key. Only the key arm reads msg.items; always attaching is cheap.
+function augmentMsg(msg, model, slice) {
+  return { ...msg, items: apiGetItems((slice && slice.paneId) || 'containers') };
 }
 
 /** Called from registerComponent after init(). Mirrors the
@@ -573,7 +579,7 @@ function render(panel, width, height, _slice, opts) {
     // spec self-suppresses when inert (refresh hides in free-config, whose wraps
     // are dropped). The refresh cadence is host-global (the service owner's
     // refreshMs), so every docker pane shows the same value.
-    borderControls: borderControlsFor('containers', m).map(c => c.text),
+    borderControls: borderControlsFor({ paneId: panel.paneId, type: 'containers' }, m).map(c => c.text),
   });
 }
 
@@ -696,6 +702,17 @@ function subscriptions(/* paneDef, model */) {
   return subs;
 }
 
+// Sortable columns for the containers pane (btop-style). `value(name)` reads the
+// host-global status/stats maps; missing metrics → -1 so not-running containers
+// sink under an ascending numeric sort. Shared by api.getItems (ordering) and
+// the sort selector control (labels + cycle order) so both stay in lockstep.
+const _sortKeys = [
+  { key: 'name',   label: 'name',   value: n => n },
+  { key: 'status', label: 'status', value: n => _status(n) },
+  { key: 'cpu',    label: 'cpu',    value: n => { const s = _stats(n); const v = s ? parsePercent(s.cpu) : NaN; return Number.isFinite(v) ? v : -1; } },
+  { key: 'mem',    label: 'mem',    value: n => { const s = _stats(n); const v = s ? parseMem(s.mem).used : NaN; return Number.isFinite(v) ? v : -1; } },
+];
+
 module.exports = {
   name: 'docker',
   init,
@@ -734,13 +751,22 @@ module.exports = {
       filterable: true,
       filterText: name => name,
       idOf: name => name,
+      // Sort as a pane capability: declared columns applied centrally in
+      // api.getItems from the per-pane nav.sort (the twin of nav.filter). The
+      // `‹ col ›` selector in the strip below drives it.
+      sortable: true,
+      sortKeys: _sortKeys,
       // Component-declared top-border control strip. Each entry is a
       // border-control SPEC (render/regions/dispatch); the framework
       // (api.borderControlsFor + panel/chrome-hittest) renders + hit-tests them
       // generically. The ONE source both the render slot (see render() above)
-      // and the click hit-test read, so paint + click can't drift. The refresh
-      // control is host-global — its click Msg routes to the docker owner.
-      borderControls: [refreshControlSpec({ owner: 'docker', currentMs: _refreshMs })],
+      // and the click hit-test read, so paint + click can't drift. Painted
+      // right-to-left: refresh (host-global) leftmost, the sort selector
+      // (per-pane) nearest the glyphs.
+      borderControls: [
+        refreshControlSpec({ owner: 'docker', currentMs: _refreshMs }),
+        sortControlSpec({ keys: _sortKeys, getSort }),
+      ],
     },
   },
   // Test-only internals (events stream pure helpers + stat parsers + reducer).

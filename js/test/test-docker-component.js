@@ -452,33 +452,73 @@ describe('[12] render draws the refresh control on the top border', () => {
   });
 });
 
-describe('[13] hitTestBorderControls resolves refresh-control clicks on a placed containers pane', () => {
+describe('[13] hitTestBorderControls resolves refresh + sort clicks on a placed containers pane', () => {
   const { hitTestBorderControls } = require('../panel/chrome-hittest');
-  const dec = { owner: 'docker', msg: { type: 'set_refresh_ms', dir: -1 } };
-  const inc = { owner: 'docker', msg: { type: 'set_refresh_ms', dir: 1 } };
-  it('maps -/+ cells to the owner Msg; label / off-row / too-narrow miss', () => {
-    const ls = getInstanceSlice('layout');
-    ls.arrange = { columns: [{ panels: [{ type: 'containers', paneId: 'c-hit', title: 'C', columnIndex: 0 }] }], detailHeightPct: 60 };
-    ls.paneBounds = { 'c-hit': { x: 0, y: 0, w: 40, h: 8 } };   // collapse [_] x0 = 36
-    ls.freeConfig = null;
-    getModel().modes = {};                                       // not free-config → collapse is leftmost glyph
-    api.dispatchMsg(api.wrap('docker', { type: 'set_refresh_ms', ms: 2000 }));  // "2s" → visibleW 6 → control x0 = 36-1-6 = 29
-    eq(hitTestBorderControls(29, 0), dec);    // on `-`
-    eq(hitTestBorderControls(34, 0), inc);    // on `+` (x0+visibleW-1)
-    eq(hitTestBorderControls(31, 0), null);   // label cell
-    eq(hitTestBorderControls(29, 1), null);   // wrong row
-    ls.paneBounds = { 'c-hit': { x: 0, y: 0, w: 10, h: 8 } };   // too narrow → control not shown
-    eq(hitTestBorderControls(5, 0), null);
-  });
-  it('suppressed in free-config (the control is not painted there → no phantom click)', () => {
+  // Two controls share the strip now — refresh (host-global, leftmost) then the
+  // sort selector (per-pane, nearest the glyphs). For a w=40 pane at "2s",
+  // unsorted (sort label `·`): collapse [_] x0 = 36;
+  //   sort  vw=5 → x0 = 36-1-5 = 30  (‹ 30-31, · 32, › 33-34)
+  //   refresh vw=6 → x0 = 30-1-6 = 23 (- 23-24, label 25-26, + 27-28)
+  const setupPane = (modes) => {
     const ls = getInstanceSlice('layout');
     ls.arrange = { columns: [{ panels: [{ type: 'containers', paneId: 'c-hit', title: 'C', columnIndex: 0 }] }], detailHeightPct: 60 };
     ls.paneBounds = { 'c-hit': { x: 0, y: 0, w: 40, h: 8 } };
     ls.freeConfig = null;
-    getModel().modes = { freeConfigMode: true };
+    getModel().modes = modes;
     api.dispatchMsg(api.wrap('docker', { type: 'set_refresh_ms', ms: 2000 }));
-    eq(hitTestBorderControls(29, 0), null);   // would hit `-` in normal mode; suppressed here
+  };
+  it('refresh -/+ route to the docker owner (host-global cadence)', () => {
+    setupPane({});
+    eq(hitTestBorderControls(23, 0), { owner: 'docker', msg: { type: 'set_refresh_ms', dir: -1 } });   // on `-`
+    eq(hitTestBorderControls(28, 0), { owner: 'docker', msg: { type: 'set_refresh_ms', dir: 1 } });    // on `+`
+    eq(hitTestBorderControls(25, 0), null);   // refresh label — no region
+  });
+  it('sort ‹ / › cycle the column, label reverses — routed to the CLICKED pane', () => {
+    setupPane({});
+    eq(hitTestBorderControls(34, 0), { owner: 'c-hit', msg: { type: 'set_sort', panel: 'containers', key: 'name' } });  // `›` next: null→name
+    eq(hitTestBorderControls(30, 0), { owner: 'c-hit', msg: { type: 'set_sort', panel: 'containers', key: 'mem'  } });  // `‹` prev: null→mem (wrap)
+    eq(hitTestBorderControls(32, 0), { owner: 'c-hit', msg: { type: 'sort_reverse', panel: 'containers' } });           // label → reverse
+  });
+  it('off-row / too-narrow / free-config miss (no phantom click)', () => {
+    setupPane({});
+    eq(hitTestBorderControls(23, 1), null);   // wrong row
+    const ls = getInstanceSlice('layout');
+    ls.paneBounds = { 'c-hit': { x: 0, y: 0, w: 12, h: 8 } };   // too narrow → strip not shown
+    eq(hitTestBorderControls(5, 0), null);
+    setupPane({ freeConfigMode: true });       // both controls suppressed
+    eq(hitTestBorderControls(23, 0), null);
+    eq(hitTestBorderControls(34, 0), null);
     getModel().modes = {};
+  });
+});
+
+describe('[14] sort orders the canonical getItems list, composes with filter, and augmentMsg threads it', () => {
+  const setSort  = (key) => api.dispatchMsg(api.wrap('docker', { type: 'set_sort', panel: 'containers', key }));
+  const reverse  = ()    => api.dispatchMsg(api.wrap('docker', { type: 'sort_reverse', panel: 'containers' }));
+  const setFilter = (t)  => api.dispatchMsg(api.wrap('docker', { type: 'set_filter', panel: 'containers', text: t }));
+  it('default = native config order; set_sort name orders A→Z; reverse flips', () => {
+    setup(['zeta', 'alpha', 'mike']);
+    setSort(null); setFilter('');
+    eq(api.getItems('containers'), ['zeta', 'alpha', 'mike']);   // native order — nothing reorders by default
+    setSort('name');
+    eq(api.getItems('containers'), ['alpha', 'mike', 'zeta']);
+    reverse();
+    eq(api.getItems('containers'), ['zeta', 'mike', 'alpha']);
+    setSort(null); setFilter('');
+  });
+  it('sort composes with filter (filter narrows, then sort orders the survivors)', () => {
+    setup(['zeta', 'alpha', 'mike']);
+    setSort('name'); setFilter('a');   // 'a' matches zeta + alpha; mike drops
+    eq(api.getItems('containers'), ['alpha', 'zeta']);
+    setSort(null); setFilter('');
+  });
+  it('augmentMsg threads EXACTLY the canonical sorted list (cursor 0 → the rendered first row)', () => {
+    setup(['zeta', 'alpha', 'mike']);
+    setSort('name'); setFilter('');
+    const threaded = docker.augmentMsg({ type: 'key', key: 'i' }, getModel()).items;
+    eq(threaded, api.getItems('containers'));   // same order the renderer uses — no raw/rendered desync
+    eq(threaded[0], 'alpha');                    // NOT config's 'zeta' — i/t/s act on the visible row
+    setSort(null); setFilter('');
   });
 });
 

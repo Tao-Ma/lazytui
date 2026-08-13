@@ -101,7 +101,8 @@ function hitTestBorderControls(mx, my) {
   if (!targets) return null;
   const model = getModel();
   for (const { p, b } of targets) {
-    const controls = borderControlsFor(p.type, model);
+    const pane = { paneId: p.paneId, type: p.type };
+    const controls = borderControlsFor(pane, model);
     if (!controls.length) continue;
     const visibleWs = controls.map(c => c.visibleW);
     if (!bc.fits(b.w - 2, GLYPH_W, visibleWs)) continue;   // same gate renderPanel uses
@@ -109,7 +110,7 @@ function hitTestBorderControls(mx, my) {
     for (let i = 0; i < controls.length; i++) {
       const regions = controls[i].spec.regions(x0s[i], b.y, controls[i].visibleW);
       for (const r of regions) {
-        if (my === r.y && mx >= r.x0 && mx <= r.x1) return controls[i].spec.dispatch(r.action);
+        if (my === r.y && mx >= r.x0 && mx <= r.x1) return controls[i].spec.dispatch(r.action, pane);
       }
     }
   }

@@ -28,6 +28,8 @@
  *   { type: 'multisel_clear',     panel? }
  *   { type: 'set_filter',         panel?, text }
  *   { type: 'clear_filter',       panel? }
+ *   { type: 'set_sort',           panel?, key }     // key=null → config order
+ *   { type: 'sort_reverse',       panel? }          // flip dir; no-op when unsorted
  */
 'use strict';
 
@@ -35,15 +37,18 @@ const NAV_TYPES = new Set([
   'set_cursor', 'set_scroll',
   'multisel_toggle', 'multisel_select_all', 'multisel_clear',
   'set_filter', 'clear_filter',
+  'set_sort', 'sort_reverse',
 ]);
 
 function isNavMsg(msg) {
   return !!(msg && typeof msg.type === 'string' && NAV_TYPES.has(msg.type));
 }
 
-/** Init a fresh nav entry. Multi-panel Components seed one per panel type. */
+/** Init a fresh nav entry. Multi-panel Components seed one per panel type.
+ *  `sort.key` null = the pane's native (config / insertion) order — nothing
+ *  reorders until a column is picked; `dir` 1 asc / -1 desc. */
 function init() {
-  return { cursor: 0, scroll: 0, multiSel: new Set(), filter: '' };
+  return { cursor: 0, scroll: 0, multiSel: new Set(), filter: '', sort: { key: null, dir: 1 } };
 }
 
 /**
@@ -110,6 +115,19 @@ function _stepEntry(entry, msg) {
     }
     case 'clear_filter':
       return entry.filter === '' ? entry : { ...entry, filter: '' };
+    case 'set_sort': {
+      // Picking a (new) column starts ascending — the standard table UX
+      // (choose column → asc; reverse toggles). Re-selecting the current column
+      // is a no-op, so a `sort_reverse` on it survives.
+      const key = msg.key != null ? msg.key : null;
+      const cur = entry.sort || { key: null, dir: 1 };
+      return key === cur.key ? entry : { ...entry, sort: { key, dir: 1 } };
+    }
+    case 'sort_reverse': {
+      const cur = entry.sort || { key: null, dir: 1 };
+      if (!cur.key) return entry;   // unsorted → nothing to reverse (no churn)
+      return { ...entry, sort: { key: cur.key, dir: -cur.dir } };
+    }
     default:
       return entry;
   }
