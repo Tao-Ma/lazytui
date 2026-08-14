@@ -249,4 +249,44 @@ describe('[terminal-pane] P2 — YAML group.terminals → auto-generated termina
   });
 });
 
+describe('[terminal-pane] overlay-repaint poll follows half-view slot swaps (round-4 #3 — sub-gate leak)', () => {
+  it('reconcile is NOT skipped when a terminal is swapped out of a half slot (halfView moves, arrange does not)', () => {
+    const state = require('../app/state');
+    sm.bootFresh();
+    const termPane = route.getInstanceSlice('layout').focus;
+    const others = [];
+    for (const col of route.getInstanceSlice('layout').arrange.columns)
+      for (const p of col.panels) if (p.paneId && p.paneId !== termPane) others.push(p.paneId);
+    assert(others.length >= 2, 'need two non-terminal panes for the half slots');
+    const [A, B] = others;
+
+    dispatchMsg(route.wrap('layout', { type: 'mint_tab', paneId: termPane, paneType: 'terminal', poolId: 'term-sg', config: { cmd: 'sleep 30' } }));
+    dispatchMsg(route.wrap('layout', { type: 'view_set', mode: 'half' }));
+    dispatchMsg(route.wrap('layout', { type: 'view_place_pane', slot: 'left', paneId: termPane }));
+
+    const overlayLive = () => state._liveSubKeys().some(k => k.includes('overlay-repaint'));
+
+    // Terminal in the left half slot → on screen → poll armed.
+    state.reconcileSubscriptions(getModel());
+    assert(visibleTerminalSurfaces(getModel()).length >= 1, 'precondition: terminal on screen in the left half slot');
+    assert(overlayLive(), 'overlay-repaint poll armed while the terminal is on screen');
+
+    // Fill BOTH half slots with NON-terminals: `halfView` changes but `arrange`
+    // does NOT (same pool + columns), so the terminal leaves the screen without an
+    // arrange rebuild. The pre-fix gate keyed only on arrange/dims/viewMode → it
+    // SKIPPED this reconcile, leaving the 250ms poll running with no terminal on
+    // screen. The fix folds `halfView` into the gate key.
+    const arrangeBefore = route.getInstanceSlice('layout').arrange;
+    dispatchMsg(route.wrap('layout', { type: 'view_place_pane', slot: 'left',  paneId: A }));
+    dispatchMsg(route.wrap('layout', { type: 'view_place_pane', slot: 'right', paneId: B }));
+    assert(route.getInstanceSlice('layout').arrange === arrangeBefore, 'arrange unchanged by the slot swaps (only halfView moved) — the crux');
+    state.reconcileSubscriptions(getModel());
+    assert(visibleTerminalSurfaces(getModel()).length === 0, 'terminal off screen once both half slots hold non-terminals');
+    assert(!overlayLive(), 'overlay-repaint poll torn down once no terminal is on screen (gate honored the halfView change)');
+
+    dispatchMsg(route.wrap('layout', { type: 'remove_tab', paneId: termPane, tabPoolId: 'term-sg' }));
+    state._resetSubscriptions();   // clear any live interval timers so the process exits promptly
+  });
+});
+
 report();

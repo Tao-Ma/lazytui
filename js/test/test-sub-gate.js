@@ -1,9 +1,11 @@
 /**
  * Subscription-reconcile PERF gate (state.js#reconcileSubscriptions).
  *
- * The reconcile is skipped when (arrange, dims, viewMode, jobsMode, diagLogMode)
- * are unchanged since the last run — a ~350µs/dispatch saving on every booted
- * layout. That skip is CORRECT iff the desired subscription set is a pure
+ * The reconcile is skipped when the gate key is unchanged since the last run
+ * (arrange, dims, viewMode, focus, halfView + jobsMode, diagLogMode, liveClock,
+ * dockerRefresh) — a ~350µs/dispatch saving on every booted layout. focus/halfView
+ * are covered live by test-terminal-pane (a half-slot swap starts/stops the
+ * overlay-repaint poll); the terminal-on-screen check is why they're in the key. That skip is CORRECT iff the desired subscription set is a pure
  * function of exactly those inputs. This test pins that invariant: each gate-key
  * MODE input changes the desired set (so the gate MUST include it), and a
  * non-key model field does NOT (so the gate can safely ignore it — the skip is

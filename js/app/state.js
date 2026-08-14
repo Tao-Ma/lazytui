@@ -68,11 +68,13 @@ const _replay = () => (_replayRef ||= require('../dispatch/runtime/replay'));
 // the token back through its kind handler.
 const _liveSubs = new Map();
 
-// PERF gate for reconcileSubscriptions — the last-reconciled {arrange, dims,
-// viewMode, jobsMode, diagLogMode}. The desired set is a pure function of these
-// (see reconcileSubscriptions), so an unchanged gate means the live set is
-// already correct and the ~350µs desired-set rebuild+diff can be skipped. Reset
-// to null by `_resetSubscriptions` so the next reconcile always runs.
+// PERF gate for reconcileSubscriptions — the last-reconciled snapshot of EVERY
+// input the desired set depends on: the layout-slice fields (arrange, dims,
+// viewMode, focus, halfView) plus the off-slice signals (jobsMode, diagLogMode,
+// liveClock, dockerRefresh). The full key is built inline in reconcileSubscriptions
+// (see the note there before adding a new dependency). An unchanged gate means the
+// live set is already correct and the ~350µs desired-set rebuild+diff can be
+// skipped. Reset to null by `_resetSubscriptions` so the next reconcile always runs.
 let _lastSubGate = null;
 
 // Sub-kind handler registry — how each kind of ongoing source is keyed,
@@ -442,14 +444,25 @@ function reconcileSubscriptions(model) {
   const jobsMode = !!modes.jobsMode, diagLogMode = !!modes.diagLogMode;
   const liveClock = _liveActionStatus(model);
   const dockerRefresh = _dockerRefreshMs();
+  // `focus` + `halfView` are gate inputs too: the app-global overlay-repaint sub
+  // arms only when a terminal is ON SCREEN (visibleTerminalSurfaces), and that set
+  // follows `slice.focus` in full view and `slice.halfView` in half view. The
+  // isolable leak is HALF view: `view_place_pane` swaps a terminal out of a slot
+  // WITHOUT touching `arrange`, so the pre-gate skipped and the 250ms poll ran on
+  // with no terminal on screen (the idle-forever waste #D15 removed). A focus
+  // change usually also rebuilds `arrange` (so it self-healed), but full-view
+  // visibility follows focus, so it belongs in the key for correctness too. Both
+  // are replaced by-ref on change, so `===` detects it; both are layout-slice
+  // fields (unlike liveClock/dockerRefresh, folded in above from OUTSIDE it).
   const g = _lastSubGate;
   if (g && ls && g.arrange === ls.arrange && g.dims === ls.dims
         && g.viewMode === ls.viewMode && g.jobsMode === jobsMode && g.diagLogMode === diagLogMode
-        && g.liveClock === liveClock && g.dockerRefresh === dockerRefresh) {
+        && g.liveClock === liveClock && g.dockerRefresh === dockerRefresh
+        && g.focus === ls.focus && g.halfView === ls.halfView) {
     return;   // desired set unchanged → live subs already correct
   }
   _lastSubGate = ls
-    ? { arrange: ls.arrange, dims: ls.dims, viewMode: ls.viewMode, jobsMode, diagLogMode, liveClock, dockerRefresh }
+    ? { arrange: ls.arrange, dims: ls.dims, viewMode: ls.viewMode, jobsMode, diagLogMode, liveClock, dockerRefresh, focus: ls.focus, halfView: ls.halfView }
     : null;
   const ctx = _subCtx();
   const desired = _desiredSubs(model);
