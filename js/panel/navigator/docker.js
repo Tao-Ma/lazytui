@@ -29,7 +29,7 @@
  * kind (app/state.js) owns spawn + line-split + reconnect/backoff + teardown;
  * docker's `onLine` is `handleEventLine` (parse/filter/debounce), which injects
  * a `dockerPoll` Msg on a tracked-container event (the TEA "external event →
- * Program.Send(msg)" pattern). i/t/s per-row keys arrive as key Msgs and emit
+ * Program.Send(msg)" pattern). i/L/s per-row keys arrive as key Msgs and emit
  * stream/shell effects.
  */
 'use strict';
@@ -48,7 +48,7 @@ const {
 } = require('../api');
 const { getModel } = require('../../model/store');
 const mnav = require('../../leaves/wm/nav');
-const { clampRefreshMs, stepRefreshMs, normalizeLadder, refreshControlSpec } = require('../../leaves/render/monitor-control');
+const { clampRefreshMs, stepRefreshMs, normalizeLadder, refreshControlSpec } = require('../../leaves/render/refresh-control');
 const { sortControlSpec } = require('../../leaves/render/sort-control');
 const { actionLegendSpec } = require('../../leaves/render/action-legend');
 
@@ -366,7 +366,7 @@ function _itemActionCmds(actionId, item) {
 // Msg-enrichment hook (dispatch/runtime/loop _runInstance / dispatchKeyToFocused). The
 // impure shell threads the focused pane's item list so _handleKey stays pure of
 // getModel(). It uses the CANONICAL apiGetItems (filtered + sorted) keyed on the
-// focused pane, NOT raw _itemsFromModel — so a keyboard action (i/t/s) hits the
+// focused pane, NOT raw _itemsFromModel — so a keyboard action (i/L/s) hits the
 // same container the cursor is visually on once a filter or sort is active (the
 // selection index is against the rendered, ordered list). `slice.paneId` is the
 // focused pane; the service/primary instance (undefined paneId) falls back to the
@@ -617,7 +617,7 @@ function render(panel, width, height, _slice, opts) {
       // legend (item-action bar, left-anchored).
       const ctl = borderControlsFor({ paneId: panel.paneId, type: 'containers', focused: isFocused, innerW: width - 2 }, m);
       return {
-        borderControls: ctl.filter(c => (c.spec.slot || 'top') !== 'bottom').map(c => c.text),
+        topControls: ctl.filter(c => (c.spec.slot || 'top') !== 'bottom').map(c => c.text),
         bottomControls: ctl.filter(c => (c.spec.slot || 'top') === 'bottom').map(c => c.text),
       };
     })(),
@@ -744,14 +744,15 @@ function subscriptions(/* paneDef, model */) {
 }
 
 // Sortable columns for the containers pane (btop-style). `value(name)` reads the
-// host-global status/stats maps; missing metrics → -1 so not-running containers
-// sink under an ascending numeric sort. Shared by api.getItems (ordering) and
+// host-global status/stats maps; a missing metric → +Infinity so not-running
+// containers SINK to the bottom under the ascending order a freshly-picked column
+// opens in (dead containers out of the way). Shared by api.getItems (ordering) and
 // the sort selector control (labels + cycle order) so both stay in lockstep.
 const _sortKeys = [
   { key: 'name',   label: 'name',   value: n => n },
   { key: 'status', label: 'status', value: n => _status(n) },
-  { key: 'cpu',    label: 'cpu',    value: n => { const s = _stats(n); const v = s ? parsePercent(s.cpu) : NaN; return Number.isFinite(v) ? v : -1; } },
-  { key: 'mem',    label: 'mem',    value: n => { const s = _stats(n); const v = s ? parseMem(s.mem).used : NaN; return Number.isFinite(v) ? v : -1; } },
+  { key: 'cpu',    label: 'cpu',    value: n => { const s = _stats(n); const v = s ? parsePercent(s.cpu) : NaN; return Number.isFinite(v) ? v : Infinity; } },
+  { key: 'mem',    label: 'mem',    value: n => { const s = _stats(n); const v = s ? parseMem(s.mem).used : NaN; return Number.isFinite(v) ? v : Infinity; } },
 ];
 
 // Per-container actions for the bottom action bar (btop-style) + the keyboard.

@@ -4,10 +4,10 @@
  * alongside the refresh control. Picks which column a sortable pane orders by,
  * and its direction.
  *
- * Like monitor-control this leaf owns the control's DATA + GEOMETRY (no state,
+ * Like refresh-control this leaf owns the control's DATA + GEOMETRY (no state,
  * no I/O): the label composition, the markup + visible width, and the three
  * click regions — `‹` (prev column), the label (reverse direction), `›` (next
- * column). Both the painter (draw.js via renderPanel's `borderControls`) and the
+ * column). Both the painter (draw.js via renderPanel's `topControls`) and the
  * hit-test (panel/chrome-hittest) derive positions from HERE so they can't drift.
  *
  * The per-pane sort STATE lives in the nav leaf (`nav.sort {key,dir}`, the twin

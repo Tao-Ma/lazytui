@@ -9,7 +9,7 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - **Sort the containers pane by column, from a border control.** A `‹ col ›`
-  selector on the pane's top border (left of the `- Ns +` refresh control)
+  selector on the pane's top border (right of `- Ns +`, nearest `[_]`)
   cycles the sort column — native order · `name` · `status` · `cpu` · `mem` —
   with the direction shown (`↑`/`↓`); click the arrows to cycle, the label to
   reverse. It's **per-pane** (two containers panes sort independently) and

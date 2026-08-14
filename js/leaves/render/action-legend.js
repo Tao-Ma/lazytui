@@ -22,6 +22,7 @@
 const { visibleLen } = require('../text/ansi');
 const { theme } = require('../infra/themes');
 const bctl = require('./border-controls');
+const { isChainActive } = require('../input/modes');
 
 const SEP = ' ';   // one space between actions (also the inter-key gap when compact)
 
@@ -77,6 +78,13 @@ function actionLegendSpec({ actions, itemAt }) {
     slot: 'bottom',
     render(model, pane) {
       if (model && model.modes && model.modes.freeConfigMode) return null;
+      // A modal that owns the keyboard (filter `/`, detail search, prefix, the
+      // pane-menu, a confirm, …) must gate the MOUSE too: mirror the keyboard
+      // modal gating so a click on this bar can't fire a focus-changing or
+      // destructive action — and leak the in-grid mode — while a modal is up.
+      // (isChainActive already covers freeConfigMode; the check above matches the
+      // sort/refresh top controls, which only drop in free-config.)
+      if (model && model.modes && isChainActive(model.modes)) return null;
       if (!pane || !pane.focused) return null;
       // Global `quick_keys` placement: `border` (default) draws this bar;
       // `footer`/`off` suppress it (the footer shows/hides the hints instead —

@@ -72,7 +72,7 @@ const BINDINGS = {
     { label: '/ search',      order: 70, when: (c) => !c.isTerminal },
   ],
 
-  // (Per-panel extras — docker i/t/s, config-status t/s/r, history Enter, files'
+  // (Per-panel extras — docker i/L/s, config-status t/s/r, history Enter, files'
   //  computed hint — stay as `keyHints` on the panel DEFS: they are already a
   //  single source the footer AND help both read, so there's no drift to fix.
   //  They aren't focus-kind contexts and would collide with 'actions'/'groups'

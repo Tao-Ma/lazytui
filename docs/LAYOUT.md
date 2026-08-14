@@ -187,8 +187,8 @@ on rows that get repainted while a glyph sits over them.
 | `[_]` | yellow | top-right of non-detail panels (4-cell gap left of `[X]` when both visible) | always (normal + free-config) | `panel_collapse_toggle` — collapses the panel to a single header row |
 | `[+]` | green | replaces `[_]` when the panel is already collapsed | always | toggle back to expanded |
 | `[≡]` | theme accent | top-left of **every** panel (immediately after the hotkey), v0.6.4 unified | shown per-pane when there's something to pick (a viewer with ≥2 tabs, any other pane with ≥2 pane rows); suppressed during drag, and siblings disable while the menu is open on one cell | opens the centered **pane-menu** — one projection-aware overlay (subsumes the former tab-list + pane-select dropdown) with a **Tabs** section (Info, Transcript, content tabs — content panes only) and a **Panes** section for swapping which pool entry occupies this slot (SWAP if picked is placed elsewhere, REPLACE if picked is hidden; half/full views place side-by-side viewers via `pane_menu_place`) |
-| `- Ns +` | dim `−`/`+`, theme border | **monitor panes only** (the `containers` pane), on the top border just left of `[_]` | normal mode (suppressed in free-config); when the pane is wide enough (else the title truncates to keep it) | `set_refresh_ms` — `−`/`+` step the container **poll cadence** through a ladder (default 1s…60s, tuned for docker's poll cost; override with `refresh_ladder:`). Host-global (one docker daemon) so every docker pane shows the same value. Starting cadence is the `containers` pane's `refresh_ms:` config (default 10s). See docs/STATS.md. |
-| `‹ col ›` | dim `‹`/`›`, theme border | **sortable panes** (the `containers` pane), on the top border immediately left of `- Ns +` (right-anchored, nearest `[_]`) | normal mode (suppressed in free-config); when the pane is wide enough | `‹`/`›` cycle the **sort column** (`· → name → status → cpu → mem →` back to `·`, where `·` = native config order); the label toggles direction (`↑`/`↓`). A new column starts ascending. **Per-pane** (unlike the host-global cadence): each `containers` pane sorts independently. Sort is applied centrally in `api.getItems`, so it composes with the `/` filter. |
+| `- Ns +` | dim `−`/`+`, theme border | **monitor panes only** (the `containers` pane), on the top border left of the sort selector `‹ col ›` (which sits nearest `[_]`) | normal mode (suppressed in free-config); when the pane is wide enough (else the title truncates to keep it) | `set_refresh_ms` — `−`/`+` step the container **poll cadence** through a ladder (default 1s…60s, tuned for docker's poll cost; override with `refresh_ladder:`). Host-global (one docker daemon) so every docker pane shows the same value. Starting cadence is the `containers` pane's `refresh_ms:` config (default 10s). See docs/STATS.md. |
+| `‹ col ›` | dim `‹`/`›`, theme border | **sortable panes** (the `containers` pane), on the top border immediately left of `[_]` (right-anchored, nearest the glyphs — so just right of `- Ns +`) | normal mode (suppressed in free-config); when the pane is wide enough | `‹`/`›` cycle the **sort column** (`· → name → status → cpu → mem →` back to `·`, where `·` = native config order); the label toggles direction (`↑`/`↓`). A new column starts ascending. **Per-pane** (unlike the host-global cadence): each `containers` pane sorts independently. Sort is applied centrally in `api.getItems`, so it composes with the `/` filter. |
 | item-action bar | key letter in the theme `key_hint` color (red), label in the border color | **panes with item-actions** (the `containers` pane), left-anchored on the **bottom** border after `╰─`, on the **focused** pane only, when the global `quick_keys: border` (default; `footer` moves them to the status line, `off` hides them — docs/global-config) | normal mode (suppressed in free-config). **Width-adaptive**: full labels when they fit, else just the key letters (fits any sidebar), else hidden (count keeps the row) | a btop-style row of per-item actions with the **trigger key highlighted in the word** — `i`nspect · `L`ogs · `s`hell · `S`top · `R`estart · `K`ill (an uppercase letter = a Shift chord: `l` is focus-right nav, so logs is `L`). Clicking a word (or its key cell when compact) runs it against the **selected** container (`item_action` Msg); the same keys work on the keyboard. Destructive `S`/`R`/`K` run `docker <verb>` behind a y/N **confirm**. The `N of M` count coexists on the right when there's room. |
 
 Detail's top row reads `╭─(o)[≡]─Detail─…─╮` — both the hotkey label
@@ -200,10 +200,12 @@ shows.
 
 All glyphs suppress during a drag in flight (the drag affordance owns
 the screen — drop targets, live preview, footer). Theme slots
-`chrome_close`, `chrome_collapse`, `chrome_expand`, `chrome_trigger`
-let palettes override the defaults. Glyphs dim with the panel when
-the panel isn't focused (composes `[dim]` with the color rather than
-defaulting to the terminal's plain `[dim]` foreground).
+`chrome_close`, `chrome_collapse`, `chrome_expand`, `chrome_trigger`,
+and `key_hint` (the item-action bar's key letters, falling back to
+`error`/red when a palette doesn't set it) let palettes override the
+defaults. Glyphs dim with the panel when the panel isn't focused
+(composes `[dim]` with the color rather than defaulting to the
+terminal's plain `[dim]` foreground).
 
 ## Concept
 

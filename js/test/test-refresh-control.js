@@ -1,18 +1,18 @@
 /**
- * monitor-control — the pure refresh-rate control primitive (Phase 0 of the
+ * refresh-control — the pure refresh-rate control primitive (Phase 0 of the
  * btop-style `- 2s +` control for monitor panes). Pins the ladder/clamp, the
  * label formatter, the right-aligned layout + hit rects, and the hit predicate,
  * so the Component renderer + panel/chrome-hittest (Phase 3) share one geometry
  * source and can't drift.
  *
- * Run: node js/test/test-monitor-control.js
+ * Run: node js/test/test-refresh-control.js
  */
 'use strict';
 
 const { describe, it, eq, assert, report } = require('./test-runner');
-const mc = require('../leaves/render/monitor-control');
+const mc = require('../leaves/render/refresh-control');
 
-describe('[monitor-control] ladder + clamp', () => {
+describe('[refresh-control] ladder + clamp', () => {
   it('bounds are the ladder ends', () => {
     eq(mc.MIN_REFRESH_MS, mc.REFRESH_LADDER[0]);
     eq(mc.MAX_REFRESH_MS, mc.REFRESH_LADDER[mc.REFRESH_LADDER.length - 1]);
@@ -32,7 +32,7 @@ describe('[monitor-control] ladder + clamp', () => {
   });
 });
 
-describe('[monitor-control] stepRefreshMs', () => {
+describe('[refresh-control] stepRefreshMs', () => {
   it('steps to the adjacent ladder stop', () => {
     eq(mc.stepRefreshMs(2000, +1), 5000);   // + = slower (larger ms)
     eq(mc.stepRefreshMs(2000, -1), 1000);   // - = faster (smaller ms)
@@ -51,7 +51,7 @@ describe('[monitor-control] stepRefreshMs', () => {
   });
 });
 
-describe('[monitor-control] formatRefreshMs', () => {
+describe('[refresh-control] formatRefreshMs', () => {
   it('sub-second → Nms, ≥1s → N[.N]s with trailing .0 dropped', () => {
     eq(mc.formatRefreshMs(500), '500ms');
     eq(mc.formatRefreshMs(1000), '1s');
@@ -64,7 +64,7 @@ describe('[monitor-control] formatRefreshMs', () => {
   });
 });
 
-describe('[monitor-control] configurable ladder', () => {
+describe('[refresh-control] configurable ladder', () => {
   it('normalizeLadder sorts / dedupes / drops non-positive; garbage → default', () => {
     eq(mc.normalizeLadder([5000, 2000, 1000]), [1000, 2000, 5000]);   // sorted
     eq(mc.normalizeLadder([2000, 2000, 5000]), [2000, 5000]);         // deduped
@@ -86,7 +86,7 @@ describe('[monitor-control] configurable ladder', () => {
   });
 });
 
-describe('[monitor-control] refreshControlText', () => {
+describe('[refresh-control] refreshControlText', () => {
   it('markup + visible width for the label', () => {
     eq(mc.refreshControlText(2000), { text: '[dim]-[/] 2s [dim]+[/]', visibleW: 6 });   // "2s" + 4
     eq(mc.refreshControlText(10000).visibleW, 7);                                        // "10s" (3) + 4
@@ -94,7 +94,7 @@ describe('[monitor-control] refreshControlText', () => {
   });
 });
 
-describe('[monitor-control] refreshControlHits + border x0', () => {
+describe('[refresh-control] refreshControlHits + border x0', () => {
   it('two 2-cell buttons that never overlap the label span', () => {
     const h = mc.refreshControlHits(14, 0, 6);
     eq(h.minus, { x0: 14, x1: 15, y: 0 });
@@ -106,7 +106,7 @@ describe('[monitor-control] refreshControlHits + border x0', () => {
   });
 });
 
-describe('[monitor-control] refreshControlDir (hit predicate)', () => {
+describe('[refresh-control] refreshControlDir (hit predicate)', () => {
   const h = mc.refreshControlHits(14, 0, 6);
   it('maps a click on each button to its direction', () => {
     eq(mc.refreshControlDir(14, 0, h), -1);   // on `-`
@@ -126,7 +126,7 @@ describe('[monitor-control] refreshControlDir (hit predicate)', () => {
 // chrome-hittest gates on. If they ever diverge, a click lands on the title/border
 // where no control drew (or a real control is un-clickable). Cross-check the REAL
 // renderPanel output against the predicate across every width.
-describe('[monitor-control] render ↔ refreshControlFits agreement (phantom-click guard)', () => {
+describe('[refresh-control] render ↔ refreshControlFits agreement (phantom-click guard)', () => {
   const draw = require('../leaves/render/draw');
   const { stripMarkup } = require('../leaves/text/ansi');
   const GLYPH_W = 3;   // collapse [_] only (the control shows in normal mode)
@@ -135,7 +135,7 @@ describe('[monitor-control] render ↔ refreshControlFits agreement (phantom-cli
     for (let w = 8; w <= 60; w++) {
       const top = stripMarkup(draw.renderPanel({
         width: w, height: 4, lines: [], title: 'Containers', hotkey: 'd',
-        chrome: { collapse: 'collapse' }, borderControls: [text],
+        chrome: { collapse: 'collapse' }, topControls: [text],
       }).split('\n')[0]);
       const drawn = top.includes('- 10s +');
       const predicted = mc.refreshControlFits(w - 2, GLYPH_W, visibleW);
@@ -147,7 +147,7 @@ describe('[monitor-control] render ↔ refreshControlFits agreement (phantom-cli
     const firstShown = (title) => {
       for (let w = 8; w <= 60; w++) {
         const top = stripMarkup(draw.renderPanel({ width: w, height: 4, lines: [], title, hotkey: 'd',
-          chrome: { collapse: 'collapse' }, borderControls: [text] }).split('\n')[0]);
+          chrome: { collapse: 'collapse' }, topControls: [text] }).split('\n')[0]);
         if (top.includes('- 10s +')) return w;
       }
       return null;

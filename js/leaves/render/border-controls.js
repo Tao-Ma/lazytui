@@ -13,7 +13,7 @@
  * Pure — takes visible widths, returns cell math, no model/api/I/O. Both the
  * painter (leaves/render/draw.js, via its assembled rightPart string) and the
  * hit-test (panel/chrome-hittest) derive positions from HERE so they can't drift
- * (the same DRY discipline monitor-control established for the lone control).
+ * (the same DRY discipline refresh-control established for the lone control).
  */
 'use strict';
 

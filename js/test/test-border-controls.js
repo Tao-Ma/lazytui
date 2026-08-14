@@ -42,7 +42,7 @@ describe('[border-controls] placeX0s (last control nearest the glyphs)', () => {
     eq(bc.placeX0s([6], 36), [29]);               // 36 - 1 - 6
   });
   it('a single control matches refreshControlBorderX0', () => {
-    const mc = require('../leaves/render/monitor-control');
+    const mc = require('../leaves/render/refresh-control');
     eq(bc.placeX0s([6], 28), [mc.refreshControlBorderX0(28, 6)]);   // 28-1-6 = 21
   });
   it('two controls step left in registration order', () => {
@@ -64,7 +64,7 @@ describe('[border-controls] render ↔ fits/placeX0s agreement (multi-control ph
     for (let w = 8; w <= 48; w++) {
       const top = stripMarkup(draw.renderPanel({
         width: w, height: 4, lines: [], title: 'T', hotkey: 'd',
-        chrome: { collapse: 'collapse' }, borderControls: [A, B],
+        chrome: { collapse: 'collapse' }, topControls: [A, B],
       }).split('\n')[0]);
       const drawn = top.includes(A) && top.includes(B);
       const predicted = bc.fits(w - 2, GLYPH_W, [6, 4]);
@@ -75,7 +75,7 @@ describe('[border-controls] render ↔ fits/placeX0s agreement (multi-control ph
     const W = 44;
     const top = stripMarkup(draw.renderPanel({
       width: W, height: 4, lines: [], title: 'T', hotkey: 'd',
-      chrome: { collapse: 'collapse' }, borderControls: [A, B],
+      chrome: { collapse: 'collapse' }, topControls: [A, B],
     }).split('\n')[0]);
     const [ax0, bx0] = bc.placeX0s([6, 4], W - 4);   // collapse [_] leftmost cell = W-4
     eq(top.indexOf(A), ax0, `A at x0 ${ax0}: ${JSON.stringify(top)}`);

@@ -406,13 +406,13 @@ const { componentForPanel: getComponentOwningPanel, getFocus } = route;
 // A pane declares its controls (refresh, sort, …) once; the framework renders +
 // hit-tests them generically. Empty array = no controls.
 function paneBorderControlSpecs(type) {
-  for (const comp of Object.values(components)) {
-    const desc = comp.panelTypes && comp.panelTypes[type];
-    if (desc && Array.isArray(desc.borderControls) && desc.borderControls.length) {
-      return desc.borderControls;
-    }
-  }
-  return [];
+  // Resolve through the canonical panel-owner map (getPanelDef → route), the SAME
+  // resolution `render`/`getItems`/`sortKeys` use — not a first-match scan over
+  // components. They agree under the one-owner-per-type norm, but a component
+  // registered with `override: true` becomes the owner, and border controls must
+  // follow the owner (else they'd diverge from render + hit-test on that type).
+  const def = getPanelDef(type);
+  return (def && Array.isArray(def.borderControls) && def.borderControls) || [];
 }
 
 // Resolve a pane's border controls against the live model: each spec's

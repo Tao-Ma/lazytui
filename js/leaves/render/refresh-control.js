@@ -1,5 +1,5 @@
 /**
- * monitor-control — the pure primitive behind a btop-style refresh-rate control
+ * refresh-control — the pure primitive behind a btop-style refresh-rate control
  * (`- 2s +`) for monitor panes (docker containers first; stats-graph later).
  *
  * This leaf owns the control's DATA + GEOMETRY, nothing stateful and no I/O:
@@ -92,7 +92,7 @@ const _PAD_CELLS = 4;
 /**
  * The control markup + its visible cell width. `text` renders as `- Ns +` with
  * the `-`/`+` dimmed; the caller places it (the refresh spec returns it from
- * render(), and docker feeds it to renderPanel's `borderControls` strip). Width =
+ * render(), and docker feeds it to renderPanel's `topControls` strip). Width =
  * label + the `- ` / ` +` padding.
  */
 function refreshControlText(refreshMs) {

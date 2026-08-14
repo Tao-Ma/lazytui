@@ -94,7 +94,7 @@ function truncate(text, maxWidth) {
  *   `count[1]` carries the true total. Default false (navigators pass the full
  *   list + scrollOffset and let renderPanel slice).
  * @param {string} [opts.color] - focused border color
- * @param {string[]} [opts.borderControls] - opt-in interactive control markup
+ * @param {string[]} [opts.topControls] - opt-in interactive control markup (top border)
  *   embedded in the top border, right-anchored one gap-dash left of the chrome
  *   glyphs. An ordered STRIP: the first entry paints leftmost, the last nearest
  *   the glyphs (the monitor refresh control `- Ns +` was the first consumer).
@@ -106,7 +106,7 @@ function truncate(text, maxWidth) {
 function renderPanel({
   width, height, lines = [], title = '', hotkey = '',
   focused = false, count = null, scrollOffset = 0, color = null,
-  panelType = null, chrome = null, windowed = false, borderControls = [], bottomControls = [],
+  panelType = null, chrome = null, windowed = false, topControls = [], bottomControls = [],
 }) {
   const t = theme();
   const b = BORDER;
@@ -135,7 +135,7 @@ function renderPanel({
   const wantLeftTrigger  = chrome && chrome.tabTrigger;
   const wantRightCollapse = chrome && chrome.collapse;
   const wantRightClose    = chrome && chrome.close;
-  const hasControls = Array.isArray(borderControls) && borderControls.length > 0;
+  const hasControls = Array.isArray(topControls) && topControls.length > 0;
   if (chrome && (wantLeftTrigger || wantRightCollapse || wantRightClose)) {
     // Right cluster first. The opt-in border-control strip (e.g. the monitor
     // refresh control `- Ns +`) sits one gap-dash LEFT of the glyphs (right-
@@ -147,7 +147,7 @@ function renderPanel({
     if (wantRightClose && wantRightCollapse) rightPart += b.h;
     if (wantRightCollapse) rightPart += _collapseGlyphMarkup(chrome.collapse, focused, fc);
     if (hasControls) {
-      for (let i = borderControls.length - 1; i >= 0; i--) rightPart = `${borderControls[i]}${b.h}${rightPart}`;
+      for (let i = topControls.length - 1; i >= 0; i--) rightPart = `${topControls[i]}${b.h}${rightPart}`;
     }
     rightPart += b.tr;
     const rightVis = visibleLen(rightPart);

@@ -341,7 +341,7 @@ describe('[8] groupActions: logs spawns through a mouse-capable pager', () => {
 });
 
 describe('[9] refresh_ms — poll cadence seeded from the RESOLVED pool config', () => {
-  const mc = require('../leaves/render/monitor-control');
+  const mc = require('../leaves/render/refresh-control');
   // Real parsed shape (verified against parser.parse): `panels:` folds into
   // config.layout.pool[id] with plugin config nested under `.config` — there is
   // NO top-level config.panels. (The old test pinned a `{panels}` fiction that
@@ -382,12 +382,12 @@ describe('[9] refresh_ms — poll cadence seeded from the RESOLVED pool config',
   });
   it('init with no seed degrades to the default cadence + ladder', () => {
     const s = docker._init();
-    eq(s.refreshMs, require('../leaves/render/monitor-control').DEFAULT_REFRESH_MS);
+    eq(s.refreshMs, require('../leaves/render/refresh-control').DEFAULT_REFRESH_MS);
   });
 });
 
 describe('[10] set_refresh_ms steps the owner poll cadence', () => {
-  const mc = require('../leaves/render/monitor-control');
+  const mc = require('../leaves/render/refresh-control');
   it('dir +1 slower / -1 faster, and emits a render', () => {
     const owner = { ...slice0(), refreshMs: 2000 };
     const up = step({ type: 'set_refresh_ms', dir: 1 }, owner);
