@@ -30,7 +30,6 @@
 const route = require('../panel/route');
 const { wrap } = route;
 const { getModel } = require('../model/store');
-const { theme } = require('../leaves/infra/themes');
 // Eager-require open-target scheme modules so their schemes register on
 // the registry before the first `:open` invocation (or first cmdline
 // rebuild that consults argComplete).
@@ -73,12 +72,11 @@ const FRAMEWORK_COMMANDS = [
       const { appendViewerLines } = require('./nav-state');
       const m = getModel();
       const { error } = writeLayoutToFile(route.getInstanceSlice('layout').arrange, m.configPath);
-      const t = theme();
       if (error) {
-        appendViewerLines(`[${t.error}]Layout save failed:[/] ${error.message}`);
+        appendViewerLines(`[error]Layout save failed:[/] ${error.message}`);
       } else {
         _host.dispatchMsg(wrap('layout', { type: 'set_arrange', dirty: false }));
-        appendViewerLines(`[${t.success}]Layout saved to[/] ${m.configPath}`);
+        appendViewerLines(`[success]Layout saved to[/] ${m.configPath}`);
       }
     },
   },
@@ -93,7 +91,7 @@ const FRAMEWORK_COMMANDS = [
       const input = (args && args.join(' ')) || '';
       if (!input) {
         const { appendViewerLines } = require('./nav-state');
-        appendViewerLines(`[${theme().error}]:open requires a path[/] — usage: :open <path>`);
+        appendViewerLines(`[error]:open requires a path[/] — usage: :open <path>`);
         return;
       }
       // Strip wrapping quotes (the cmdline splits on whitespace; quoting
@@ -113,17 +111,16 @@ const FRAMEWORK_COMMANDS = [
     argComplete: (text) => require('../feature/open-file').hostComplete(text,
       { verb: 'edit', onFile: (p) => _host.editFile(p) }),
     run: (args) => {
-      const t = theme();
       const input = (args && args.join(' ')) || '';
       if (!input) {
         const { appendViewerLines } = require('./nav-state');
-        appendViewerLines(`[${t.error}]:edit requires a path[/] — usage: :edit <path>`);
+        appendViewerLines(`[error]:edit requires a path[/] — usage: :edit <path>`);
         return;
       }
       const cleaned = input.replace(/^(['"])(.*)\1$/, '$2');
       if (/^[a-z][a-z0-9+.-]*:\/\//i.test(cleaned)) {
         const { appendViewerLines } = require('./nav-state');
-        appendViewerLines(`[${t.error}]:edit is host-only[/] — a ${cleaned.split('://')[0]}:// URI has no local file to hand an editor`);
+        appendViewerLines(`[error]:edit is host-only[/] — a ${cleaned.split('://')[0]}:// URI has no local file to hand an editor`);
         return;
       }
       _host.editFile(cleaned);
@@ -136,7 +133,7 @@ const FRAMEWORK_COMMANDS = [
       const which = args && args[0];
       if (which && which !== 'global') {
         const { appendViewerLines } = require('./nav-state');
-        appendViewerLines(`[${theme().error}]:config takes no argument, or 'global'[/]`);
+        appendViewerLines(`[error]:config takes no argument, or 'global'[/]`);
         return;
       }
       _host.editConfig(which || null);
@@ -155,7 +152,7 @@ const FRAMEWORK_COMMANDS = [
       // The runtime layout the user was working with is gone; the
       // undo/redo history pointed at it is no longer meaningful.
       _host.dispatchMsg(wrap('layout', { type: 'free_config_clear_undo' }));
-      appendViewerLines(`[${theme().success}]Layout restored from[/] ${m.configPath}`);
+      appendViewerLines(`[success]Layout restored from[/] ${m.configPath}`);
     },
   },
   {
@@ -182,7 +179,7 @@ const FRAMEWORK_COMMANDS = [
       let position1 = (args && args.length > 0) ? Number(args[0]) : N;
       if (!Number.isInteger(position1)) {
         const { appendViewerLines } = require('./nav-state');
-        appendViewerLines(`[${theme().error}]:add-column requires a 1-based integer position[/]`);
+        appendViewerLines(`[error]:add-column requires a 1-based integer position[/]`);
         return;
       }
       _host.dispatchMsg(wrap('layout', { type: 'add_column', position: position1 - 1 }));
@@ -196,7 +193,7 @@ const FRAMEWORK_COMMANDS = [
       const focus = layoutSlice && layoutSlice.focus;
       if (!focus) {
         const { appendViewerLines } = require('./nav-state');
-        appendViewerLines(`[${theme().error}]:text-view needs a focused pane[/]`);
+        appendViewerLines(`[error]:text-view needs a focused pane[/]`);
         return;
       }
       const title = (args && args.length > 0) ? args.join(' ') : 'text';
@@ -215,7 +212,7 @@ const FRAMEWORK_COMMANDS = [
       const focus = layoutSlice && layoutSlice.focus;
       if (!focus) {
         const { appendViewerLines } = require('./nav-state');
-        appendViewerLines(`[${theme().error}]:terminal needs a focused pane[/]`);
+        appendViewerLines(`[error]:terminal needs a focused pane[/]`);
         return;
       }
       const cmd = (args && args.length > 0) ? args.join(' ') : (process.env.SHELL || '/bin/bash');
@@ -238,7 +235,7 @@ const FRAMEWORK_COMMANDS = [
       const focus = layoutSlice && layoutSlice.focus;
       if (!focus) {
         const { appendViewerLines } = require('./nav-state');
-        appendViewerLines(`[${theme().error}]:agent needs a focused pane[/]`);
+        appendViewerLines(`[error]:agent needs a focused pane[/]`);
         return;
       }
       // docs/live-agent.md A4 — mint an `agent` pane into the focused slot
@@ -256,16 +253,15 @@ const FRAMEWORK_COMMANDS = [
     name: 'remove-column',
     desc: 'Remove an empty column — :remove-column <n>  (1-based; refused on last column or non-empty)',
     run: (args) => {
-      const t = theme();
       if (!args || args.length === 0) {
         const { appendViewerLines } = require('./nav-state');
-        appendViewerLines(`[${t.error}]:remove-column requires a column number[/]`);
+        appendViewerLines(`[error]:remove-column requires a column number[/]`);
         return;
       }
       const n1 = Number(args[0]);
       if (!Number.isInteger(n1)) {
         const { appendViewerLines } = require('./nav-state');
-        appendViewerLines(`[${t.error}]:remove-column requires a 1-based integer column number[/]`);
+        appendViewerLines(`[error]:remove-column requires a 1-based integer column number[/]`);
         return;
       }
       _host.dispatchMsg(wrap('layout', { type: 'remove_column', columnIndex: n1 - 1 }));
@@ -278,10 +274,9 @@ const FRAMEWORK_COMMANDS = [
       const { appendViewerLines } = require('./nav-state');
       const file = (args && args.join(' ').trim().replace(/^(['"])(.*)\1$/, '$2')) || undefined;
       const r = _host.recordSave(file);
-      const t = theme();
       appendViewerLines(r.skipped
-        ? `[${t.warning}]Already recording →[/] ${r.path}`
-        : `[${t.success}]Recording session →[/] ${r.path}`);
+        ? `[warning]Already recording →[/] ${r.path}`
+        : `[success]Recording session →[/] ${r.path}`);
     },
   },
   {
@@ -291,10 +286,9 @@ const FRAMEWORK_COMMANDS = [
       const { appendViewerLines } = require('./nav-state');
       const file = (args && args.join(' ').trim().replace(/^(['"])(.*)\1$/, '$2')) || undefined;
       const path = _host.recordLoad(file);
-      const t = theme();
       appendViewerLines(path
-        ? `[${t.success}]Replaying[/] ${path}  [dim]— j/k seek · space play · b reverse · q exit[/]`
-        : `[${t.error}]:record-load — no session file[/]`);
+        ? `[success]Replaying[/] ${path}  [dim]— j/k seek · space play · b reverse · q exit[/]`
+        : `[error]:record-load — no session file[/]`);
     },
   },
   {
@@ -303,7 +297,7 @@ const FRAMEWORK_COMMANDS = [
     run: () => {
       const { appendViewerLines } = require('./nav-state');
       _host.recordStop();
-      appendViewerLines(`[${theme().success}]Recording stopped[/]`);
+      appendViewerLines(`[success]Recording stopped[/]`);
     },
   },
 ];

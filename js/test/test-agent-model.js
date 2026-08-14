@@ -125,7 +125,7 @@ describe('[agent model] backend text is markup-escaped (T32 posture)', () => {
       { type: 'error', message: 'boom [red]' },
     ]);
     eq(s.transcript[0], '[dim]→ \\[bold]x({"a":"\\[dim]"})[/]');
-    eq(s.transcript[1], '[red]✗ boom \\[red][/]');
+    eq(s.transcript[1], '[error]✗ boom \\[red][/]');
   });
   it('long tool args truncate RAW before esc (no cut-open markup)', () => {
     const s = fold([{ type: 'tool-call', id: 't', name: 'f', args: { data: 'x'.repeat(100) } }]);
@@ -147,24 +147,24 @@ describe('[agent model] status merge keeps last-known usage counters', () => {
 describe('[agent model] error / exit lifecycle', () => {
   it('error appends red, session stays alive', () => {
     const s = fold([{ type: 'settled' }, { type: 'error', message: 'rate limited' }]);
-    eq(s.transcript, ['[red]✗ rate limited[/]']);
+    eq(s.transcript, ['[error]✗ rate limited[/]']);
     eq(s.status.state, 'idle');
   });
   it('a MULTI-LINE error folds as a block — no embedded newline in any row (live-Pi regression)', () => {
     const s = fold([{ type: 'error', message: 'No API key found.\n\nUse /login. See:\n  docs.md' }]);
     eq(s.transcript, [
-      '[red]✗ No API key found.[/]',
-      '[red]  [/]',
-      '[red]  Use /login. See:[/]',
-      '[red]    docs.md[/]',
+      '[error]✗ No API key found.[/]',
+      '[error]  [/]',
+      '[error]  Use /login. See:[/]',
+      '[error]    docs.md[/]',
     ]);
     assert(s.transcript.every(l => !l.includes('\n')), 'every row is newline-free');
   });
   it('exit appends the end line + state exited; null code reads killed', () => {
     const s = fold([{ type: 'exit', code: 0 }]);
-    eq(s.transcript, ['[yellow]Session ended (exit 0).[/]']);
+    eq(s.transcript, ['[warning]Session ended (exit 0).[/]']);
     eq(s.status.state, 'exited');
-    eq(fold([{ type: 'exit', code: null }]).transcript, ['[yellow]Session ended (killed).[/]']);
+    eq(fold([{ type: 'exit', code: null }]).transcript, ['[warning]Session ended (killed).[/]']);
   });
 });
 
@@ -257,7 +257,7 @@ describe('[agent model] agent_input (A4): Enter sends, Esc interrupts-or-leaves'
     for (const ch of 'hi [x]') s = inp(s, ch);
     const r = inp(s, 'return');
     const [next, cmds] = r;
-    eq(next.transcript, ['[cyan]› hi \\[x][/]'], 'user line markup-escaped');
+    eq(next.transcript, ['[accent]› hi \\[x][/]'], 'user line markup-escaped');
     eq(next.inputDraft, { text: '', cursor: 0 });
     eq(cmds[0].type, 'agent_start', 'self-healing idempotent start rides along');
     eq(cmds[1], { type: 'agent_send', id: 'a1', text: 'hi [x]' });

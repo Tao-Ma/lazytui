@@ -181,7 +181,7 @@ function _fold(slice, evt) {
         : evt.result === undefined ? ''
         : JSON.stringify(evt.result);
       return _status(_append(slice, evt.isError
-        ? _blockLines(text, 'red', '✗')
+        ? _blockLines(text, 'error', '✗')
         : _blockLines(text, 'dim', '←')),
         { state: 'thinking', tool: null });
     }
@@ -202,11 +202,13 @@ function _fold(slice, evt) {
       // multi-line (pi's no-API-key message is), and an embedded \n inside
       // one transcript row corrupts row rendering. Caught by live-Pi
       // validation; the fixtures' errors were all single-line.
-      return _append(slice, _blockLines(String(evt.message), 'red', '✗'));
+      return _append(slice, _blockLines(String(evt.message), 'error', '✗'));
     case 'exit': {
       const label = evt.code === null ? '(killed)' : `(exit ${evt.code})`;
-      // Named 16-color literal ON PURPOSE: update() is a pure reducer and must not read the #D8 theme cache (truecolor arc 3a leaves reducer-baked content lines un-themed).
-      return _status(_append(_clearStream(slice), [`[yellow]Session ended ${label}.[/]`]), { state: 'exited' });
+      // SEMANTIC theme token (truecolor arc 3b): update() is a pure reducer and
+      // must not read the #D8 palette — `[warning]` stays pure (no theme read) yet
+      // resolves at paint (ansi._expandThemeKeys), so this line IS themed + tracks :theme.
+      return _status(_append(_clearStream(slice), [`[warning]Session ended ${label}.[/]`]), { state: 'exited' });
     }
     default:
       return slice;   // io/agent validates; an unknown type here is a no-op, not a crash
@@ -246,11 +248,12 @@ function _input(slice, msg) {
     // draft (readline discards it on accept — we keep it reachable); the stash
     // is non-empty only while browsing. Working copies are spent.
     const stash = slice.histStash || '';
-    // Named 16-color literal ON PURPOSE: update() is a pure reducer and must not read the #D8 theme cache (truecolor arc 3a leaves reducer-baked content lines un-themed).
+    // SEMANTIC theme token (truecolor arc 3b): `[accent]` stays pure in the reducer
+    // (no #D8 read) yet resolves at paint, so the echoed prompt IS themed + tracks :theme.
     const next = _append(
       { ...slice, inputDraft: { text: stash, cursor: stash.length }, history,
         histIdx: null, histStash: '', histEdits: {} },
-      [`[cyan]› ${esc(text)}[/]`]);
+      [`[accent]› ${esc(text)}[/]`]);
     return [next, [
       { type: 'agent_start', id: selfId, cfg: { ...slice.descriptor } },
       { type: 'agent_send', id: selfId, text },

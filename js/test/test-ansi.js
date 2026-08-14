@@ -13,6 +13,7 @@
 
 const { describe, it, eq, assert, report } = require('./test-runner');
 const { esc, richToAnsi, stripControls } = require('../leaves/text/ansi');
+const themes = require('../leaves/infra/themes');
 
 describe('[1] stripControls — preserves SGR, strips dangerous escapes', () => {
   it('strips CSI cursor-move / screen-clear (non-SGR)', () => {
@@ -166,6 +167,38 @@ describe('[N+1] tag parser — hex atoms (canonical truecolor)', () => {
     // Unescaped raw SGR followed by a literal ] elsewhere: the old [^\]]*
     // interior would swallow '\x1b[33mAB' into one bogus "tag".
     eq(richToAnsi('\x1b[33mAB]'), '\x1b[33mAB]');
+  });
+});
+
+// Semantic theme tokens (truecolor arc 3b): an atom naming a palette slot expands
+// to that slot's CURRENT value at paint, so STORED markup like `[warning]…` tracks
+// a :theme change — the systemic fix for baked-color transcript content.
+describe('[semantic theme tokens] a slot atom resolves to the LIVE palette + tracks :theme', () => {
+  const hexSgr = (hex) => `\x1b[38;2;${parseInt(hex.slice(1, 3), 16)};${parseInt(hex.slice(3, 5), 16)};${parseInt(hex.slice(5, 7), 16)}m`;
+  it('[warning] resolves to theme().warning, and re-resolves when the theme flips', () => {
+    themes.setTheme('dracula');
+    eq(richToAnsi('[warning]x[/]'), `${hexSgr(themes.theme().warning)}x\x1b[0m`);   // #f1fa8c
+    themes.setTheme('monokai');
+    eq(richToAnsi('[warning]x[/]'), `${hexSgr(themes.theme().warning)}x\x1b[0m`);   // #e6db74 — cache invalidated
+    themes.setTheme('dracula');
+    eq(richToAnsi('[warning]x[/]'), `${hexSgr(themes.theme().warning)}x\x1b[0m`);   // back
+  });
+  it('[error] / [success] / [accent] resolve too; a compound [bold warning] works', () => {
+    themes.setTheme('dracula');
+    eq(richToAnsi('[error]x[/]'), `${hexSgr(themes.theme().error)}x\x1b[0m`);
+    eq(richToAnsi('[bold warning]x[/]'), `\x1b[1;38;2;241;250;140mx\x1b[0m`);
+  });
+  it('the fix does NOT touch attributes or named-16 colors (dim stays faint, red stays 31)', () => {
+    eq(richToAnsi('[dim]x[/]'), '\x1b[2mx\x1b[0m');      // dim = ATTRIBUTE, never the `dim` slot
+    eq(richToAnsi('[red]x[/]'), '\x1b[31mx\x1b[0m');     // named-16 wins over any same-named slot
+  });
+  it('a stored footer markup ([warning]Cancelled.) re-colors on :theme (the reported bug)', () => {
+    const line = '[warning]Cancelled.[/]';   // exactly what stream.js now stores
+    themes.setTheme('dracula'); const a = richToAnsi(line);
+    themes.setTheme('monokai'); const b = richToAnsi(line);
+    assert(a !== b && a.includes('Cancelled.') && b.includes('Cancelled.'),
+      `stored footer re-colors on theme change: ${JSON.stringify([a, b])}`);
+    themes.setTheme('dracula');
   });
 });
 

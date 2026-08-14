@@ -55,7 +55,7 @@ const WAL = [
   W({ type: 'agent_event', evt: { type: 'settled' } }),
 ];
 const FULL_TRANSCRIPT = [
-  '[cyan]› hi[/]',
+  '[accent]› hi[/]',
   '[dim]→ bash({"cmd":"ls"})[/]',
   '[dim]← ok[/]',
   'two files',
@@ -87,7 +87,7 @@ describe('[agent-replay] the recorded Msg log reconstructs the pane, effect-free
     replay.replayEntries(WAL);
     eq(slice().transcript.length, 4, 'at the end');
     replay.replayEntries(WAL.slice(0, 5), { fromState: base });   // just after Enter
-    eq(slice().transcript, ['[cyan]› hi[/]'], 'only the user line at the earlier frame');
+    eq(slice().transcript, ['[accent]› hi[/]'], 'only the user line at the earlier frame');
     eq(slice().status.state, 'idle', 'pre-turn status at that frame');
   });
 });

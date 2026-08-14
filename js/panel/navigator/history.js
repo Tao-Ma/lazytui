@@ -114,15 +114,17 @@ function render(panel, w, h, _slice, opts) {
  * historyReplay effect on Enter.
  */
 function _replayLines(entry) {
-  const t = theme();
+  // Semantic theme tokens ([success]/[error]) — this replay content is STORED in
+  // the viewer (setViewerContent), so a resolved color would freeze; the tokens
+  // re-resolve at paint and track :theme (ansi._expandThemeKeys).
   const lines = [`[dim]$ ${esc(entry.label)}[/]`];
   for (const ol of entry.output || []) lines.push(esc(ol));
   if (entry._detached) {
     lines.push('[dim](detached — no captured output)[/]');
   } else if (entry.exitCode === 0) {
-    lines.push(`[${t.success}]Done.[/]`);
+    lines.push('[success]Done.[/]');
   } else if (entry.exitCode !== null) {
-    lines.push(`[${t.error}]Exit ${entry.exitCode}[/]`);
+    lines.push(`[error]Exit ${entry.exitCode}[/]`);
   }
   return lines;
 }

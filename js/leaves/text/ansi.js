@@ -5,16 +5,21 @@
  *   attributes  bold · dim · reverse
  *   fg colors   green red yellow blue magenta cyan white · #rrggbb (24-bit)
  *   bg          on <named|dark_blue|#rrggbb>
+ *   theme slots warning · error · accent · running · … (any THEMES palette key)
  *   reset       [/] (also [/bold], [/dim])
  * plus escaped brackets \[text]. Examples: [bold cyan], [#rrggbb],
- * [#rrggbb on #rrggbb]. Hex atoms ALWAYS emit 38;2/48;2 — the pipeline is
- * canonically truecolor; device depth adapts at the WRITE boundary, never
- * here (docs/truecolor.md P3). A tag containing any unknown atom compiles to
- * RESET (defensive, pre-parser behavior preserved). Named atoms emit
- * byte-identical SGR to the pre-parser CODES table (P6, pinned in
- * test-ansi.js). Compiled tags are memoized (pure memoization — same tag,
- * same bytes; the vocabulary is finite since esc() escapes brackets in
- * content, so content cannot mint tags).
+ * [#rrggbb on #rrggbb], [warning]. Hex atoms ALWAYS emit 38;2/48;2 — the
+ * pipeline is canonically truecolor; device depth adapts at the WRITE boundary,
+ * never here (docs/truecolor.md P3). A tag containing any unknown atom compiles
+ * to RESET (defensive, pre-parser behavior preserved). Named atoms emit
+ * byte-identical SGR to the pre-parser CODES table (P6, pinned in test-ansi.js).
+ *
+ * SEMANTIC THEME TOKENS (truecolor arc 3b): an atom naming a palette slot expands
+ * to that slot's CURRENT value at paint time (`_expandThemeKeys`), so STORED
+ * markup like `[warning]Cancelled.[/]` re-colors on a `:theme` change and a pure
+ * reducer can emit themed content without reading the #D8 palette. This makes a
+ * compiled tag theme-DEPENDENT, so the memo is invalidated when `theme()` flips
+ * (richToAnsi); non-slot tags stay a pure `tag → bytes` memo.
  *
  * Two dependencies back `charWidth` (the width truth function — a standard,
  * spec-evolving problem; see charWidth's doc): `eastasianwidth` (UAX #11, the
@@ -32,6 +37,9 @@
 
 const { eastAsianWidth } = require('eastasianwidth');
 const wcwidth = require('wcwidth');
+// Semantic theme tokens resolve against the LIVE palette at paint (below). themes
+// is a dependency-free infra leaf, so this is an acyclic leaf→leaf edge.
+const { theme } = require('../infra/themes');
 
 const RESET = '\x1b[0m';
 
@@ -46,10 +54,37 @@ function _hexParams(prefix, hex) {
   return `${prefix};2;${parseInt(hex.slice(0, 2), 16)};${parseInt(hex.slice(2, 4), 16)};${parseInt(hex.slice(4, 6), 16)}`;
 }
 
+// Semantic theme tokens (truecolor arc 3b): an atom naming a theme palette slot
+// (warning, error, accent, running, partial, …) expands to that slot's CURRENT
+// value — a hex, a named-16 color, or a compound `bold #hex` / `#fg on #bg` body.
+// Resolved HERE (richToAnsi = paint time), so STORED markup like
+// `[warning]Cancelled.[/]` re-colors on a :theme change, and a pure reducer can
+// emit themed content without reading the #D8 palette. `dim` stays the faint
+// ATTRIBUTE and named-16 FGs (red/green/…) win over any same-named slot (both
+// checked first). No slot is named literally in markup today (grep 0), so this
+// only ADDS behavior. The result feeds the existing atom compiler + cache, which
+// richToAnsi invalidates when theme() flips.
+function _expandThemeKeys(tag) {
+  if (tag.indexOf(' ') === -1) {
+    if (_ATTRS[tag] || _FG[tag]) return tag;
+    const v = theme()[tag];
+    return v === undefined ? tag : v;
+  }
+  const atoms = tag.split(' ');
+  let changed = false;
+  for (let i = 0; i < atoms.length; i++) {
+    const a = atoms[i];
+    if (_ATTRS[a] || _FG[a]) continue;
+    const v = theme()[a];
+    if (v !== undefined) { atoms[i] = v; changed = true; }
+  }
+  return changed ? atoms.join(' ') : tag;
+}
+
 /** Compile one tag body to SGR, or null when any atom is unknown. */
 function _compileTag(tag) {
   if (tag === '/' || tag === '/bold' || tag === '/dim') return RESET;
-  const toks = tag.split(' ');
+  const toks = _expandThemeKeys(tag).split(' ');
   const codes = [];
   for (let i = 0; i < toks.length; i++) {
     const tk = toks[i];
@@ -75,6 +110,11 @@ function _compileTag(tag) {
 // vocabulary is finite (theme slot values + panel literals + gradient steps).
 const _TAG_CACHE = new Map();
 const _TAG_CACHE_MAX = 1024;
+// Semantic theme tokens make a compiled tag theme-DEPENDENT, so the cache must
+// drop when the palette changes. `theme()` returns a stable object ref per theme
+// (the THEMES table entry), so a `!==` flip is a real :theme change; richToAnsi
+// clears the cache once on the first row of the changed frame.
+let _lastTheme = null;
 
 function _tagSgr(tag) {
   let v = _TAG_CACHE.get(tag);
@@ -115,6 +155,9 @@ const _SENTINEL_RE = new RegExp(_BRACKET_SENTINEL, 'g');
 // guards: it must agree with richToAnsi on what is a tag (visibleLen pads
 // what richToAnsi renders).
 function richToAnsi(text) {
+  // Invalidate the tag cache on a :theme change so semantic theme tokens re-resolve.
+  const th = theme();
+  if (th !== _lastTheme) { _TAG_CACHE.clear(); _lastTheme = th; }
   // Protect escaped brackets
   let result = text.replace(/\\\[/g, _BRACKET_SENTINEL);
   // Replace tags

@@ -139,8 +139,8 @@ function emitStatusChip(outcome, tabInstId) {
 function preemptNotice(jobId) {
   const ctx = procs.get(jobId);
   if (!ctx) return '';
-  const t = theme();
-  return `[${t.warning}]⊗[/] [dim]killed previous: ${esc(ctx.headerLabel || '<stream>')}[/]`;
+  // Semantic [warning] (not a resolved color) so the stored preamble tracks :theme.
+  return `[warning]⊗[/] [dim]killed previous: ${esc(ctx.headerLabel || '<stream>')}[/]`;
 }
 
 /** Kill a single job. Removes it from procs + slotIndex, SIGTERMs the
@@ -159,7 +159,8 @@ function killJob(jobId, opts = {}) {
   // endedAt (the duration/time segments).
   if (ctx.record) ctx.record.kill();
   if (!opts.silent) {
-    const t = theme();
+    // Semantic theme tokens ([warning]/[error]) — NOT resolved colors — so these
+    // stored footers re-color on a :theme change (ansi._expandThemeKeys, paint).
     const batch = [];
     if (ctx.flushTail) {
       const tail = ctx.flushTail();
@@ -169,17 +170,17 @@ function killJob(jobId, opts = {}) {
       // The user clicked the chip's ✗ cancel — not a preempt, so the "next run"
       // / "previous" wording reads wrong. One neutral footer, routed to the job's
       // own instance (routed) or the Transcript (unrouted).
-      batch.push(`[${t.warning}]Cancelled.[/]`);
+      batch.push('[warning]Cancelled.[/]');
       appendDetailLines(batch, ctx.target ? ctx.target.tabInstId : undefined);
     } else if (ctx.target) {
       // Routed: re-run-on-same-slot footer → the action's text-view instance.
-      batch.push(`[${t.warning}]Killed by next run.[/]`);
+      batch.push('[warning]Killed by next run.[/]');
       appendDetailLines(batch, ctx.target.tabInstId);
     } else {
       // Unrouted: identify what was killed (the next stream is a
       // different command, so "Killed by next run" reads oddly here).
       // Goes to the Transcript text-view instance (no tabInstId on the dispatch).
-      batch.push(`[${t.warning}]Killed previous: ${esc(ctx.headerLabel || '<stream>')}.[/]`);
+      batch.push(`[warning]Killed previous: ${esc(ctx.headerLabel || '<stream>')}.[/]`);
       appendDetailLines(batch);
     }
     // Powerline stamp for the preempt outcome (pre-release review) — a killed job is a
@@ -379,7 +380,6 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
     // Completion appends: the decoder tail (if any), then the status line (a
     // right-aligned `tv_status` row), then the routed re-run hint — separate
     // dispatches (the status row must be recorded distinctly for right-align).
-    const t = theme();
     const tail = decoder.end();
     if (tail) buffer += tail;
     if (buffer) { appendDetailLine(esc(buffer), tabInstId); rec.append(buffer); if (fab) rawLines.push(buffer); buffer = ''; }
@@ -395,8 +395,8 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
       : { status: 'exited', exitCode: (code == null ? null : (code | 0)), startedAt: rec.entry.startedAt, endedAt: rec.entry.endedAt };
     if (!emitStatusChip(outcome, tabInstId)) {
       // Chip disabled → the classic plain footer, so completion is never silent.
-      const plain = signal ? `[${t.warning}]Killed (${signal})[/]`
-        : code === 0 ? `[${t.success}]Done.[/]` : `[${t.error}]Exit ${code}[/]`;
+      const plain = signal ? `[warning]Killed (${signal})[/]`
+        : code === 0 ? '[success]Done.[/]' : `[error]Exit ${code}[/]`;
       appendDetailLine(plain, tabInstId);
     }
     if (routed) appendDetailLine('[dim]Press Enter to run again.[/]', tabInstId);
@@ -409,10 +409,9 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
     jobs.close(jobId, { status: 'killed' });
     procs.delete(jobId);
     if (slotIndex.get(slotKey) === jobId) slotIndex.delete(slotKey);
-    const t = theme();
     rec.append(`Error: ${err.message}`);
     rec.end('error');   // stamp endedAt so the chip's duration/time resolve
-    appendDetailLine(`[${t.error}]Error: ${esc(err.message)}[/]`, tabInstId);
+    appendDetailLine(`[error]Error: ${esc(err.message)}[/]`, tabInstId);
     // Same powerline stamp as the normal close path (pre-release review) so a spawn
     // failure is marked like every other outcome. A spawn error carries no exit
     // code/signal → renders `✗ ?`; the Error: line above carries the detail.
