@@ -321,10 +321,10 @@ selection per-tab; docs/pane-selection.md). The v0.6.2 "T3" system
 this section used to describe — `slice.tabState` keyed by resolved tab
 identity, a finalizer FROM-capture, per-arm restores, `viewerOverride`
 hygiene — was the workaround for ONE viewer slice serving many content
-tabs; it retired with the viewer in U2f (docs/one-tab-system.md). The
-generic `leaves/wm/tab-state.js` store survives as a pure leaf
-(reachable via tab-container's `perTabState`), but no production pane
-needs it today.
+tabs; it retired with the viewer in U2f (docs/one-tab-system.md). The generic
+`tab-state` / `tab-container` leaves lingered unused afterward and were
+removed once nothing referenced them — per-tab view-state now rides the
+finalizer capture/restore + mint reconcile instead.
 
 **See also.**
 - `docs/PRINCIPLES.md` §12 — the Component discipline rules.

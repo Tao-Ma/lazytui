@@ -443,8 +443,8 @@ function _paneMenuPick(target, item) {
     // U2f — every pane-menu tab row is a POSITION-tab (the unified slot strip via
     // panel/slot-strip; backing 'slot'), so a pick just activates it — the SAME
     // routing the visible strip's click uses (menu ≡ strip). The flat viewer-tab
-    // pick (tab-container 'viewer' backing → resolveTabKey → tab_switch) retired
-    // with the viewer's flat strip.
+    // pick (the retired viewer's flat-strip tab backing) is gone with the viewer
+    // (U2f).
     close();
     dispatchMsg(wrap('layout', { type: 'focus_set', focus: target }));
     dispatchMsg(wrap('layout', { type: 'set_active_tab', paneId: target, tabPoolId: item.poolId }));

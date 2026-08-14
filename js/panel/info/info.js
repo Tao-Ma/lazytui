@@ -70,7 +70,8 @@ function update(msg, slice) {
     // `viewer_show_info` "already on Info" branch: replace the buffer, reset scroll
     // to the top of the new item's info, reset the match CURSOR on real content
     // change (keep the term so `/[Up]` recalls it). Per-tab view-state restore on
-    // (re)mount is the framework's job (tab-state + mint reconcile), not this arm.
+    // (re)mount is the framework's job (mint reconcile + finalizer view-state
+    // capture/restore), not this arm.
     if (!Array.isArray(msg.lines)) return slice;
     const sameLines = _linesEq(slice.lines, msg.lines);
     // True no-op (content + scroll already in target shape) — return the input ref
