@@ -209,7 +209,7 @@ function _contentLines(slice, innerW) {
 // holds no running action (completed / open-file / docker-log views), or on the
 // pre-reconcile boot frame. On completion this vanishes and stream.js's stored
 // `tv_status` line takes over. The Transcript (unrouted sink) matches by kind.
-function _runningLine(panel, t, innerW) {
+function _chipFor(paneId, t, innerW) {
   const model = getModel();
   // Cheap early-out for the steady state (no action running): skip the config
   // resolve + transcript-identity resolve + per-pane job scan entirely. This
@@ -217,21 +217,50 @@ function _runningLine(panel, t, innerW) {
   // while an action runs — so the common no-op path must stay trivial.
   const jobs = model.jobs;
   if (!Array.isArray(jobs) || !jobs.some((j) => j.status === 'running'
-      && (j.kind === 'stream-routed' || j.kind === 'stream-unrouted'))) return '';
+      && (j.kind === 'stream-routed' || j.kind === 'stream-unrouted'))) return null;
   const cfg = astatus.resolveConfig((model.config || {}).action_status);
-  if (!cfg.enabled) return '';
+  if (!cfg.enabled) return null;
   const route = require('../route');
-  const instId = panel && panel.paneId ? route.activeInstanceOf(panel.paneId) : null;
-  if (!instId) return '';
+  const instId = paneId ? route.activeInstanceOf(paneId) : null;
+  if (!instId) return null;
   const isTranscript = instId === route.resolveTarget('viewer_transcript');
   const job = astatus.jobForPane(jobs, instId, isTranscript);
-  if (!job || job.status !== 'running') return '';
-  const seg = astatus.statusLine(
+  if (!job || job.status !== 'running') return null;
+  const chip = astatus.runningChip(
     { status: 'running', startedAt: job.startedAt },
     model.now, cfg,
-    { success: t.success, warning: t.warning, error: t.error },
+    { success: t.success, warning: t.warning, error: t.error }, innerW,
   );
-  return seg ? _rightAlign(seg, innerW) : '';
+  return chip ? { job, instId, line: chip.line, cancelX0: chip.cancelX0, cancelX1: chip.cancelX1 } : null;
+}
+
+// The LIVE action-status line string for render (floated at the tail). '' when
+// this pane holds no running action. Thin wrapper over the shared _chipFor.
+function _runningLine(panel, t, innerW) {
+  const info = _chipFor(panel && panel.paneId, t, innerW);
+  return info ? info.line : '';
+}
+
+// Shell hook for the click hit-test (chrome-hittest.hitTestActionCancel): the
+// pane-local `✗ cancel` span + owning jobId for a pane's live chip, or null.
+// Non-null ONLY when the affordance actually drew (cancelX0 >= 0) AND the chip is
+// on-screen — the tail line renders only while bottom-stuck (render's `wasBottom`
+// below); scrolled up it's off-screen and not clickable, by design. `innerW`/
+// `innerH` are the pane's content dims (b.w-2 / b.h-2). Impure-shell theme read.
+function cancelHitInfo(paneId, innerW, innerH) {
+  const t = require('../../leaves/infra/themes').theme();
+  const info = _chipFor(paneId, t, innerW);
+  if (!info || info.cancelX0 < 0) return null;
+  const slice = require('../route').getInstanceSlice(info.instId);
+  if (!slice) return null;
+  const linesLen = (slice.lines || []).length;
+  const atBottom = (slice.scroll || 0) >= Math.max(0, linesLen - innerH);
+  if (!atBottom) return null;
+  // The chip is the tail of (contentLines + chip). With bottom-stick (render's
+  // `wasBottom` branch), its row within the inner window is min(linesLen, innerH-1)
+  // — right after short output, or the last inner row once output fills the pane.
+  const row = Math.min(linesLen, Math.max(0, innerH - 1));
+  return { jobId: info.job.id, cancelX0: info.cancelX0, cancelX1: info.cancelX1, row };
 }
 
 function render(panel, w, h, slice, opts) {
@@ -300,5 +329,6 @@ module.exports = {
   init,
   update,
   augmentMsg,
+  cancelHitInfo,
   panelTypes: { 'text-view': { render } },
 };

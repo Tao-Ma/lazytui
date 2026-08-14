@@ -399,6 +399,13 @@ function installBuiltins() {
       stream.streamCommand(eff.headerLabel, eff.cmd, eff.args, { ...(eff.opts || {}), preamble: notice });
     });
   });
+  // kill_job: cancel a running streamed command (the action-status chip's ✗ cancel
+  // click → cancel_job Msg → this Cmd). SIGTERMs + tears down the registry entry;
+  // `userCancel` stamps a neutral "Cancelled." footer + a ⊗ outcome chip (not the
+  // preempt wording). No-op if the job already finished.
+  registerEffect('kill_job', (eff) => {
+    if (eff && eff.jobId) require('./stream').killJob(eff.jobId, { userCancel: true });
+  });
   // jobs_route: the second half of jobs_activate (Phase C). jobs_activate
   // closed the overlay and queued the group switch; by the time this effect
   // runs, the preceding set_current_group Cmd in the same batch has committed,

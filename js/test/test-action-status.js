@@ -459,4 +459,111 @@ describe('[action-status] augmentMsg stamps innerW only when status rows exist (
   });
 });
 
+// The `✗ cancel` affordance on the LIVE running chip (round-5 feature). runningChip
+// is the SINGLE source both render (.line) and the hit-test (.cancelX0/.cancelX1)
+// read, so a click can't land where the ✗ cancel didn't paint.
+describe('[action-status] runningChip — the ✗ cancel affordance', () => {
+  it('appends a right-aligned `✗ cancel` (✗ red) whose span is the rightmost CANCEL_W cols', () => {
+    const info = astatus.runningChip(running, 2000, undefined, TAGS, 30);
+    assert(info, 'a chip is composed for a running outcome');
+    const plain = stripMarkup(info.line);
+    assert(/✗ cancel$/.test(plain), `line ends with the affordance: ${JSON.stringify(plain)}`);
+    assert(info.line.includes('[red]✗[/]'), `the ✗ is red: ${info.line}`);
+    eq(plain.length, 30);                                          // right-aligned to innerW
+    eq(info.cancelX0, 22); eq(info.cancelX1, 29);                  // rightmost 8 cols (innerW-8 .. innerW-1)
+    eq(plain.slice(info.cancelX0, info.cancelX1 + 1), '✗ cancel'); // the span IS `✗ cancel` (8 wide)
+  });
+  it('too-narrow pane → status shown WITHOUT the affordance (cancelX0 = -1)', () => {
+    const info = astatus.runningChip(running, 2000, undefined, TAGS, 5);
+    assert(info && info.cancelX0 === -1, `no cancel span when it does not fit: ${JSON.stringify(info)}`);
+    assert(!/✗ cancel/.test(stripMarkup(info.line)), 'no ✗ cancel drawn in a too-narrow pane');
+  });
+  it('a non-running outcome → null (cancel is running-only; completion uses tv_status)', () => {
+    eq(astatus.runningChip(exited0, 9999, undefined, TAGS, 30), null);
+    eq(astatus.runningChip(killed, 9999, undefined, TAGS, 30), null);
+  });
+});
+
+describe('[action-status] cancel_job reducer arm → kill_job Cmd', () => {
+  it('forwards a kill_job Cmd carrying the jobId (no model change)', () => {
+    const model = { now: 0 };
+    const [next, cmds] = update(model, { type: 'cancel_job', jobId: 'job-7' });
+    eq(next, model);                                              // identity — Cmd-only verb
+    eq(cmds, [{ type: 'kill_job', jobId: 'job-7' }]);
+  });
+  it('a missing jobId is a no-op (no Cmd)', () => {
+    eq(update({}, { type: 'cancel_job' })[1], []);
+  });
+});
+
+// End-to-end: the pane render DRAWS `✗ cancel`, and chrome-hittest fires EXACTLY
+// on the drawn cell — both derive from runningChip, so this pins render↔hit-test
+// agreement at the real rendered position (via the component render, which returns
+// the full pane, not a cell-diff), plus the scrolled-up gate + the click → kill.
+describe('[action-status] ✗ cancel — render draws it where the hit-test fires', () => {
+  const sm = require('./smoke/_helpers/smoke');
+  const route = require('../panel/route');
+  const geo = require('../leaves/wm/geometry');
+  const { getModel } = require('../app/runtime');
+  const { runAction, killAll } = require('../dispatch/runtime/action-runner');
+  const { hitTestActionCancel } = require('../panel/chrome-hittest');
+  const { applyMsg } = require('../dispatch/control/dispatch');
+  if (!sm.api.getComponent('text-view')) sm.api.registerComponent(require('../panel/text-view/text-view'));
+  const renderTV = tv.panelTypes['text-view'].render;
+  const CANCEL_W = 8;   // visible width of '✗ cancel' (✗ is 1 display col)
+  const ACT = { key: 'logs', label: 'logs', type: 'run', script: 'sleep 5', tab: true };
+
+  // Boot a running routed action + resolve the content slot's bounds + slice.
+  function bootRun() {
+    sm.bootFresh({ groups: { g1: { name: 'g1', label: 'G1', containers: [], children: [], parent: null, depth: 0, quick: false, actions: { logs: ACT } } } });
+    sm.resize(100, 30);
+    runAction('logs', ACT);
+    const job = (getModel().jobs || []).find((j) => j.kind === 'stream-routed' && j.status === 'running');
+    const slot = route.resolveViewerPaneId();
+    const b = geo.visibleBoundsFor(route.serviceSlice('layout'), slot, slot);
+    const instId = route.activeInstanceOf(slot);
+    return { job, slot, b, instId };
+  }
+
+  it('the hit-test fires on the drawn `✗ cancel` cell, and NOT one col left / one row up', () => {
+    const { job, slot, b, instId } = bootRun();
+    assert(job && b && b.w > 12, 'a running job + a real content slot');
+
+    // Full component render (not a diff) → find `✗ cancel`'s pane-local (line,col).
+    const lines = renderTV({ paneId: slot, hotkey: null }, b.w, b.h, route.getInstanceSlice(instId), {}).split('\n').map(stripMarkup);
+    let li = -1, ci = -1;
+    for (let i = 0; i < lines.length; i++) { const j = lines[i].indexOf('✗ cancel'); if (j >= 0) { li = i; ci = j; break; } }
+    assert(li >= 0, `render drew '✗ cancel' in the pane: ${JSON.stringify(lines.filter((l) => /cancel|[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/.test(l)))}`);
+
+    // Pane-local (li,ci) → screen (b.x+ci, b.y+li). The hit-test must fire there.
+    eq(hitTestActionCancel(b.x + ci, b.y + li), job.id);                 // the ✗ (left edge)
+    eq(hitTestActionCancel(b.x + ci + CANCEL_W - 1, b.y + li), job.id);  // last col of "cancel"
+    eq(hitTestActionCancel(b.x + ci - 1, b.y + li), null);                      // the ` · ` separator — NOT clickable
+    eq(hitTestActionCancel(b.x + ci, b.y + li - 1), null);                      // one row up (log output) — no hit
+    killAll();
+  });
+
+  it('scrolled up (chip off-screen) → no hit', () => {
+    const { job, slot, b, instId } = bootRun();
+    // Precondition: bottom-stuck → the chip is live + clickable.
+    assert(tv.cancelHitInfo(slot, b.w - 2, b.h - 2), 'chip is hittable while bottom-stuck');
+    // Fill the tab past its viewport + scroll to the top → not bottom-stuck, so
+    // render doesn't float the chip onto the window and the hit-test finds nothing.
+    const s = route.getInstanceSlice(instId);
+    route.setInstanceSlice(instId, { ...s, lines: Array.from({ length: 200 }, (_, i) => `line ${i}`), scroll: 0 });
+    eq(tv.cancelHitInfo(slot, b.w - 2, b.h - 2), null);   // scrolled up → nothing to click
+    void job;
+    killAll();
+  });
+
+  it('cancel_job → kill_job → the job stops running (the click path)', () => {
+    const { job } = bootRun();
+    assert(require('../feature/jobs').snapshot().some((j) => j.id === job.id && j.status === 'running'), 'running before cancel');
+    applyMsg({ type: 'cancel_job', jobId: job.id });      // exactly what the click dispatches
+    assert(!require('../feature/jobs').snapshot().some((j) => j.id === job.id && j.status === 'running'),
+      'the job is no longer running after the cancel');
+    killAll();
+  });
+});
+
 report();

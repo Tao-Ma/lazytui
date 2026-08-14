@@ -34,6 +34,7 @@
 // The clock + duration ladder are shared with the history navigator so the two
 // panels never drift (they once rendered `1m5s` vs `1m05s` for the same run).
 const { fmtClock, fmtDurationMs } = require('./time');
+const { visibleLen } = require('./ansi');
 
 const VALID_SEGMENTS = new Set(['status', 'duration', 'time']);
 const DEFAULT_SEGMENTS = ['status', 'duration', 'time'];
@@ -130,4 +131,36 @@ function statusLine(outcome, now, cfg, tags) {
   return parts.join(' · ');
 }
 
-module.exports = { resolveConfig, jobForPane, statusLine };
+// The clickable cancel affordance on the LIVE running chip: `✗ cancel` (the ✗
+// red, `cancel` dim). Its visible width; the hit-test (chrome-hittest.js) maps a
+// click on the rightmost CANCEL_W content cols of the chip's row to killJob. The
+// ` · ` separator is drawn but is NOT part of the clickable span.
+const CANCEL_W = 8;   // visibleLen('✗ cancel') = ✗(1) + ' '(1) + 'cancel'(6)
+
+/**
+ * Compose the LIVE running chip WITH the trailing clickable cancel affordance,
+ * right-aligned to `innerW`. Returns `{ line, cancelX0, cancelX1 }` — the display
+ * string plus the cancel span in pane-local content columns [0..innerW) — or null
+ * when there's no live chip. `cancelX0 === -1` means the ✗ cancel didn't fit, so
+ * the chip is shown WITHOUT it (too-narrow pane) and there is nothing to click.
+ *
+ * This is the SINGLE source both the renderer (uses `.line`) and the hit-test
+ * (uses `.cancelX0/.cancelX1`) read, so a click can never land where the
+ * affordance didn't draw (the border-controls `regions()` discipline). Pure.
+ */
+function runningChip(outcome, now, cfg, tags, innerW) {
+  if (!outcome || outcome.status !== 'running') return null;   // cancel affordance is running-only
+  const seg = statusLine(outcome, now, cfg, tags);
+  if (!seg) return null;
+  const withCancel = `${seg} · [${tags.error}]✗[/] [dim]cancel[/]`;
+  const wcw = visibleLen(withCancel);
+  if (wcw <= innerW) {
+    return { line: ' '.repeat(innerW - wcw) + withCancel, cancelX0: innerW - CANCEL_W, cancelX1: innerW - 1 };
+  }
+  // The affordance doesn't fit — draw the status alone (no cancel), never truncate
+  // the ✗ cancel to a dead half-target.
+  const sv = visibleLen(seg);
+  return { line: sv >= innerW ? seg : ' '.repeat(innerW - sv) + seg, cancelX0: -1, cancelX1: -1 };
+}
+
+module.exports = { resolveConfig, jobForPane, statusLine, runningChip };

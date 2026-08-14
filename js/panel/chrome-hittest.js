@@ -144,4 +144,30 @@ function hitTestBorderControls(mx, my) {
   return null;
 }
 
-module.exports = { hitTestCollapseButton, hitTestCloseButton, hitTestBorderControls };
+/** Hit-test the LIVE action-status chip's `✗ cancel` affordance. Returns the
+ *  running jobId under (mx, my), or null. Unlike the glyphs above, the chip is a
+ *  CONTENT line (the running status floated at the pane's tail), not border chrome
+ *  — so this walks ALL placed panes (incl. the detail/content slots
+ *  `_placedWidgetTargets` excludes) and asks the text-view Component where its
+ *  cancel span drew this frame. Presence + geometry come from the SAME
+ *  `astatus.runningChip` the render used (via `cancelHitInfo` → bottom-stuck tail
+ *  row, right-aligned), so a click can't land where the ✗ cancel didn't paint. */
+function hitTestActionCancel(mx, my) {
+  const slice = getInstanceSlice('layout');
+  if (!slice || !slice.arrange) return null;
+  if (slice.freeConfig && slice.freeConfig.drag) return null;   // drag owns the screen
+  const textview = require('./text-view/text-view');
+  for (const p of mpool.allPanesInColumns(slice.arrange)) {
+    const b = visibleBoundsFor(slice, p.paneId);
+    if (!b || b.h < 3 || b.w < 3) continue;                     // need a border + ≥1 inner row
+    const info = textview.cancelHitInfo(p.paneId, b.w - 2, b.h - 2);
+    if (!info) continue;
+    const row = b.y + 1 + info.row;                             // pane-local chip row → screen row
+    const x0 = b.x + 1 + info.cancelX0;                         // pane-local content col → screen col
+    const x1 = b.x + 1 + info.cancelX1;
+    if (my === row && mx >= x0 && mx <= x1) return info.jobId;
+  }
+  return null;
+}
+
+module.exports = { hitTestCollapseButton, hitTestCloseButton, hitTestBorderControls, hitTestActionCancel };

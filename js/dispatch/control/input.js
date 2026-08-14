@@ -550,10 +550,19 @@ function handleMouse(kind, x, y) {
   // and the in-grid modes (filter/search/prefix/listSelect) still let
   // chrome clicks through; only input-owning modes block them.
   if (kind === 'press' && !suppressesChromeClicks(model.modes)) {
-    const { hitTestCollapseButton, hitTestCloseButton, hitTestBorderControls } = require('../../panel/chrome-hittest');
+    const { hitTestCollapseButton, hitTestCloseButton, hitTestBorderControls, hitTestActionCancel } = require('../../panel/chrome-hittest');
     const collapseId = hitTestCollapseButton(mx, my);
     if (collapseId) {
       dispatchMsg(wrap('layout', { type: 'panel_collapse_toggle', id: collapseId }));
+      render();
+      return;
+    }
+    // Live action-status `✗ cancel` click → cancel that running command. It's a
+    // CONTENT-line affordance (the running chip), checked here alongside the border
+    // chrome so a click on it cancels instead of arming a text selection.
+    const cancelJobId = hitTestActionCancel(mx, my);
+    if (cancelJobId) {
+      applyMsg({ type: 'cancel_job', jobId: cancelJobId });
       render();
       return;
     }

@@ -162,7 +162,13 @@ function killJob(jobId, opts = {}) {
       const tail = ctx.flushTail();
       if (tail) batch.push(esc(tail));
     }
-    if (ctx.target) {
+    if (opts.userCancel) {
+      // The user clicked the chip's ✗ cancel — not a preempt, so the "next run"
+      // / "previous" wording reads wrong. One neutral footer, routed to the job's
+      // own instance (routed) or the Transcript (unrouted).
+      batch.push(`[${t.warning}]Cancelled.[/]`);
+      appendDetailLines(batch, ctx.target ? ctx.target.tabInstId : undefined);
+    } else if (ctx.target) {
       // Routed: re-run-on-same-slot footer → the action's text-view instance.
       batch.push(`[${t.warning}]Killed by next run.[/]`);
       appendDetailLines(batch, ctx.target.tabInstId);

@@ -448,6 +448,13 @@ function update(model, msg) {
       // free_config_enter Msg into the layout Component.
       return [model, [{ type: 'msg', msg: route.wrap('layout', { type: 'free_config_enter' }) }]];
     }
+    // Cancel a running streamed command (the live action-status chip's `✗ cancel`
+    // click, dispatch/control/input.js). Cmd-only, like free_config: the SIGTERM +
+    // registry teardown is a side effect, so the arm just forwards a kill_job Cmd
+    // (the effects layer runs stream.killJob). No model change here — the job's
+    // exit → jobs_synced → the chip settles to `⊗`.
+    case 'cancel_job':
+      return [model, msg.jobId ? [{ type: 'kill_job', jobId: msg.jobId }] : []];
     default:
       return [model, []];
   }
