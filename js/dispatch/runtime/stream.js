@@ -42,7 +42,6 @@
 const { spawn } = require('child_process');
 const { StringDecoder } = require('string_decoder');
 const { esc } = require('../../leaves/text/ansi');
-const { theme } = require('../../leaves/infra/themes');
 const astatus = require('../../leaves/text/action-status');
 const { getModel } = require('../../model/store');
 const { scheduleRender } = require('../../leaves/infra/render-queue');
@@ -101,15 +100,15 @@ function appendDetailLines(lines, tabInstId) {
 
 // Append the permanent completion-status line (`tv_status`) — same routing as
 // appendDetailLine, but the arm records the line as a right-aligned status row.
-function appendStatusLine(line, outcome, tabInstId) {
+function appendStatusLine(line, tabInstId) {
   const api = require('../../panel/api');
   if (tabInstId) {
-    require('./loop').dispatchMsg(api.wrap(tabInstId, { type: 'tv_status', line, outcome }));
+    require('./loop').dispatchMsg(api.wrap(tabInstId, { type: 'tv_status', line }));
     return;
   }
   const target = require('../../panel/route').resolveTarget('viewer_transcript');
   if (target == null) return;
-  require('./loop').dispatchMsg(api.wrap(target, { type: 'tv_status', line, outcome }));
+  require('./loop').dispatchMsg(api.wrap(target, { type: 'tv_status', line }));
 }
 
 // The ONE job-termination status seam (pre-release review). The powerline `✓/✗/⊗ · dur ·
@@ -120,14 +119,11 @@ function appendStatusLine(line, outcome, tabInstId) {
 // close path can fall back to its plain Done./Exit N footer when the chip is
 // disabled; error/killJob keep their own detail footers regardless.
 function emitStatusChip(outcome, tabInstId) {
-  const t = theme();
-  const chip = astatus.statusLine(outcome, null, (getModel().config || {}).action_status,
-    { success: t.success, warning: t.warning, error: t.error });
+  // statusLine emits SEMANTIC theme tokens, so the stored chip line tracks :theme
+  // at paint (ansi._expandThemeKeys) — no palette read, no render-side re-derivation.
+  const chip = astatus.statusLine(outcome, null, (getModel().config || {}).action_status);
   if (!chip) return false;
-  // Pass the OUTCOME alongside the pre-colored line: the text-view stores both, and
-  // render re-derives the chip's color from the outcome each frame so a past ✓/✗/⊗
-  // tracks a :theme change (the stored line is the coordinate/fallback text).
-  appendStatusLine(chip, outcome, tabInstId);
+  appendStatusLine(chip, tabInstId);
   return true;
 }
 

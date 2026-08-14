@@ -105,12 +105,11 @@ function update(msg, slice) {
     case 'tv_append_lines':
       return (Array.isArray(msg.lines) && msg.lines.length) ? _appendLines(slice, msg.lines) : slice;
     case 'tv_status': {
-      // Append the permanent completion-status line + record its index AND the
-      // outcome (docs/global-config.md §action_status). render() right-aligns it
-      // and re-derives its color from the outcome under the current theme (so a
-      // past ✓/✗/⊗ tracks :theme). `msg.line` is the stored coordinate/fallback.
+      // Append the permanent completion-status line + record its index so render()
+      // right-aligns it (docs/global-config.md §action_status). The line carries
+      // SEMANTIC theme tokens, so it tracks :theme at paint without re-derivation.
       const s = _appendLines(slice, [msg.line]);
-      return { ...s, statusRows: (slice.statusRows || []).concat([{ index: s.lines.length - 1, outcome: msg.outcome || null }]) };
+      return { ...s, statusRows: (slice.statusRows || []).concat([s.lines.length - 1]) };
     }
     case 'tv_set_lines':
       // U2e P1b — REPLACE the buffer wholesale (open-file/docker: the `Loading…`
@@ -193,27 +192,16 @@ function _rightAlign(line, width) {
 // consume, so keyboard/mouse coords and the painted highlight can't drift.
 // Right-aligning here (not in the stored buffer) keeps the text width-agnostic
 // across resizes. Ref-preserving: returns slice.lines untouched on the common
-// path (no status rows, or width unavailable) so the no-copy fast path holds.
-//
-// `statusCtx` ({cfg, tags}) is passed ONLY by render: it re-derives each status
-// row's chip COLOR from the stored outcome under the CURRENT theme, so a past
-// ✓/✗/⊗ tracks a :theme change instead of freezing the completion-time palette.
-// The reducer omits it and uses the stored line — same TEXT/width (only color
-// tags differ), so selection/search coordinates still match render's.
-function _contentLines(slice, innerW, statusCtx) {
+// path (no status rows, or width unavailable) so the no-copy fast path holds. The
+// stored status-chip line carries SEMANTIC theme tokens (statusLine), so it tracks
+// :theme at paint on its own — this transform only right-aligns it to the width.
+function _contentLines(slice, innerW) {
   const lines = slice.lines || [];
   const statusRows = slice.statusRows;
   if (!statusRows || !statusRows.length || !(innerW > 0)) return lines;
   const out = lines.slice();
-  for (const r of statusRows) {
-    const i = r.index;
-    if (i < 0 || i >= out.length) continue;
-    let line = out[i];
-    if (statusCtx && r.outcome) {
-      const chip = astatus.statusLine(r.outcome, null, statusCtx.cfg, statusCtx.tags);
-      if (chip) line = chip;
-    }
-    out[i] = _rightAlign(line, innerW);
+  for (const i of statusRows) {
+    if (i >= 0 && i < out.length) out[i] = _rightAlign(out[i], innerW);
   }
   return out;
 }
@@ -224,7 +212,7 @@ function _contentLines(slice, innerW, statusCtx) {
 // holds no running action (completed / open-file / docker-log views), or on the
 // pre-reconcile boot frame. On completion this vanishes and stream.js's stored
 // `tv_status` line takes over. The Transcript (unrouted sink) matches by kind.
-function _chipFor(paneId, t, innerW) {
+function _chipFor(paneId, innerW) {
   const model = getModel();
   // Cheap early-out for the steady state (no action running): skip the config
   // resolve + transcript-identity resolve + per-pane job scan entirely. This
@@ -243,16 +231,15 @@ function _chipFor(paneId, t, innerW) {
   if (!job || job.status !== 'running') return null;
   const chip = astatus.runningChip(
     { status: 'running', startedAt: job.startedAt },
-    model.now, cfg,
-    { success: t.success, warning: t.warning, error: t.error }, innerW,
+    model.now, cfg, innerW,
   );
   return chip ? { job, instId, line: chip.line, cancelX0: chip.cancelX0, cancelX1: chip.cancelX1 } : null;
 }
 
 // The LIVE action-status line string for render (floated at the tail). '' when
 // this pane holds no running action. Thin wrapper over the shared _chipFor.
-function _runningLine(panel, t, innerW) {
-  const info = _chipFor(panel && panel.paneId, t, innerW);
+function _runningLine(panel, innerW) {
+  const info = _chipFor(panel && panel.paneId, innerW);
   return info ? info.line : '';
 }
 
@@ -261,10 +248,9 @@ function _runningLine(panel, t, innerW) {
 // Non-null ONLY when the affordance actually drew (cancelX0 >= 0) AND the chip is
 // on-screen — the tail line renders only while bottom-stuck (render's `wasBottom`
 // below); scrolled up it's off-screen and not clickable, by design. `innerW`/
-// `innerH` are the pane's content dims (b.w-2 / b.h-2). Impure-shell theme read.
+// `innerH` are the pane's content dims (b.w-2 / b.h-2).
 function cancelHitInfo(paneId, innerW, innerH) {
-  const t = require('../../leaves/infra/themes').theme();
-  const info = _chipFor(paneId, t, innerW);
+  const info = _chipFor(paneId, innerW);
   if (!info || info.cancelX0 < 0) return null;
   const slice = require('../route').getInstanceSlice(info.instId);
   if (!slice) return null;
@@ -299,14 +285,9 @@ function render(panel, w, h, slice, opts) {
   //     un-navigable highlight the reducer never counts) nor
   //     yielded by a yank; it lives in the display window, not the select set.
   // No copy for the common case (no status rows, not running) — most text-views
-  // hit this and contentLines === slice.lines by reference. `statusCtx` re-derives
-  // each stored status row's chip color from its outcome under the CURRENT theme,
-  // so past ✓/✗/⊗ chips track :theme (the reducer's _contentLines omits it — same
-  // TEXT/width, so its selection/search coords still match this buffer).
-  let contentLines = _contentLines(slice, innerW, {
-    cfg: astatus.resolveConfig((getModel().config || {}).action_status),
-    tags: { success: t.success, warning: t.warning, error: t.error },
-  });
+  // hit this and contentLines === slice.lines by reference. Status rows carry
+  // semantic theme tokens, so they track :theme at paint; this just right-aligns.
+  let contentLines = _contentLines(slice, innerW);
 
   // Search decoration over contentLines (excludes the running line) so render's
   // match set stays in lockstep with the reducer, which now runs matchesFor over
@@ -320,7 +301,7 @@ function render(panel, w, h, slice, opts) {
   // up into history.
   let displayLines = contentLines;
   let scroll = slice.scroll;
-  const running = _runningLine(panel, t, innerW);
+  const running = _runningLine(panel, innerW);
   if (running) {
     displayLines = contentLines.slice();
     const wasBottom = (slice.scroll || 0) >= Math.max(0, (slice.lines || []).length - innerH);

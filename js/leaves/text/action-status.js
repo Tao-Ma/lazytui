@@ -94,12 +94,14 @@ function _spinner(now, startedAt) {
 
 /** The status chip: spinner (running) · ✓ 0 (exit 0) · ✗ N (non-zero, with the
  *  code) · ⊗ SIG (killed, with the signal). `o` = { status, exitCode, signal,
- *  startedAt }. */
-function _statusChip(o, now, tags) {
-  if (o.status === 'running') return `[${tags.warning}]${_spinner(now, o.startedAt)}[/]`;
-  if (o.status === 'killed') return `[${tags.warning}]⊗${o.signal ? ` ${o.signal}` : ''}[/]`;
-  if (o.exitCode === 0) return `[${tags.success}]✓ 0[/]`;   // exit value shown for success too
-  return `[${tags.error}]✗ ${o.exitCode == null ? '?' : o.exitCode}[/]`;
+ *  startedAt }. Uses SEMANTIC theme tokens ([warning]/[success]/[error]) so a
+ *  STORED chip line tracks :theme at paint (ansi._expandThemeKeys) — no baked
+ *  color, no caller-passed palette. */
+function _statusChip(o, now) {
+  if (o.status === 'running') return `[warning]${_spinner(now, o.startedAt)}[/]`;
+  if (o.status === 'killed') return `[warning]⊗${o.signal ? ` ${o.signal}` : ''}[/]`;
+  if (o.exitCode === 0) return '[success]✓ 0[/]';   // exit value shown for success too
+  return `[error]✗ ${o.exitCode == null ? '?' : o.exitCode}[/]`;
 }
 
 /** Compose the status line for `outcome` as Rich markup, or '' when disabled /
@@ -107,7 +109,7 @@ function _statusChip(o, now, tags) {
  *  signal?, startedAt, endedAt? }. Segments render in config order, joined by
  *  ` · `; `time` is omitted while running (no finish time yet). The caller
  *  right-aligns the result to the pane width. */
-function statusLine(outcome, now, cfg, tags) {
+function statusLine(outcome, now, cfg) {
   if (!outcome) return '';
   const conf = resolveConfig(cfg);
   if (!conf.enabled) return '';
@@ -121,7 +123,7 @@ function statusLine(outcome, now, cfg, tags) {
   const parts = [];
   for (const seg of segs) {
     if (seg === 'status') {
-      parts.push(_statusChip(outcome, now, tags));
+      parts.push(_statusChip(outcome, now));
     } else if (seg === 'duration') {
       parts.push(`[dim]${fmtDuration(outcome.startedAt, running ? null : outcome.endedAt, now)}[/]`);
     } else if (seg === 'time') {
@@ -148,11 +150,11 @@ const CANCEL_W = 8;   // visibleLen('✗ cancel') = ✗(1) + ' '(1) + 'cancel'(6
  * (uses `.cancelX0/.cancelX1`) read, so a click can never land where the
  * affordance didn't draw (the border-controls `regions()` discipline). Pure.
  */
-function runningChip(outcome, now, cfg, tags, innerW) {
+function runningChip(outcome, now, cfg, innerW) {
   if (!outcome || outcome.status !== 'running') return null;   // cancel affordance is running-only
-  const seg = statusLine(outcome, now, cfg, tags);
+  const seg = statusLine(outcome, now, cfg);
   if (!seg) return null;
-  const withCancel = `${seg} · [${tags.error}]✗[/] [dim]cancel[/]`;
+  const withCancel = `${seg} · [error]✗[/] [dim]cancel[/]`;
   const wcw = visibleLen(withCancel);
   if (wcw <= innerW) {
     return { line: ' '.repeat(innerW - wcw) + withCancel, cancelX0: innerW - CANCEL_W, cancelX1: innerW - 1 };

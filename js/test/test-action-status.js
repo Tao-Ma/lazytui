@@ -22,8 +22,7 @@ const { mergeGlobal } = require('../parser/global');
 const { update } = require('../dispatch/update/reducer');
 const tv = require('../panel/text-view/text-view');
 
-const TAGS = { success: 'green', warning: 'yellow', error: 'red' };
-const line = (outcome, now, cfg) => stripMarkup(astatus.statusLine(outcome, now, cfg, TAGS));
+const line = (outcome, now, cfg) => stripMarkup(astatus.statusLine(outcome, now, cfg));
 
 const exited0 = { status: 'exited', exitCode: 0, startedAt: 1000, endedAt: 3300 };  // 2.3s
 const exited2 = { status: 'exited', exitCode: 2, startedAt: 1000, endedAt: 1450 };  // 450ms
@@ -102,7 +101,7 @@ describe('[action-status] statusLine', () => {
     const s = line(exited0, 9999, { segments: ['duration', 'status'] });
     assert(s.indexOf('2.3s') < s.indexOf('✓'), s);
     eq(line(exited0, 9999, false), '');
-    eq(astatus.statusLine(null, 0, undefined, TAGS), '');
+    eq(astatus.statusLine(null, 0, undefined), '');
   });
 });
 
@@ -115,17 +114,16 @@ describe('[action-status] clock_tick emits a render Cmd (live-line repaint)', ()
 });
 
 describe('[action-status] tv_status reducer arm', () => {
-  it('appends the status line and records its buffer index + outcome', () => {
+  it('appends the status line and records its buffer index', () => {
     let s = tv.init('p1');
     s = tv.update({ type: 'tv_append_lines', lines: ['$ build', 'compiling'] }, s);
-    s = tv.update({ type: 'tv_status', line: '[green]✓ 0[/]', outcome: { status: 'exited', exitCode: 0, startedAt: 1, endedAt: 2 } }, s);
+    s = tv.update({ type: 'tv_status', line: '[success]✓ 0[/]' }, s);
     eq(s.lines.length, 3);
-    eq(s.statusRows.map((r) => r.index), [2]);
-    eq(s.statusRows[0].outcome.exitCode, 0);          // outcome recorded → render re-derives color
+    eq(s.statusRows, [2]);
     // A second command in the same buffer (Transcript accretion) records another.
     s = tv.update({ type: 'tv_append', line: '$ test' }, s);
-    s = tv.update({ type: 'tv_status', line: '[red]✗ 1[/]', outcome: { status: 'exited', exitCode: 1, startedAt: 3, endedAt: 4 } }, s);
-    eq(s.statusRows.map((r) => r.index), [2, 4]);
+    s = tv.update({ type: 'tv_status', line: '[error]✗ 1[/]' }, s);
+    eq(s.statusRows, [2, 4]);
   });
   it('tv_stream_start (re-run reseed) clears statusRows', () => {
     let s = tv.init('p1');
@@ -441,7 +439,7 @@ describe('[action-status] augmentMsg stamps innerW only when status rows exist (
     // The tv_* arms are served before the reducer and never read innerW, so the
     // append path (incl. the Transcript, which keeps appending after a status row
     // lands) must not pay the paneInnerW geometry read.
-    const slice = { ...tv.init('p1'), lines: ['x'], statusRows: [{ index: 0, outcome: null }] };
+    const slice = { ...tv.init('p1'), lines: ['x'], statusRows: [0] };
     eq(tv.augmentMsg({ type: 'tv_append', line: 'y' }, {}, slice).innerW, undefined);
   });
 
@@ -454,7 +452,7 @@ describe('[action-status] augmentMsg stamps innerW only when status rows exist (
     const ls = route.serviceSlice('layout');
     const b = geo.visibleBoundsFor(ls, vp, vp);
     assert(b && b.w > 2, 'the viewer pane has real bounds');
-    const slice = { ...tv.init(vp), lines: ['x'], statusRows: [{ index: 0, outcome: null }] };
+    const slice = { ...tv.init(vp), lines: ['x'], statusRows: [0] };
     const msg = tv.augmentMsg({ type: 'key', seq: 'v', focusKind: 'text-view' }, getModel(), slice);
     eq(msg.innerW, b.w - 2);                       // stamped == render's innerW (w − 2)
   });
@@ -465,23 +463,23 @@ describe('[action-status] augmentMsg stamps innerW only when status rows exist (
 // read, so a click can't land where the ✗ cancel didn't paint.
 describe('[action-status] runningChip — the ✗ cancel affordance', () => {
   it('appends a right-aligned `✗ cancel` (✗ red) whose span is the rightmost CANCEL_W cols', () => {
-    const info = astatus.runningChip(running, 2000, undefined, TAGS, 30);
+    const info = astatus.runningChip(running, 2000, undefined, 30);
     assert(info, 'a chip is composed for a running outcome');
     const plain = stripMarkup(info.line);
     assert(/✗ cancel$/.test(plain), `line ends with the affordance: ${JSON.stringify(plain)}`);
-    assert(info.line.includes('[red]✗[/]'), `the ✗ is red: ${info.line}`);
+    assert(info.line.includes('[error]✗[/]'), `the ✗ uses the semantic error token: ${info.line}`);
     eq(plain.length, 30);                                          // right-aligned to innerW
     eq(info.cancelX0, 22); eq(info.cancelX1, 29);                  // rightmost 8 cols (innerW-8 .. innerW-1)
     eq(plain.slice(info.cancelX0, info.cancelX1 + 1), '✗ cancel'); // the span IS `✗ cancel` (8 wide)
   });
   it('too-narrow pane → status shown WITHOUT the affordance (cancelX0 = -1)', () => {
-    const info = astatus.runningChip(running, 2000, undefined, TAGS, 5);
+    const info = astatus.runningChip(running, 2000, undefined, 5);
     assert(info && info.cancelX0 === -1, `no cancel span when it does not fit: ${JSON.stringify(info)}`);
     assert(!/✗ cancel/.test(stripMarkup(info.line)), 'no ✗ cancel drawn in a too-narrow pane');
   });
   it('a non-running outcome → null (cancel is running-only; completion uses tv_status)', () => {
-    eq(astatus.runningChip(exited0, 9999, undefined, TAGS, 30), null);
-    eq(astatus.runningChip(killed, 9999, undefined, TAGS, 30), null);
+    eq(astatus.runningChip(exited0, 9999, undefined, 30), null);
+    eq(astatus.runningChip(killed, 9999, undefined, 30), null);
   });
 });
 
@@ -571,32 +569,16 @@ describe('[action-status] ✗ cancel — render draws it where the hit-test fire
   });
 });
 
-// A STORED completion chip tracks :theme — render re-derives each status row's
-// color from its stored outcome under the CURRENT theme (it was baked at
-// completion time and froze the palette otherwise). Component render returns Rich
-// markup, so the color tag right before ✗ is directly inspectable.
-describe('[action-status] a stored completion chip tracks :theme (color re-derived at render)', () => {
-  const themes = require('../leaves/infra/themes');
-  const render = tv.panelTypes['text-view'].render;
-  const chipColorUnder = (themeName) => {
-    themes.setTheme(themeName);
-    let s = tv.init('p1');
-    s = tv.update({ type: 'tv_append', line: '$ build' }, s);
-    // Stored ✗ 2 chip WITH its outcome; the `line` is a deliberately WRONG color
-    // ([red]) so a pass proves render re-derived from the outcome, not the stored line.
-    s = tv.update({ type: 'tv_status', line: '[red]✗ 2[/]', outcome: { status: 'exited', exitCode: 2, startedAt: 1, endedAt: 2 } }, s);
-    const out = render({ paneId: 'p1', hotkey: null }, 40, 8, { ...s, scroll: 0 }, {});
-    const row = out.split('\n').find((l) => l.includes('✗'));
-    const m = row && row.match(/\[([^\]]+)\]✗/);
-    return m && m[1];
-  };
-  it('the stored ✗ chip takes the CURRENT theme error, not the completion-time color', () => {
-    themes.setTheme('dracula'); const dErr = themes.theme().error;
-    themes.setTheme('monokai'); const mErr = themes.theme().error;
-    assert(dErr && mErr && dErr !== mErr, `themes differ (sanity): ${dErr} vs ${mErr}`);
-    eq(chipColorUnder('dracula'), dErr, 'dracula → dracula error color');
-    eq(chipColorUnder('monokai'), mErr, 'monokai → monokai error (re-derived from the outcome, not baked)');
-    themes.setTheme('dracula');   // restore a deterministic theme
+// The chip uses SEMANTIC theme tokens ([success]/[warning]/[error]) rather than a
+// resolved color, so a STORED chip line tracks :theme at paint (ansi resolution is
+// pinned in test-ansi.js). This just asserts statusLine emits the tokens.
+describe('[action-status] the chip uses semantic theme tokens (so it tracks :theme)', () => {
+  it('statusLine emits [success]/[error]/[warning], not a baked color', () => {
+    assert(astatus.statusLine(exited0, 9999, undefined).includes('[success]'), 'exit 0 → [success]');
+    assert(astatus.statusLine(exited2, 9999, undefined).includes('[error]'), 'non-zero → [error]');
+    assert(astatus.statusLine(killed, 9999, undefined).includes('[warning]'), 'killed → [warning]');
+    // No resolved hex/named theme color baked into the glyph.
+    assert(!/\[#|\[green\]|\[red\]|\[yellow\]/.test(astatus.statusLine(exited0, 9999, undefined)), 'no baked color');
   });
 });
 
