@@ -145,6 +145,33 @@ function _declaredItems() {
   }));
 }
 
+// Memoized ReDoS probe for the filter path — the analogue of search.matchesFor's
+// WeakMap. `files.render` recomputes the item list every frame (paint renders every
+// pane every frame), so an un-memoized probe would block the main thread on a worker
+// round-trip PER FRAME while a filter is active — sub-ms for a benign pattern, a
+// full MATCH_BUDGET_MS stall for a pathological one. The key is the (names, pattern,
+// flags) signature, not the pattern alone: a pattern safe against one name set can
+// still bomb another, so a dir reload / showHidden toggle must re-probe. Bounded so a
+// long session (many patterns) can't grow it without limit; a few live files panes
+// with distinct filters all stay resident under the cap. Round-5 review 2026-08-14.
+const _FILTER_PROBE_CAP = 32;
+const _filterProbeMemo = new Map();   // signature → 'safe' | 'timedOut' | 'unavailable'
+
+function _probeFilterMemoized(names, pattern, flags) {
+  // Collision-free composite key — JSON quotes/escapes each part, so a space in a
+  // pattern or a filename can't alias a different (pattern, names) split into the same key.
+  const key = JSON.stringify([flags, pattern, names]);
+  const hit = _filterProbeMemo.get(key);
+  if (hit !== undefined) return hit;
+  const bounded = require('../../leaves/text/bounded-match');
+  const verdict = bounded.probeFilter(names, pattern, flags);
+  if (_filterProbeMemo.size >= _FILTER_PROBE_CAP) {
+    _filterProbeMemo.delete(_filterProbeMemo.keys().next().value);   // evict oldest (insertion order)
+  }
+  _filterProbeMemo.set(key, verdict);
+  return verdict;
+}
+
 function _matchesFilter(items, pattern) {
   if (!pattern) return items;
   // safeRegex rejects oversize / obvious-nested-backtracking patterns; null
@@ -155,8 +182,8 @@ function _matchesFilter(items, pattern) {
   // Durable ReDoS bound: prove the pattern terminates within budget against these
   // names in a worker; if it blows the budget (a shape the guard can't catch),
   // don't filter — same friendly fallback as a null pattern, never a UI freeze.
-  const bounded = require('../../leaves/text/bounded-match');
-  if (bounded.probeFilter(items.map(it => it.name), pattern, 'i') === 'timedOut') return items;
+  // Memoized (above) so a stable (names, pattern) doesn't re-probe every render.
+  if (_probeFilterMemoized(items.map(it => it.name), pattern, 'i') === 'timedOut') return items;
   // Never filter out parent / loading rows — navigation + status must stay
   // reachable regardless of pattern.
   return items.filter(it => it.kind === 'parent' || it.kind === 'loading' || rx.test(it.name));
