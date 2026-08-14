@@ -70,7 +70,7 @@ panel appears in the first column, populated by `getItems()`. Selecting
 an item shows `getInfo(item)` in the detail panel.
 
 That's the floor. Everything from here is on top of that contract:
-async refresh via the self-arming `tick` Cmd, hub publish/subscribe,
+async refresh via a declared `interval` subscription (`subscriptions()`), hub publish/subscribe,
 viewContributions (footer slots), `copyOptions`, streaming output,
 group-action injection, custom `:` commands.
 

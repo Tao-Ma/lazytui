@@ -554,10 +554,11 @@ function getItems(panelType) {
 // with the other panel-state accessors. Callers import them from nav-state.
 
 /**
- * Fan a `refresh` Msg out to every Component's update(). Components that
- * drive their own polling (docker, files, config-status) self-arm via the
- * `tick` effect from their refresh handler; there's no framework poll
- * loop. Used at boot, on `r`, and on `:refresh`.
+ * Fan a `refresh` Msg out to every Component's update(). A Component that polls
+ * declares it via a pure `subscriptions(paneDef, model)` and the reconciler owns
+ * the timer (the self-arming `tick` effect is retired); today only docker polls
+ * (an `interval` Sub). There's no framework poll loop. Used at boot, on `r`, and
+ * on `:refresh`.
  */
 async function refreshAll() {
   // Event log (PRINCIPLES.md §11). One record per tick — payload

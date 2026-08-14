@@ -1,28 +1,33 @@
 # Msg route catalog — the TEA purity map
 
-> **STATUS — COMPLETE, audit artifact (5 loops, 2026-06-24).**
-> This documents *where every Msg goes and what it writes*, so each feature's
-> dataflow is visible in one place and the "pure TEA vs mutable" question can be
-> answered per-route. It is a **review/learning aid**, not a canonical
-> spec — `docs/PRINCIPLES.md §11/§12` and `docs/DATAFLOW.md` remain the
-> authority. **No refactor is implied** by anything written here; the goal is to
-> write the code case down accurately. Findings that suggest a refactor are
-> parked in §9, never acted on inline.
+> **STATUS — audit snapshot, 5 loops, 2026-06-24. ⚠ DRIFTED since — verify against code.**
+> This documents *where every Msg goes and what it writes* **as of 2026-06-24**, so each
+> feature's dataflow is visible in one place and the "pure TEA vs mutable" question can be
+> answered per-route. It is a **review/learning aid**, not a canonical spec —
+> `docs/PRINCIPLES.md §11/§12` and `docs/DATAFLOW.md` remain the authority. **No refactor
+> is implied** by anything here. Findings that suggest a refactor are parked in §9.
 >
-> **Coverage (all verified against source):**
+> **⚠ Known drift since the snapshot (flagged 2026-08-14, NOT yet re-audited):**
+> - The `viewer` Component was **dissolved (U2f)** — **§7.4 and every `panel/viewer/viewer.js`
+>   / `reduceTabMsg` reference is RETIRED**; the content slot is now `info` + `text-view`
+>   (+ `agent`/`terminal`) panes (`app/components.js`).
+> - **§7.3 omits** the later `info` / `agent` / `terminal` / `component-ports` /
+>   `fabric-wires` Components; **§4 omits** arms added after the snapshot (agent-mode
+>   `agent_enter`/`agent_exit`, kitty `kkp_detected`, the store-mirror `*_synced`, the
+>   v0.6.7 `nav_*` jumplist) — so "all 19 arms" / "every Msg documented" undercount.
+> - `augmentMsg` is declared by **six** Components today (info/docker/agent/files/history/
+>   text-view), **not "only the viewer"** (the retired §7.4 / §7.8 wording).
+>
+> Treat the coverage list below as the 2026-06-24 shape; verify each cited symbol/path
+> against source before relying on it.
+>
+> **Coverage (as verified on 2026-06-24, pre-drift):**
 > - ✅ §1 Architecture view · §2 Purity model · §3 Reading the tables
-> - ✅ §4 Root-reducer Msgs (flat) — all 19, verified against source
-> - ✅ §5 Modal sub-reducer Msgs — all 9 modals (~40 types), verified
-> - ✅ §6 Broadcast Msgs
-> - ✅ §8 Effect / Cmd vocabulary — framework set + Component-contributed bodies
->   all verified
-> - ✅ §7 Component Msgs (wrapped) — **ALL Components verified**: §7.2 shared nav,
->   §7.4 viewer, §7.5 layout, §7.6 groups, §7.8 docker/files/config-status/history,
->   §7.9 stats, + actions (nav-only)
-> - ✅ §9 Purity verdict + blessed-exception index
-> - ✅ §10 Input-verb layer — `intent.realize` + `handleAction` (where Msgs are
->   produced; each feature traceable end-to-end)
-> - ✅ §11 Completeness verification — grep-diff proves no Msg/Cmd missed
+> - §4 Root-reducer Msgs (flat) — the 2026-06-24 set (later arms above not yet listed)
+> - ✅ §5 Modal sub-reducer Msgs · §6 Broadcast Msgs · §8 Effect / Cmd vocabulary
+> - §7 Component Msgs (wrapped) — §7.2 shared nav, **§7.4 viewer (RETIRED, U2f)**,
+>   §7.5 layout, §7.6 groups, §7.8 docker/files/config-status/history, §7.9 stats
+> - ✅ §9 Purity verdict · §10 Input-verb layer · §11 Completeness (as of snapshot)
 
 ---
 
@@ -437,7 +442,8 @@ one instance: `kind` is a Component name (primary instance) OR a paneId
 (per-pane instance); the pump resolves it through `route.getInstance` /
 `componentForPanel` / `getPrimaryByKind`, applies `comp.augmentMsg(msg, model,
 slice)` when the Component declares it (the **shell-threads-facts** seam —
-exception C, ONLY the viewer declares one), then runs `comp.update(msg, slice)`.
+exception C; six Components declare one today: info/docker/agent/files/history/
+text-view — see §7.8), then runs `comp.update(msg, slice)`.
 Key events arrive as `{type:'key'}` only to the FOCUSED component, only when no
 modal owns input; a component claims a key by returning a `_claimed` sentinel
 effect (filtered out before `runEffects`).
@@ -515,13 +521,21 @@ reducer (they hold no domain state beyond nav).
 
 > **text-view vocabulary** (the content Component that superseded the viewer's flat content-tab machinery in U2f — post-dates this doc's original 2026-06-24 audit loops). Own Msgs: `tv_stream_start` (re-run reseed to the header; optional `preamble` line seeded ahead of it — the unrouted-preempt "⊗ killed previous: X" notice that survives the reseed, §DATAFLOW; omitted when empty; optional `append:true` — per-action `output: append` — keeps the accumulated buffer and adds the run below the previous one instead of reseeding), `tv_append` / `tv_append_lines` (streamed output), `tv_set_lines` (wholesale replace), `tv_status` (a distinct right-alignable status row — the action-status chip). Selection/search/scroll flow through the shared `tvu` reducer (`leaves/text/text-view-update.js`), same arms the viewer used.
 
-### 7.4 viewer/detail (`kind: 'detail'`) — verified
+### 7.4 viewer/detail (`kind: 'detail'`) — ⚠ RETIRED (U2f — viewer Component dissolved)
 
-The richest Component: tab routing, streaming buffers, per-tab view-state,
-search, visual-mode selection. `update(msg, slice)` derives active-tab `lines`
-once from `msg.viewerModel` (the threaded bundle), lifts generic tab Msgs
-through `pt.reduceTabMsg`, then handles its own arms, then runs its pure
-`_finalize`. **The only Component with `augmentMsg`.** All arms pure — verified.
+> **This section describes code that no longer exists.** The `viewer`/`detail`
+> Component, `panel/viewer/viewer.js`, `pt.reduceTabMsg`, `msg.viewerModel`, and the
+> "only Component with augmentMsg" claim below were all removed in the U2f one-tab-
+> system arc. The content slot is now `info` + `text-view` (+ `agent`/`terminal`)
+> panes; selection/search/scroll live in the shared `tvu` reducer
+> (`leaves/text/text-view-update.js`, see §7.3's text-view note); `augmentMsg` is
+> declared by six Components (§7.8). Kept below as a dated record of the pre-U2f
+> shape — do NOT treat it as current.
+
+The richest Component (pre-U2f): tab routing, streaming buffers, per-tab view-state,
+search, visual-mode selection. `update(msg, slice)` derived active-tab `lines`
+once from `msg.viewerModel` (the threaded bundle), lifted generic tab Msgs
+through `pt.reduceTabMsg`, then handled its own arms, then ran its pure `_finalize`.
 
 **(a) Generic tab-lifecycle Msgs — via `pt.reduceTabMsg(msg, slice, ctx)` (pane-tabs leaf, paneId-parameterized)**
 

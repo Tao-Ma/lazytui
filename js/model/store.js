@@ -73,7 +73,7 @@
  * (cursor/scroll/multiSel/filter) lives on each Navigator's `slice.nav`.
  *
  * Field map:
- *   - modes{}                        — 14 modal flags (single registry; see leaves/modes.js)
+ *   - modes{}                        — 18 modal flags (single registry; see leaves/input/modes.js)
  *   - currentGroup                   — current group (chrome)
  *   - now                            — frame clock (docs/model-now-tick.md; cadence = the `clock` interval Sub)
  *   - modal{ filter, menu, confirm, prompt, copy, registerPopup, cmdline }
@@ -83,7 +83,7 @@
  *   - register                       — yank register
  */
 function init() {
-  // Derive the initial modes bag from leaves/modes.js MODES registry —
+  // Derive the initial modes bag from leaves/input/modes.js MODES registry —
   // the registry is the single source of truth. Hardcoding the list
   // here let v0.6.3 D1's paneSelectMode drift: the registry had it but
   // init() didn't, so the mode_set Cmd's `flag in modes` guard refused

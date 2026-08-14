@@ -365,7 +365,7 @@ judgment call — see Decisions Ledger) · `FORWARD` (parked for a later pass to
   CANNOT be render/finalizer-local without making the reducer impure — it must live in the
   slice. Its only TEA-clean alternative is write-through-`update` via a re-introduced
   `viewer_set_viewport` Msg. User chose **KEEP**: the direct finalizer write + `!==` ref-guard
-  is the flat-registry adaptation of Bubble Tea's `viewport.Height` (stored-on-component,
+  is the flat-registry adaptation of TEA's `viewport.Height` (stored-on-component,
   runtime-written). The fresh review's strongest point — the scroll-clamp routes a `set_scroll`
   Msg from the SAME finalizer while `innerH` is written direct — was examined and accepted,
   not glossed: the scroll clamp reuses the navigator's **existing** `set_scroll` arm (free,

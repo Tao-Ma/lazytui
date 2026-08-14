@@ -442,10 +442,11 @@ function main() {
     require('../dispatch/control/input').applyKeyboardMode(kbd);
   }
 
-  // Phase 6 — the framework's per-Plugin refresh-loop retired. Components
-  // that need periodic polling (docker, files, config-status) self-arm
-  // from their `refresh`-Msg handler via a `tick` effect; the cadence is
-  // entirely Component-owned (the self-re-arming-tick Cmd pattern).
+  // Phase 6 — the framework's per-Plugin refresh-loop retired. A Component that
+  // needs periodic polling declares it via a pure `subscriptions(paneDef, model)`
+  // and the reconciler owns the timer (the self-re-arming `tick` Cmd is gone).
+  // Today only docker polls (an `interval` Sub); files/config-status load on
+  // demand, not on a timer.
 
   // #D15 (2026-06-18, examined + KEPT) — eventual-consistency repaint of the
   // terminal overlay, the safety-net backstop for the off-model PTY island
