@@ -285,9 +285,9 @@ function installBuiltins() {
   // 'detail' singleton; multi-viewer in Phase 6+). null → no viewer
   // registered, drop the Cmd silently.
   registerEffect('show_selected_info', (eff) => {
-    // eff.paneId (optional) targets a specific viewer — the pane-tabs
-    // tab_switch-to-Info path wants info on THE pane whose tab flipped,
-    // not whatever resolveTarget picks (viewer-lines-selector P0).
+    // eff.paneId (optional) targets a specific content pane — the
+    // set_active_tab-to-Info path wants info on THE content slot whose tab
+    // flipped, not whatever resolveTarget picks (viewer-lines-selector P0).
     try { require('../control/dispatch').showSelectedInfo(eff && eff.paneId); } catch (_) { /* no renderer (test) */ }
   });
   // U2e P4 — open a discrete document as a text-view content tab in the content
@@ -510,7 +510,7 @@ function installBuiltins() {
   // pending. The ACTUAL coordinate read + nav_record push is deferred to
   // `flushNavCapture()`, run ONCE at the outermost-dispatch boundary (loop's
   // global depth-0 exit). A single user gesture often cascades across arms
-  // (set_current_group + tab_switch + focus_set), each emitting nav_capture; if
+  // (set_current_group + set_active_tab + focus_set), each emitting nav_capture; if
   // each pushed immediately the jumplist would gain an intermediate half-state
   // record per arm (one back would only partly reverse the jump). Deferring to
   // the boundary coalesces a same-gesture cascade into ONE record stamped with
@@ -520,7 +520,7 @@ function installBuiltins() {
 
   // nav_restore: a back/forward step resolved to a target location — resolve
   // each stable coordinate to a LIVE address and fire the existing primitive
-  // Msgs (set_current_group / focus_set / tab_switch / set_cursor), all stamped
+  // Msgs (set_current_group / focus_set / set_active_tab / set_cursor), all stamped
   // noCapture so retracing doesn't push new history. Per-coordinate best-effort
   // (pane/tab/item gone → land on the nearest); a record whose GROUP is gone is
   // the spine missing → prune it and continue the travel in `dir`.

@@ -1,33 +1,51 @@
 # Msg route catalog — the TEA purity map
 
-> **STATUS — audit snapshot, 5 loops, 2026-06-24. ⚠ DRIFTED since — verify against code.**
-> This documents *where every Msg goes and what it writes* **as of 2026-06-24**, so each
-> feature's dataflow is visible in one place and the "pure TEA vs mutable" question can be
-> answered per-route. It is a **review/learning aid**, not a canonical spec —
-> `docs/PRINCIPLES.md §11/§12` and `docs/DATAFLOW.md` remain the authority. **No refactor
-> is implied** by anything here. Findings that suggest a refactor are parked in §9.
+> **STATUS — re-audited 2026-08-14 (loop 6) against current source.**
+> The original catalog was a 5-loop snapshot (2026-06-24); loop 6 reconciled it
+> with everything shipped since — the U2f one-tab-system, live-agent, the dataflow
+> fabric (P1.5), kitty-keyboard detection, the store-/metrics-mirror Subs, and the
+> v0.6.7 jumplist. It documents *where every Msg goes and what it writes*, so each
+> feature's dataflow is visible in one place and the "pure TEA vs mutable" question
+> can be answered per-route. It is a **review/learning aid**, not a canonical spec
+> — `docs/PRINCIPLES.md §11/§12` and `docs/DATAFLOW.md` remain the authority. **No
+> refactor is implied** by anything here. Findings that suggest a refactor are
+> parked in §9.
 >
-> **⚠ Known drift since the snapshot (flagged 2026-08-14, NOT yet re-audited):**
-> - The `viewer` Component was **dissolved (U2f)** — **§7.4 and every `panel/viewer/viewer.js`
->   / `reduceTabMsg` reference is RETIRED**; the content slot is now `info` + `text-view`
->   (+ `agent`/`terminal`) panes (`app/components.js`).
-> - **§7.3 omits** the later `info` / `agent` / `terminal` / `component-ports` /
->   `fabric-wires` Components; **§4 omits** arms added after the snapshot (agent-mode
->   `agent_enter`/`agent_exit`, kitty `kkp_detected`, the store-mirror `*_synced`, the
->   v0.6.7 `nav_*` jumplist) — so "all 19 arms" / "every Msg documented" undercount.
-> - `augmentMsg` is declared by **six** Components today (info/docker/agent/files/history/
->   text-view), **not "only the viewer"** (the retired §7.4 / §7.8 wording).
+> **What loop 6 reconciled (2026-08-14):**
+> - **§4 root reducer — 30 arms now** (was 19): added the agent-mode flags
+>   (`agent_enter`/`agent_exit`), kitty detection (`kkp_detected`), the four
+>   store-/metrics-mirror arms (`history_synced` / `diag_synced` / `jobs_synced` /
+>   `metrics_synced`), and the v0.6.7 jumplist (`nav_record` / `nav_back` /
+>   `nav_forward` / `nav_prune`). `next_tab`/`prev_tab` now emit `set_active_tab`
+>   (layout, not the retired `tab_switch`); `terminal_*` thread kitty suspend/
+>   resume; `set_current_group` emits `nav_capture`; `reset_group_context` emits
+>   `select_cancel_all`.
+> - **§5 — the sub-reducer table** (`_SUBREDUCER_BY_TYPE`, ex-`_MODAL_BY_TYPE`) now
+>   holds **10 modals + 1 fabric-state delegate**: added `fabric-field` (§5.10)
+>   and the fabric injects/output/wires store (§5.11).
+> - **§7 — the `viewer`/`detail` Component was dissolved (U2f)**; §7.4 is kept as a
+>   dated RETIRED record. The content slot is now the `info` / `text-view` /
+>   `agent` / `terminal` panes (**new §7.10**), all sharing the `tvu` reducer
+>   (`leaves/text/text-view-update`) for scroll/search/select, plus the fabric
+>   `component-ports` / `fabric-wires` panes (**new §7.11**). `augmentMsg` is
+>   declared by **six** Components (info/agent/text-view/docker/files/history).
+> - **§8 — added** the new framework effects (`kkp_suspend`/`resume`, `edit_file`,
+>   `select_cancel_all`, `open_doc_tab`, `agent_start`/`send`/`interrupt`,
+>   `nav_capture`/`restore`) and the fabric component effects; `destroy_pty_session`
+>   **retired** (its only emitter was the dissolved viewer's ephemeral-terminal arm).
 >
-> Treat the coverage list below as the 2026-06-24 shape; verify each cited symbol/path
-> against source before relying on it.
+> This is a point-in-time audit — verify each cited symbol/path against source
+> before relying on it.
 >
-> **Coverage (as verified on 2026-06-24, pre-drift):**
+> **Coverage (re-verified 2026-08-14):**
 > - ✅ §1 Architecture view · §2 Purity model · §3 Reading the tables
-> - §4 Root-reducer Msgs (flat) — the 2026-06-24 set (later arms above not yet listed)
-> - ✅ §5 Modal sub-reducer Msgs · §6 Broadcast Msgs · §8 Effect / Cmd vocabulary
-> - §7 Component Msgs (wrapped) — §7.2 shared nav, **§7.4 viewer (RETIRED, U2f)**,
->   §7.5 layout, §7.6 groups, §7.8 docker/files/config-status/history, §7.9 stats
-> - ✅ §9 Purity verdict · §10 Input-verb layer · §11 Completeness (as of snapshot)
+> - ✅ §4 Root-reducer Msgs (30, flat) · §5 Modal + fabric sub-reducers (11)
+> - ✅ §6 Broadcast Msgs · §8 Effect / Cmd vocabulary
+> - ✅ §7 Component Msgs (wrapped) — §7.2 shared nav · **§7.4 viewer (RETIRED, U2f)**
+>   · §7.5 layout · §7.6 groups · §7.8 docker/files/config-status/history · §7.9
+>   stats · **§7.10 content-slot panes (info/text-view/agent/terminal)** · **§7.11
+>   fabric panes (component-ports/fabric-wires)**
+> - ✅ §9 Purity verdict · §10 Input-verb layer · §11 Completeness
 
 ---
 
@@ -57,7 +75,8 @@ single interpreter runs. The render path is a (near-)pure projection.
               └───────────────────────┬────────────────────────┘
               ┌───────────────────────▼────────────────────────┐
   panel/      │  api (Component registry) · route (instances)    │  Components +
-              │  layout · navigator/* · viewer/* · monitor/*      │  routing
+              │  layout · navigator/* · monitor/* · fabric/*      │  routing
+              │  info · agent · terminal · text-view (content panes)
               │  nav-state · commands · chrome-hittest · plugin-guard
               └───────────────────────┬────────────────────────┘
               ┌───────────────────────▼────────────────────────┐
@@ -104,7 +123,8 @@ route topology; runs I/O) by design.
               every Cmd is plain DATA ({type, …}); a handler runs the side effect.
               'msg' re-enters a pump (routed by msg.kind)  → the cyclic spine (cap 32).
               periodic + external re-entry rides Subs (app/state.js interval /
-                resize / store-mirror / process-stream kinds → applyMsg/dispatch, async).
+                resize / store-mirror / metrics-mirror / process-stream kinds →
+                applyMsg/dispatch, async).
               async results (stream onData, fetch, PTY) → dispatchMsg back in.
                                    │
                                    ▼
@@ -112,8 +132,10 @@ route topology; runs I/O) by design.
   finalize.js   • reconcile per-pane instances (mint/dispose), gated on arrange-ref
                 • reconcile hub subscriptions (Model → Sub diff)            [#D13]
                 • keep-in-view scroll clamp → set_scroll Msg per nav pane   [resize-as-Msg]
-                • viewer innerH: NO finalizer write — stamped on each viewer
-                  Msg by augmentMsg, committed by the viewer's reducer  [v0.6.6 FIX-2]
+                • flush a pending nav-capture → one nav_record Msg    [v0.6.7 jumplist]
+                • content-pane innerH: NO finalizer write — stamped on each
+                  pane Msg by that pane's augmentMsg, committed by its own
+                  reducer  [v0.6.6 FIX-2; §7.10]
                 • active terminal PTY ensure/resize                [v0.6.5 §5]
                                    │
                                    ▼
@@ -129,8 +151,8 @@ route topology; runs I/O) by design.
 
 | Home | Module | Writer | Examples |
 |---|---|---|---|
-| **Root model** (centralized chrome) | `model/store.js` (`_modelRef.current`) | `reducer.update` + `modal/*` ONLY | `modes{}` (modal flags), `modal{}` (editing buffers), `currentGroup`, `now`, `theme`, `history`/`diagLog`/`jobs` (store-mirror'd, FIX-1), `metrics[topic]` (metrics-mirror'd, Finding B), `config`, `register`, `focused`, `prefixNode/Seq` |
-| **Component slices** (decentralized) | `panel/route.js` instance store | each Component's own `update` ONLY | `layout` (focus/viewMode/arrange/freeConfig), `detail` (viewer tabs/buffers/view-state), `groups` (tree/expanded), `docker`, `files`, `config-status`, `nav[panelType]` (cursor/scroll/multiSel/filter) |
+| **Root model** (centralized chrome) | `model/store.js` (`_modelRef.current`) | `reducer.update` + `modal/*` + `fabric` sub-reducer ONLY | `modes{}` (modal flags), `modal{}` (editing buffers), `currentGroup`, `now`, `theme`, `history`/`diagLog`/`jobs` (store-mirror'd, FIX-1), `metrics[topic]` (metrics-mirror'd, Finding B), `caps` (kitty-keyboard capability), `nav` (jumplist ring, v0.6.7), `fabric{injects,output,wires}` (dataflow fabric, P1.5), `config`, `register`, `focused`, `prefixNode/Seq` |
+| **Component slices** (decentralized) | `panel/route.js` instance store | each Component's own `update` ONLY | `layout` (focus/viewMode/arrange/freeConfig), the content-slot panes `info`/`text-view`/`agent` (lines/scroll/search/select/cursor via `tvu`) + `terminal` (cmd/label; grid is foreign), `groups` (tree/expanded), `docker`, `files`, `config-status`, `component-ports` (pinned target), `fabric-wires` (nav), `nav[panelType]` (cursor/scroll/multiSel/filter) |
 | **Out-of-TEA stores** (global-by-nature) | `feature/*`, `io/*` | module-local mutators | `feature/jobs` (live child procs), `feature/history`, `io/diag-log` (ring buffer), `io/terminal` (xterm buffers) |
 
 ---
@@ -173,13 +195,15 @@ everywhere except the terminal island.** Concretely, three tiers:
    plugin guard — are now deferred off the read path and drained by the dispatch
    finalizer; see Finding C in docs/v0.6.6.md §9.)
 
-**Single-writer invariant.** Only `reducer.update`/`modal/*` write the root
-model; only a Component's own `update` writes its slice. Cross-layer writes
-have NO direct path — they go out as a `{type:'msg', msg}` Cmd that re-enters a
-pump (wrapped → Component fan-out, flat → root reducer). The invariant holds
-with **no structural exception** — since v0.6.6 FIX-2 retired exception B, even
-the viewer's derived `innerH` is committed by the viewer's OWN reducer
-(`augmentMsg` stamps it, the viewer `update` writes it).
+**Single-writer invariant.** Only `reducer.update` / `modal/*` / the `fabric`
+state sub-reducer write the root model (all three delegated through `update`, so
+the reducer is still the single entry); only a Component's own `update` writes
+its slice. Cross-layer writes have NO direct path — they go out as a
+`{type:'msg', msg}` Cmd that re-enters a pump (wrapped → Component fan-out, flat
+→ root reducer). The invariant holds with **no structural exception** — since
+v0.6.6 FIX-2 retired exception B, even a content pane's derived `innerH` is
+committed by that pane's OWN reducer (its `augmentMsg` stamps it, its `update`
+writes it — the same seam the four `info`/`text-view`/`agent` panes now share, §7.10).
 
 **So: is it pure TEA or mutable?** It is **pure TEA at the decision layer**
 (every state transition is a pure reducer), wrapped in an **intentionally
@@ -204,8 +228,9 @@ Each Msg row records its full route:
   - `✓` pure reducer arm (the norm)
   - `shell` pure arm, but depends on facts the **impure shell** stamped (the
     handler read `getModel`/topology — exception C lives in the handler, not here)
-  - `C` touches blessed-exception C directly (superscript `ᴮ` = reads the
-    viewer's derived `innerH` for a clamp; not a blessed exception since FIX-2)
+  - `C` touches blessed-exception C directly (superscript `ᴮ` = reads a pane's
+    derived `innerH` for a clamp; not a blessed exception since FIX-2 — appears
+    only in the retired §7.4 tables, kept as a legend for that historical record)
   - `fx` this is an effect/Cmd handler — impure by design (the interpreter tier)
 
 ---
@@ -215,7 +240,7 @@ Each Msg row records its full route:
 Handled by `dispatch/update/reducer.js#update(model, msg)`, driven by the
 **root-Msg pump** `applyMsg` (`dispatch/runtime/loop.js`). Routed here when the
 Msg is flat (`msg.kind` absent). Every arm returns a NEW model on change,
-identity-preserves on no-op. **All 19 arms are pure** — verified.
+identity-preserves on no-op. **All 30 arms are pure** — verified.
 
 | Msg | Emitted by | Writes | Emits (Cmds) | Purity |
 |---|---|---|---|---|
@@ -223,19 +248,28 @@ identity-preserves on no-op. **All 19 arms are pure** — verified.
 | `list_select` | `v` (toggle) / `*` (on) | `modes.listSelectMode` | `msg→multisel_clear` when toggled OFF | shell¹ |
 | `enter_prefix` | leader key | `modes.prefixMode→true`, `prefixNode`=kb root, `prefixSeq=[]` | — | ✓ |
 | `prefix_key` | key in prefix mode | `prefixNode`/`prefixSeq` (descend) or clears prefix (leaf/cancel) | `force_full_repaint` (descend) · `run_binding` (leaf) | ✓² |
-| `next_tab` / `prev_tab` | `]` / `[` | — | `msg→tab_switch` (viewer) | shell³ |
+| `next_tab` / `prev_tab` | `]` / `[` | — | `msg→set_active_tab` (layout — cycle the content slot's position-tabs) | shell³ |
 | `nav_select` | row select (kbd/mouse) | — | `msg→set_cursor` + `show_selected_info` (+ `msg→groups_selected` if groups) | shell⁴ |
-| `terminal_enter` | enter-terminal verb | `modes.terminalMode→true` | — | ✓ |
-| `terminal_exit` | exit-terminal / dead PTY | `modes.terminalMode→false` | `msg→view_drop_full_to_normal` (layout) | ✓ |
+| `terminal_enter` | enter-terminal verb | `modes.terminalMode→true` | `kkp_suspend` (child owns the terminal → legacy encoding) | ✓ |
+| `terminal_exit` | exit-terminal / dead PTY | `modes.terminalMode→false` | `kkp_resume` + `msg→view_drop_full_to_normal` (layout) | ✓ |
+| `agent_enter` / `agent_exit` | agent-mode verb / the `agent` pane | `modes.agentMode` | — | ✓ |
 | `focus_event` | DEC 1004 focus in/out | `model.focused` | — | ✓ |
-| `clock_tick` | `clock` interval Sub | `model.now=msg.now` | `render` | ✓⁵ |
+| `kkp_detected` | boot kitty-keyboard handshake (input.js) | `model.caps.keyboard` (`kitty`\|`legacy`) | — | ✓⁵ |
+| `clock_tick` | `clock` interval Sub | `model.now=msg.now` | `render` | ✓⁶ |
+| `history_synced` | `history` store-mirror Sub | `model.history` (whole snapshot) | `render` | ✓⁷ |
+| `diag_synced` | `diag` store-mirror Sub | `model.diagLog` (whole snapshot) | `render` | ✓⁷ |
+| `jobs_synced` | `jobs` store-mirror Sub | `model.jobs` (whole snapshot) | `render` | ✓⁷ |
+| `metrics_synced` | `metrics-mirror` Sub (throttled) | `model.metrics[topic]={series,schema}` | `render` | ✓⁷ |
 | `set_theme` | `:theme` / boot | `model.theme` | — | ✓ |
-| `mode_clear` | wedge-guard / panic recovery | `modes[msg.flag]→false` | — | ✓ |
-| `mode_set` | viewer search-enter etc. | `modes[msg.flag]→true` | — | ✓ |
-| `set_current_group` | groups cascade / jobs_activate | `model.currentGroup` | — | ✓ |
-| `set_config` | boot `loadConfig` | `config`, `projectDir`, `configPath` | `msg→set_config` (config-status, if `msg.csOwner`) | shell⁶ |
+| `mode_clear` | wedge-guard / panic recovery | `modes[msg.flag]→false` (+ drops any staged `modal.continuation`) | — | ✓ |
+| `mode_set` | pane search-enter etc. | `modes[msg.flag]→true` | — | ✓ |
+| `set_current_group` | groups cascade / jobs_activate / nav_restore | `model.currentGroup` | `nav_capture` (unless `msg.noCapture`) | ✓⁸ |
+| `nav_record` | `nav_capture` finalizer flush | `model.nav` (push loc; consecutive-dup no-op) | — | ✓⁹ |
+| `nav_back` / `nav_forward` | `o` / `i` (jumplist step) | `model.nav.cursor` (ring step) | `nav_restore{loc,dir}` | ✓⁹ |
+| `nav_prune` | `nav_restore` effect (stale spine record) | `model.nav` (drop index) | — | ✓⁹ |
+| `set_config` | boot `loadConfig` | `config`, `projectDir`, `configPath` | `msg→set_config` (config-status, if `msg.csOwner`) | shell¹⁰ |
 | `set_register` | boot `initState` | `model.register` | — | ✓ |
-| `reset_group_context` | groups cascade | `modes.terminalMode/listSelectMode→false` | per `msg.owners`: `msg→set_cursor`+`multisel_clear`+`clear_filter` | shell⁷ |
+| `reset_group_context` | groups cascade | `modes.terminalMode/listSelectMode→false` | `select_cancel_all` + per `msg.owners`: `msg→set_cursor`+`multisel_clear`+`clear_filter` | shell¹¹ |
 | `free_config` | `:free-config` verb | — | `msg→free_config_enter` (layout) | ✓ |
 | *(default)* | — | — | — | ✓ |
 
@@ -244,39 +278,69 @@ identity-preserves on no-op. **All 19 arms are pure** — verified.
   Msg — no topology read. blessed-A elimination (`docs/reducer-route-purity.md`).
 ² `kb.resolve` / `kb.tokenForEvent` are pure reads of the dependency-free
   keybinding leaf — not a topology read.
-³ `actions._viewerTabBundle` (handler) stamps `msg.target` + `total`/`curTab`/
-  `tabKeys`; the arm keeps only the pure cycle math.
+³ U2e P1b: `]`/`[` cycle the content slot's VISIBLE position-tabs (Info /
+  Transcript / minted text-views — was the retired viewer's flat inner strip).
+  `actions._viewerTabBundle` (handler) stamps `msg.slotPaneId` + the slot's
+  ordered visible `tabPoolIds` (via `slot-strip.unifiedSlotStrip`) + `curIdx`;
+  the arm keeps only the pure cycle math and emits `set_active_tab` to the layout
+  slot. Empty `tabPoolIds` (single visible tab / no slot) → no-op.
 ⁴ navSelect handler stamps `msg.route`, `msg.viewerTarget`, `msg.resetOwners`.
   The `groups` branch builds `ctx` via `groups.groupsBundle(model)` — a pure
   projection of the **`model` arg** (NOT `getModel()`), so the arm stays pure.
-⁵ `msg.now` is threaded from the `clock` interval Sub's `onTick`, which reads the
-  wall clock in the impure shell (exception C). The arm itself is pure of the
-  clock, and no longer re-arms — the Sub owns the cadence (FIX-3 Phase 6; the
-  `arm_clock` effect + `clockArmed` latch are retired). It emits a `render` Cmd:
-  the live action-status line is a panel (not an overlay), so its ticking
-  spinner/duration needs the repaint the tick drives (cell-diff-bounded — see
-  `docs/model-now-tick.md`).
-⁶ `msg.csOwner` (the config-status owner) is resolved by `app/state.loadConfig`
+⁵ The terminal-side enable/disable of the CSI-u protocol is an impure-shell
+  effect the caller (input.js) owns; the arm only RECORDS the learned capability
+  onto `model.caps`, so it rides the WAL and folds identically on replay.
+⁶ `msg.now` is threaded from the `clock` interval Sub's `onTick`, which reads the
+  wall clock in the impure shell (exception C). The arm is pure of the clock and
+  no longer re-arms — the Sub owns the cadence (FIX-3 Phase 6; the `arm_clock`
+  effect + `clockArmed` latch are retired). Its `render` Cmd is LOAD-BEARING: the
+  clock tick carries no implicit repaint, so it is the SOLE driver for every armed
+  case — the live action-status line (a PANEL, `frame=f(model.now)`) AND the
+  jobs/diag age overlays (cell-diff-bounded — `docs/model-now-tick.md`).
+⁷ The four **mirror-sync arms**. Each lands an external source's whole snapshot on
+  the model; `frame=f(model)` (#D5, FIX-1 / Finding B). The value is stamped by
+  the impure shell — the Sub's cb reads the off-model store / hub bus (exception
+  C) and dispatches via `ctx.applyMsg`. The `render` Cmd is LOAD-BEARING: those
+  Msgs run `update→setModel→runEffects` with NO implicit repaint, so the arm
+  re-instates the repaint the pre-FIX-1 stores did directly. store-mirror fires
+  per store mutation (discrete: history/diag/jobs); metrics-mirror once per
+  throttle window (continuous series, so a sampler doesn't churn the loop).
+⁸ A committed group change is a jumplist push point; `msg.noCapture` (stamped by
+  `nav_restore`) suppresses the push while retracing, so travelling history
+  doesn't record new locations.
+⁹ **Jumplist arms** — all four are PURE ring math (`leaves/wm/nav-history`). The
+  impure work is relocated to the effects (§8.1): `nav_capture` reads post-commit
+  coords by STABLE identity (group name, active tab poolId, focused-item `idOf`)
+  and stamps them onto a `nav_record` Msg at the depth-0 finalizer boundary;
+  `nav_restore` resolves a stable location → a LIVE address and re-fires the
+  primitive Msgs (`set_current_group`/`focus_set`/`set_active_tab`/`set_cursor`),
+  all `noCapture`. The push lives on the Msg path, so the WAL fold reconstructs
+  `model.nav` identically.
+¹⁰ `msg.csOwner` (the config-status owner) is resolved by `app/state.loadConfig`
   (impure shell), so the reducer reads no ownership registry (#D9).
-⁷ `msg.owners` (`{panelType: ownerComponentName}`) is resolved by the dispatch
-  shell from `route.resetGroupOwners()` (#D9). The map's keys decide which panels
-  reset; null owner skips.
+¹¹ `msg.owners` (`{panelType: ownerComponentName}`) is resolved by the dispatch
+  shell from `route.resetGroupOwners()` (#D9); the map's keys decide which panels
+  reset, null owner skips. `select_cancel_all` (§8.1) sweeps EVERY active per-pane
+  text selection (the instance registry, incl. hidden tabs) so a stale absolute
+  selection can't re-own whatever content the new group loads at that spot.
 
 **Verdict (§4): pure TEA.** Every root arm is a pure function of `(model, msg)`.
-All topology/model/clock reads are relocated to the impure shell via Msg
-stamping (exception C) — none survive in a reducer arm.
+All topology/model/clock/store/hub reads are relocated to the impure shell via
+Msg stamping (exception C) — none survive in a reducer arm.
 
 ---
 
 ## 5. Modal sub-reducer Msgs (flat, delegated)
 
-`reducer.update` checks `_MODAL_BY_TYPE` first; a hit delegates the whole arm to
-that modal's `update(model, msg) → [model, cmds]` over its own
-`model.modal.<name>` buffer + mode flag. Shared write helpers (`withModes`,
-`withModal`, `armClock`) live in `model-ops.js` (pure, zero imports). Each
-close/commit arm **guards on its mode flag** so a stale double-fire after the
-modal closed is a no-op (not a re-execution of the staged Cmd). **All arms
-pure** — verified across all 9 modules.
+`reducer.update` checks `_SUBREDUCER_BY_TYPE` (ex-`_MODAL_BY_TYPE`) first; a hit
+delegates the whole arm to that sub-reducer's `update(model, msg) → [model, cmds]`
+over its own `model.modal.<name>` buffer + mode flag. The table holds **10 modal
+sub-reducers** (§5.1–§5.10) **plus the `fabric` state sub-reducer** (§5.11 — not
+a modal, but delegated by the same mechanism; it writes `model.fabric.*`). Shared
+write helpers (`withModes` / `withModal` / `withModalMode`) live in `model-ops.js`
+(pure, zero imports). Each close/commit arm **guards on its mode flag** so a stale
+double-fire after the modal closed is a no-op (not a re-execution of the staged
+Cmd). **All arms pure** — verified across all 11 delegates.
 
 ### 5.1 `confirm` (`modal/confirm.js`) — staged-Cmd-as-data
 
@@ -356,7 +420,7 @@ closures stay module-held in `dispatch/control/cmdline.js`.
 | `jobs_close` | `modes.jobsMode→false` (guarded) | — | ✓ |
 | `jobs_nav` | `modal.jobs.{cursor,scroll}` (clamp vs `msg.count`/`msg.vh`) | — | shell² |
 | `jobs_activate` | closes overlay (guarded); resolves target group from `msg.job` (model-only) | `set_current_group` (if cross-group) + `jobs_route{job,now}` | shell³ |
-| `jobs_routed` | — | per job kind: `tab_switch`+`focus_set` (routed/pty) · `terminal_enter` (pty) · `viewer_set_content`+`focus_set` (bg/tmux info card) · `focus_set` (unrouted) | shell⁴ |
+| `jobs_routed` | — | per job kind: routed/pty/agent → `set_active_tab`+`focus_set` (jump to the owning position-tab) or `focus_set` (content-slot fallback) · background/tmux → `open_doc_tab{job-info}` + `focus_set` | shell⁴ |
 
 ¹ `msg.now` threaded from handler (wall clock = exception C).
 ² `msg.count` (`model.jobs.length`, since FIX-1) + `msg.vh` threaded by handler
@@ -367,9 +431,11 @@ closures stay module-held in `dispatch/control/cmdline.js`.
 ⁴ **The Phase-C split** (`docs/blessed-exceptions.md`): `jobs_activate` is a pure
   orchestrator (closes + queues group switch + emits `jobs_route`). The
   `jobs_route` *effect* runs AFTER the switch commits, reads the now-correct
-  viewer slice in the dispatch layer, and threads `viewerTarget`/`groupName`/
-  `tabIdx`/`targetKey`/`fromTabKey` into the pure `jobs_routed` tail. This
-  removed the **last** root-reducer cross-slice value read.
+  content slot in the dispatch layer, and threads the SLOT paneId + the owning
+  tab's `{jumpPaneId, jumpPoolId}` (U2e P4 — was the retired `viewerTarget` /
+  `tabIdx` / `targetKey`) into the pure `jobs_routed` tail — which emits only
+  `set_active_tab`/`focus_set`/`open_doc_tab` from the payload. This removed the
+  **last** root-reducer cross-slice value read.
 
 ### 5.7 `diag-log` (`modal/diag-log.js`) — diagnostics window (leader e)
 
@@ -388,14 +454,18 @@ closures stay module-held in `dispatch/control/cmdline.js`.
 
 | Msg | Writes | Emits | Purity |
 |---|---|---|---|
-| `menu_open` | `modes.menuOpen→true`, `modal.menu={items,idx:0,anchor,title}` | — | shell¹ |
+| `menu_open` | `modes.menuOpen→true`, `modal.menu={items,idx:0,anchor,title,back}` | — | shell¹ |
 | `menu_close` | closes (guarded) | — | ✓ |
 | `menu_nav` | `modal.menu.idx` (skips null separators) | — | ✓ |
-| `menu_activate` | closes (guarded) | `menu_action{action,arg}` (routes the picked verb back through `dispatch.handleAction`) | ✓ |
+| `menu_activate` | closes (guarded); a `menu_back` item reopens the parent snapshot instead | `menu_action{action,arg}` (routes the picked verb back through `dispatch.handleAction`) | ✓² |
+| `menu_back` | reopens the previous-menu snapshot (`mm.back`), or closes if none | — | ✓² |
 
 ¹ `msg.items` (action strings, no closures) are built from the layout slice by
-  the `menu_open` handler; `msg.anchor` ({x,y} for a right-click) / `msg.title`
-  threaded.
+  the `menu_open` handler; `msg.anchor` ({x,y} for a right-click) / `msg.title` /
+  `msg.back` (the parent-menu snapshot, for submenus) threaded.
+² Submenu support (the fabric `send_to_port` → port-picker step, §10.2): a submenu
+  `menu_open` carries `back` = the parent snapshot; a "← Back" row or the Backspace
+  key emits `menu_back`, which restores it in place rather than closing.
 
 ### 5.9 `filter` (`modal/filter.js`) — `/` filter mode
 
@@ -412,10 +482,56 @@ closures stay module-held in `dispatch/control/cmdline.js`.
   #D11: the body-refresh on exit is the reducer's decision (`show_selected_info`
   Cmd), not a second imperative dispatch.
 
-**Verdict (§5): pure TEA.** Every modal arm is pure; all view/topology/clock/
-out-of-TEA reads are stamped onto the Msg by the dispatch handler (exception C
-in the shell). Editing buffers, register history, cmdline match-set selection,
-and overlay clamps are all pure model transforms.
+### 5.10 `fabric-field` (`modal/fabric-field.js`) — the component-ports in-grid input editor
+
+The `component-ports` pane's field editor (docs/ports-and-wires.md, "Manual field
+input = an inject"). Same shape as the cmdline/prompt editors, but the buffer edits
+ONE input port's value and commits it as a sticky inject.
+
+| Msg | Writes | Emits | Purity |
+|---|---|---|---|
+| `fabric_field_enter` | `modes.fabricFieldMode→true`, `modal.fabricField={paneId,addr,text}` | — | shell¹ |
+| `fabric_field_key` | `modal.fabricField.text` (type/backspace/Ctrl+U/paste; single-line) | — | ✓ |
+| `fabric_field_submit` | commits the raw text as a sticky inject (`fabric.applyInject`) + closes (guarded) | — | ✓² |
+| `fabric_field_cancel` | closes (guarded) | — | ✓ |
+
+¹ Won't open over a live modal (`isChainActive` guard, like `prompt_enter`). The
+  selected input row → `component.port` address is resolved by the
+  `fabric_field_open` effect (it needs model/focus the pure pane lacks) and
+  stamped on `msg.addr`.
+² Submit is ONE atomic reduction — the inject write (`model.fabric.injects`) + the
+  mode close, no handler cascade. Empty text injects `""` (a real, honoured value);
+  use `x`/clear to remove one. The raw text is NEVER re-parsed (bind-parameter model).
+
+### 5.11 `fabric` (`update/fabric.js`) — the dataflow-fabric state store (NOT a modal)
+
+The single writer of `model.fabric.*` (injects / output / wires), delegated by the
+root reducer via the same `{TYPES, update}` mechanism as the modals — but it holds
+FABRIC state, not a modal buffer. All of `model.fabric.*` is transient (never
+serialised to config) yet IN-MODEL, so it rides the WAL and replay reproduces it
+(same discipline as `model.modal.continuation`). See `docs/ports-and-wires.md`.
+
+| Msg | Writes | Emits | Purity |
+|---|---|---|---|
+| `port_inject{port,value}` | `fabric.injects[port]={value,at}` (last-write-wins; `at` from `model.now`) | — | ✓¹ |
+| `port_clear{port}` | removes `fabric.injects[port]` (identity-preserve if absent) | — | ✓ |
+| `fabric_output_set{group,name,lines}` | `fabric.output[group][name]` (a producer's raw stdout, replaced per run) | — | ✓ |
+| `wire_create{from,to}` | `fabric.wires` (one runtime wire per input `to`, last-write-wins; identity-preserve on a no-op re-wire) | — | ✓² |
+| `wire_delete{from,to}` | `fabric.wires` (drop by exact endpoints; a config wire lives in the YAML → no-op) | — | ✓ |
+
+¹ Injects are STICKY (persist until overwritten or cleared, NOT auto-consumed on
+  run); resolve-time precedence is inject > wire > default. `at` is stamped from
+  `model.now` (the frame clock) — replay-safe, never `Date.now()`. `applyInject` is
+  shared with the `fabric_field_submit` modal arm (§5.10) so both paths land
+  identical state.
+² Shape-guarded here; wire TYPE-equality is validated at the handler (where the
+  port types are in scope) so the reducer stays a pure, dependency-light transform.
+
+**Verdict (§5): pure TEA.** Every modal arm — and the fabric state store — is pure;
+all view/topology/clock/out-of-TEA reads are stamped onto the Msg by the dispatch
+handler (exception C in the shell). Editing buffers, register history, cmdline
+match-set selection, overlay clamps, and the fabric injects/wires are all pure
+model transforms.
 
 ---
 
@@ -442,43 +558,49 @@ one instance: `kind` is a Component name (primary instance) OR a paneId
 (per-pane instance); the pump resolves it through `route.getInstance` /
 `componentForPanel` / `getPrimaryByKind`, applies `comp.augmentMsg(msg, model,
 slice)` when the Component declares it (the **shell-threads-facts** seam —
-exception C; six Components declare one today: info/docker/agent/files/history/
-text-view — see §7.8), then runs `comp.update(msg, slice)`.
+exception C; **six** Components declare one today: docker/files/history (§7.8) +
+info/agent/text-view (§7.10)), then runs `comp.update(msg, slice)`.
 Key events arrive as `{type:'key'}` only to the FOCUSED component, only when no
 modal owns input; a component claims a key by returning a `_claimed` sentinel
 effect (filtered out before `runEffects`).
 
 **The two-tier Component update.** Every Navigator's `update` is
 `mnav.isNavMsg(msg) ? mnav.apply(slice, msg) : <own handling>` — the shared nav
-reducer first, the Component's own arms second. The viewer is the same shape
-(`pt.reduceTabMsg` first, then its own switch). So a Component's full Msg set =
-**shared nav vocabulary (§7.2)** + its **own arms**.
+reducer first, the Component's own arms second. The content-slot text panes
+(info/text-view/agent, §7.10) are the same shape via the shared **`tvu` reducer**
+(`leaves/text/text-view-update`) — `tvu.reduce` first (scroll/search/select), the
+pane's own arms second. So a Component's full Msg set = **shared reducer
+(nav §7.2 / tvu §7.10)** + its **own arms**.
 
-**Coverage:** §7.2 shared nav + §7.4 **viewer/detail** verified this loop;
-§7.3 lists the rest (pending loops 3+).
+**Coverage:** §7.2 shared nav · §7.4 viewer/detail (RETIRED, U2f) · §7.5 layout ·
+§7.6 groups · §7.8 docker/files/config-status/history · §7.9 stats · §7.10
+content-slot panes · §7.11 fabric panes.
 
 ### 7.1 The Component-update / finalizer relationship
 
 ```
   dispatchMsg(wrapped) ─┐
                         ▼
-   msg = comp.augmentMsg(msg, model, slice)   ← IMPURE SHELL (exc. C): viewer threads
-                        │                        viewerModel = pt.viewerModelBundle(model)
-                        │                        + stamps msg.innerH (FIX-2)
-   [next, fx] = comp.update(msg, slice)        ← PURE reducer (commits innerH; +
-                        │                          viewer's OWN _finalize: per-tab
-                        │                          view-state capture on tab transition)
+   msg = comp.augmentMsg(msg, model, slice)   ← IMPURE SHELL (exc. C): stamps facts —
+                        │                        e.g. a content pane stamps msg.innerH
+                        │                        from the committed geometry (FIX-2)
+   [next, fx] = comp.update(msg, slice)        ← PURE reducer (commits innerH; content
+                        │                          panes fall through to tvu.reduce §7.10)
    route.setInstanceSlice(id, next)
    runEffects(fx)
        … (depth-0 exit) …
-   finalizeDispatch()  ← reconciles instances/subs + scroll clamp (NO innerH write)
+   finalizeDispatch()  ← reconciles instances/subs + scroll clamp + nav-capture
+                          flush (NO innerH write)
 ```
-Two distinct "finalizers": (1) the viewer's OWN `_finalize`/`_withDerivedFields`
-runs *inside* `update` and is pure (captures the leaving tab's view-state); (2)
-the *dispatch-runtime* `finalizeDispatch` runs once at depth-0 exit. Since v0.6.6
-FIX-2 the finalizer no longer touches `innerH`: `augmentMsg` stamps `msg.innerH`
-(derived from the pane's committed geometry) and the viewer's OWN reducer is the
-single writer. Viewer arms READ `innerH` (`_innerH`) for scroll clamps.
+Two seams keep derived + per-tab state pure: (1) each content pane's `augmentMsg`
+stamps `msg.innerH` (the committed viewport height) and the pane's OWN `update` is
+the single writer of `slice.innerH` — read for scroll clamps, never
+finalizer-written (v0.6.6 FIX-2); (2) the *dispatch-runtime* `finalizeDispatch`
+runs once at depth-0 exit — reconciling per-pane instances (mint/dispose) +
+subscriptions, clamping scroll, and flushing a pending nav-capture. Per-tab
+view-state (scroll/search/select) now rides the framework's mint reconcile +
+view-state capture/restore across the slot's position-tabs (the viewer's old
+in-`update` `_finalize` retired with it, U2f).
 
 ### 7.2 Shared Navigator nav reducer (`leaves/wm/nav.js`) — verified
 
@@ -506,20 +628,30 @@ reducer (they hold no domain state beyond nav).
 
 ### 7.3 Per-Component overview (status + vocabulary)
 
-| Component (`kind`) | File | own arms | Own Msgs (beyond shared nav) | Status |
+| Component (`kind`) | File | own arms | Own Msgs (beyond the shared reducer) | § |
 |---|---|---|---|---|
-| **detail** (viewer) | `panel/viewer/viewer.js` | ~22 + tab leaf | see §7.4 | ✅ verified (loop 2) |
-| **layout** | `panel/layout.js` | ~40 | see §7.5 | ✅ verified (loop 3) |
-| **groups** | `panel/navigator/groups.js` | ~4 +nav | see §7.6 | ✅ verified (loop 3) |
-| **docker** | `panel/navigator/docker.js` | 6 +nav | see §7.8 | ✅ verified (loop 4) |
-| **files** | `panel/navigator/files.js` | 4 +nav | see §7.8 | ✅ verified (loop 4) |
-| **config-status** | `panel/navigator/config-status.js` | 4 +nav | see §7.8 | ✅ verified (loop 4) |
-| **history** | `panel/navigator/history.js` | 1 +nav | see §7.8 (effect `historyReplay`) | ✅ verified (loop 4) |
-| **actions** | `panel/navigator/actions.js` | 0 +nav | shared nav only | ✅ nav-only (§7.2) |
-| **stats** | `panel/monitor/stats.js` | 0 (no-op update) | `subscriptions(paneDef,model)` (#D13) — see §7.9 | ✅ verified (loop 4) |
-| **text-view** | `panel/text-view/text-view.js` | 5 + shared tvu | see note below | 📎 catalogued (post-audit) |
+| **detail** (viewer) | ~~`panel/viewer/viewer.js`~~ | — | — | ⚠ **RETIRED (U2f)** — §7.4 |
+| **layout** | `panel/layout.js` | ~40 | see §7.5 | ✅ §7.5 |
+| **groups** | `panel/navigator/groups.js` | ~4 +nav | see §7.6 | ✅ §7.6 |
+| **docker** | `panel/navigator/docker.js` | 6 +nav | see §7.8 | ✅ §7.8 |
+| **files** | `panel/navigator/files.js` | 4 +nav | see §7.8 | ✅ §7.8 |
+| **config-status** | `panel/navigator/config-status.js` | 4 +nav | see §7.8 | ✅ §7.8 |
+| **history** | `panel/navigator/history.js` | 1 +nav | see §7.8 (effect `historyReplay`) | ✅ §7.8 |
+| **actions** | `panel/navigator/actions.js` | 0 +nav | shared nav only | ✅ §7.2 |
+| **stats** | `panel/monitor/stats.js` | 0 (no-op update) | `subscriptions(paneDef,model)` (#D13) | ✅ §7.9 |
+| **info** | `panel/info/info.js` | 1 + shared tvu | `info_show_content` | ✅ §7.10 |
+| **text-view** | `panel/text-view/text-view.js` | 5 + shared tvu | `tv_stream_start`/`tv_append`/`tv_append_lines`/`tv_set_lines`/`tv_status` | ✅ §7.10 |
+| **agent** | `panel/agent/agent.js` | 3 + shared tvu | `agent_event`/`agent_activate`/`agent_input` | ✅ §7.10 |
+| **terminal** | `panel/terminal/terminal.js` | 0 (no-op; foreign PTY) | — | ✅ §7.10 |
+| **component-ports** | `panel/fabric/ports-pane.js` | 2 +nav | `key`(e/x/w/p/↵)→fabric effects · `fabric_pin` | ✅ §7.11 |
+| **fabric-wires** | `panel/fabric/wire-list.js` | 1 +nav | `key`(d/x)→`fabric_wire_delete` | ✅ §7.11 |
 
-> **text-view vocabulary** (the content Component that superseded the viewer's flat content-tab machinery in U2f — post-dates this doc's original 2026-06-24 audit loops). Own Msgs: `tv_stream_start` (re-run reseed to the header; optional `preamble` line seeded ahead of it — the unrouted-preempt "⊗ killed previous: X" notice that survives the reseed, §DATAFLOW; omitted when empty; optional `append:true` — per-action `output: append` — keeps the accumulated buffer and adds the run below the previous one instead of reseeding), `tv_append` / `tv_append_lines` (streamed output), `tv_set_lines` (wholesale replace), `tv_status` (a distinct right-alignable status row — the action-status chip). Selection/search/scroll flow through the shared `tvu` reducer (`leaves/text/text-view-update.js`), same arms the viewer used.
+The four content-slot text panes (**info** / **text-view** / **agent** — plus
+**terminal**, whose grid is foreign) replaced the dissolved viewer in the U2f
+one-tab-system; their route tables are §7.10. The two **fabric** panes
+(component-ports / fabric-wires) are §7.11. Every Component's `kind` is its
+registered `name`; `layout` registers outside `BUILTIN_COMPONENTS` (a chrome
+service slot).
 
 ### 7.4 viewer/detail (`kind: 'detail'`) — ⚠ RETIRED (U2f — viewer Component dissolved)
 
@@ -661,6 +793,7 @@ via a `mode_set`/`mode_clear` Cmd.
 | `pool_hide{id}` / `pool_show{id,columnIndex?,index?}` | `arrange` (strip/insert + hotkey reassign) + focus clamp ★w | `show_selected_info` (on focus move) | ✓ |
 | `pool_show_new_column{id,position}` | `arrange` (spawn column) + focus ★w + `freeConfig.notice` | `show_selected_info` | ✓ |
 | `set_active_tab{paneId,tabPoolId}` | `arrange` (multi-tab active switch, undo push) + focus ★w | `show_selected_info` (if focused) | ✓ |
+| `activate_tab{paneId,tabPoolId}` | — | `msg→focus_set` **then** `msg→set_active_tab` (the focus+activate pair as one reducer-owned sequence — round-4 arch T3) | ✓ |
 | `panel_collapse_toggle{id}` | `arrange` (flip `collapsed`, undo push) | — | ✓ |
 | `add_column{position}` / `remove_column{columnIndex}` | `arrange` (via `mfc.addColumn`/`removeColumn`) + `freeConfig.notice`; remove clamps focus ★w | `show_selected_info` (remove, on focus move) | ✓ |
 | `set_boot_warnings{warnings}` / `dismiss_warnings` | `bootWarnings` | — | ✓ |
@@ -675,7 +808,6 @@ via a `mode_set`/`mode_clear` Cmd.
 | `free_config_title_enter`/`submit`/`key`/`cancel` | `freeConfig.titleEdit` (+ commits title) | `mode_set`/`mode_clear{freeConfigTitleEditMode}` ★m | shell⁷ |
 | `free_config_mouse_press`/`motion`/`release` | `freeConfig.drag` (+ `previewArrange` on target change) | `force_full_repaint` ★f (on target shift) | ✓ |
 | `pool_drag_start`/`motion`/`release` | `freeConfig.drag` (+ `previewArrange`) | start/motion `force_full_repaint` ★f; release re-emits `pool_hide`/`pool_show` | ✓ |
-| `tab_drag_start`/`motion`/`release{viewerTarget,viewerPaneId,tabBounds}` | `freeConfig.drag` | start `force_full_repaint`; **motion emits `msg→viewer_reorder_content_tab`** (cross-Component → detail) | shell⁸ |
 | `free_config_clear_undo` | clears undo/redo stacks | — | ✓ |
 | `panel_list_open{cursor}`/`close`/`nav{dir}` | `panelList` | `force_full_repaint` ★f (on open/close transition) | ✓ |
 | `panel_list_pick` | closes `panelList` | re-emits `pool_hide`/`pool_show` + `force_full_repaint` | ✓ |
@@ -689,13 +821,16 @@ via a `mode_set`/`mode_clear` Cmd.
   is intricate but pure (operates on the slice's own arrange).
 ⁶ Reads `mpool.hiddenIds`/`allPanesInColumns` off its OWN slice's arrange — pure.
 ⁷ `msg.freeConfigTitleEditMode` threaded (whether title-edit was open).
-⁸ `viewerTarget`/`viewerPaneId`/`tabBounds`/`modelBundle` threaded by `input.js`
-  (impure shell) so the arm reads no route topology; today `viewerTarget==='detail'`.
+
+(The flat `tab_drag_start`/`motion`/`release` reorder gesture + `leaves/wm/tab-drag.js`
+were **deleted in U2f**: content is position-tabs now, and the flat strip the
+gesture drove was never populated post-P1b. It emitted the retired
+`viewer_reorder_content_tab` Msg — both are gone.)
 
 **Verdict (§7.5): pure TEA.** Layout is the proof that a large, intricate
-Component (40 arms, drag preview, compound arrange surgery) stays a pure reducer:
-all math lives in pure leaves, all cross-layer writes (mode flags, viewer
-reorder, pool re-dispatch) go out as Cmds, and the handful of topology facts are
+Component (~40 arms, drag preview, compound arrange surgery) stays a pure reducer:
+all math lives in pure leaves, all cross-layer writes (mode flags, tab-activate
+focus, pool re-dispatch) go out as Cmds, and the handful of topology facts are
 threaded by the shell. No `getModel()`, no route-value read in any arm.
 
 ### 7.6 groups (`kind: 'groups'`) — the cascade emitter — verified
@@ -703,9 +838,10 @@ threaded by the shell. No `getModel()`, no route-value read in any arm.
 Owns `list` / `expanded:Set` / `tab` / `nav`. Shared nav (`mnav.apply`) first,
 then 4 own arms. The Component that **drives the cross-layer group-switch
 cascade** — but it writes only its OWN slice; `currentGroup`, per-panel resets,
-and the viewer reset all go out as Cmds (single-writer per layer). All arms pure
-(facts arrive via `msg.ctx` = `{groups, currentGroup, paneMenuMode, viewerTarget,
-resetOwners}`, built by `nav-state._groupsCtx` in the impure shell). Verified.
+and the content-pane chrome reset all go out as Cmds (single-writer per layer).
+All arms pure (facts arrive via `msg.ctx` = `{groups, currentGroup, paneMenuMode,
+viewerTarget, resetOwners}`, built by `nav-state._groupsCtx` in the impure shell).
+Verified.
 
 | Msg | Writes | Emits | Purity |
 |---|---|---|---|
@@ -716,13 +852,17 @@ resetOwners}`, built by `nav-state._groupsCtx` in the impure shell). Verified.
 
 ¹ `msg.ctx` is built by the impure shell (`nav-state._groupsCtx` →
   `groupsBundle(model)` + `route.resolveTarget('viewer')` + `route.resetGroupOwners()`),
-  so the arm reads no `getModel()`/topology (#D9/#D10).
+  so the arm reads no `getModel()`/topology (#D9/#D10). `resolveTarget('viewer')`
+  now resolves the content slot's ACTIVE content instance (info/text-view/agent),
+  which handles `viewer_reset_chrome` via the shared `tvu` reducer (§7.10).
 
 **The B5 ordering is load-bearing** (`_groupChangeCmds`): `viewer_reset_chrome`
-MUST be emitted BEFORE `set_current_group`. The viewer's finalizer captures the
-leaving tab's view-state on the `slice.tab` transition; if `currentGroup`
-switched first, the capture would land under the NEW group's key. Documented at
-the emit site — a genuine cross-Component ordering constraint, not an impurity.
+MUST be emitted BEFORE `set_current_group`. The framework captures the leaving
+tab's view-state (scroll/search/select) keyed by the CURRENT group; if
+`currentGroup` switched first, the capture would land under the NEW group's key.
+Documented at the emit site — a genuine cross-Component ordering constraint, not an
+impurity. (Pre-U2f the capture was the viewer's own in-`update` finalizer; the
+constraint survived the move to the framework's mint-reconcile view-state capture.)
 
 **Verdict (§7.6): pure TEA.** groups is the textbook cascade emitter: own-slice
 writes + a fan of cross-layer Cmds, every fact threaded. The §7.7 cascade below
@@ -738,7 +878,8 @@ groups key/select
             → set_cursor × N      (wrapped → each owner nav, via mnav.apply)
             → multisel_clear × N
             → clear_filter × N
-      → viewer_reset_chrome      (wrapped → detail.update)
+      → viewer_reset_chrome      (wrapped → the active content pane:
+                                    info/text-view/agent, via the tvu reducer §7.10)
 ```
 ~4 deep; the `msg`-Cmd cycle cap (32, `effects.js` T28) is the backstop.
 
@@ -749,7 +890,7 @@ These are the Components with **async work**: their `update` arms stay pure
 lives in their `installEffects`-registered handlers (tier `fx`, impure by
 design — they read `getModel()` and shell out). Three of them use **`augmentMsg`
 to thread an out-of-TEA / model-derived fact** into the `key` arm so the arm
-stays pure (the same exception-C seam the viewer uses). A recurring correctness
+stays pure (the same exception-C seam the content panes use, §7.10). A recurring correctness
 rule across all their effects: **route async results to the ORIGINATING
 `paneId`** (`host.wrap(eff.paneId || kind, …)`), never the kind's primary — else
 multi-instance panes clobber each other (the "collapse-to-primary footgun").
@@ -837,6 +978,143 @@ no Msg, no slice, the data lives in the hub bus (docker publishes
 **Verdict (§7.9): pure TEA** (vacuously — no reducer arms; subscription is a
 pure declaration the runtime reconciles).
 
+### 7.10 Content-slot text panes — info / text-view / agent / terminal (the post-viewer content slot) — verified
+
+The U2f one-tab-system dissolved the monolithic viewer (§7.4) into first-class
+panes minted into a slot's `tabs[]`. Three are scrollable text buffers that share
+the **`tvu` reducer** (`leaves/text/text-view-update`) for scroll / search /
+select / cursor: `update` handles its OWN content arms, then falls through to
+`tvu.reduce(msg, slice, lines, ownKind)` (`null` → not a tvu Msg, keep the slice).
+All three stamp `innerH` via their own `augmentMsg` (the viewer-FIX-2 seam — the
+pane's committed viewport height, so scroll clamps stay pure of geometry). The
+fourth, **terminal**, is a FOREIGN component (its grid lives in `io/terminal`), so
+its `update` is a no-op and it holds only `{cmd,label}`.
+
+**Shared `tvu` vocabulary** (`leaves/text/text-view-update`; `ownKind` gates the
+key state machine): `viewer_scroll` · `viewer_search_enter`/`_key`/`_nav`/
+`_commit`/`_cancel`/`_clear_committed` · `select_begin`/`_extend`/`_cancel`/
+`_set_cursor`/`_scroll_view` · `viewer_reset_chrome` (group-cascade reset — scroll/
+search/select cleared, emitted by the groups cascade §7.6) · `key` (the visual-mode
+machine). These are the same arms the retired viewer ran (§7.4b), now factored into
+the leaf. All pure; `innerH` read for clamps, stamped by `augmentMsg`.
+
+**(a) info (`kind: 'info'`)** — `slice.{lines, scroll, innerH, search, select,
+cursor}`. The Info tab as a pane: content is INJECTED wholesale from the focused
+Navigator's `getInfo(selectedItem)` projection.
+
+| Msg | Writes | Emits | Purity |
+|---|---|---|---|
+| `info_show_content{lines}` | `slice.lines` (wholesale replace) + `scroll=0` + search-idx reset on real change | — | shell¹ |
+| *(shared tvu)* | scroll/search/select/cursor over `slice.lines` | — | ✓ |
+
+¹ `msg.lines` is precomputed by `dispatch.showSelectedInfo` via
+  `nav-state.infoLinesFromFocus` (the plugin `getInfo` read is in the shell, not
+  the arm); a missing payload safely bails. `_linesEq` buys a ref-stable
+  `slice.lines` across no-change refreshes (nav-select fires the arm each move).
+
+**(b) text-view (`kind: 'text-view'`)** — `slice.{lines, statusRows, scroll,
+innerH, search, select, cursor}`. The streamed / seeded content pane that
+superseded the viewer's flat content-tab machinery.
+
+| Msg | Writes | Emits | Purity |
+|---|---|---|---|
+| `tv_stream_start{header,preamble?,append?}` | reseeds `lines` to the header (or, `append:true`, keeps the buffer + adds the run below) + clears `statusRows` | — | ✓¹ |
+| `tv_append{line}` / `tv_append_lines{lines}` | appends to `lines` (bottom-stick scroll) | — | ✓ |
+| `tv_set_lines{lines}` | wholesale replace `lines`, reset scroll, clear `statusRows` | — | ✓ |
+| `tv_status{line}` | appends the completion line + records its index in `statusRows` (render right-aligns it — the action-status chip) | — | ✓ |
+| *(shared tvu)* | scroll/search/select/cursor over `_contentLines(slice, innerW)` | — | ✓² |
+
+¹ `preamble` is an optional line seeded ahead of the header — the unrouted-preempt
+  "⊗ killed previous: X" notice that survives the reseed (§DATAFLOW; omitted when
+  empty). `append:true` (per-action `output: append`) accumulates runs.
+² The tvu runs over the DISPLAY-space buffer (statusRows right-aligned to `innerW`,
+  the same transform render decorates + windows), so keyboard select/search
+  coordinates match what the user sees.
+
+**(c) agent (`kind: 'agent'`)** — the live-agent chat pane (docs/live-agent.md).
+`slice.{transcript, status, inputDraft, history/histIdx/histStash/histEdits,
+streaming, descriptor, scroll, innerH, search, select, cursor}`. The subprocess
+lives off-model in `io/agent`; every visible byte is folded here by pure arms so
+`frame=f(model)` and recorded Msgs re-fold on replay.
+
+| Msg | Writes | Emits | Purity |
+|---|---|---|---|
+| `agent_event{evt}` | folds one normalized AgentEvent → `transcript`/`streaming`/`status` (turn-start · assistant-delta/-message · tool-call/-result · status · turn-end · settled · error · exit) | — | ✓¹ |
+| `agent_activate` | — | `agent_start{id,cfg}` + `msg→agent_enter` | ✓² |
+| `agent_input{key,seq,selfId}` | `inputDraft` (edit) · `transcript`+`history` (send) · `scroll` (page) · draft-history recall (up/down) | send→`agent_start`+`agent_send{id,text}`; Esc→`agent_interrupt{id}` (busy) or `msg→agent_exit` (idle) | shell³ |
+| *(shared tvu)* | scroll/search/select/cursor over `transcript` | — | ✓ |
+
+¹ Backend strings route through `esc()` before entering the transcript (T32).
+  `assistant-delta` folds into the provisional `streaming` line (rendered dim);
+  the settled `assistant-message` supersedes it. Reducer-baked lines use named
+  16-color literals ON PURPOSE (a pure reducer must not read the #D8 theme cache).
+² Enter on the pane (run_selected fork): start the session idempotently, then flip
+  agent mode. ³ `selfId` (the session id) is stamped by the `agentMode` key handler
+  so Cmds carry it; `augmentMsg` stamps `innerH` MINUS the 2 reserved rows (status
+  line + input draft), so scroll clamps against the real transcript viewport.
+
+**(d) terminal (`kind: 'terminal'`)** — the embedded PTY as a pane (U2d). FOREIGN:
+the xterm grid lives in `io/terminal`, painted by the terminal OVERLAY over the
+pane's inner bounds; `render` draws only chrome. `slice.{cmd,label,onExit}`. `update`
+is a **no-op** — no reducer-managed content; the PTY lifecycle (lazy spawn + resize)
+is reconciled in the dispatch finalizer, keystrokes forwarded straight to the PTY.
+
+| Msg | Writes | Emits | Purity |
+|---|---|---|---|
+| *(none — foreign grid; update is a no-op)* | — | — | ✓ (vacuous) |
+
+**Verdict (§7.10): pure TEA.** The content slot is now four small panes instead of
+one Component. The three text panes are pure `(msg, slice) → [slice, effects]` —
+scroll/search/select factored into the shared `tvu` leaf, content arms pure, the one
+model read (info's getInfo lines, agent's session id) stamped by the shell, `innerH`
+stamped by each pane's `augmentMsg`. terminal is a foreign no-op. This replaced the
+viewer's ~22-arm monolith (§7.4) with small, uniform, independently-testable panes.
+
+### 7.11 Fabric panes — component-ports / fabric-wires (dataflow fabric, P1.5) — verified
+
+The dataflow-fabric UI (docs/ports-and-wires.md). Both are pure navigators whose key
+arms defer the model/focus-needing work to effects; the writes land in
+`model.fabric.*` via the §5.11 sub-reducer (the panes never write fabric state
+directly — single-writer per layer).
+
+**component-ports (`kind: 'component-ports'`)** — a follows-focus INSPECTOR over a
+fabric component's port surface (inputs = operate-half, outputs = check-half).
+`slice.{nav, paneId, pinned, selectFrom, component}` (init-injection #4). Retargets
+to the component under focus / a configured source / a runtime pin.
+
+| Msg | Writes | Emits | Purity |
+|---|---|---|---|
+| `key{↵}` | — | `_claimed` + `fabric_run{paneId}` (run the inspected component) | ✓¹ |
+| `key{e}` | — | `_claimed` + `fabric_field_open{paneId,cursor}` (edit selected input → inject) | ✓¹ |
+| `key{x}` | — | `_claimed` + `fabric_field_clear{paneId,cursor}` (clear its inject) | ✓¹ |
+| `key{w}` | — | `_claimed` + `fabric_connect_open{paneId,cursor}` (summon the producer picker) | ✓¹ |
+| `key{p}` | — | `_claimed` + `fabric_pin_toggle{paneId}` (pin/unpin the inspector) | ✓¹ |
+| `fabric_pin{name}` | `slice.pinned` (runtime pin; null → follows-focus) | — | ✓ |
+| *(shared nav)* | `slice.nav` | — | ✓ |
+
+¹ Each `key` CLAIMS so the framework's `run_selected` default doesn't also fire; the
+  selected row → `component.port` address needs model/focus, so each defers to an
+  effect (§8.2). `j`/`k` etc. arrive as nav Msgs (handled by `mnav`), NOT claimed.
+
+**fabric-wires (`kind: 'fabric-wires'`)** — the GLOBAL edge view: every wire (config +
+runtime, merged), its current value + validity, plus delete. Stateless render over
+`listWires()`; `slice.{nav, paneId}`.
+
+| Msg | Writes | Emits | Purity |
+|---|---|---|---|
+| `key{d\|x}` | — | `_claimed` + `fabric_wire_delete{paneId,cursor}` (runtime wires only) | ✓¹ |
+| *(shared nav)* | `slice.nav` | — | ✓ |
+
+¹ The row address needs model access, so `fabric_wire_delete` (§8.2) resolves it; a
+  config-authored wire warns "edit the YAML" instead of deleting (config wires aren't
+  runtime-editable).
+
+**Verdict (§7.11): pure TEA.** Both fabric panes are pure navigators: shared nav + a
+handful of key arms that emit effects, no fabric-state write in any arm. All
+`model.fabric.*` writes go through the §5.11 sub-reducer (via the `port_inject` /
+`port_clear` / `wire_create` / `wire_delete` / `fabric_output_set` Msgs those effects
+dispatch), preserving the single-writer invariant.
+
 ---
 
 ## 8. Effect / Cmd vocabulary (the side-effect tier — impure by design)
@@ -854,12 +1132,19 @@ handlers are tier-`fx` (impure by design).**
 |---|---|---|
 | `msg` | routes `eff.msg` by `msg.kind`: wrapped → `dispatchMsg`, flat → `applyMsg` | **yes** (the cyclic spine; cap 32) |
 | `render` | `renderQueue.scheduleRender()` (50ms debounce) | no |
-| `show_selected_info` | `dispatch.showSelectedInfo(eff.paneId?)` → resolves focused info lines → viewer | yes (→ `viewer_show_info`) |
 | `force_full_repaint` | `renderQueue.forceFullRepaint()` | no |
+| `show_selected_info` | `dispatch.showSelectedInfo(eff.paneId?)` → resolves focused info lines → the content slot's info pane | yes (→ `info_show_content`) |
+| `open_doc_tab{key,label,lines}` | `content-tab.addContentTab(currentGroup, …)` — mint a text-view content tab (the jobs job-info card's reducer-side entry, ex-`viewer_set_content`) | via mint |
 | `_claimed` | no-op (sentinel consumed earlier in `dispatchKeyToFocused`) | no |
+| `kkp_suspend` / `kkp_resume` | `io/term.suspendKKP()` / `.resumeKKP()` — drop to legacy key encoding while an embedded child owns the terminal, restore on exit | no |
+| `edit_file{path,isConfig}` | `edit.editFile(…)` — open the file in the user's editor (files pane `e`); synchronously re-enters (mint/focus/view/mode Msgs) | yes (T28 cap) |
+| `select_cancel_all` | sweep the instance registry (`select-view.allSelections`) → a wrapped `select_cancel` per owner (incl. hidden tabs) | yes (per selection) |
 | `do_run` / `run_action` | `setImmediate` → `action-runner.doRun/runAction` (spawn after the overlay-gone frame paints) | via action lifecycle |
 | `unrouted_preempt_and_run` | kill prior stream + start new (`stream.killJob`+`streamCommand`) | via stream |
-| `jobs_route` | reads post-switch viewer slice, threads tab → `applyMsg(jobs_routed)` | yes (the read-then-Msg pattern) |
+| `agent_start{id,cfg}` / `agent_send{id,text}` / `agent_interrupt{id}` | drive the off-model `io/agent` session (idempotent start / send a turn / interrupt the in-flight turn) | via async `agent_event` Msgs |
+| `jobs_route` | reads post-switch content slice, threads tab → `applyMsg(jobs_routed)` | yes (the read-then-Msg pattern) |
+| `nav_capture` | marks the jumplist dirty (`_navDirty`); the depth-0 finalizer reads post-commit coords → one `nav_record` Msg | deferred (finalizer → `nav_record`) |
+| `nav_restore{loc,dir}` | resolve a stable location → a LIVE address; re-fire `set_current_group`/`focus_set`/`set_active_tab`/`set_cursor` (all `noCapture`); a dead group → `nav_prune` + continue in `dir` | yes |
 | `copy_commit` | `copy.copySelect(idx,label)` → OSC52, then `copy.clearOptions()` | no |
 | `emit_osc52` | `io/term.emitOSC52(text)` (clipboard) | no |
 | `cmdline_rebuild` | re-query registry → `applyMsg(cmdline_set_matches)` | yes (read-then-Msg) |
@@ -869,12 +1154,14 @@ handlers are tier-`fx` (impure by design).**
 | `menu_action` | `dispatch.handleAction(action, arg)` (or `focus_panel:<h>`) | yes |
 | `run_binding` | `Promise.resolve(eff.run()).catch(...)` (resolved leader leaf) | via action |
 | `diag_clear` / `diag_save` | `io/diag-log.clear()` / `.save()` | no |
-| `destroy_pty_session` | `io/terminal.destroySession(id)` | no |
 
 Also note: `refireCmdlineRebuild` (handed to the feature-host port, not a
 registered Cmd) re-fires the dropdown rebuild after an async completion fetch
-(docker dir listing) resolves. The `set_theme` effect was **retired** (#D8 —
-palette now projected from `model.theme` at render entry).
+(docker dir listing) resolves. Two effects were **retired**: `destroy_pty_session`
+(U2d P2b — its only emitter was the dissolved viewer's
+`viewer_remove_ephemeral_terminal`; terminal panes now dispose via the finalizer's
+instance reconcile), and `set_theme` (#D8 — palette now projected from
+`model.theme` at render entry).
 
 ### 8.2 Component-contributed effects (registered via each Component's `installEffects`) — verified
 
@@ -894,6 +1181,12 @@ footgun.
 | `cfgStatusCompute{branch,files,projectDir,paneId}` | config-status | `setImmediate` → git status off-tick → `cfgStatusResult` Msg (wrapped to `paneId`) |
 | `cfgStatusDiff{item,branch,projectDir}` | config-status | `setViewerContent(diff)` |
 | `historyReplay{entry}` | history | `setViewerContent(replayLines, {tab:0})` (single dispatch — override + land on Info) |
+| `fabric_field_open{paneId,cursor}` | component-ports | resolve row → addr → `applyMsg(fabric_field_enter)` (seed the field editor with the port's current inject) |
+| `fabric_field_clear{paneId,cursor}` | component-ports | resolve row → `applyMsg(port_clear{port:addr})` |
+| `fabric_connect_open{paneId,cursor}` | component-ports | build the compatible-producer picker (type-matched, current wire floated + tagged) → `applyMsg(menu_open)` (→ `wire_create` on pick) |
+| `fabric_run{paneId}` | component-ports | resolve component → `host.runActionByKey(name)` (the existing action dispatch; no new run path) |
+| `fabric_pin_toggle{paneId}` | component-ports | resolve component → `dispatchMsg(wrap(paneId, fabric_pin{name}))` (runtime pin toggle) |
+| `fabric_wire_delete{paneId,cursor}` | fabric-wires | resolve row; runtime wire → `applyMsg(wire_delete)`; config wire → diag warn ("edit the YAML") |
 | `test_fx` / `test_wrapped_fx` | test harness only | — |
 
 ---
@@ -902,11 +1195,12 @@ footgun.
 
 ### 9.1 Verdict (reducer + modal + Component + effects + producers — all traced)
 
-**lazytui is pure TEA at the decision layer.** All 19 root-reducer arms and all
-~40 modal arms are pure functions `(model, msg) → [model, cmds]` returning new
-immutable state and Cmd descriptors. No reducer arm reads `getModel()`, the wall
-clock, or Component-slice values to branch — every such fact is **stamped onto
-the Msg by the impure shell** (handlers / effects). That relocation is the
+**lazytui is pure TEA at the decision layer.** All 30 root-reducer arms and every
+modal + fabric-state sub-reducer arm (§5) are pure functions
+`(model, msg) → [model, cmds]` returning new immutable state and Cmd descriptors.
+No reducer arm reads `getModel()`, the wall clock, a store/hub bus, or
+Component-slice values to branch — every such fact is **stamped onto the Msg by
+the impure shell** (handlers / effects / the mirror Subs). That relocation is the
 single recurring "impurity", and it is *blessed-exception C* by design.
 
 The genuinely mutable surface is **concentrated and named**:
@@ -917,7 +1211,8 @@ The genuinely mutable surface is **concentrated and named**:
   now under the model via the store-mirror / metrics-mirror Subs (FIX-1 / Finding B).
 
 (Exception **B** — the finalizer's `innerH` same-slice write — was RETIRED in
-v0.6.6 FIX-2; innerH is now threaded onto viewer Msgs and reducer-committed. §9.2.)
+v0.6.6 FIX-2; innerH is now threaded onto each content pane's Msgs and
+reducer-committed by that pane (§7.10). §9.2.)
 
 ### 9.2 Standing blessed exceptions (the live set)
 
@@ -995,15 +1290,18 @@ this is the producer-side completeness check.
 |---|---|
 | `nav_up`/`nav_down` | `moveSel` → `dispatch.navSelect` → `nav_select` |
 | `focus_left`/`focus_right`/`focus_panel` | `msg→focus_set` (layout) |
-| `run_selected` | context-dependent: terminal tab→`activateTerminal`→`terminal_enter`; action tab→`_runResolvedAction`→`prompt_enter` or `run_action` fx; groups branch→`msg→toggle_group`, leaf→`msg→focus_set(actions)`; actions→`_runResolvedAction`; else→`dispatch.showSelectedInfo`→`viewer_show_info` |
-| `next_tab`/`prev_tab` | `applyMsg(next_tab/prev_tab + _viewerTabBundle)` |
-| `page_up`/`page_down` | detail→`msg→viewer_scroll{delta}`; list→`_pageInListPanel`→`nav_select` |
-| `goto_top`/`goto_bottom` | detail→`msg→viewer_scroll{to}`; list→`_jumpInListPanel`→`nav_select` |
+| `run_selected` | context-dependent: focused `terminal` pane→`activateTerminal`→`terminal_enter`; focused `agent` pane→`msg→agent_activate`; action tab→`_runResolvedAction`→`prompt_enter` or `run_action` fx; groups branch→`msg→toggle_group`, leaf→`msg→focus_set(actions)`; actions→`_runResolvedAction`; else→`dispatch.showSelectedInfo`→`info_show_content` |
+| `next_tab`/`prev_tab` | `applyMsg(next_tab/prev_tab + _viewerTabBundle)` → `set_active_tab` (layout) |
+| `page_up`/`page_down` | content pane→`msg→viewer_scroll{delta}` (tvu); list→`_pageInListPanel`→`nav_select` |
+| `goto_top`/`goto_bottom` | content pane→`msg→viewer_scroll{to}` (tvu); list→`_jumpInListPanel`→`nav_select` |
 | `view_expand`/`view_shrink` | `msg→view_expand/shrink` (layout; `freeConfigMode` stamped) |
 | `toggle_collapse_focused` | `msg→panel_collapse_toggle` (layout) |
 | `filter` | `dispatch._enterFilterMode` → `filter_enter` |
 | `free_config` | `applyMsg(free_config)` |
 | `copy_text` | `applyMsg(register_push)` |
+| `send_to_port` | right-click → `applyMsg(menu_open)` (input-port picker; each row → `port_inject`) |
+| `port_inject` | `applyMsg(port_inject{port,value})` (the picked port + selection value; also the P2 agent's push primitive) |
+| `wire_create` | type-validate, then `applyMsg(wire_create{from,to})` (mismatch → diag warn, no wire) |
 | `ctx_run_action` | `_runActionByKey` → `_runResolvedAction` (`prompt_enter` / `run_action`) |
 | `ctx_run_command` | `cmdline.runCommandString` |
 | `refresh` | `api.refreshAll()` (direct async — broadcasts `refresh`) |
@@ -1016,27 +1314,37 @@ throughout §4–§7). Same model: read once in the shell, stamp onto the Msg.
 
 ---
 
-## 11. Completeness verification (loop 5)
+## 11. Completeness verification (loops 5 + 6)
 
-A grep-diff of the catalog against the whole `js/` tree (excl. tests):
+A grep-diff of the catalog against the whole `js/` tree (excl. tests). Loop 5
+(2026-06-24) proved the original set; **loop 6 (2026-08-14) re-ran it against
+current source** and reconciled every drift.
 
-- **Every reducer/modal/Component Msg type is documented** as of the 2026-06-24
-  audit loops. Cross-checked all `case '…'` / `msg.type === '…'` handlers,
-  INCLUDING the 5 camelCase Component Msgs the first pass's `[a-z_]+` grep missed
-  (`dockerPoll`, `dockerResult`, `dirLoaded`, `showHidden`, `cfgStatusResult` —
-  all in §7.8). (The `dockerTick` self-re-arm Msg was retired in v0.6.6 FIX-3 —
-  the poll is an `interval` Sub.) The `tv_*` family (text-view Component, added by
-  the U2f refactor AFTER this audit) is catalogued in the §7.3 note, not the
-  original loops.
-- **Every effect is documented.** Every `registerEffect('…')` type appears in
-  §8.1 (framework) or §8.2 (component) or is one of the test-only fixtures.
-  (The `dockerEventsStart` component effect was retired in v0.6.6 FIX-3 — the
-  `docker events` watcher is now the generic `process-stream` Sub kind.)
-- **`viewer_set_viewport` is comment-only** (`viewer.js:63`) — a referenced-but-
-  never-implemented Msg; correctly NOT in the catalog.
-- **The non-Msg `case` strings** the broad grep surfaced are the input-verb /
-  intent / key-value vocabulary (§10) — producers, not Msgs. Now documented.
-- **Shared nav Msgs** (`leaves/wm/nav.js` `NAV_TYPES`) all in §7.2.
+- **Every reducer / modal / fabric-state Msg type is documented.** Loop 6
+  cross-checked every `case '…'` in `reducer.js` + `modal/*.js` + `fabric.js`
+  against §4/§5: the 30 root arms and all 11 sub-reducer `TYPES` sets match. New
+  since loop 5 — the agent/kkp/mirror/jumplist root arms (§4), the `fabric-field`
+  modal (§5.10), and the `fabric` injects/output/wires store (§5.11). Two arms the
+  loop-5 tables had missed were caught and added: `menu_back` (§5.8) and the
+  round-4 `activate_tab` layout arm (§7.5c).
+- **Every Component Msg is documented.** The dissolved viewer's arms now live in
+  the shared `tvu` leaf (`leaves/text/text-view-update`) + the four content panes
+  (§7.10); `info_show_content` / `tv_*` / `agent_*` / the fabric-pane keys are all
+  catalogued (§7.10 / §7.11). `viewer_set_viewport` (the old comment-only Msg) went
+  with `panel/viewer/viewer.js`. The 5 camelCase navigator Msgs (`dockerPoll`,
+  `dockerResult`, `dirLoaded`, `showHidden`, `cfgStatusResult`) stay in §7.8.
+- **Every effect is documented.** All 30 framework `registerEffect('…')` types
+  (effects.js) appear in §8.1 and the component effects in §8.2, or are test-only
+  fixtures. New since loop 5 — kkp_suspend/resume, edit_file, select_cancel_all,
+  open_doc_tab, agent_start/send/interrupt, nav_capture/restore (framework) + the
+  six fabric effects (component). `destroy_pty_session` retired (U2d P2b); the
+  `dockerTick` / `dockerEventsStart` Msgs stayed retired (interval / process-stream
+  Subs, FIX-3).
+- **The non-Msg `case` strings** the broad grep surfaces are the input-verb /
+  intent / key vocabulary (§10) — producers, not Msgs. The fabric verbs
+  (`send_to_port` / `port_inject` / `wire_create`) were added to §10.2.
+- **Shared nav Msgs** (`leaves/wm/nav.js` `NAV_TYPES`) all in §7.2, incl. the
+  border-control `set_sort` / `sort_reverse` arms.
 
 **Two DATAFLOW.md lags found and fixed (2026-06-24):**
 1. Its single-writer note still listed `viewer.slice.tabBounds` as "the last
@@ -1048,18 +1356,20 @@ A grep-diff of the catalog against the whole `js/` tree (excl. tests):
    `handleAction` verb (§10.2) handled directly in the shell (`process.exit`),
    not a registered Cmd. Removed from the box; §8 is the accurate Cmd registry.
 
-**Final verdict (catalog complete + verified):** lazytui is **pure TEA at the
-decision layer** — every one of the ~150 Msg types resolves to a pure reducer
-arm `(state, msg) → [state, cmds]`, and every side effect is a data descriptor
-run by one interpreter. The mutable surface is **concentrated, named, and
-commented**: exception **C** (the impure-shell reads — the input verbs of §10,
-the `augmentMsg` hooks of §7, and the effect bodies of §8, all of which read the
-model/registry and thread facts forward so reducers stay pure), and the
-**#D5/#D14 boundary** (render reads the model everywhere; the one off-model read
-is the terminal island — the PTY screen buffer + term dims — a non-TEA region).
-Exception **B** (the finalizer's `innerH` write) was RETIRED in v0.6.6
-FIX-2. There is **no scattered mutation** — the impurity is exactly the shell
-that the pure core is wrapped in, by design.
+**Final verdict (catalog re-verified 2026-08-14):** lazytui is **pure TEA at the
+decision layer** — every Msg type (the 30 root arms, the 11 sub-reducers, every
+Component arm) resolves to a pure reducer `(state, msg) → [state, cmds]`, and every
+side effect is a data descriptor run by one interpreter. Two years of features
+(one-tab-system, live-agent, the dataflow fabric, kitty-keyboard, the mirror Subs,
+the jumplist) added arms and Components but **no new mutable surface**: the mutable
+surface is still **concentrated, named, and commented** — exception **C** (the
+impure-shell reads: the input verbs of §10, the `augmentMsg` hooks of §7, the
+mirror Subs, and the effect bodies of §8, all reading the model/store/registry and
+threading facts forward so reducers stay pure), and the **#D5/#D14 boundary**
+(render reads the model everywhere; the one off-model read is the terminal island —
+the PTY screen buffer + term dims — a non-TEA region). Exception **B** (the
+finalizer's `innerH` write) was RETIRED in v0.6.6 FIX-2. There is **no scattered
+mutation** — the impurity is exactly the shell the pure core is wrapped in, by design.
 
 ---
 
@@ -1097,13 +1407,25 @@ that the pure core is wrapped in, by design.
   traceable end-to-end from its entry verb to its Msg. Noted 2 DATAFLOW.md lags
   as observations (no edits — task is doc-only, no refactor). Sources read in
   full: `intent.js`, `actions.js`. Final verdict restated in §11.
+- **Loop 6 (2026-08-14, done — FULL RE-AUDIT):** reconciled the whole catalog with
+  ~2 years of shipped features against current source. §4 grew 19→30 arms (agent /
+  kkp / mirror / jumplist); §5 gained the `fabric-field` modal + the `fabric`
+  state store (9→11 sub-reducers); §7.4 viewer stamped RETIRED (U2f), replaced by
+  the content-slot panes (**new §7.10** info/text-view/agent/terminal + shared
+  `tvu` leaf) and the fabric panes (**new §7.11** component-ports/fabric-wires);
+  §8 gained 10 framework + 6 component effects (`destroy_pty_session` retired); §10
+  gained the fabric verbs. Two drifts the loop-5 tables had missed were caught
+  (`menu_back` §5.8, `activate_tab` §7.5c). Every purity verdict re-held. Sources
+  read in full: `reducer.js`, `fabric.js`, `modal/fabric-field.js`, `effects.js`
+  (builtins), `app/state.js` (Subs), `panel/{info,agent,terminal}/*`,
+  `panel/fabric/{ports-pane,wire-list}.js`, `leaves/text/text-view-update.js`,
+  `dispatch/control/actions.js`.
 
-**Status: COMPLETE.** Sections §1–§11 cover the architecture view, the
-purity model, every Msg route (root / modal / Component / broadcast), every
-effect, the producer (verb) layer, and the blessed-exception index — all verified
-against source. What remains is OUT OF SCOPE by the task's own terms ("don't
-refactor, just write the code case down"): the **refactor discussion** (§9 lists
-the live exception C + the #D5/#D14 boundary as the candidates; turning either
-into a plan is a separate, opt-in exercise). Re-invoke the loop only to (a) deepen a
-specific Component, (b) re-verify after code changes, or (c) open the refactor
-conversation.
+**Status: COMPLETE (re-verified 2026-08-14).** Sections §1–§11 cover the
+architecture view, the purity model, every Msg route (root / modal / fabric-state
+/ Component / broadcast), every effect, the producer (verb) layer, and the
+blessed-exception index — all verified against current source. What remains is OUT
+OF SCOPE by the task's own terms ("don't refactor, just write the code case down"):
+the **refactor discussion** (§9 lists the live exception C + the #D5/#D14 boundary
+as the candidates). Re-invoke the loop only to (a) deepen a specific Component,
+(b) re-verify after code changes, or (c) open the refactor conversation.

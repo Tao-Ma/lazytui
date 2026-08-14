@@ -198,11 +198,13 @@ function _groupChangeCmds(res, ctx) {
   if (!res.groupChanged) return [];
   const cmds = [];
   // v0.6.2 B5 — viewer_reset_chrome MUST run before set_current_group.
-  // The viewer's finalizer captures the leaving tab's view-state on
-  // slice.tab transition. If set_current_group runs FIRST, the
-  // finalizer's resolveTabKey sees the NEW group and the FROM-capture
-  // lands under the WRONG group's key. Reordering keeps the finalizer
-  // reading the OLD group at capture time.
+  // The framework captures the leaving tab's view-state (scroll/search/
+  // select) keyed by the CURRENT group. If set_current_group runs FIRST,
+  // the capture sees the NEW group and the FROM-capture lands under the
+  // WRONG group's key. Reordering keeps the capture reading the OLD group
+  // at capture time. (Pre-U2f the capture was the viewer's own in-update
+  // finalizer; the constraint survived the move to the framework's
+  // mint-reconcile view-state capture — docs/msg-routes.md §7.6.)
   const target = ctx && ctx.viewerTarget;
   if (target) {
     cmds.push({ type: 'msg', msg: require('../api').wrap(target, {
