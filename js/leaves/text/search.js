@@ -27,45 +27,11 @@
  */
 'use strict';
 
-const { safeRegex } = require('./regex-guard');
 const { stripMarkup, charWidth } = require('./ansi');
-
-/** Display-column count of plain text up to (not including) codepoint index
- *  `charIdx` (a UTF-16 index). Translates regex match positions into columns. */
-function _displayWidthBefore(plain, charIdx) {
-  let consumed = 0;
-  let width = 0;
-  for (const ch of plain) {
-    if (consumed >= charIdx) break;
-    width += charWidth(ch.codePointAt(0));
-    consumed += ch.length;
-  }
-  return width;
-}
-
-/** Run `term` (regex, gi) against `lines` → [{line, col, len}] in display
- *  columns. Invalid/empty-match-prone patterns yield [] (never throws/loops). */
-function computeMatches(lines, term) {
-  const rx = safeRegex(term, 'gi');
-  if (!rx) return [];
-  const matches = [];
-  for (let li = 0; li < lines.length; li++) {
-    const plain = stripMarkup(lines[li]);
-    rx.lastIndex = 0;
-    let prev = -1;
-    let m;
-    while ((m = rx.exec(plain)) !== null) {
-      if (m.index <= prev) { rx.lastIndex = m.index + 1; continue; }
-      prev = m.index;
-      const col = _displayWidthBefore(plain, m.index);
-      let len = 0;
-      for (const ch of m[0]) len += charWidth(ch.codePointAt(0));
-      if (len > 0) matches.push({ line: li, col, len });
-      if (m.index === rx.lastIndex) rx.lastIndex++;  // zero-width safety
-    }
-  }
-  return matches;
-}
+// computeMatches + _displayWidthBefore moved to match-core (shared with the
+// bounded-match worker so both sides run byte-identical matching).
+const { computeMatches, _displayWidthBefore } = require('./match-core');
+const bounded = require('./bounded-match');
 
 // --- the chained selector (P1, viewer-lines selector arc) ---
 
@@ -86,7 +52,13 @@ function matchesFor(lines, term) {
   if (!term || !Array.isArray(lines) || lines.length === 0) return EMPTY_MATCHES;
   const hit = _matchMemo.get(lines);
   if (hit && hit.term === term) return hit.matches;
-  const matches = computeMatches(lines, term);
+  // Durable ReDoS bound: prove the pattern terminates within a wall-clock budget
+  // (in a worker) before running it here — a pathological pattern the shape guard
+  // can't catch is rejected as [] instead of freezing the UI thread. 'safe' and
+  // 'unavailable' both fall through to the real (regex-guard-guarded) scan.
+  const matches = bounded.probeSearch(lines, term) === 'timedOut'
+    ? EMPTY_MATCHES
+    : computeMatches(lines, term);
   _matchMemo.set(lines, { term, matches });
   return matches;
 }

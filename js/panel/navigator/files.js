@@ -147,11 +147,16 @@ function _declaredItems() {
 
 function _matchesFilter(items, pattern) {
   if (!pattern) return items;
-  // safeRegex rejects oversize / catastrophic-backtracking patterns; null
+  // safeRegex rejects oversize / obvious-nested-backtracking patterns; null
   // means "don't filter" (friendlier than blinking to empty mid-type).
   const { safeRegex } = require('../../leaves/text/regex-guard');
   const rx = safeRegex(pattern, 'i');
   if (!rx) return items;
+  // Durable ReDoS bound: prove the pattern terminates within budget against these
+  // names in a worker; if it blows the budget (a shape the guard can't catch),
+  // don't filter — same friendly fallback as a null pattern, never a UI freeze.
+  const bounded = require('../../leaves/text/bounded-match');
+  if (bounded.probeFilter(items.map(it => it.name), pattern, 'i') === 'timedOut') return items;
   // Never filter out parent / loading rows — navigation + status must stay
   // reachable regardless of pattern.
   return items.filter(it => it.kind === 'parent' || it.kind === 'loading' || rx.test(it.name));
