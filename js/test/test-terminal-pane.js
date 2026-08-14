@@ -287,6 +287,55 @@ describe('[terminal-pane] overlay-repaint poll follows half-view slot swaps (rou
     dispatchMsg(route.wrap('layout', { type: 'remove_tab', paneId: termPane, tabPoolId: 'term-sg' }));
     state._resetSubscriptions();   // clear any live interval timers so the process exits promptly
   });
+
+  it('ISOLATES the halfView term: the gate trips on a halfView change with focus INVARIANT', () => {
+    // The test above also MOVES focus (view_place_pane focus-follows the placed
+    // pane), so it would pass on the `focus` gate term ALONE — it can't prove
+    // `halfView` is independently load-bearing. This one changes halfView WITHOUT
+    // touching focus (round-5 review): place the ALREADY-FOCUSED pane into the
+    // OTHER slot. view_place_pane focus-follows, but the pane is already focused,
+    // so focus is invariant; halfView { left:P, right:term } → { left:P, right:P },
+    // which halfProjection collapses (right===left) → the terminal leaves screen,
+    // arrange untouched. A gate keyed on {arrange,dims,viewMode,focus} but NOT
+    // halfView would SKIP this reconcile → the 250ms poll leaks with no terminal up.
+    const state = require('../app/state');
+    sm.bootFresh();
+    const termPane = route.getInstanceSlice('layout').focus;
+    const others = [];
+    for (const col of route.getInstanceSlice('layout').arrange.columns)
+      for (const p of col.panels) if (p.paneId && p.paneId !== termPane) others.push(p.paneId);
+    assert(others.length >= 1, 'need a non-terminal pane for the left half slot');
+    const P = others[0];
+
+    // half view = { left: P (non-terminal), right: termPane (terminal) }, focus on P.
+    // The explicit focus_set makes focus INDEPENDENT of view_place_pane's focus-
+    // follow (which no-ops when the slot already holds the pane — so placing P into
+    // an already-P default slot wouldn't move focus). Robust to the default seeding.
+    dispatchMsg(route.wrap('layout', { type: 'mint_tab', paneId: termPane, paneType: 'terminal', poolId: 'term-iso', config: { cmd: 'sleep 30' } }));
+    dispatchMsg(route.wrap('layout', { type: 'view_set', mode: 'half' }));
+    dispatchMsg(route.wrap('layout', { type: 'view_place_pane', slot: 'left',  paneId: P }));
+    dispatchMsg(route.wrap('layout', { type: 'view_place_pane', slot: 'right', paneId: termPane }));
+    dispatchMsg(route.wrap('layout', { type: 'focus_set', focus: P }));
+
+    const overlayLive = () => state._liveSubKeys().some(k => k.includes('overlay-repaint'));
+    state.reconcileSubscriptions(getModel());
+    eq(route.getInstanceSlice('layout').focus, P, 'precondition: focus on the left (non-terminal) pane');
+    assert(visibleTerminalSurfaces(getModel()).length >= 1, 'precondition: terminal on screen in the right half slot');
+    assert(overlayLive(), 'precondition: overlay-repaint poll armed');
+
+    // THE ISOLATING MOVE — place the already-focused P into the RIGHT slot.
+    const focusBefore = route.getInstanceSlice('layout').focus;
+    const arrangeBefore = route.getInstanceSlice('layout').arrange;
+    dispatchMsg(route.wrap('layout', { type: 'view_place_pane', slot: 'right', paneId: P }));
+    eq(route.getInstanceSlice('layout').focus, focusBefore, 'focus UNCHANGED — placing the already-focused pane (the isolation)');
+    assert(route.getInstanceSlice('layout').arrange === arrangeBefore, 'arrange unchanged — only halfView moved');
+    state.reconcileSubscriptions(getModel());
+    assert(visibleTerminalSurfaces(getModel()).length === 0, 'terminal off screen once both half slots resolve to P');
+    assert(!overlayLive(), 'overlay-repaint poll torn down — the gate tripped on the halfView change ALONE (focus invariant)');
+
+    dispatchMsg(route.wrap('layout', { type: 'remove_tab', paneId: termPane, tabPoolId: 'term-iso' }));
+    state._resetSubscriptions();
+  });
 });
 
 report();
