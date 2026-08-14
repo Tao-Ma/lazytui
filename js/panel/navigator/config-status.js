@@ -530,7 +530,7 @@ function installEffects(registerEffect) {
         try { body = diffFor(eff.item, eff.branch, eff.projectDir || '.').join('\n'); }
         catch (e) { body = `[dim]diff failed:[/] ${e.message}`; }
         if (host.signal && host.signal.aborted) return;   // drop stale
-        setViewerContent(null, body, { key: 'config-diff', label: 'Diff' });
+        setViewerContent(body, { key: 'config-diff', label: 'Diff' });
       } finally {
         if (host.releaseKey) host.releaseKey();   // C5 — free the key
       }

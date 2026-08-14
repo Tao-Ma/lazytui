@@ -79,7 +79,7 @@ describe('[3] setViewerContent shows a discrete doc as a text-view tab (U2e P4)'
 
   it('mints a text-view tab with the given content, active', () => {
     seedContentSlot();
-    setViewerContent(null, 'brand new\ncontent here', { key: 'doc3', label: 'Doc' });
+    setViewerContent('brand new\ncontent here', { key: 'doc3', label: 'Doc' });
     const slotPaneId = route.resolveViewerPaneId();
     const pane = require('../leaves/wm/pool').findPaneLocation(
       getInstanceSlice('layout').arrange, p => p.paneId === slotPaneId).pane;
@@ -88,8 +88,8 @@ describe('[3] setViewerContent shows a discrete doc as a text-view tab (U2e P4)'
   });
   it('reuses the same tab and replaces content on re-invoke', () => {
     seedContentSlot();
-    setViewerContent(null, 'first', { key: 'doc3b', label: 'Doc' });
-    setViewerContent(null, 'second\nthird', { key: 'doc3b', label: 'Doc' });
+    setViewerContent('first', { key: 'doc3b', label: 'Doc' });
+    setViewerContent('second\nthird', { key: 'doc3b', label: 'Doc' });
     eq((docTabLines('doc3b') || []).join('|'), 'second|third', 'content replaced in place');
   });
 });

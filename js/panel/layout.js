@@ -32,7 +32,6 @@ const mpool = require('../leaves/wm/pool');
 const mpane = require('../leaves/wm/pane');
 const { halfProjection, visibleBoundsFor } = require('../leaves/wm/geometry');
 const route = require('../panel/route');
-const { getInstanceSlice } = require('./api');
 
 
 /** Compare two drag drop targets for visual equality. Used by both

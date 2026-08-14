@@ -4,7 +4,7 @@
  * keyHints + collected `:` cmdline commands.
  *
  * v0.6.2 N7 — moved from dispatch/ to overlay/. The file builds
- * viewer-bound content (setViewerContent(null, helpLines)) — a
+ * viewer-bound content (setViewerContent(helpLines)) — a
  * render-side content producer, not a Msg dispatcher. Peer to
  * overlay/which-key.js (the leader-chord popup, another
  * help-flavored content surface). Pre-N7 the file was in dispatch/
@@ -159,7 +159,7 @@ function helpLines() {
 
 /** Build help lines and show them as the content slot's Help text-view tab (U2e P4). */
 function showHelp() {
-  setViewerContent(null, helpLines().join('\n'), { key: 'help', label: 'Help' });
+  setViewerContent(helpLines().join('\n'), { key: 'help', label: 'Help' });
 }
 
 module.exports = { showHelp };

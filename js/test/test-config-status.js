@@ -499,7 +499,7 @@ describe('[8] diffFor — preview shape per status', () => {
 
     // (2) U2f — P4 re-homed the DIFF override writer from the retired viewerOverride
     // slot to a `text-view` CONTENT TAB. The cfgStatusDiff effect's off-tick body
-    // funnels through nav-state.setViewerContent(null, diffBody, {key:'config-diff',
+    // funnels through nav-state.setViewerContent(diffBody, {key:'config-diff',
     // label:'Diff'}) → panel/content-tab.addContentTab → a minted `content-config-diff`
     // text-view tab whose slice.lines hold the diff. That async setImmediate boundary
     // can't be awaited before this file's synchronous report()/exit, so drive the
@@ -513,7 +513,7 @@ describe('[8] diffFor — preview shape per status', () => {
     m.currentGroup = 'g';
     initState();
     const body = cs._diffFor(items[idx], 'config', TMP).join('\n');
-    require('../panel/nav-state').setViewerContent(null, body, { key: 'config-diff', label: 'Diff' });
+    require('../panel/nav-state').setViewerContent(body, { key: 'config-diff', label: 'Diff' });
     const tabInst = route.getInstance(mpane.newPaneId('content-config-diff'));
     assert(tabInst, 'the config-diff text-view tab was minted in the content slot');
     eq(route.instanceKind(mpane.newPaneId('content-config-diff')), 'text-view', 'rehomed to a text-view tab');

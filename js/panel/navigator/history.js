@@ -167,7 +167,7 @@ function installEffects(registerEffect) {
     // U2e P4 — replay output shows as the content slot's History text-view tab
     // (was the viewer's viewerOverride; the opts.tab=0 park-on-Info is retired
     // with the flat strip).
-    setViewerContent(null, _replayLines(eff.entry).join('\n'), { key: 'history', label: 'History' });
+    setViewerContent(_replayLines(eff.entry).join('\n'), { key: 'history', label: 'History' });
   });
 }
 

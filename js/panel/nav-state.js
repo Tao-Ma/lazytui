@@ -164,13 +164,13 @@ function collapseGroup(path, recursive = false) {
 
 // --- Viewer content writers ---
 
-function setViewerContent(tabId, text, opts) {
+function setViewerContent(text, opts) {
   // U2e P4 — a discrete document (history replay, config-status diff, help text,
   // Running-overlay job info) is shown as a `text-view` POSITION-tab in the content
   // slot (was the detail viewer's single `viewerOverride` slot, retired with the
   // viewer). Each producer keys a distinct REUSED tab via `opts.key` (poolId
   // `content-<key>`), so re-invoking replaces its content in place; `opts.label`
-  // names the tab. `tabId` is vestigial (destination is the content slot). Reuses
+  // names the tab. Reuses
   // the P1b mint path (panel/content-tab) → recording/replay + per-instance
   // view-state come for free. This is the impure-shell entry (help / the
   // config-status + history effects); the reducer-side caller (jobs) emits the
