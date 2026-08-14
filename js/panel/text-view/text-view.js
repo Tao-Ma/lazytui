@@ -105,10 +105,12 @@ function update(msg, slice) {
     case 'tv_append_lines':
       return (Array.isArray(msg.lines) && msg.lines.length) ? _appendLines(slice, msg.lines) : slice;
     case 'tv_status': {
-      // Append the permanent completion-status line + record its index so
-      // render() right-aligns it (docs/global-config.md §action_status).
+      // Append the permanent completion-status line + record its index AND the
+      // outcome (docs/global-config.md §action_status). render() right-aligns it
+      // and re-derives its color from the outcome under the current theme (so a
+      // past ✓/✗/⊗ tracks :theme). `msg.line` is the stored coordinate/fallback.
       const s = _appendLines(slice, [msg.line]);
-      return { ...s, statusRows: (slice.statusRows || []).concat([s.lines.length - 1]) };
+      return { ...s, statusRows: (slice.statusRows || []).concat([{ index: s.lines.length - 1, outcome: msg.outcome || null }]) };
     }
     case 'tv_set_lines':
       // U2e P1b — REPLACE the buffer wholesale (open-file/docker: the `Loading…`
@@ -192,13 +194,26 @@ function _rightAlign(line, width) {
 // Right-aligning here (not in the stored buffer) keeps the text width-agnostic
 // across resizes. Ref-preserving: returns slice.lines untouched on the common
 // path (no status rows, or width unavailable) so the no-copy fast path holds.
-function _contentLines(slice, innerW) {
+//
+// `statusCtx` ({cfg, tags}) is passed ONLY by render: it re-derives each status
+// row's chip COLOR from the stored outcome under the CURRENT theme, so a past
+// ✓/✗/⊗ tracks a :theme change instead of freezing the completion-time palette.
+// The reducer omits it and uses the stored line — same TEXT/width (only color
+// tags differ), so selection/search coordinates still match render's.
+function _contentLines(slice, innerW, statusCtx) {
   const lines = slice.lines || [];
   const statusRows = slice.statusRows;
   if (!statusRows || !statusRows.length || !(innerW > 0)) return lines;
   const out = lines.slice();
-  for (const i of statusRows) {
-    if (i >= 0 && i < out.length) out[i] = _rightAlign(out[i], innerW);
+  for (const r of statusRows) {
+    const i = r.index;
+    if (i < 0 || i >= out.length) continue;
+    let line = out[i];
+    if (statusCtx && r.outcome) {
+      const chip = astatus.statusLine(r.outcome, null, statusCtx.cfg, statusCtx.tags);
+      if (chip) line = chip;
+    }
+    out[i] = _rightAlign(line, innerW);
   }
   return out;
 }
@@ -284,8 +299,14 @@ function render(panel, w, h, slice, opts) {
   //     un-navigable highlight the reducer never counts) nor
   //     yielded by a yank; it lives in the display window, not the select set.
   // No copy for the common case (no status rows, not running) — most text-views
-  // hit this and contentLines === slice.lines by reference.
-  let contentLines = _contentLines(slice, innerW);
+  // hit this and contentLines === slice.lines by reference. `statusCtx` re-derives
+  // each stored status row's chip color from its outcome under the CURRENT theme,
+  // so past ✓/✗/⊗ chips track :theme (the reducer's _contentLines omits it — same
+  // TEXT/width, so its selection/search coords still match this buffer).
+  let contentLines = _contentLines(slice, innerW, {
+    cfg: astatus.resolveConfig((getModel().config || {}).action_status),
+    tags: { success: t.success, warning: t.warning, error: t.error },
+  });
 
   // Search decoration over contentLines (excludes the running line) so render's
   // match set stays in lockstep with the reducer, which now runs matchesFor over

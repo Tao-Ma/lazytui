@@ -1021,7 +1021,7 @@ superseded the viewer's flat content-tab machinery.
 | `tv_stream_start{header,preamble?,append?}` | reseeds `lines` to the header (or, `append:true`, keeps the buffer + adds the run below) + clears `statusRows` | — | ✓¹ |
 | `tv_append{line}` / `tv_append_lines{lines}` | appends to `lines` (bottom-stick scroll) | — | ✓ |
 | `tv_set_lines{lines}` | wholesale replace `lines`, reset scroll, clear `statusRows` | — | ✓ |
-| `tv_status{line}` | appends the completion line + records its index in `statusRows` (render right-aligns it — the action-status chip) | — | ✓ |
+| `tv_status{line,outcome}` | appends the completion line + records `{index,outcome}` in `statusRows` (render right-aligns it AND re-derives its color from `outcome` under the current theme — the action-status chip tracks `:theme`) | — | ✓ |
 | *(shared tvu)* | scroll/search/select/cursor over `_contentLines(slice, innerW)` | — | ✓² |
 
 ¹ `preamble` is an optional line seeded ahead of the header — the unrouted-preempt

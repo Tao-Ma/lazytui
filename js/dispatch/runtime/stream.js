@@ -101,15 +101,15 @@ function appendDetailLines(lines, tabInstId) {
 
 // Append the permanent completion-status line (`tv_status`) — same routing as
 // appendDetailLine, but the arm records the line as a right-aligned status row.
-function appendStatusLine(line, tabInstId) {
+function appendStatusLine(line, outcome, tabInstId) {
   const api = require('../../panel/api');
   if (tabInstId) {
-    require('./loop').dispatchMsg(api.wrap(tabInstId, { type: 'tv_status', line }));
+    require('./loop').dispatchMsg(api.wrap(tabInstId, { type: 'tv_status', line, outcome }));
     return;
   }
   const target = require('../../panel/route').resolveTarget('viewer_transcript');
   if (target == null) return;
-  require('./loop').dispatchMsg(api.wrap(target, { type: 'tv_status', line }));
+  require('./loop').dispatchMsg(api.wrap(target, { type: 'tv_status', line, outcome }));
 }
 
 // The ONE job-termination status seam (pre-release review). The powerline `✓/✗/⊗ · dur ·
@@ -124,7 +124,10 @@ function emitStatusChip(outcome, tabInstId) {
   const chip = astatus.statusLine(outcome, null, (getModel().config || {}).action_status,
     { success: t.success, warning: t.warning, error: t.error });
   if (!chip) return false;
-  appendStatusLine(chip, tabInstId);
+  // Pass the OUTCOME alongside the pre-colored line: the text-view stores both, and
+  // render re-derives the chip's color from the outcome each frame so a past ✓/✗/⊗
+  // tracks a :theme change (the stored line is the coordinate/fallback text).
+  appendStatusLine(chip, outcome, tabInstId);
   return true;
 }
 

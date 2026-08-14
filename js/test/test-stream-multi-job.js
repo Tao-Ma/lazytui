@@ -213,7 +213,7 @@ describe('[multi-job] killJob stamps the ⊗ completion chip (review [16] seam)'
     const slice = route.getInstanceSlice(transcript);
     const rows = slice.statusRows || [];
     eq(rows.length, before + 1, 'killJob appended exactly one status row (was silent on the old code)');
-    const chip = stripMarkup(slice.lines[rows[rows.length - 1]]);
+    const chip = stripMarkup(slice.lines[rows[rows.length - 1].index]);
     assert(chip.includes('⊗'), `the killed chip carries the ⊗ glyph: ${JSON.stringify(chip)}`);
     eq(running().length, 0, 'job cleared');
   });

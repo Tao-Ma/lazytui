@@ -115,16 +115,17 @@ describe('[action-status] clock_tick emits a render Cmd (live-line repaint)', ()
 });
 
 describe('[action-status] tv_status reducer arm', () => {
-  it('appends the status line and records its buffer index', () => {
+  it('appends the status line and records its buffer index + outcome', () => {
     let s = tv.init('p1');
     s = tv.update({ type: 'tv_append_lines', lines: ['$ build', 'compiling'] }, s);
-    s = tv.update({ type: 'tv_status', line: '[green]✓ Done[/]' }, s);
+    s = tv.update({ type: 'tv_status', line: '[green]✓ 0[/]', outcome: { status: 'exited', exitCode: 0, startedAt: 1, endedAt: 2 } }, s);
     eq(s.lines.length, 3);
-    eq(s.statusRows, [2]);
+    eq(s.statusRows.map((r) => r.index), [2]);
+    eq(s.statusRows[0].outcome.exitCode, 0);          // outcome recorded → render re-derives color
     // A second command in the same buffer (Transcript accretion) records another.
     s = tv.update({ type: 'tv_append', line: '$ test' }, s);
-    s = tv.update({ type: 'tv_status', line: '[red]✗ Exit 1[/]' }, s);
-    eq(s.statusRows, [2, 4]);
+    s = tv.update({ type: 'tv_status', line: '[red]✗ 1[/]', outcome: { status: 'exited', exitCode: 1, startedAt: 3, endedAt: 4 } }, s);
+    eq(s.statusRows.map((r) => r.index), [2, 4]);
   });
   it('tv_stream_start (re-run reseed) clears statusRows', () => {
     let s = tv.init('p1');
@@ -440,7 +441,7 @@ describe('[action-status] augmentMsg stamps innerW only when status rows exist (
     // The tv_* arms are served before the reducer and never read innerW, so the
     // append path (incl. the Transcript, which keeps appending after a status row
     // lands) must not pay the paneInnerW geometry read.
-    const slice = { ...tv.init('p1'), lines: ['x'], statusRows: [0] };
+    const slice = { ...tv.init('p1'), lines: ['x'], statusRows: [{ index: 0, outcome: null }] };
     eq(tv.augmentMsg({ type: 'tv_append', line: 'y' }, {}, slice).innerW, undefined);
   });
 
@@ -453,7 +454,7 @@ describe('[action-status] augmentMsg stamps innerW only when status rows exist (
     const ls = route.serviceSlice('layout');
     const b = geo.visibleBoundsFor(ls, vp, vp);
     assert(b && b.w > 2, 'the viewer pane has real bounds');
-    const slice = { ...tv.init(vp), lines: ['x'], statusRows: [0] };
+    const slice = { ...tv.init(vp), lines: ['x'], statusRows: [{ index: 0, outcome: null }] };
     const msg = tv.augmentMsg({ type: 'key', seq: 'v', focusKind: 'text-view' }, getModel(), slice);
     eq(msg.innerW, b.w - 2);                       // stamped == render's innerW (w − 2)
   });
@@ -567,6 +568,35 @@ describe('[action-status] ✗ cancel — render draws it where the hit-test fire
     assert((tab.lines || []).some((l) => stripMarkup(l).includes('⊗ SIGTERM')),
       `cancel stamps ⊗ SIGTERM: ${JSON.stringify((tab.lines || []).map(stripMarkup).slice(-4))}`);
     killAll();
+  });
+});
+
+// A STORED completion chip tracks :theme — render re-derives each status row's
+// color from its stored outcome under the CURRENT theme (it was baked at
+// completion time and froze the palette otherwise). Component render returns Rich
+// markup, so the color tag right before ✗ is directly inspectable.
+describe('[action-status] a stored completion chip tracks :theme (color re-derived at render)', () => {
+  const themes = require('../leaves/infra/themes');
+  const render = tv.panelTypes['text-view'].render;
+  const chipColorUnder = (themeName) => {
+    themes.setTheme(themeName);
+    let s = tv.init('p1');
+    s = tv.update({ type: 'tv_append', line: '$ build' }, s);
+    // Stored ✗ 2 chip WITH its outcome; the `line` is a deliberately WRONG color
+    // ([red]) so a pass proves render re-derived from the outcome, not the stored line.
+    s = tv.update({ type: 'tv_status', line: '[red]✗ 2[/]', outcome: { status: 'exited', exitCode: 2, startedAt: 1, endedAt: 2 } }, s);
+    const out = render({ paneId: 'p1', hotkey: null }, 40, 8, { ...s, scroll: 0 }, {});
+    const row = out.split('\n').find((l) => l.includes('✗'));
+    const m = row && row.match(/\[([^\]]+)\]✗/);
+    return m && m[1];
+  };
+  it('the stored ✗ chip takes the CURRENT theme error, not the completion-time color', () => {
+    themes.setTheme('dracula'); const dErr = themes.theme().error;
+    themes.setTheme('monokai'); const mErr = themes.theme().error;
+    assert(dErr && mErr && dErr !== mErr, `themes differ (sanity): ${dErr} vs ${mErr}`);
+    eq(chipColorUnder('dracula'), dErr, 'dracula → dracula error color');
+    eq(chipColorUnder('monokai'), mErr, 'monokai → monokai error (re-derived from the outcome, not baked)');
+    themes.setTheme('dracula');   // restore a deterministic theme
   });
 });
 
