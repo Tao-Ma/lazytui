@@ -212,7 +212,8 @@ function buildPlacedPane(resolved, hotkey, columnIndex, detailHeightSetter, pool
   if (mpool.isDetailPane(active) && placement.height !== undefined) {
     const h = placement.height;
     if (typeof h === 'string' && h.endsWith('%')) {
-      detailHeightPct = parseInt(h.slice(0, -1), 10);
+      const n = parseInt(h.slice(0, -1), 10);
+      if (Number.isFinite(n)) detailHeightPct = n;   // guard: never let a bad parse leak NaN (schema validates upstream)
     } else if (typeof h === 'number' && Number.isInteger(h)) {
       detailHeightPct = h;
     }

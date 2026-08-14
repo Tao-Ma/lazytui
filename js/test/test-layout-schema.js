@@ -166,4 +166,36 @@ describe('[7] empty-layout error message (T3.7)', () => {
   });
 });
 
+describe('[8] cell sizing keys — height / heightPct / collapsed values (round-4 #2)', () => {
+  const cell = (extra) => ({ columns: [{ panels: ['groups'] }, { panels: [{ tabs: ['detail'], ...extra }] }] });
+  it('accepts a "N%" string, an integer percent, a heightPct number, and a boolean collapsed', () => {
+    ok(cell({ height: '60%' }));
+    ok(cell({ height: 40 }));
+    ok(cell({ heightPct: 40 }));
+    ok(cell({ collapsed: true }));
+    ok(cell({ collapsed: false }));
+  });
+  it('rejects a non-numeric height (was parseInt→NaN → detail pane collapsed to h:0)', () => {
+    let err = null;
+    try { validate(withLayout(cell({ height: 'abc%' })), 'test'); } catch (e) { err = e; }
+    assert(err !== null && /'height' must be a percent/.test(err.message), `names the bad height: ${err && err.message}`);
+    bad(cell({ height: '%' }));
+    bad(cell({ height: '12x%' }));
+  });
+  it('rejects height outside the 1-100 percent range', () => {
+    bad(cell({ height: 0 }));
+    bad(cell({ height: 150 }));
+    bad(cell({ height: '0%' }));
+  });
+  it('rejects a string / out-of-range heightPct (was silently dropped downstream)', () => {
+    bad(cell({ heightPct: '50' }));
+    bad(cell({ heightPct: 0 }));
+    bad(cell({ heightPct: 120 }));
+  });
+  it('rejects a non-boolean collapsed (was silently ignored)', () => {
+    bad(cell({ collapsed: 'yes' }));
+    bad(cell({ collapsed: 1 }));
+  });
+});
+
 report();

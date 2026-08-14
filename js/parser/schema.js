@@ -373,6 +373,25 @@ function validateLayout(layout, warnings) {
       if ('activeTab' in p && (typeof p.activeTab !== 'string' || !p.tabs.includes(p.activeTab))) {
         throw new SchemaError("'activeTab' must be one of the entries in `tabs`", { context: cellCtx });
       }
+      // Sizing keys — validate VALUES, not just the key names. Unchecked, a
+      // malformed `height` became parseInt→NaN and poisoned layout geometry (the
+      // detail pane collapsed to h:0), and a mistyped `heightPct`/`collapsed` was
+      // silently dropped downstream. All express a percentage (1-100) or a boolean.
+      if ('height' in p) {
+        const h = p.height;
+        const pct = (typeof h === 'string' && /^\d+%$/.test(h)) ? Number(h.slice(0, -1)) : null;
+        const okStr = pct !== null && pct > 0 && pct <= 100;
+        const okNum = typeof h === 'number' && Number.isInteger(h) && h > 0 && h <= 100;
+        if (!okStr && !okNum) {
+          throw new SchemaError(`'height' must be a percent — an integer 1-100 or a "N%" string (got ${JSON.stringify(h)})`, { context: cellCtx });
+        }
+      }
+      if ('heightPct' in p && !(typeof p.heightPct === 'number' && Number.isFinite(p.heightPct) && p.heightPct > 0 && p.heightPct <= 100)) {
+        throw new SchemaError(`'heightPct' must be a number 1-100 (got ${JSON.stringify(p.heightPct)})`, { context: cellCtx });
+      }
+      if ('collapsed' in p && typeof p.collapsed !== 'boolean') {
+        throw new SchemaError(`'collapsed' must be true or false (got ${JSON.stringify(p.collapsed)})`, { context: cellCtx });
+      }
     });
     // Soft cap: first column (Navigators) tolerates more panels than
     // the last column (Viewer-side, where detail + actions sit). Mirrors
