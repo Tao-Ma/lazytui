@@ -133,4 +133,39 @@ describe('[U2f] picking a position row switches correctly', () => {
   });
 });
 
+describe('[cascade-refactor] activate_tab == the focus_set→set_active_tab cascade (round-4)', () => {
+  // The strip-click (input.js) and the pane-menu tab pick (dispatch.js) now
+  // dispatch ONE `activate_tab`; the layout reducer emits the focus_set→
+  // set_active_tab pair (moving the sequence out of the handler — rule-3). Pin
+  // that the combined Msg produces byte-identical end state (focus + active tab).
+  function endState(switchFn) {
+    sm.bootFresh();                               // content slot starts UNFOCUSED (focus=groups)
+    const vpid = route.resolveViewerPaneId();
+    mintTextView(vpid, 'tv-x', 'X');              // active becomes tv-x
+    const target = paneOf(vpid).tabs.find(t => t.id !== 'tv-x').id;  // a non-active seeded tab
+    switchFn(vpid, target);
+    const layout = api.getInstanceSlice('layout');
+    return { focus: layout.focus, activeTabId: paneOf(vpid).activeTabId, target };
+  }
+  it('yields the same focus + active tab as the two-Msg cascade', () => {
+    const viaCascade = endState((vpid, target) => {
+      api.dispatchMsg(api.wrap('layout', { type: 'focus_set', focus: vpid }));
+      api.dispatchMsg(api.wrap('layout', { type: 'set_active_tab', paneId: vpid, tabPoolId: target }));
+    });
+    const viaCombined = endState((vpid, target) => {
+      api.dispatchMsg(api.wrap('layout', { type: 'activate_tab', paneId: vpid, tabPoolId: target }));
+    });
+    eq(viaCombined.activeTabId, viaCombined.target, 'combined activates the picked tab');
+    // The end state (incl. focus_set's downstream show_selected_info) is what
+    // must match — the whole point is that ONE Msg == the two-Msg cascade.
+    eq(JSON.stringify(viaCombined), JSON.stringify(viaCascade), 'combined == cascade (focus + active tab)');
+  });
+  it('no-ops on a missing paneId', () => {
+    sm.bootFresh();
+    const before = JSON.stringify(api.getInstanceSlice('layout').focus);
+    api.dispatchMsg(api.wrap('layout', { type: 'activate_tab', tabPoolId: 'whatever' }));
+    eq(JSON.stringify(api.getInstanceSlice('layout').focus), before, 'no paneId → slice untouched');
+  });
+});
+
 report();

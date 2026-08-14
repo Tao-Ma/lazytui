@@ -736,8 +736,7 @@ function handleMouse(kind, x, y) {
       const localX = mx - b.x;
       for (const tab of (strip ? strip.tabBounds : [])) {
         if (localX >= tab.x && localX < tab.x + tab.w) {
-          dispatchMsg(wrap('layout', { type: 'focus_set', focus: p.paneId }));
-          dispatchMsg(wrap('layout', { type: 'set_active_tab', paneId: p.paneId, tabPoolId: tab.poolId }));
+          dispatchMsg(wrap('layout', { type: 'activate_tab', paneId: p.paneId, tabPoolId: tab.poolId }));
           mutated = true;
           break;
         }

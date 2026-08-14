@@ -927,6 +927,21 @@ function update(msg, slice) {
       }
       return next;
     }
+    // The ONE Msg the strip-click (input.js) and the pane-menu tab pick
+    // (dispatch.js) dispatch, in place of hand-orchestrating a
+    // focus_set→set_active_tab cascade in the handler (rule-3 — the handler owned
+    // the sequence). The reducer emits the pair as Cmds — the same
+    // reducer-emits-the-pair shape jobs.js#jump uses. Order (focus THEN activate)
+    // is preserved verbatim, so set_active_tab's focus-follow retargets focus onto
+    // the new tab id exactly as before. (docker's shell path stays a bespoke
+    // activate→focus for terminal_enter — there focus must be the pane, not the tab.)
+    case 'activate_tab': {
+      if (!msg.paneId) return slice;
+      return [slice, [
+        { type: 'msg', msg: { kind: 'layout', msg: { type: 'focus_set', focus: msg.paneId } } },
+        { type: 'msg', msg: { kind: 'layout', msg: { type: 'set_active_tab', paneId: msg.paneId, tabPoolId: msg.tabPoolId } } },
+      ]];
+    }
     // U2b — mint a NEW tab-instance into a slot's tabs[] (the mint-into-slot
     // primitive). Creates a runtime pool entry, appends + activates a tab on the
     // target pane, and focuses it. ONE undo entry (reverting drops the tab + the

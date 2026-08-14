@@ -446,8 +446,7 @@ function _paneMenuPick(target, item) {
     // pick (the retired viewer's flat-strip tab backing) is gone with the viewer
     // (U2f).
     close();
-    dispatchMsg(wrap('layout', { type: 'focus_set', focus: target }));
-    dispatchMsg(wrap('layout', { type: 'set_active_tab', paneId: target, tabPoolId: item.poolId }));
+    dispatchMsg(wrap('layout', { type: 'activate_tab', paneId: target, tabPoolId: item.poolId }));
     return;
   }
   // Pane row — resolve by view mode.
