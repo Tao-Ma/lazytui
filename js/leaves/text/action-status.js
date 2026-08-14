@@ -92,13 +92,13 @@ function _spinner(now, startedAt) {
   return SPINNER[Math.floor(elapsed / 125) % SPINNER.length];
 }
 
-/** The status chip: spinner (running) · ✓ (exit 0) · ✗ N (non-zero, with the
+/** The status chip: spinner (running) · ✓ 0 (exit 0) · ✗ N (non-zero, with the
  *  code) · ⊗ SIG (killed, with the signal). `o` = { status, exitCode, signal,
  *  startedAt }. */
 function _statusChip(o, now, tags) {
   if (o.status === 'running') return `[${tags.warning}]${_spinner(now, o.startedAt)}[/]`;
   if (o.status === 'killed') return `[${tags.warning}]⊗${o.signal ? ` ${o.signal}` : ''}[/]`;
-  if (o.exitCode === 0) return `[${tags.success}]✓[/]`;
+  if (o.exitCode === 0) return `[${tags.success}]✓ 0[/]`;   // exit value shown for success too
   return `[${tags.error}]✗ ${o.exitCode == null ? '?' : o.exitCode}[/]`;
 }
 

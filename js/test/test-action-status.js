@@ -65,9 +65,9 @@ describe('[action-status] jobForPane', () => {
 });
 
 describe('[action-status] statusLine', () => {
-  it('exit 0 → ✓ · duration · finish time (glyph only, middot-joined)', () => {
+  it('exit 0 → ✓ 0 · duration · finish time (exit value shown, middot-joined)', () => {
     const s = line(exited0, 9999);
-    assert(s.includes('✓'), s);
+    assert(s.includes('✓ 0'), `success shows the exit value: ${s}`);
     assert(!/Done/.test(s), `no word: ${s}`);
     assert(s.includes(' · '), `middot separator: ${s}`);
     assert(s.includes('2.3s'), s);
@@ -562,6 +562,10 @@ describe('[action-status] ✗ cancel — render draws it where the hit-test fire
     applyMsg({ type: 'cancel_job', jobId: job.id });      // exactly what the click dispatches
     assert(!require('../feature/jobs').snapshot().some((j) => j.id === job.id && j.status === 'running'),
       'the job is no longer running after the cancel');
+    // The cancel stamps `⊗ SIGTERM` on the job's tab (not a bare ⊗ — killJob's signal).
+    const tab = route.getInstanceSlice(route.activeInstanceOf(route.resolveViewerPaneId()));
+    assert((tab.lines || []).some((l) => stripMarkup(l).includes('⊗ SIGTERM')),
+      `cancel stamps ⊗ SIGTERM: ${JSON.stringify((tab.lines || []).map(stripMarkup).slice(-4))}`);
     killAll();
   });
 });

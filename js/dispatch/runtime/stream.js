@@ -186,7 +186,9 @@ function killJob(jobId, opts = {}) {
     // close path's tail → chip → hint order).
     if (ctx.record) {
       emitStatusChip(
-        { status: 'killed', startedAt: ctx.record.entry.startedAt, endedAt: ctx.record.entry.endedAt },
+        // killJob SIGTERMs (above), so stamp the signal — the chip shows `⊗ SIGTERM`
+        // rather than a bare `⊗` (matches a real signal death's `⊗ SIG`).
+        { status: 'killed', signal: 'SIGTERM', startedAt: ctx.record.entry.startedAt, endedAt: ctx.record.entry.endedAt },
         ctx.target ? ctx.target.tabInstId : undefined,
       );
     }
