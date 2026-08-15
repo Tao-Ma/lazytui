@@ -1,39 +1,43 @@
 # host-monitor demo — a btop-style system monitor
 
 A small **system monitor** for the host: live CPU, memory, and load-average
-graphs, plus a live process view. It looks like `btop`/`top`, but every graph
-is declared in YAML — no plugin code.
+graphs alongside a sorted process table with per-process drill-down. It looks
+like `btop`/`top`, but every graph and column is declared in YAML — no plugin
+code.
 
 ```
-╭─(1)─CPU──────────────────────────╮╭─(4)─Host─────────────────────╮
-│ CPU          47.2%  peak 92  avg 38││ > top (live)           spawn │
-│ ⣀⣠⣴⣾⣿⣷⣄⡀⣀⣠⣶⣿⣿⣷⣄        ││   processes (snapshot)   tab │
-│ MEM                     24.1%     ││   uptime                 tab │
-│ ▂▃▃▄▄▄▅▅▅▅▆▆▆▆▆              ││                              │
-│ LOAD (1m)               0.56      │╰──────────────────────────────╯
-│ ▁▁▂▂▃▃▃▃▃▃                   │╭─(o)─Output───────────────────╮
-╰────────────────────────────────────╯│ PID  %CPU %MEM COMMAND       │
-                                       ╰──────────────────────────────╯
+╭─(1)─CPU──────────╮╭─(4)─Processes────‹ cpu↓ ›─╮╭─(7)─Host──────╮
+│ CPU        47.2% ││        cpu↓   mem comm     ││ > top (live)  │
+│ ⣀⣠⣴⣾⣿⣷⣄⡀⣀⣠⣶  ││ 240   50.0%  0.3% node     ││   processes   │
+│ MEM        24.1% ││ 404    2.2%  4.0% claude   ││   uptime      │
+│ ▂▃▃▄▄▅▅▅▆▆▆    ││ 166    2.1%  0.4% agent    │╰───────────────╯
+│ LOAD       0.56  │╰──────────────────1 of 20──╯╭─(o)─Output────╮
+│ ▁▁▂▂▃▃▃▃      ││ Selected: 240              ││ ...           │
+│                  ││ CPU  50.0%  ████████       ││               │
+╰──────────────────╯╰────────────────────────────╯╰───────────────╯
 ```
 
 ## What it shows
 
 This is the first demo with **no container at all**. It exercises the
 `metrics:` producer feature ([docs/metrics-producer.md](../../docs/metrics-producer.md)):
-a top-level `metrics:` block turns plain host commands into live hub data that
-the `stats` panel graphs — the same braille line-graphs that used to be
-docker-only.
+a top-level `metrics:` block turns plain host commands into live hub data —
+graphed by the `stats` panel and listed by the `table` panel, no plugin code.
 
-Three producers, each a one-line host command:
+Four producers, each a one-line host command:
 
-| Topic | Command (summarised) | Graph |
+| Topic | Command (summarised) | Rendered as |
 |---|---|---|
 | `host.cpu` | two `/proc/stat` samples → busy% | CPU line graph + meter |
 | `host.mem` | `free` → used% | Memory line graph + meter |
 | `host.load` | `/proc/loadavg` → 1-min load | Load line graph |
+| `host.proc` | `ps` top-by-CPU (pid/cpu/mem/comm) | **Processes table** |
 
-Plus three host actions: **top** (live process view in an embedded terminal
-tab), **processes** (a `ps` snapshot into the Output panel), and **uptime**.
+The **Processes** table lists the top processes, sorted by CPU (click the
+`‹ cpu↓ ›` control on its border to re-sort). Select a row and the **Selected**
+graph drills into that process's own CPU/memory history — the table feeds the
+graph via `select_from:`. Plus host actions: **top** (live view in a terminal
+tab), **processes** (a `ps` snapshot), and **uptime**.
 
 ## Requirements
 
@@ -55,9 +59,7 @@ Keys: `up`/`dn` select an action, `Enter` run, `h`/`l` move between panels,
 
 - **Per-core CPU**, network, or disk are natural next producers — see the
   worked examples in [docs/metrics-producer.md](../../docs/metrics-producer.md)
-  (`mpstat -P ALL` for per-core). A *browsable* per-core / process **table**
-  (like btop's process list) needs a table consumer that isn't built yet;
-  today a single-stream metric graphs with `row: _`, and a live process list
-  is the `top` tab.
+  (`mpstat -P ALL` for per-core). Per-core would drop straight into a second
+  `table` (row per core) the same way `host.proc` does.
 - Change a poll rate by editing `interval:` on a producer, or repoint a
   producer's `cmd:` at any command that prints a number.

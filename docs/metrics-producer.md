@@ -377,12 +377,15 @@ sys_cpu:
 `_resolveSelection` returns `panel.row` when `select_from` is absent.
 ~5 lines in `stats.js`, no new panel type.
 
-Explicitly **deferred to their own backlog items** (not this doc):
-a `gauge` panel (btop mem/swap bars — promote the existing `meterRow`
-in `stats-graph.js`), an aggregate / per-core overlay mode (STATS.md
-already lists this as deferred), and a live-sorted numeric process
-**table** consumer (the sort selector already shipped with the
-border-control facility).
+The live-sorted numeric process **table** consumer that browses a
+multi-row topic **shipped** — `type: table` (`js/panel/monitor/table.js`),
+the list sibling of this drill-down `stats` panel. Select a row in the
+table and a `stats` pane with `select_from: <table>` graphs it.
+
+Still **deferred to their own backlog items** (not this doc): a `gauge`
+panel (btop mem/swap bars — promote the existing `meterRow` in
+`stats-graph.js`) and an aggregate / per-core overlay mode (STATS.md
+already lists this as deferred).
 
 ## 10. Scope — v1 vs. deferred
 
@@ -406,7 +409,8 @@ border-control facility).
   v1 to keep the first cut to two modes.
 - **Live rate-stepping** via `refresh_ladder` + the `- Ns +` control
   (§7).
-- Consumer panels: `gauge`, aggregate/per-core, process table (§9).
+- Consumer panels: `gauge`, aggregate/per-core (§9). The process **table**
+  (`type: table`) shipped — see §9.
 
 ## 11. Worked examples
 

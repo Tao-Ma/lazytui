@@ -21,6 +21,7 @@ const BUILTIN_COMPONENTS = [
   require('../panel/navigator/files'),
   require('../panel/navigator/actions'),
   require('../panel/monitor/stats'),
+  require('../panel/monitor/table'),
   require('../panel/navigator/history'),
   require('../panel/navigator/groups'),
   require('../panel/fabric/ports-pane'),   // component-ports (dataflow fabric, P1.5)

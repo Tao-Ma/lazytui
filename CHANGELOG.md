@@ -8,6 +8,15 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **A sortable process table (`type: table`).** A new panel that lists the rows
+  of a hub topic as a columnar, sortable, selectable table — a live process list
+  in the btop mould. It reads the same `metrics:` topics the graphs do, formats
+  each cell by its schema type (`percent`/`bytes`/`number`), and orders by a
+  column via the on-border `‹ col↓ ›` sort selector (or a config `sort:`
+  default). Select a row and a `stats` pane pointed at it with `select_from:`
+  drills into that row's history — pick a process, watch its CPU/memory graph.
+  The host-monitor demo now ships a `Processes` table + drill-down. See
+  docs/LAYOUT.md.
 - **Declare a live metric from any shell command — no code.** A new top-level
   `metrics:` config block turns a command into a hub data source: poll it on an
   interval, pull numbers from its stdout (a regex per field, or whitespace/tab

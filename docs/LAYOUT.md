@@ -292,6 +292,25 @@ filesystem; select with `source:` (`declared` / `filesystem` / `both` /
 - `PgUp`/`PgDn` scrolls content
 - Bottom border shows scroll position when content overflows
 
+### Monitor panels (hub consumers)
+
+Two panels render a `metrics:` hub topic (or any producer's topic — see
+[metrics-producer.md](metrics-producer.md)); both scale/format by the topic's
+schema column types.
+
+**stats** — the DRILL-DOWN. Multi-row braille line-graphs of ONE row's history:
+the row selected via `select_from: <panel>`, or a fixed `row:` for a
+single-stream topic. `metrics:`, `window:`, `graph:`, `graph_color:` — see
+[STATS.md](STATS.md).
+
+**table** — the LIST. Lists a topic's rows as a sorted, selectable, columnar
+table (btop's process list). Config: `topic:`, `columns:` (schema columns to
+show, in order — the row key is the leading identity column), `sort:` (default
+column; desc for a metric). Cells format by schema type; the on-border
+`‹ col↓ ›` sort selector cycles the sort column. Returns string row keys, so a
+`stats` pane can use it as a `select_from` source — select a row, graph its
+history.
+
 ## Navigation
 
 | Key | Action |

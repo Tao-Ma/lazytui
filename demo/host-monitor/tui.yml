@@ -57,6 +57,19 @@ metrics:
     schema:
       columns: { load: { type: number } }
 
+  # Top processes by CPU — a multi-row topic (one row per pid) for the process
+  # TABLE. pcpu/pmem are percentages; comm is the command name.
+  host.proc:
+    cmd: "ps -eo pid=,pcpu=,pmem=,comm= --sort=-pcpu | head -20"
+    interval: 3000
+    extract:
+      mode: columns
+      row_key: pid
+      fields: { pid: 0, cpu: 1, mem: 2, comm: 3 }
+    schema:
+      row_key: pid
+      columns: { cpu: { type: percent }, mem: { type: percent }, comm: { type: string } }
+
 # --- Panels --------------------------------------------------------------------
 panels:
   actions:
@@ -77,20 +90,38 @@ panels:
     title: Load (1m)
     topic: host.load
     row: _
+  # The process TABLE — lists host.proc's rows, sorted by CPU, selectable.
+  procs:
+    type: table
+    title: Processes
+    topic: host.proc
+    columns: [cpu, mem, comm]   # schema columns to show; pid is the row identity
+    sort: cpu                    # default sort (desc for a metric)
+  # Drill-down: the CPU/MEM history of the process SELECTED in the table.
+  procsel:
+    type: stats
+    title: Selected
+    topic: host.proc
+    select_from: procs
+    metrics: [cpu, mem]
   detail:
     type: detail
     title: Output
 
 layout:
   columns:
-    - width: 46
+    - width: 34
       panels:
         - cpu
         - mem
         - load
+    - width: 46
+      panels:
+        - procs
+        - { tabs: [procsel], height: 45% }
     - panels:
         - actions
-        - { tabs: [detail], height: 45% }
+        - { tabs: [detail], height: 50% }
 
 # --- Host actions --------------------------------------------------------------
 groups:
