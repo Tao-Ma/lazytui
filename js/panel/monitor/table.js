@@ -258,6 +258,11 @@ function render(panel, w, h, slice, opts) {
     width: w, height: h, lines,
     title, hotkey: panel.hotkey, panelType: 'table', focused, chrome,
     windowed: true,
+    // The sticky header sits at inner row 0, ahead of the data rows. Declare it
+    // so the click→row mapping skips it (a click on a data row selects THAT row,
+    // not the one below). Paired with `scrollOffset` (the header-aware clamped
+    // scroll we painted with), the click maps to the row actually on screen.
+    headerRows: 1,
     count: [sel + 1, rows.length],
     scrollOffset: scroll,
     topControls: ctl.filter(c => (c.spec.slot || 'top') !== 'bottom').map(c => c.text),

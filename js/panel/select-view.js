@@ -50,11 +50,17 @@ function currentPaneId() { return _current; }
  *  many LEADING captured rows are selectable content when the window carries
  *  non-content rows after them — the agent pane's status/input chrome and its
  *  provisional streaming preview (extraction reads `slice.transcript`, which
- *  the preview is not part of). null = every captured row is content. */
-function recordContent(paneId, lines, scroll, windowed, selectableRows, fullLines) {
+ *  the preview is not part of). null = every captured row is content.
+ *  `headerRows` = leading NON-item chrome rows a pane painted INSIDE its inner
+ *  region but OUTSIDE its getItems list (e.g. the table panel's sticky column
+ *  header at inner row 0). The click→row mapping subtracts it so a click on a
+ *  data row selects THAT row, not the one below it. 0 for panes without such a
+ *  header. */
+function recordContent(paneId, lines, scroll, windowed, selectableRows, fullLines, headerRows) {
   if (!paneId) return;
   _content.set(paneId, { lines: lines || [], scroll: scroll || 0, windowed: !!windowed,
     selectableRows: selectableRows == null ? null : selectableRows,
+    headerRows: headerRows | 0,
     // The full display-space buffer for extraction on windowed panes that apply
     // a per-line display transform (text-view right-aligns status rows), so a
     // yank reads the text at the columns the click captured — not the stored

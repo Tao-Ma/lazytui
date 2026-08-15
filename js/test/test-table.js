@@ -113,4 +113,93 @@ describe('[table] render — sorted, columnar (real paint)', () => {
   });
 });
 
+// A click on a table row must select THAT row — not the one below it. The
+// sticky header sits at inner row 0 outside getItems, so the generic click→row
+// mapping (`itemRow = my - b.y - 1`) was off by the header row, selecting the
+// next process down. When the list overflows, the model scroll (header-unaware,
+// clamped to innerH) also diverged from the painted scroll (innerH-1) — the two
+// errors CANCELLED while scrolled but not at the top, so the bug only showed at
+// scroll 0. The fix maps clicks through the painted geometry (headerRows +
+// captured scroll); this pins both regimes. See input.js:_rowIndexAt.
+describe('[table] click selects the row under the cursor (header-aware)', () => {
+  const nav = require('../panel/nav-state');
+  const rq = require('../leaves/infra/render-queue');
+
+  // Decode the painted frame into screen-row → text, so a test can find the
+  // ACTUAL screen y a given process rendered at (paint uses absolute cursor
+  // moves, not '\n' between rows). Forces a full repaint first (cell-diff would
+  // otherwise emit only changed rows).
+  function screenGrid() {
+    let raw = '';
+    const orig = process.stdout.write.bind(process.stdout);
+    process.stdout.write = (s) => { raw += s; return true; };
+    rq.forceFullRepaint();
+    sm.render();
+    process.stdout.write = orig;
+    const rows = {}; let cy = 1, cx = 1, i = 0;
+    while (i < raw.length) {
+      if (raw[i] === '\x1b') {
+        const mm = /^\x1b\[([0-9;]*)([A-Za-z])/.exec(raw.slice(i));
+        if (mm) { const p = mm[1].split(';').map(Number); if (mm[2] === 'H') { cy = p[0] || 1; cx = p[1] || 1; } i += mm[0].length; continue; }
+        i++; continue;
+      }
+      if (raw[i] === '\n') { cy++; cx = 1; i++; continue; }
+      rows[cy] = rows[cy] || []; rows[cy][cx] = raw[i]; cx++; i++;
+    }
+    const byY = {};
+    for (const y of Object.keys(rows)) {
+      const m = /proc\d+/.exec((rows[y] || []).join(''));
+      if (m) byY[Number(y)] = m[0];
+    }
+    return byY;   // screen-y → 'procN' visible there
+  }
+
+  function seed(paneId, n) {
+    const paneCfg = { id: paneId, type: 'table', title: 'P', config: { topic: 't', columns: ['cpu'] } };  // native order
+    sm.bootFresh({
+      groups: { g: { label: 'G', containers: [], actions: { a: { cmd: 'echo', label: 'A' } } } },
+      layout: { pool: { [paneId]: paneCfg }, columns: [{ panels: [paneCfg] }] },
+    });
+    const series = {};
+    for (let i = 0; i < n; i++) series['proc' + i] = [{ cpu: i }];
+    setMetric('t', series, SCHEMA);
+  }
+
+  it('clicking a data row selects the process shown there (fits in viewport)', () => {
+    seed('procs', 10);
+    sm.capture(() => sm.render());
+    const grid = screenGrid();
+    const items = require('../panel/api').getItems('procs');
+    let checked = 0;
+    for (const y of Object.keys(grid).map(Number)) {
+      nav.setSel('procs', 5);                    // sentinel, distinct from most rows
+      sm.capture(() => sm.handleMouse('press', 3, y));
+      const sel = nav.getSel('procs');
+      eq(items[sel], grid[y], `click screen-row ${y} selects ${grid[y]} (shown there), not a neighbour`);
+      checked++;
+    }
+    assert(checked >= 5, 'exercised several data rows');
+  });
+
+  it('clicking a data row selects the process shown there (list scrolled/overflowing)', () => {
+    seed('big', 40);
+    sm.resize(80, 12);                           // short pane → list overflows
+    nav.setSel('big', 30);                       // scroll well down (both clamps engaged)
+    sm.capture(() => sm.render());
+    const grid = screenGrid();
+    const items = require('../panel/api').getItems('big');
+    let checked = 0;
+    for (const y of Object.keys(grid).map(Number)) {
+      nav.setSel('big', 30);                      // restore the scrolled context
+      rq.forceFullRepaint();
+      sm.capture(() => sm.render());
+      sm.capture(() => sm.handleMouse('press', 3, y));
+      const sel = nav.getSel('big');
+      eq(items[sel], grid[y], `scrolled: click screen-row ${y} selects ${grid[y]} (shown there)`);
+      checked++;
+    }
+    assert(checked >= 3, 'exercised several scrolled data rows');
+  });
+});
+
 report();

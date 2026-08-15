@@ -347,6 +347,26 @@ function _dispatchActiveModeMouse(kind, mx, my, model) {
   return false;
 }
 
+// Map a click's screen-y to a list pane's getItems INDEX, through the geometry
+// the pane actually PAINTED (recorded in select-view). `my - b.y - 1` drops the
+// top border; a pane that drew leading chrome outside its item list (the table
+// panel's sticky header at inner row 0) records `headerRows`, dropped here too.
+// The scroll offset likewise comes from the paint for a header pane — it
+// self-windows and re-clamps its own scroll (the model's getScroll is header-
+// unaware, so it diverges by the header row when the list overflows); the
+// captured scrollOffset is exactly what was drawn. Header-less panes keep
+// getScroll (identical to what they painted — every navigator passes
+// scrollOffset: getScroll), so their mapping is unchanged. Returns the row
+// index (>= 0) or -1 when the click lands above the first item (border/header).
+function _rowIndexAt(paneId, b, my) {
+  const cap = require('../../panel/select-view').contentFor(paneId);
+  const header = (cap && cap.headerRows) || 0;
+  const itemRow = my - b.y - 1 - header;
+  if (itemRow < 0) return -1;
+  const scroll = header ? (cap ? cap.scroll : getScroll(paneId)) : getScroll(paneId);
+  return itemRow + scroll;
+}
+
 // v0.6.4 Theme F Phase 4 — side-effect-free hit resolution for a discrete
 // button gesture: which pane + which row sits under the cursor. Mirrors the
 // click body arm's geometry but WITHOUT its chrome/tab/detail/text-select
@@ -361,13 +381,10 @@ function _resolveBodyHit(mx, my) {
     if (!b) continue;
     if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
     let navIdx = -1;
-    const itemRow = my - b.y - 1;  // -1 for top border
-    if (itemRow >= 0) {
-      const def = getPanelDef(p.type);
-      if (def && typeof def.getItems === 'function') {
-        const idx = itemRow + getScroll(p.paneId);
-        if (idx < getItems(p.paneId).length) navIdx = idx;
-      }
+    const def = getPanelDef(p.type);
+    if (def && typeof def.getItems === 'function') {
+      const idx = _rowIndexAt(p.paneId, b, my);
+      if (idx >= 0 && idx < getItems(p.paneId).length) navIdx = idx;
     }
     return { paneId: p.paneId, navIdx };
   }
@@ -407,8 +424,8 @@ function _resolveContextAt(mx, my) {
     // Feeds the context menu's "Copy selection" / "Send selection to port".
     const psel = require('../../panel/select-view');
     const selectionText = psel.selectedTextFor(p.paneId) || psel.selectedText() || null;
-    const itemRow = my - b.y - 1;  // -1 for top border
     if (route.isViewerKind(p.paneId)) {   // U2f — content-viewer kinds (info / text-view)
+      const itemRow = my - b.y - 1;  // -1 for top border
       const d = getInstanceSlice(p.paneId);
       // The active content instance holds its displayed buffer on slice.lines.
       const lines = (d && Array.isArray(d.lines)) ? d.lines : [];
@@ -418,10 +435,10 @@ function _resolveContextAt(mx, my) {
     }
     const def = getPanelDef(p.type);
     let itemLabel = null;
-    if (itemRow >= 0 && def && typeof def.getItems === 'function') {
-      const idx = itemRow + getScroll(p.paneId);
+    if (def && typeof def.getItems === 'function') {
+      const idx = _rowIndexAt(p.paneId, b, my);   // header-aware, painted-scroll
       const items = getItems(p.paneId);
-      if (idx < items.length) itemLabel = _itemText(def, items[idx]);
+      if (idx >= 0 && idx < items.length) itemLabel = _itemText(def, items[idx]);
     }
     return { paneKind: p.type, lineText: null, itemLabel, selectionText };
   }
@@ -773,15 +790,13 @@ function handleMouse(kind, x, y) {
     // its own cascade (skipInfo) to avoid a double-fire — the first
     // against the pre-cursor-write (stale) item. Off-row clicks keep
     // focus_set's show_selected_info so Info still refreshes on focus.
-    const itemRow = my - b.y - 1;  // -1 for top border
+    // v0.6.4 Theme A Phase 5 — scroll + items for THIS pane (p.paneId); the
+    // mapping is header-aware + reads the painted scroll (see _rowIndexAt).
     let navIdx = -1;
-    if (itemRow >= 0) {
-      const def = getPanelDef(p.type);
-      if (def && typeof def.getItems === 'function') {
-        // v0.6.4 Theme A Phase 5 — scroll + items for THIS pane (p.paneId).
-        const idx = itemRow + getScroll(p.paneId);
-        if (idx < getItems(p.paneId).length) navIdx = idx;
-      }
+    const def = getPanelDef(p.type);
+    if (def && typeof def.getItems === 'function') {
+      const idx = _rowIndexAt(p.paneId, b, my);
+      if (idx >= 0 && idx < getItems(p.paneId).length) navIdx = idx;
     }
     // v0.6.4 Theme F Phase 2 — the spatial resolution above stays here
     // (which pane, which row); the focus + select now route through the

@@ -34,6 +34,15 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   also gained a `row:` field so a single-stream metric renders without another
   panel to select from. See docs/metrics-producer.md.
 
+### Fixed
+
+- **Clicking a row in the process table selected the wrong process.** The table's
+  sticky column header sits at the top of the pane, ahead of the data rows, so a
+  click landed one row too low — you clicked a process and its neighbour below got
+  selected (and the `select_from` drill-down graphed the wrong one). Clicks now map
+  through the painted layout (header + scroll offset), so the row you click is the
+  row that selects — whether the list fits on screen or is scrolled.
+
 ## [0.6.17] — 2026-08-15
 
 ### Added
