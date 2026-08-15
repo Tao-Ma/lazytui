@@ -154,7 +154,7 @@ layout:
       panels:
         - cpubars                       # btop-style CPU bar chart (gauge) — visible on boot
         - procs                         # process table (same host.proc topic, list view)
-        - { tabs: [net], height: 30% }  # network throughput table (counter→rate)
+        - { tabs: [net], heightPct: 30 }  # network throughput table (counter→rate)
     - panels:
         - procsel
         - actions

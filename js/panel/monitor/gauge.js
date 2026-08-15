@@ -110,7 +110,9 @@ function init(paneId, seed) {
     column: pd.column || null,
     label: pd.label || null,
     max: (typeof pd.max === 'number' && pd.max > 0) ? pd.max : null,
-    barMax: (typeof pd.bar_width === 'number' && pd.bar_width > 0) ? pd.bar_width : 20,   // bounded meter (btop-style)
+    // bounded meter (btop-style). FLOOR to a whole number of cells — a fractional
+    // width desyncs the two render paths (`repeat` floors, the fill loop doesn't).
+    barMax: (typeof pd.bar_width === 'number' && pd.bar_width >= 1) ? Math.floor(pd.bar_width) : 20,
     sortDir: pd.sort_dir === 'asc' ? 1 : -1,   // bars sort by metered value; desc default
     // The cursor/scroll live in this slice's nav entry (getSel/getScroll read it
     // via mnav.entryOf), so the click/keyboard nav_select can move the selection.
@@ -206,8 +208,8 @@ function render(panel, w, h, slice, opts) {
   if (type === 'percent') denom = 100;
   else if (slice.max) denom = slice.max;
   else {
-    const finite = rows.map(valueOf).filter(Number.isFinite);
-    denom = finite.length ? Math.max(1, ...finite) : 1;
+    // reduce, not Math.max(...spread) — a huge topic would blow the arg limit.
+    denom = rows.reduce((m, rk) => { const v = valueOf(rk); return Number.isFinite(v) && v > m ? v : m; }, 1);
   }
 
   // Widths: label left (capped + truncated), value right (fixed). The bar is a
@@ -215,7 +217,8 @@ function render(panel, w, h, slice, opts) {
   // sprawl across a wide pane; it still shrinks to fit a narrow one. The row is
   // padded to full width after the value so the selection highlight spans it.
   // Label width from ALL rows (stable while scrolling), not just the window.
-  const maxLabel = Math.max(3, ...rows.map(rk => visibleLen(esc(labelText(rk)))));
+  // reduce, not Math.max(...spread) — a huge topic would blow the arg limit.
+  const maxLabel = rows.reduce((m, rk) => Math.max(m, visibleLen(esc(labelText(rk)))), 3);
   const labelW = Math.max(3, Math.min(16, maxLabel));
   const avail = innerW - labelW - _VALUE_W - 2;               // two single-space gaps
   const barW = Math.max(1, Math.min(slice.barMax || 20, avail));

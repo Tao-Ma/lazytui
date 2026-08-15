@@ -198,6 +198,15 @@ describe('[gauge] click uses the painted scroll after a row-shrink (divergence r
 
 // _meterFill: whole-cell fill count (no partial half-blocks — those show the
 // terminal bg through their empty half). Proportional to value, clamped.
+describe('[gauge] init — bar_width floored to whole cells', () => {
+  it('floors a fractional bar_width (else the two render paths desync)', () => {
+    eq(gauge.init('g', { paneDef: { topic: 't', column: 'c', bar_width: 20.5 } }).barMax, 20);
+    eq(gauge.init('g', { paneDef: { topic: 't', column: 'c', bar_width: 12 } }).barMax, 12);
+    eq(gauge.init('g', { paneDef: { topic: 't', column: 'c' } }).barMax, 20);            // default
+    eq(gauge.init('g', { paneDef: { topic: 't', column: 'c', bar_width: 0.5 } }).barMax, 20);  // <1 → default
+  });
+});
+
 describe('[gauge] _meterFill — fill cells (whole-cell, proportional)', () => {
   const f = gauge._meterFill;
   it('rounds value×width to whole cells', () => { eq(f(0.5, 10), 5); eq(f(0, 10), 0); eq(f(1, 10), 10); eq(f(0.04, 10), 0); eq(f(0.06, 10), 1); });
