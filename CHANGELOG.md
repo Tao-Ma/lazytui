@@ -30,6 +30,16 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   status line instead, keeping the pane border clean; `off` hides them (the keys
   still work). Shown in exactly one place, never both. Global-only, in
   `~/.config/lazytui/config.yml` — see docs/global-config.md.
+- **Cancel a running command from its status chip.** The live action-status bar
+  now ends in a clickable red ` ✗ cancel ` block that SIGTERMs the job — there
+  was previously no user-facing way to stop a running command (e.g. a
+  `docker logs -f` tail). The completion stamp also shows the exit value now:
+  `✓ 0` on success, `✗ N` for a non-zero code, `⊗ SIGTERM` when killed.
+- **The action-status bar is reverse-filled.** Each segment is now a solid-color
+  block — the status glyph on its state color (green / red / yellow) under a dark
+  ink, the duration and finish time on a neutral fill — butted together with no
+  divider and floated flush-right. The colors track the active `:theme`. (Adds a
+  `chip_ink` theme slot and `black` to the named-color set; no Nerd Font needed.)
 
 ### Fixed
 
@@ -46,6 +56,20 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   `\x1b[27u` until a `reset`). These signals are now trapped: the terminal is
   restored and the process exits `128+signum`. `SIGKILL` remains uncatchable —
   only a shell-side `reset` recovers that.
+- **Stored transcript content recolors on `:theme`.** Switching color themes now
+  repaints already-printed output — the completion status chip and the
+  `Cancelled.` / `Killed` footers — instead of leaving it in the previous
+  palette until the next run produced fresh output. (The frame diff compares
+  markup, which is byte-identical across a theme switch, so a theme change now
+  forces a full repaint.)
+- **Viewing output no longer flags the layout as “unsaved.”** Opening a file,
+  tailing logs (`L`), opening a docker shell, jumping via nav-history, or the
+  viewer auto-showing Info as you navigate all switch a content tab — which used
+  to mark the layout dirty and nag `• unsaved (:save-layout)`. Switching or
+  minting a tab is transient view state now (a minted tab isn't even saved), so
+  only *structural* edits — add/remove column, pool hide/show/swap, collapse,
+  drag/reorder — mark the layout dirty. `:save-layout` still persists the active
+  tab.
 
 ### Changed
 

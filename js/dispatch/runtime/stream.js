@@ -179,7 +179,7 @@ function killJob(jobId, opts = {}) {
       batch.push(`[warning]Killed previous: ${esc(ctx.headerLabel || '<stream>')}.[/]`);
       appendDetailLines(batch);
     }
-    // Powerline stamp for the preempt outcome (pre-release review) — a killed job is a
+    // Reverse-filled status stamp for the preempt outcome (pre-release review) — a killed job is a
     // ⊗; routes to the job's own instance (routed) or the Transcript (unrouted),
     // so all three termination seams (close/error/killJob) mark consistently.
     // Emitted after the footer text, before the routed re-run hint (mirrors the
@@ -410,7 +410,7 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
     rec.append(`Error: ${err.message}`);
     rec.end('error');   // stamp endedAt so the chip's duration/time resolve
     appendDetailLine(`[error]Error: ${esc(err.message)}[/]`, tabInstId);
-    // Same powerline stamp as the normal close path (pre-release review) so a spawn
+    // Same reverse-filled status stamp as the normal close path (pre-release review) so a spawn
     // failure is marked like every other outcome. A spawn error carries no exit
     // code/signal → renders `✗ ?`; the Error: line above carries the detail.
     emitStatusChip(

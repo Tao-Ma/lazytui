@@ -98,9 +98,9 @@ shells are transparent — only the multiplexer layer matters.)
 
 ### action_status
 
-A reverse-filled (powerline-style), right-aligned status bar at the end of an
-action's output pane — the routed tab of a `tab:`-routed action and the
-Transcript. It shows, for the job that produced that pane's output:
+A reverse-filled, right-aligned status bar at the end of an action's output
+pane — the routed tab of a `tab:`-routed action and the Transcript. It shows,
+for the job that produced that pane's output:
 
 - a status glyph — `✓ 0` (exit 0), `✗ N` (non-zero, with the code), `✗ ?` (no
   exit code, e.g. a spawn failure), `⊗ SIG` (killed by signal), or a braille
@@ -113,8 +113,8 @@ red / yellow) under a dark ink, then the duration and time on the neutral (foote
 color. The blocks butt together with **no divider** — the fill color change
 separates them — and the bar floats flush-right with a transparent left, e.g.
 ` ✓ 0  4.1s  14:32:07 ` (imagine each group filled). The colors track the active
-`:theme`. No Nerd Font is required (the fills are plain background colors; only
-the optional powerline `` arrow separators would need one).
+`:theme`. No Nerd Font is required — the fills are plain background colors and
+there are no separator glyphs at all.
 
 While the action runs, a **live** line floats at the end of the output (spinner
 + ticking duration + a clickable ` ✗ cancel ` block that SIGTERMs the job) and is

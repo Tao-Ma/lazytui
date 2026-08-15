@@ -178,7 +178,7 @@ describe('[multi-job] routed + unrouted independent', () => {
   });
 });
 
-// Review [16] SEAM — the powerline completion chip was originally wired ONLY
+// Review [16] SEAM — the reverse-filled completion chip was originally wired ONLY
 // into the normal `close` path, so a preempt (`killJob`) exit was left silently
 // unmarked. A non-silent `killJob` now routes a killed job through the shared
 // `emitStatusChip` seam, exactly like a clean close. This drives a DIRECT

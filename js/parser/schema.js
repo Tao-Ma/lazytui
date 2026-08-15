@@ -28,7 +28,7 @@ const VALID_TOP_KEYS    = new Set(['project_dir', 'groups', 'vars', 'helpers', '
 // global file warns and is ignored — a global file must never brick a project.
 const GLOBAL_TOP_KEYS = new Set(['theme', 'keys', 'keymap', 'mouse', 'context-menu', 'selection', 'editor', 'color_depth', 'keyboard_protocol', 'action_status', 'quick_keys']);
 
-// action-status — the powerline-style command-finish status line on a
+// action-status — the reverse-filled command-finish status line on a
 // text-view output pane. `segments` are the fields (subset + order); `time` =
 // finish clock time.
 const VALID_ACTION_STATUS_SEGMENTS = new Set(['status', 'duration', 'time']);
