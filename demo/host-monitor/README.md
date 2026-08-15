@@ -17,6 +17,10 @@ code.
 ╰──────────────────╯╰────────────────────────────╯╰───────────────╯
 ```
 
+*(Simplified sketch. The shipped layout adds a **CPU bars** tab on the Processes
+pane — a `gauge` view of the same topic — and a **Network** throughput table
+below it; the **Selected** drill-down sits in the right column.)*
+
 ## What it shows
 
 This is the first demo with **no container at all**. It exercises the

@@ -35,6 +35,7 @@ const {
   getSel, getScroll, getItems: apiGetItems,
 } = require('../api');
 const { truncate } = require('../../leaves/render/draw');
+const { fmt: _fmt } = require('../../leaves/metrics/format');   // shared compact cell formatter (see table.js)
 const { meterRow } = require('./stats-graph');
 const mnav = require('../../leaves/wm/nav');
 
@@ -65,32 +66,17 @@ function _meterColumn(slice, metric) {
   return num ? num[0] : null;
 }
 
-// Format a value by its schema type — the compact, width-constrained style the
-// `table` panel uses for cells (a gauge's value label is the same kind of cell).
-// Kept local so the two panels stay decoupled; see table.js `_fmt`.
-function _fmt(v, type) {
-  if (type === 'string') return v == null ? '' : String(v);
-  if (!Number.isFinite(v)) return '—';
-  if (type === 'percent') return `${v.toFixed(1)}%`;
-  if (type === 'bytes' || type === 'rate') {
-    const suf = type === 'rate' ? '/s' : '';
-    if (v < 1024) return `${Math.round(v)}B${suf}`;
-    if (v < 1024 ** 2) return `${(v / 1024).toFixed(0)}K${suf}`;
-    if (v < 1024 ** 3) return `${(v / 1024 ** 2).toFixed(1)}M${suf}`;
-    return `${(v / 1024 ** 3).toFixed(1)}G${suf}`;
-  }
-  return Number.isInteger(v) ? String(v) : v.toFixed(1);
-}
-
 const _VALUE_W = 8;   // right-aligned value column (e.g. "999.9M/s")
 
 // --- Component (TEA) half ---
 
 function subscriptions(paneDef, _model) {
   if (!paneDef || !paneDef.topic) return [];
-  // Same Sub the stats/table panels declare — retains `window` samples and
-  // throttle-repaints on publish. Multiple panes on one topic share one mirror.
-  return [{ kind: 'metrics-mirror', topic: paneDef.topic, window: paneDef.window || 40 }];
+  // Same Sub the stats/table panels declare — throttle-repaints on publish.
+  // A gauge only reads the LATEST sample, so window 1 by default; when a gauge
+  // shares a topic with a stats/table pane the mirror's `merge` takes the max
+  // window, so a graph pane isn't starved.
+  return [{ kind: 'metrics-mirror', topic: paneDef.topic, window: paneDef.window || 1 }];
 }
 
 function init(paneId, seed) {

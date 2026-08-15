@@ -127,7 +127,9 @@ see [metrics-producer.md](metrics-producer.md).
 scaling and `unit` for value formatting:
 
 - `percent` — fixed 0–100 axis. "30% CPU" reads visually as "around a third."
-- `bytes` / `number` — local-max axis (0 to max sample in the window).
+- `bytes` / `number` / `rate` — local-max axis (0 to max sample in the
+  window). (`rate` is a per-second value — a producer's `counter`
+  derivation, e.g. net/disk throughput — formatted as `B/s`.)
   The graph shows shape-of-change; idle and busy containers both get
   rows that fill. Absolute scale (e.g. `mem` vs. `memLimit`) is
   available in the row's data and surfaces via the existing detail

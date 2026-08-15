@@ -185,7 +185,10 @@ function validateQuickKeys(v) {
 // throw here (consistent with every other project section) — runtime command
 // failures degrade softly at poll time (execAsync never rejects; a mis-parse
 // renders as '—'), that's a separate concern.
-const VALID_METRICS_KEYS = new Set(['cmd', 'interval', 'timeout', 'focus_gate', 'refresh_ladder', 'extract', 'schema']);
+// NOTE: `refresh_ladder` is NOT accepted here yet — the metrics-poll kind does
+// not consume it (only the docker pane does). Accepting it would be a validated
+// no-op; it returns when live rate-stepping wires it (metrics-producer.md §7).
+const VALID_METRICS_KEYS = new Set(['cmd', 'interval', 'timeout', 'focus_gate', 'extract', 'schema']);
 const VALID_EXTRACT_KEYS = new Set(['mode', 'fields', 'delimiter', 'skip', 'row_key']);
 const VALID_EXTRACT_MODES = new Set(['regex', 'columns']);
 // Advisory column types (HUB.md §16). A closed set so a typo (`strng`) is caught

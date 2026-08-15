@@ -123,7 +123,6 @@ entry defaults to `number`.
 | `interval` | no | `2000` | ms between a poll completing and the next starting (polls are sequential — §4.1) |
 | `timeout` | no | `min(interval, 5000)` | ms; SIGTERM a hung poll |
 | `focus_gate` | no | `true` | skip the exec while `model.focused === false` (mirrors docker) |
-| `refresh_ladder` | no | — | `- Ns +` step stops; enables live rate-stepping (§7, fast-follow) |
 | `extract.mode` | yes | — | `regex` \| `columns` |
 | `extract.fields` | yes | — | field → capture (regex) or column index (columns) |
 | `extract.delimiter` | columns | `whitespace` | `whitespace` \| `tab` \| any literal |
@@ -185,6 +184,11 @@ declares (v0.6.6 Finding B) throttle-samples the hub into the model, so
 share nothing but the topic string.
 
 ### 4.1 The `metrics-poll` kind (shape)
+
+> This sketch shows the base shape only. The **counter→rate** additions (§6.1) —
+> `token.prev` as a `Map<rowKey,{sample,t}>`, the `counter`→`rate` schema rewrite
+> before `defineTopic`, and publishing the derived `Δ/Δt` — are omitted here for
+> clarity; see §6.1 for the shipped form.
 
 ```js
 'metrics-poll': {
@@ -473,8 +477,8 @@ metrics:
       columns: { busy: { type: percent, unit: '%' } }
 ```
 
-Top processes (multi-row table — feeds a future process panel, and the
-`stats` drill-down today):
+Top processes (multi-row table — feeds the process table (`type: table`) and
+the gauge (`type: gauge`), plus the `stats` drill-down):
 
 ```yaml
 metrics:

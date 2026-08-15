@@ -45,6 +45,7 @@ const {
   getItems: apiGetItems, borderControlsFor,
 } = require('../api');
 const { truncate } = require('../../leaves/render/draw');
+const { fmt: _fmt } = require('../../leaves/metrics/format');   // shared compact cell formatter (see gauge.js)
 const mnav = require('../../leaves/wm/nav');
 const { sortControlText, sortControlHits, NONE_LABEL, ASC, DESC } = require('../../leaves/render/sort-control');
 
@@ -69,21 +70,6 @@ function _columns(panel, metric) {
 function _typeOf(metric, col) {
   const c = metric && metric.schema && metric.schema.columns && metric.schema.columns[col];
   return (c && c.type) || 'number';
-}
-
-// Format one cell by its schema type. Numbers → compact; string → as-is.
-function _fmt(v, type) {
-  if (type === 'string') return v == null ? '' : String(v);
-  if (!Number.isFinite(v)) return '—';
-  if (type === 'percent') return `${v.toFixed(1)}%`;
-  if (type === 'bytes' || type === 'rate') {
-    const suf = type === 'rate' ? '/s' : '';   // `rate` = a per-second byte rate (counter derivation)
-    if (v < 1024) return `${Math.round(v)}B${suf}`;
-    if (v < 1024 ** 2) return `${(v / 1024).toFixed(0)}K${suf}`;
-    if (v < 1024 ** 3) return `${(v / 1024 ** 2).toFixed(1)}M${suf}`;
-    return `${(v / 1024 ** 3).toFixed(1)}G${suf}`;
-  }
-  return Number.isInteger(v) ? String(v) : v.toFixed(1);
 }
 
 const _NUM_W = 7;   // fixed width for a value column (right-aligned)

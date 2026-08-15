@@ -155,4 +155,44 @@ describe('[gauge] click selects the bar under the cursor (no header → no off-b
   });
 });
 
+// Regression: a gauge is a WINDOWED self-slicing pane (like the table) — it
+// re-clamps its own scroll at render but the model getScroll isn't re-clamped to
+// the list bounds, so getScroll diverges on a resize / row-shrink while scrolled.
+// The click→row mapping must read the PAINTED scroll (the capture), not getScroll,
+// or every click lands on the wrong bar. See input.js `_rowIndexAt` (cap.windowed).
+describe('[gauge] click uses the painted scroll after a row-shrink (divergence regression)', () => {
+  // Fresh divergent setup per click (a prior click repaints + re-clamps scroll,
+  // collapsing the divergence — so each assertion rebuilds it), then ONE click.
+  function clickAfterShrink(screenY) {
+    const paneCfg = { id: 'bars', type: 'gauge', title: 'CPU', config: { topic: 'host.proc', column: 'v' } };
+    sm.bootFresh({
+      groups: { grp: { label: 'G', containers: [], actions: { a: { cmd: 'echo', label: 'A' } } } },
+      layout: { pool: { bars: paneCfg }, columns: [{ panels: [paneCfg] }] },
+    });
+    sm.resize(80, 12);                                   // short pane → the list overflows
+    const set = (n) => { const s = {}; for (let i = 0; i < n; i++) s['p' + i] = [{ v: i }]; setMetric('host.proc', s, { v: { type: 'number' } }); };
+    set(40); nav.setSel('bars', 39); sm.capture(() => sm.render());   // scroll to the bottom
+    set(20); sm.capture(() => sm.render());              // 20 procs exit → getScroll now stale/divergent
+    const grid = screenGrid();
+    const items = api.getItems('bars');
+    const cap = require('../panel/select-view').contentFor('pane-bars');
+    const m = /p\d+/.exec(grid[screenY] || '');          // the proc painted at this screen row
+    sm.capture(() => sm.handleMouse('press', 3, screenY));
+    return { shown: m ? m[0] : null, selected: items[nav.getSel('bars')], diverged: nav.getScroll('bars') !== (cap && cap.scroll) };
+  }
+
+  it('clicking a visible bar selects THAT bar even when getScroll has diverged', () => {
+    let checked = 0, diverged = false;
+    for (const y of [2, 5, 8, 10]) {
+      const r = clickAfterShrink(y);
+      if (r.shown == null) continue;                     // that screen row had no bar
+      diverged = diverged || r.diverged;
+      eq(r.selected, r.shown, `divergent gauge: click screen-row ${y} selects ${r.shown} (painted there)`);
+      checked++;
+    }
+    assert(checked >= 3, 'exercised several bars under divergence');
+    assert(diverged, 'the scenario actually produced a getScroll↔painted divergence (else the test is vacuous)');
+  });
+});
+
 report();

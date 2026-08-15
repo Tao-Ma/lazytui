@@ -351,19 +351,19 @@ function _dispatchActiveModeMouse(kind, mx, my, model) {
 // the pane actually PAINTED (recorded in select-view). `my - b.y - 1` drops the
 // top border; a pane that drew leading chrome outside its item list (the table
 // panel's sticky header at inner row 0) records `headerRows`, dropped here too.
-// The scroll offset likewise comes from the paint for a header pane — it
-// self-windows and re-clamps its own scroll (the model's getScroll is header-
-// unaware, so it diverges by the header row when the list overflows); the
-// captured scrollOffset is exactly what was drawn. Header-less panes keep
-// getScroll (identical to what they painted — every navigator passes
-// scrollOffset: getScroll), so their mapping is unchanged. Returns the row
-// index (>= 0) or -1 when the click lands above the first item (border/header).
+// The scroll offset comes from the paint for a WINDOWED pane — it self-slices +
+// re-clamps its own scroll at render (the model's getScroll is NOT re-clamped to
+// the list bounds, so it diverges on a resize / row-shrink while scrolled); the
+// captured scrollOffset is exactly what was drawn (table AND gauge). Non-windowed
+// panes keep getScroll — identical to what they painted (every navigator passes
+// scrollOffset: getScroll). Returns the row index (>= 0) or -1 when the click
+// lands above the first item (border/header).
 function _rowIndexAt(paneId, b, my) {
   const cap = require('../../panel/select-view').contentFor(paneId);
   const header = (cap && cap.headerRows) || 0;
   const itemRow = my - b.y - 1 - header;
   if (itemRow < 0) return -1;
-  const scroll = header ? (cap ? cap.scroll : getScroll(paneId)) : getScroll(paneId);
+  const scroll = (cap && cap.windowed) ? cap.scroll : getScroll(paneId);
   return itemRow + scroll;
 }
 
