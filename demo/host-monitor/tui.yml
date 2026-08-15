@@ -1,0 +1,115 @@
+# lazytui demo — host-monitor (a btop-style system monitor).
+#
+# The first demo with NO container at all: it monitors the HOST. Live CPU,
+# memory, and load graphs come entirely from the top-level `metrics:` block —
+# each entry polls a plain host command, extracts a number from stdout, and
+# publishes it to a hub topic that a `stats` panel graphs. No docker, no
+# framework code: the whole data path is declared here in YAML.
+#
+# This is what the metrics-producer feature (docs/metrics-producer.md) unlocks —
+# the same braille line-graphs that used to be docker-only, now over `/proc`,
+# `free`, and friends. See `.agent-prompt.md` for the intent and the two-step
+# loop this demo documents.
+#
+# Run:
+#   cd demo/host-monitor && ./run
+#   node js/app/tui.js demo/host-monitor/tui.yml     # equivalent, from repo root
+#
+# Requires: Linux (reads /proc/stat, /proc/loadavg), `free`, `awk`. `top` for
+# the live process tab.
+
+project_dir: ../..
+theme: monokai
+
+# --- Headless metric producers -------------------------------------------------
+# Each polls a command every `interval` ms and publishes parsed numbers to its
+# topic. All commands are cwd-independent one-liners (no script files needed).
+metrics:
+  # Overall CPU busy% — two /proc/stat aggregate samples 0.2s apart, busy =
+  # 100 - idle over the delta. POSIX sh; the shell expands $t1/$t2 into awk.
+  host.cpu:
+    cmd: |-
+      read c u n s i io r sr st rest </proc/stat; t1=$((u+n+s+i+io+r+sr+st)); i1=$((i+io)); sleep 0.2; read c u n s i io r sr st rest </proc/stat; t2=$((u+n+s+i+io+r+sr+st)); i2=$((i+io)); awk "BEGIN{d=$t2-$t1;di=$i2-$i1;if(d>0)printf \"%.1f\",100*(d-di)/d;else print 0}"
+    interval: 2000
+    extract:
+      mode: regex
+      fields: { cpu: '([0-9.]+)' }
+    schema:
+      columns: { cpu: { type: percent, unit: '%' } }
+
+  # Memory used% — from `free` (used / total * 100).
+  host.mem:
+    cmd: "free | awk '/^Mem/{printf \"%.1f\", $3/$2*100}'"
+    interval: 2000
+    extract:
+      mode: regex
+      fields: { mem: '([0-9.]+)' }
+    schema:
+      columns: { mem: { type: percent, unit: '%' } }
+
+  # 1-minute load average.
+  host.load:
+    cmd: "awk '{print $1}' /proc/loadavg"
+    interval: 2000
+    extract:
+      mode: regex
+      fields: { load: '([0-9.]+)' }
+    schema:
+      columns: { load: { type: number } }
+
+# --- Panels --------------------------------------------------------------------
+panels:
+  actions:
+    type: actions
+    title: Host
+  cpu:
+    type: stats
+    title: CPU
+    topic: host.cpu
+    row: _                 # single-stream topic → pin the one row (no select_from)
+  mem:
+    type: stats
+    title: Memory
+    topic: host.mem
+    row: _
+  load:
+    type: stats
+    title: Load (1m)
+    topic: host.load
+    row: _
+  detail:
+    type: detail
+    title: Output
+
+layout:
+  columns:
+    - width: 46
+      panels:
+        - cpu
+        - mem
+        - load
+    - panels:
+        - actions
+        - { tabs: [detail], height: 45% }
+
+# --- Host actions --------------------------------------------------------------
+groups:
+  host:
+    label: Host
+    containers: []
+    actions:
+      top:
+        label: top (live)
+        desc: Live process view in an embedded terminal tab. Quit with `q`.
+        type: spawn
+        cmd: top
+      ps:
+        label: processes (snapshot)
+        desc: Top 25 processes by CPU, one-shot into the Output panel.
+        type: run
+        cmd: ps -eo pid,pcpu,pmem,comm --sort=-pcpu | head -25
+      uptime:
+        label: uptime
+        desc: System uptime + load averages.
+        type: run
+        cmd: uptime

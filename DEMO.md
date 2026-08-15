@@ -86,10 +86,11 @@ demo, not part of the demo's runtime." A visitor who wants to *use*
 the demo can ignore it; a visitor who wants to *understand the loop*
 will notice the dot and read it.
 
-## Two demo shapes
+## Demo shapes
 
-Demos come in two shapes. Pick the shape *before* writing
-`.agent-prompt.md` — it determines what the producing agent writes.
+Demos come in a few shapes. Pick the shape *before* writing
+`.agent-prompt.md` — it determines what the producing agent writes. The
+first two are about Docker targets; the third has no container at all.
 
 ### Shape A — produce from scratch (postgres demo)
 
@@ -129,6 +130,28 @@ no docker-compose.yml in the demo itself.**
 The prompt focuses on: which upstream verbs to wrap, what
 introspection the lazytui surface should add on top (status, logs,
 test, etc.).
+
+### Shape C — wrap the host (host-monitor demo)
+
+There is no target project and no container: the demo monitors the
+**host machine** itself. The agent writes only `tui.yml` — no
+Dockerfile, no compose, no scripts. The data path is declared with the
+top-level `metrics:` block: each entry polls a host command (`/proc`,
+`free`, …) and publishes a number the `stats` panel graphs.
+
+**Use Shape C when:**
+
+- The thing you want to surface is the local machine or any data a plain
+  command prints — system stats, GPU load, a queue depth, a build's
+  progress number. Anything that emits a number on stdout can become a
+  live graph.
+- You want to show lazytui as a code-free monitor. See
+  [metrics-producer.md](docs/metrics-producer.md) for the producer
+  contract (extraction modes, schema types, worked examples).
+
+The prompt focuses on: which commands produce the numbers, how to make
+each one *instantaneous* (e.g. two `/proc/stat` samples for CPU busy%),
+and the metric type (`percent` / `bytes` / `number`) so axes scale right.
 
 ### Picking the shape — one minute of checking
 
