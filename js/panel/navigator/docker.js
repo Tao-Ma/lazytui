@@ -509,7 +509,9 @@ function installEffects(registerEffect) {
       title: label, config: { cmd, label },
       hint: { origin: 'docker-shell', item: eff.item },
     }));
-    host.dispatchMsg(host.wrap('layout', { type: 'set_active_tab', paneId: container, tabPoolId: poolId }));
+    // transient — a system bring-forward of the (session-transient) shell tab, not
+    // a user layout edit, so it must not mark the layout dirty.
+    host.dispatchMsg(host.wrap('layout', { type: 'set_active_tab', paneId: container, tabPoolId: poolId, transient: true }));
     host.dispatchMsg(host.wrap('layout', { type: 'focus_set', focus: container }));
     host.applyMsg({ type: 'terminal_enter' });
   });

@@ -52,9 +52,17 @@ const route = require('../panel/route');
  *  panel_collapse_toggle, set_active_tab) — keeps the snapshot timing
  *  and the dirty-flag write in lockstep. */
 function _commitArrange(slice, nextArrange, opts) {
-  const skipUndo = opts && opts.skipUndo;
+  // `transient` — a SYSTEM-driven activation that shows the user output by
+  // switching the active tab (the unrouted-stream auto-jump, opening a file /
+  // output as a content tab, a docker-shell bring-forward). It is NOT a user
+  // layout edit, so it neither pushes undo nor marks the layout dirty (the
+  // existing dirty state is preserved) — otherwise merely viewing logs nags
+  // `• unsaved (:save-layout)`. Deliberate user gestures (tab-strip click,
+  // :switch-tab, pane-menu pick) omit the flag and dirty + stay undoable.
+  const transient = opts && opts.transient;
+  const skipUndo = transient || (opts && opts.skipUndo);
   const withUndo = skipUndo ? slice : mfcCore.pushUndo(slice);
-  const committed = { ...withUndo, arrange: nextArrange, dirty: true };
+  const committed = { ...withUndo, arrange: nextArrange, dirty: transient ? slice.dirty : true };
   // v0.6.4 — an arrange mutation (pool hide/show/swap, column ops, drag)
   // can orphan a half-view projection slot pointing at a now-removed pane.
   // Clear stale slots here, the shared commit point, so the persistent
@@ -911,7 +919,7 @@ function update(msg, slice) {
         out[loc.paneIndex] = nextPane;
         return out;
       });
-      const next = _commitArrange(slice, nextArrange);
+      const next = _commitArrange(slice, nextArrange, msg.transient ? { transient: true } : undefined);
       // Focus follow — when the switched pane was focused, retarget
       // focus to the new active tab id. Otherwise render's
       // `focus === p.type` highlight misses the new type and the
