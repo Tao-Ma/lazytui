@@ -1,6 +1,10 @@
 # Metrics Producer — YAML-declarable hub source
 
-**Status:** design (v0.6.18). Not yet implemented.
+**Status:** implemented (v0.6.18), on branch `feat/metrics-producer`. The
+parser block, the `metrics-poll` Sub kind + app-global sourcing, the pure
+extractor, and the `stats` `row:` companion all ship here with tests
+(`test-metrics-extract.js`, `test-metrics-producer.js`, `metrics` cases in
+`test-parser-schema.js`). Deferred items in §10 remain future work.
 
 A generic, YAML-declarable **producer**: poll a shell command on an
 interval, extract numbers from its stdout, and publish them as hub

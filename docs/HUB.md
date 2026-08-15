@@ -95,6 +95,12 @@ Lightweight — purely informational. The hub doesn't enforce it; it's for
 discoverability (the `:` cmdline could list "what topics exist") and for
 generic table renderers that want a `unit` hint per column.
 
+> **No JS required.** A producer need not be a hand-written Component:
+> the top-level `metrics:` config block declares a headless producer that
+> polls a shell command, extracts numbers from stdout, and calls
+> `defineTopic` + `publish` for you. See
+> [metrics-producer.md](metrics-producer.md).
+
 ```javascript
 {
   rowKey: 'container_name',                   // human label for the row dimension

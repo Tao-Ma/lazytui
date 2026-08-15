@@ -74,7 +74,10 @@ function _fmtBytes(v) {
 }
 
 function _resolveSelection(panel) {
-  if (!panel.select_from) return null;
+  // Single-stream topic (a headless metrics producer with one row, e.g.
+  // host.cpu): render the static `row:` (default '_') when there's no cursor
+  // to follow. See docs/metrics-producer.md §9.
+  if (!panel.select_from) return panel.row != null ? String(panel.row) : null;
   const items = apiGetItems(panel.select_from);
   // Phase 4a — read the cursor via the state helper (resolves the
   // owning Component's nav slice).
@@ -187,8 +190,8 @@ function render(panel, w, h, _slice, opts) {
   // ANOTHER pane's cursor via panel.select_from (cross-pane by design),
   // so its own slice is empty; only the focus flag is per-pane here.
   const focused = !!(opts && opts.focused);
-  if (!panel.topic || !panel.select_from) {
-    return _renderEmpty(panel, w, h, '(stats panel needs topic + select_from)', chrome, focused);
+  if (!panel.topic || (!panel.select_from && panel.row == null)) {
+    return _renderEmpty(panel, w, h, '(stats panel needs topic + select_from or row)', chrome, focused);
   }
   const window = panel.window || 40;
 
@@ -241,7 +244,9 @@ function render(panel, w, h, _slice, opts) {
 
   return renderPanel({
     width: w, height: h, lines,
-    title: `${panel.title}: ${esc(rowKey)}`,
+    // Single-stream topics use the sentinel rowKey '_' (no entity to name) —
+    // show the bare title; drill-down topics append the selected row.
+    title: rowKey === '_' ? panel.title : `${panel.title}: ${esc(rowKey)}`,
     hotkey: panel.hotkey,
     panelType: 'stats',
     focused,

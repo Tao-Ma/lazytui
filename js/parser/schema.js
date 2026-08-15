@@ -20,7 +20,7 @@ const VALID_ACTION_TYPES = new Set(['run', 'spawn', 'background']);
 // the new run below (a status-over-time log). See docs/DATAFLOW.md.
 const VALID_ACTION_OUTPUT_MODES = new Set(['replace', 'append']);
 
-const VALID_TOP_KEYS    = new Set(['project_dir', 'groups', 'vars', 'helpers', 'files', 'layout', 'theme', 'plugins', 'register', 'keys', 'keymap', 'mouse', 'context-menu', 'panels', 'selection', 'editor', 'color_depth', 'keyboard_protocol']);
+const VALID_TOP_KEYS    = new Set(['project_dir', 'groups', 'vars', 'helpers', 'files', 'layout', 'theme', 'plugins', 'register', 'keys', 'keymap', 'mouse', 'context-menu', 'panels', 'selection', 'editor', 'color_depth', 'keyboard_protocol', 'metrics']);
 
 // Global user config (~/.config/lazytui/config.yml, docs/global-config) — only
 // the APP-BEHAVIOR sections are honored there; project content (groups,
@@ -119,6 +119,7 @@ function validate(data, _sourceFile, warnings) {
   if ('context-menu' in data) validateContextMenu(data['context-menu']);
   if ('panels' in data)   validatePanels(data.panels);
   if ('layout' in data)   validateLayout(data.layout, warnings);
+  if ('metrics' in data)  validateMetrics(data.metrics);
 
   for (const [gname, gdata] of Object.entries(groups)) {
     validateGroup(gname, gdata);
@@ -174,6 +175,74 @@ function validateQuickKeys(v) {
   if (v == null) return;   // bare key → default (border) at the read site
   if (!VALID_QUICK_KEYS.has(v)) {
     throw new SchemaError(`'quick_keys' must be one of: ${[...VALID_QUICK_KEYS].join(', ')}`);
+  }
+}
+
+// metrics (docs/metrics-producer.md) — a mapping of hub-topic → producer def.
+// Each producer polls `cmd` on an interval and publishes extracted numbers to
+// its topic (the map key). PROJECT-level (VALID_TOP_KEYS, not global): a
+// malformed producer is an authoring error the user must see, so shape errors
+// throw here (consistent with every other project section) — runtime command
+// failures degrade softly at poll time (execAsync never rejects; a mis-parse
+// renders as '—'), that's a separate concern.
+const VALID_METRICS_KEYS = new Set(['cmd', 'interval', 'timeout', 'focus_gate', 'refresh_ladder', 'extract', 'schema']);
+const VALID_EXTRACT_KEYS = new Set(['mode', 'fields', 'delimiter', 'skip', 'row_key']);
+const VALID_EXTRACT_MODES = new Set(['regex', 'columns']);
+function validateMetrics(v) {
+  if (v == null) return; // bare `metrics:` key → no producers (never-brick)
+  if (!isMapping(v)) throw new SchemaError("'metrics' must be a mapping (topic → producer)");
+  for (const [topic, def] of Object.entries(v)) {
+    const ctx = `metrics.${topic}`;
+    if (!isMapping(def)) throw new SchemaError(`'${ctx}' must be a mapping`);
+    checkUnknownKeys(def, VALID_METRICS_KEYS, ctx);
+    if (typeof def.cmd !== 'string' || !def.cmd.trim()) {
+      throw new SchemaError(`'${ctx}.cmd' is required and must be a non-empty string`);
+    }
+    for (const numKey of ['interval', 'timeout']) {
+      if (numKey in def && (typeof def[numKey] !== 'number' || def[numKey] <= 0)) {
+        throw new SchemaError(`'${ctx}.${numKey}' must be a positive number (ms)`);
+      }
+    }
+    if ('focus_gate' in def && typeof def.focus_gate !== 'boolean') {
+      throw new SchemaError(`'${ctx}.focus_gate' must be a boolean`);
+    }
+    if (!isMapping(def.extract)) throw new SchemaError(`'${ctx}.extract' is required and must be a mapping`);
+    const ex = def.extract, exCtx = `${ctx}.extract`;
+    checkUnknownKeys(ex, VALID_EXTRACT_KEYS, exCtx);
+    const mode = ex.mode || 'regex';
+    if (!VALID_EXTRACT_MODES.has(mode)) {
+      throw new SchemaError(`'${exCtx}.mode' must be one of: ${[...VALID_EXTRACT_MODES].join(', ')}`);
+    }
+    if (!isMapping(ex.fields) || Object.keys(ex.fields).length === 0) {
+      throw new SchemaError(`'${exCtx}.fields' is required and must be a non-empty mapping`);
+    }
+    if ('skip' in ex && (typeof ex.skip !== 'number' || ex.skip < 0)) {
+      throw new SchemaError(`'${exCtx}.skip' must be a non-negative number`);
+    }
+    if (mode === 'columns') {
+      for (const [f, idx] of Object.entries(ex.fields)) {
+        if (typeof idx !== 'number' || idx < 0 || !Number.isInteger(idx)) {
+          throw new SchemaError(`'${exCtx}.fields.${f}' must be a non-negative column index (columns mode)`);
+        }
+      }
+      if ('row_key' in ex && !(ex.row_key in ex.fields)) {
+        throw new SchemaError(`'${exCtx}.row_key' ('${ex.row_key}') must name a field in extract.fields`);
+      }
+    } else { // regex
+      for (const [f, pat] of Object.entries(ex.fields)) {
+        if (typeof pat !== 'string' || !pat) {
+          throw new SchemaError(`'${exCtx}.fields.${f}' must be a non-empty regex string (regex mode)`);
+        }
+        try { new RegExp(pat); }
+        catch (e) { throw new SchemaError(`'${exCtx}.fields.${f}' is not a valid regex: ${e.message}`); }
+      }
+    }
+    if ('schema' in def) {
+      if (!isMapping(def.schema)) throw new SchemaError(`'${ctx}.schema' must be a mapping`);
+      if ('columns' in def.schema && !isMapping(def.schema.columns)) {
+        throw new SchemaError(`'${ctx}.schema.columns' must be a mapping`);
+      }
+    }
   }
 }
 

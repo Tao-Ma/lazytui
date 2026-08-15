@@ -281,4 +281,32 @@ describe('keymap: block', () => {
   });
 });
 
+// metrics producers (docs/metrics-producer.md) — a top-level `metrics:` block.
+// PROJECT-level + strict: a malformed producer throws (authoring error), while
+// runtime command failures degrade softly at poll time (separate concern).
+describe('metrics producers', () => {
+  const withMetrics = (metrics) => ({
+    groups: { g: { label: 'G', containers: [], actions: { a: { cmd: 'echo', label: 'A' } } } },
+    metrics,
+  });
+  const regexProducer = { cmd: "top -bn1", extract: { mode: 'regex', fields: { cpu: '([0-9.]+) us' } }, schema: { columns: { cpu: { type: 'percent' } } } };
+  const columnsProducer = { cmd: 'ps', extract: { mode: 'columns', row_key: 'pid', fields: { pid: 0, cpu: 1 } }, schema: { columns: { cpu: { type: 'percent' } } } };
+
+  it('valid regex producer passes', () => { validate(withMetrics({ 'host.cpu': regexProducer }), 'test'); assert(true); });
+  it('valid columns producer passes', () => { validate(withMetrics({ 'host.proc': columnsProducer }), 'test'); assert(true); });
+  it('bare/empty metrics block is fine (never-brick)', () => { validate(withMetrics(undefined), 'test'); validate(withMetrics(null), 'test'); assert(true); });
+
+  it('metrics not a mapping throws', () => expectThrow(/'metrics' must be a mapping/, () => validate(withMetrics([]), 'test')));
+  it('producer entry not a mapping throws', () => expectThrow(/must be a mapping/, () => validate(withMetrics({ x: 'nope' }), 'test')));
+  it('missing cmd throws', () => expectThrow(/\.cmd' is required/, () => validate(withMetrics({ x: { extract: { fields: { a: 'x' } } } }), 'test')));
+  it('missing extract throws', () => expectThrow(/\.extract' is required/, () => validate(withMetrics({ x: { cmd: 'echo' } }), 'test')));
+  it('unknown producer key throws', () => expectThrow(/unknown key/, () => validate(withMetrics({ x: { cmd: 'echo', extract: { fields: { a: 'x' } }, bogus: 1 } }), 'test')));
+  it('bad extract mode throws', () => expectThrow(/\.mode' must be one of/, () => validate(withMetrics({ x: { cmd: 'echo', extract: { mode: 'jq', fields: { a: 'x' } } } }), 'test')));
+  it('empty fields throws', () => expectThrow(/\.fields' is required/, () => validate(withMetrics({ x: { cmd: 'echo', extract: { fields: {} } } }), 'test')));
+  it('columns non-integer index throws', () => expectThrow(/column index/, () => validate(withMetrics({ x: { cmd: 'echo', extract: { mode: 'columns', fields: { a: 'notnum' } } } }), 'test')));
+  it('columns row_key not in fields throws', () => expectThrow(/row_key.*must name a field/, () => validate(withMetrics({ x: { cmd: 'echo', extract: { mode: 'columns', row_key: 'missing', fields: { a: 0 } } } }), 'test')));
+  it('regex invalid pattern throws', () => expectThrow(/not a valid regex/, () => validate(withMetrics({ x: { cmd: 'echo', extract: { mode: 'regex', fields: { a: '([0-9' } } } }), 'test')));
+  it('non-positive interval throws', () => expectThrow(/interval' must be a positive/, () => validate(withMetrics({ x: { cmd: 'echo', interval: 0, extract: { fields: { a: 'x' } } } }), 'test')));
+});
+
 report();

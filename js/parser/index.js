@@ -789,6 +789,11 @@ function parse(yamlPath, opts) {
     // context-menu registry at boot. Default empty — only the built-in
     // copy/refresh/help rows apply.
     'context-menu': data['context-menu'] !== undefined ? data['context-menu'] : [],
+    // Headless hub producers (top-level `metrics:`, docs/metrics-producer.md).
+    // state.js `_appSubscriptions` emits one `metrics-poll` Sub per entry —
+    // each polls its `cmd` and publishes extracted numbers to its topic (the
+    // map key) for the `stats` panel. Default empty — no producers.
+    metrics: data.metrics !== undefined ? data.metrics : {},
     // Soft-fail diagnostics from validation (today: column over soft
     // cap). tui.js boot drains these into the event log + a brief
     // chrome notice; nothing else reads them.

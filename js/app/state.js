@@ -262,6 +262,72 @@ const _subKinds = {
       if (token.hubToken != null) _hub().unsubscribe(token.hubToken);
     },
   },
+  // Headless metrics PRODUCER (docs/metrics-producer.md). Descriptor
+  // `{kind:'metrics-poll', id, topic, cmd, interval?, timeout?, focus_gate?, extract, schema?}`.
+  // Sourced app-globally from config.metrics (_appSubscriptions) — decoupled
+  // from any pane, unlike docker's per-pane poll. `start` announces the topic
+  // schema once, then self-rearms `execAsync(cmd)` off-tick every `interval`,
+  // runs the pure extractor over stdout, and publishes each row to the hub; the
+  // existing `metrics-mirror` (declared by a stats pane) samples it into the
+  // model. Mirrors docker's fetch discipline: an `inFlight` latch (no pile-up if
+  // a poll outruns its interval), `unref`'d timer (never holds the process
+  // open), abort-on-stop (kills an in-flight child via execAsync's signal), and
+  // per-row GC (a rowKey gone from this tick's output is hub.delete'd, so an
+  // exited process/removed device drops out). Skips the exec while the TUI is
+  // backgrounded (focus_gate, default on) OR under replay (a fold replays the
+  // recorded publishes; no live command runs — same guard the overlay poll uses).
+  'metrics-poll': {
+    normalize: (d) => (d && d.id && d.topic && d.cmd && d.extract && typeof d.extract === 'object' ? d : null),
+    key: (d) => d.id,
+    start: (d, ctx) => {
+      const { execAsync } = require('../io/exec');
+      const { extract } = require('../leaves/metrics/extract');
+      const hub = _hub();
+      hub.defineTopic(d.topic, d.schema || {});
+      const ms = (typeof d.interval === 'number' && d.interval > 0) ? d.interval : 2000;
+      const timeout = (typeof d.timeout === 'number' && d.timeout > 0) ? d.timeout : Math.min(ms, 5000);
+      const cols = (d.schema && d.schema.columns) || {};
+      const token = { timer: null, stopped: false, inFlight: false, prev: new Set(), ac: null };
+      const schedule = () => {
+        if (token.stopped || token.timer) return;
+        token.timer = setTimeout(poll, ms);
+        if (token.timer.unref) token.timer.unref();
+      };
+      const poll = async () => {
+        token.timer = null;
+        if (token.stopped) return;
+        // Skip the exec while backgrounded or replaying; still reschedule so
+        // polling resumes when focus returns / the fold ends. getModel() read
+        // LIVE (the tick fires after the declaring model is stale — the same
+        // blessed live-read the overlay-repaint / clock Subs use).
+        const skip = (d.focus_gate !== false && getModel().focused === false) || _replay().isReplaying();
+        if (!token.inFlight && !skip) {
+          token.inFlight = true;
+          token.ac = new AbortController();
+          try {
+            const out = await execAsync(d.cmd, { signal: token.ac.signal, timeout });
+            if (!token.stopped) {
+              const rows = extract(out, d.extract, cols);
+              const seen = new Set();
+              for (const { rowKey, sample } of rows) { seen.add(rowKey); hub.publish(d.topic, rowKey, sample); }
+              for (const rk of token.prev) if (!seen.has(rk)) hub.delete(d.topic, rk); // GC vanished rows
+              token.prev = seen;
+            }
+          } catch (e) {
+            if (!token.stopped) console.error(`[metrics:${d.topic}] ${e && e.message}`);
+          } finally { token.inFlight = false; token.ac = null; }
+        }
+        schedule();
+      };
+      setTimeout(poll, 0); // first poll ASAP, not after `interval`
+      return token;
+    },
+    stop: (token) => {
+      token.stopped = true;
+      if (token.timer) { clearTimeout(token.timer); token.timer = null; }
+      if (token.ac) { try { token.ac.abort(); } catch (_) { /* nothing in flight */ } }
+    },
+  },
 };
 
 // True while a streamed action is running AND the live action-status chip is
@@ -338,6 +404,19 @@ function _appSubscriptions(model) {
     kind: 'store-mirror', id: 'jobs',
     store: _jobs(), msgType: 'jobs_synced', field: 'jobs',
   });
+  // Headless hub producers (docs/metrics-producer.md) — one `metrics-poll` Sub
+  // per top-level `metrics:` entry. App-global (not pane-owned): a producer
+  // runs whenever it's declared, decoupled from whether a consumer pane is
+  // placed (a topic with no subscriber drops its publishes cheaply). Config is
+  // boot-immutable (a `:reload-config` rebuilds arrange → the reconcile gate
+  // re-runs this projection), so cadence never re-arms mid-session — a future
+  // live rate-step via the refresh control would fold each producer's ms into
+  // `_lastSubGate` (§7), the same treatment docker's `dockerRefresh` gets.
+  const producers = (model && model.config && model.config.metrics) || {};
+  for (const [topic, def] of Object.entries(producers)) {
+    if (!def || typeof def !== 'object') continue;
+    subs.push({ kind: 'metrics-poll', id: `metrics:${topic}`, topic, ...def });
+  }
   return subs;
 }
 
