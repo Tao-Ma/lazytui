@@ -73,6 +73,13 @@ function _fmtBytes(v) {
   return `${(v / 1024 ** 3).toFixed(2)}GiB`;
 }
 
+// A `rate` column carries a per-second value (a producer's `counter` derivation,
+// e.g. net/disk throughput) — format as human bytes/sec.
+function _fmtRate(v) {
+  if (!Number.isFinite(v)) return '—';
+  return `${_fmtBytes(v)}/s`;
+}
+
 function _resolveSelection(panel) {
   // Single-stream topic (a headless metrics producer with one row, e.g.
   // host.cpu): render the static `row:` (default '_') when there's no cursor
@@ -147,6 +154,9 @@ function _renderSection(metric, samples, schema, width, graphHeight, style, colo
   } else if (col.type === 'bytes') {
     if (finite.length) max = Math.max(1, ...finite);
     fmt = _fmtBytes;
+  } else if (col.type === 'rate') {
+    if (finite.length) max = Math.max(1, ...finite);
+    fmt = _fmtRate;
   } else if (finite.length) {
     max = Math.max(1, ...finite);
   }
@@ -279,5 +289,6 @@ module.exports = {
   _defaultMetrics,
   _fmtBytes,
   _fmtPercent,
+  _fmtRate,
   _renderSection,
 };

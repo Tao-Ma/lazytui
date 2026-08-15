@@ -21,6 +21,7 @@ const SCHEMA = { cpu: { type: 'percent' }, comm: { type: 'string' }, rss: { type
 describe('[table] _fmt — by schema type', () => {
   it('percent', () => eq(table._fmt(47.2, 'percent'), '47.2%'));
   it('bytes compact', () => { eq(table._fmt(512, 'bytes'), '512B'); eq(table._fmt(1536, 'bytes'), '2K'); eq(table._fmt(1.5 * 1024 ** 3, 'bytes'), '1.5G'); });
+  it('rate = bytes/sec', () => { eq(table._fmt(512, 'rate'), '512B/s'); eq(table._fmt(1.5 * 1024 ** 2, 'rate'), '1.5M/s'); eq(table._fmt(NaN, 'rate'), '—'); });
   it('number', () => { eq(table._fmt(128, 'number'), '128'); eq(table._fmt(3.14159, 'number'), '3.1'); });
   it('string passthrough', () => eq(table._fmt('postgres', 'string'), 'postgres'));
   it('NaN → em dash', () => eq(table._fmt(NaN, 'percent'), '—'));

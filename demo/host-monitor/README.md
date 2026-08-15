@@ -24,7 +24,7 @@ This is the first demo with **no container at all**. It exercises the
 a top-level `metrics:` block turns plain host commands into live hub data —
 graphed by the `stats` panel and listed by the `table` panel, no plugin code.
 
-Four producers, each a one-line host command:
+Five producers, each a one-line host command:
 
 | Topic | Command (summarised) | Rendered as |
 |---|---|---|
@@ -32,6 +32,7 @@ Four producers, each a one-line host command:
 | `host.mem` | `free` → used% | Memory line graph + meter |
 | `host.load` | `/proc/loadavg` → 1-min load | Load line graph |
 | `host.proc` | `ps` top-by-CPU (pid/cpu/mem/comm) | **Processes table** |
+| `host.net` | `/proc/net/dev` rx/tx **counters** → rates | **Network table** (`B/s`) |
 
 The **Processes** table lists the top processes, sorted by CPU (click the
 `‹ cpu↓ ›` control on its border to re-sort). Select a row and the **Selected**

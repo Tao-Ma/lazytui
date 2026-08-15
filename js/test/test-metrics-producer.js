@@ -124,6 +124,32 @@ function waitFor(pred, ms, label) {
       state._resetSubscriptions();
       assert(!state._liveSubKeys().includes(K2), 'producer torn down on reset (2)');
     } finally { try { fs.unlinkSync(TF); } catch (_) { /* best effort */ } }
+
+    // 3) counter → rate: a monotonic counter field publishes its per-second rate,
+    //    and defineTopic advertises the column as `rate` to consumers.
+    hub._reset(); state._resetSubscriptions();
+    section('[metrics-poll] end-to-end: counter → rate');
+    const TF3 = path.join(os.tmpdir(), `lazytui-counter-${process.pid}.txt`);
+    fs.writeFileSync(TF3, '1000');
+    const T3 = 'test.rate';
+    const m3 = { config: { metrics: { [T3]: {
+      cmd: `cat ${TF3}`, interval: 80, focus_gate: false,
+      extract: { mode: 'regex', fields: { c: '(\\d+)' } },
+      schema: { columns: { c: { type: 'counter' } } },
+    } } }, jobs: [], modes: {} };
+    hub.subscribe(T3, { window: 10 });
+    state.reconcileSubscriptions(m3);
+    try {
+      eq((hub.schema(T3).columns.c || {}).type, 'rate', 'counter column advertised to consumers as rate');
+      await waitFor(() => hub.snapshot(T3).has('_'), 3000, 'first counter publish');
+      fs.writeFileSync(TF3, '9000');                          // counter rises by 8000
+      await waitFor(() => { const s = hub.snapshot(T3).get('_'); return s && Number.isFinite(s.c) && s.c > 0; }, 3000, 'positive rate');
+      assert(true, 'rising counter → positive finite rate');
+      fs.writeFileSync(TF3, '5');                             // counter RESET (drops)
+      await waitFor(() => { const s = hub.snapshot(T3).get('_'); return s && !Number.isFinite(s.c); }, 3000, 'reset → NaN');
+      assert(true, 'counter reset → NaN, not a negative spike');
+      state._resetSubscriptions();
+    } finally { try { fs.unlinkSync(TF3); } catch (_) { /* best effort */ } }
   } catch (e) {
     assert(false, e.message);
   }

@@ -191,7 +191,11 @@ const VALID_EXTRACT_MODES = new Set(['regex', 'columns']);
 // Advisory column types (HUB.md §16). A closed set so a typo (`strng`) is caught
 // at parse time rather than silently coercing a label to NaN; the full documented
 // set is allowed, so `rate`/`duration` (deferred derivations) still validate.
-const VALID_COLUMN_TYPES = new Set(['number', 'percent', 'bytes', 'rate', 'string', 'duration']);
+// `counter` is a PRODUCER directive: the raw value is a monotonic counter
+// (/proc/net/dev bytes, /proc/diskstats sectors, …) and the metrics-poll kind
+// publishes its per-second RATE — the topic then advertises the column as
+// `rate` to consumers. See docs/metrics-producer.md §counter.
+const VALID_COLUMN_TYPES = new Set(['number', 'percent', 'bytes', 'rate', 'counter', 'string', 'duration']);
 function validateMetrics(v) {
   if (v == null) return; // bare `metrics:` key → no producers (never-brick)
   if (!isMapping(v)) throw new SchemaError("'metrics' must be a mapping (topic → producer)");

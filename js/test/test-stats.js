@@ -310,6 +310,11 @@ describe('[9] _fmtPercent + _fmtBytes', () => {
     eq(stats._fmtBytes(125 * 1024 * 1024), '125.0MiB');
     eq(stats._fmtBytes(2 * 1024 ** 3), '2.00GiB');
   });
+  it('rate: bytes/sec (counter derivation)', () => {
+    eq(stats._fmtRate(1536), '1.5KiB/s');
+    eq(stats._fmtRate(125 * 1024 * 1024), '125.0MiB/s');
+    eq(stats._fmtRate(NaN), '—');
+  });
 });
 
 // --- hub round-trip on docker.stats topic ---

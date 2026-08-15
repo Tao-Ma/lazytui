@@ -313,8 +313,8 @@ describe('metrics producers', () => {
   it('non-string delimiter throws', () => expectThrow(/delimiter' must be a string/, () => validate(withMetrics({ x: { cmd: 'echo', extract: { mode: 'columns', delimiter: 5, row_key: 'k', fields: { k: 0 } } } }), 'test')));
   it('non-integer skip throws', () => expectThrow(/skip' must be a non-negative integer/, () => validate(withMetrics({ x: { cmd: 'echo', extract: { fields: { a: 'x' }, skip: 1.5 } } }), 'test')));
   it('unknown column type throws (catches typos like strng)', () => expectThrow(/type' must be one of/, () => validate(withMetrics({ x: { cmd: 'echo', extract: { fields: { a: 'x' } }, schema: { columns: { a: { type: 'strng' } } } } }), 'test')));
-  it('documented column types (incl. rate/duration) accepted', () => {
-    for (const t of ['number', 'percent', 'bytes', 'rate', 'string', 'duration']) {
+  it('documented column types (incl. rate/counter/duration) accepted', () => {
+    for (const t of ['number', 'percent', 'bytes', 'rate', 'counter', 'string', 'duration']) {
       validate(withMetrics({ x: { cmd: 'echo', extract: { fields: { a: 'x' } }, schema: { columns: { a: { type: t } } } } }), 'test');
     }
     assert(true);

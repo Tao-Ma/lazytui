@@ -70,6 +70,21 @@ metrics:
       row_key: pid
       columns: { cpu: { type: percent }, mem: { type: percent }, comm: { type: string } }
 
+  # Network throughput — /proc/net/dev gives MONOTONIC byte counters per
+  # interface (rx = col 1, tx = col 9, after stripping the `iface:` colon and the
+  # 2 header lines). `type: counter` tells the producer to publish the per-second
+  # RATE (bytes/s) instead of the raw tally — the table then shows live B/s.
+  host.net:
+    cmd: "cat /proc/net/dev | tail -n +3 | tr -d ':'"
+    interval: 2000
+    extract:
+      mode: columns
+      row_key: iface
+      fields: { iface: 0, rx: 1, tx: 9 }
+    schema:
+      row_key: iface
+      columns: { rx: { type: counter }, tx: { type: counter } }
+
 # --- Panels --------------------------------------------------------------------
 panels:
   actions:
@@ -104,24 +119,33 @@ panels:
     topic: host.proc
     select_from: procs
     metrics: [cpu, mem]
+  # Network throughput TABLE — per-interface rx/tx rates (derived from the
+  # counter fields; the table shows live B/s).
+  net:
+    type: table
+    title: Network
+    topic: host.net
+    columns: [rx, tx]
+    sort: rx
   detail:
     type: detail
     title: Output
 
 layout:
   columns:
-    - width: 34
+    - width: 32
       panels:
         - cpu
         - mem
         - load
-    - width: 46
+    - width: 44
       panels:
         - procs
-        - { tabs: [procsel], height: 45% }
+        - { tabs: [net], height: 34% }
     - panels:
+        - procsel
         - actions
-        - { tabs: [detail], height: 50% }
+        - { tabs: [detail], height: 40% }
 
 # --- Host actions --------------------------------------------------------------
 groups:

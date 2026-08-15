@@ -307,11 +307,40 @@ Coercion by schema type (generalizes docker's `_parsePercent` /
 | `bytes` | parse human size | `1.2GiB` → `1288490188` |
 | `number` | `Number` | `128` → `128` |
 | `string` | pass through (rowKey / label only) | `postgres` |
-| `rate` | **deferred** — see §10 | — |
+| `counter` | `Number` (raw tally); the producer derives its RATE — §6.1 | `6210830315` |
+| `rate` | `Number` (a pre-computed per-second value) | `4076` |
 
 A field that fails to parse yields `NaN`; the `stats` panel already
 renders `NaN` as `—` and filters it from peak/avg, so a transient
 mis-parse degrades gracefully instead of throwing.
+
+### 6.1 `counter` → `rate` derivation
+
+Net and disk throughput come as **monotonic counters** — `/proc/net/dev`
+rx/tx bytes, `/proc/diskstats` sectors — that only ever increase. A
+graph wants the *rate* (bytes/s), not the ever-climbing tally. Mark such
+a field `type: counter` and the producer does the arithmetic:
+
+- The `metrics-poll` kind keeps the previous RAW sample + its timestamp
+  per row (in `token.prev`, which also drives row-GC). Each tick it
+  publishes `Δcounter / Δt` (per second) in place of the raw value.
+- `defineTopic` advertises the column to consumers as **`rate`** (so the
+  `stats`/`table` panels format it as `B/s`); the *author* writes
+  `counter`, the *consumer* sees `rate`.
+- The **first** sample per row (no prior) and a **counter reset / wrap**
+  (Δ < 0, e.g. an interface bounces) publish `NaN` — a one-tick `—`, never
+  a bogus negative or huge spike.
+
+```yaml
+host.net:
+  cmd: "cat /proc/net/dev | tail -n +3 | tr -d ':'"   # iface(0) rx_bytes(1) tx_bytes(9)
+  extract: { mode: columns, row_key: iface, fields: { iface: 0, rx: 1, tx: 9 } }
+  schema: { row_key: iface, columns: { rx: { type: counter }, tx: { type: counter } } }
+```
+
+A `table` on `host.net` then shows live per-interface `rx`/`tx` in `B/s`.
+(Rates are formatted as byte rates; a non-byte counter still graphs
+correctly, just labelled with byte units.)
 
 ## 7. Reconcile-gate & live rate-stepping
 
@@ -397,13 +426,11 @@ already lists this as deferred).
   `percent` / `bytes` / `number` / `string`.
 - Companion: static `row:` on `stats` for single-stream topics.
 
+The **`counter` → `rate` derivation** (net/disk throughput) **shipped** —
+`type: counter` on a field makes the producer publish `Δ/Δt` and advertise
+the column as `rate`. See §6.1.
+
 **Deferred (own backlog items — [[project_host_monitor_arc]]):**
-- **`counter` → `rate` derivation.** Net/disk throughput are monotonic
-  counters; a rate needs the producer to hold the previous per-row
-  sample (already in `token.prev` — extend it to carry values + ts) and
-  emit `(now − prev) / dt`. The `rate` column *type* already exists in
-  the hub schema (HUB.md §16) — this is producer arithmetic, not a
-  schema change. Backlog #2.
 - **`json` extract mode.** `JSON.parse` + a dotted path (`fields: { cpu:
   '$.load.1m' }`) — dep-free (no `jq`), a clean fast-follow. Left out of
   v1 to keep the first cut to two modes.

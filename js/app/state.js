@@ -287,11 +287,22 @@ const _subKinds = {
       const { execAsync } = require('../io/exec');
       const { extract } = require('../leaves/metrics/extract');
       const hub = _hub();
-      hub.defineTopic(d.topic, d.schema || {});
+      const cols = (d.schema && d.schema.columns) || {};
+      // `counter` columns are monotonic tallies (net/disk byte counters): the
+      // producer publishes their per-second RATE and advertises them to consumers
+      // as `rate` (B/s). Rewrite the schema for defineTopic; the extractor still
+      // sees the raw `counter` type in `cols` (parsed as a plain number).
+      const counterFields = Object.keys(cols).filter(f => cols[f] && cols[f].type === 'counter');
+      const pubSchema = counterFields.length
+        ? { ...(d.schema || {}), columns: Object.fromEntries(Object.entries(cols).map(
+            ([f, c]) => [f, (c && c.type === 'counter') ? { ...c, type: 'rate' } : c])) }
+        : (d.schema || {});
+      hub.defineTopic(d.topic, pubSchema);
       const ms = (typeof d.interval === 'number' && d.interval > 0) ? d.interval : 2000;
       const timeout = (typeof d.timeout === 'number' && d.timeout > 0) ? d.timeout : Math.min(ms, 5000);
-      const cols = (d.schema && d.schema.columns) || {};
-      const token = { timer: null, stopped: false, inFlight: false, prev: new Set(), ac: null };
+      // token.prev: rowKey -> { sample: RAW counters, t: Date.now() } — kept for
+      // rate derivation across polls AND for row GC (via keys()).
+      const token = { timer: null, stopped: false, inFlight: false, prev: new Map(), ac: null };
       const schedule = () => {
         if (token.stopped || token.timer) return;
         token.timer = setTimeout(poll, ms);
@@ -318,9 +329,30 @@ const _subKinds = {
               // parsed rows; an empty poll leaves prior data + history intact
               // (docker's dropStale keeps prior maps on a bad fetch).
               if (rows.length) {
-                const seen = new Set();
-                for (const { rowKey, sample } of rows) { seen.add(rowKey); hub.publish(d.topic, rowKey, sample); }
-                for (const rk of token.prev) if (!seen.has(rk)) hub.delete(d.topic, rk); // GC vanished rows
+                const now = Date.now();
+                const seen = new Map();
+                for (const { rowKey, sample } of rows) {
+                  let outSample = sample;
+                  if (counterFields.length) {
+                    // Derive per-second rates for counter fields from the prior
+                    // RAW sample; publish those in place of the raw tally.
+                    outSample = { ...sample };
+                    const prev = token.prev.get(rowKey);
+                    const dt = prev ? (now - prev.t) / 1000 : 0;
+                    for (const f of counterFields) {
+                      const cur = sample[f];
+                      const pv = prev && prev.sample ? prev.sample[f] : undefined;
+                      const delta = cur - pv;
+                      // First sample, non-monotonic (counter reset/wrap), or zero
+                      // dt → no rate this tick (renders '—').
+                      outSample[f] = (prev && dt > 0 && Number.isFinite(cur) && Number.isFinite(pv) && delta >= 0)
+                        ? delta / dt : NaN;
+                    }
+                  }
+                  hub.publish(d.topic, rowKey, outSample);
+                  seen.set(rowKey, { sample, t: now });   // RAW counters for the next delta
+                }
+                for (const rk of token.prev.keys()) if (!seen.has(rk)) hub.delete(d.topic, rk); // GC vanished rows
                 token.prev = seen;
               }
             }

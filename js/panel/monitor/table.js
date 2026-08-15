@@ -76,11 +76,12 @@ function _fmt(v, type) {
   if (type === 'string') return v == null ? '' : String(v);
   if (!Number.isFinite(v)) return '—';
   if (type === 'percent') return `${v.toFixed(1)}%`;
-  if (type === 'bytes') {
-    if (v < 1024) return `${Math.round(v)}B`;
-    if (v < 1024 ** 2) return `${(v / 1024).toFixed(0)}K`;
-    if (v < 1024 ** 3) return `${(v / 1024 ** 2).toFixed(1)}M`;
-    return `${(v / 1024 ** 3).toFixed(1)}G`;
+  if (type === 'bytes' || type === 'rate') {
+    const suf = type === 'rate' ? '/s' : '';   // `rate` = a per-second byte rate (counter derivation)
+    if (v < 1024) return `${Math.round(v)}B${suf}`;
+    if (v < 1024 ** 2) return `${(v / 1024).toFixed(0)}K${suf}`;
+    if (v < 1024 ** 3) return `${(v / 1024 ** 2).toFixed(1)}M${suf}`;
+    return `${(v / 1024 ** 3).toFixed(1)}G${suf}`;
   }
   return Number.isInteger(v) ? String(v) : v.toFixed(1);
 }

@@ -69,6 +69,8 @@ function coerce(raw, type) {
   if (type === 'string') return raw == null ? '' : String(raw).trim();
   if (type === 'percent') return parsePercent(raw);
   if (type === 'bytes') return parseBytes(raw);
+  // `counter` parses as a plain number (a monotonic tally); the producer derives
+  // its rate downstream. `rate`/`duration`/unknown also fall through to numeric.
   return parseNumber(raw);
 }
 

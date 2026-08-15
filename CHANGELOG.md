@@ -8,6 +8,13 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Network / disk throughput from counters (`type: counter`).** Mark a metric
+  column `counter` and the producer publishes its per-second **rate** instead of
+  the raw monotonic tally — so `/proc/net/dev` byte counters (or `/proc/diskstats`
+  sectors) graph as live `B/s`. The topic advertises the column as `rate`, and
+  the `stats`/`table` panels format it in bytes/sec. A counter reset or the first
+  sample shows `—` for one tick (never a bogus negative spike). The host-monitor
+  demo gains a `Network` throughput table. See docs/metrics-producer.md §6.1.
 - **A sortable process table (`type: table`).** A new panel that lists the rows
   of a hub topic as a columnar, sortable, selectable table — a live process list
   in the btop mould. It reads the same `metrics:` topics the graphs do, formats
