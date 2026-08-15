@@ -6,6 +6,18 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Declare a live metric from any shell command — no code.** A new top-level
+  `metrics:` config block turns a command into a hub data source: poll it on an
+  interval, pull numbers from its stdout (a regex per field, or whitespace/tab
+  columns), and the existing Stats panel graphs them — the same braille
+  line-graphs that were docker-only now work for `top`, `vmstat`, `free`, `ps`,
+  or anything else. Each producer is headless (owns no pane) and declares its own
+  schema (`percent`/`bytes`/`number`) so the graph axes scale. The Stats panel
+  also gained a `row:` field so a single-stream metric renders without another
+  panel to select from. See docs/metrics-producer.md.
+
 ## [0.6.17] — 2026-08-15
 
 ### Added

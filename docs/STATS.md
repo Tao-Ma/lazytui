@@ -83,6 +83,7 @@ panels:
     title: Stats
     topic: docker.stats     # which hub topic to read
     select_from: containers # which panel's focused row drives content
+    # row: _                # ...OR pin a fixed row (single-stream topics); one of select_from / row
     metrics: [cpu, mem]     # which schema columns to graph, top-to-bottom
     window: 40              # samples retained per row (panel-driven sub)
     graph: braille          # braille (default) | blocks
@@ -92,8 +93,9 @@ panels:
 | Field         | Required | Default                                | Notes |
 |---------------|----------|----------------------------------------|-------|
 | `type`        | yes      | —                                      | Always `stats`. |
-| `topic`       | yes      | —                                      | Hub topic to subscribe. Must have a registered schema. |
-| `select_from` | yes      | —                                      | Panel type whose focused row is the topic's row key. |
+| `topic`       | yes      | —                                      | Hub topic to subscribe. Must have a registered schema (a framework producer, or a `metrics:` config producer — see below). |
+| `select_from` | yes\*    | —                                      | Panel type whose focused row is the topic's row key. \*Required unless `row:` is set. |
+| `row`         | no       | —                                      | Pin a fixed row key instead of following another panel — for a single-stream topic (one row, e.g. a headless `metrics:` producer's `host.cpu`). Use `row: _` for the default single-stream key. Supply `row` or `select_from`. |
 | `metrics`     | no       | all `percent` / `bytes` schema columns | Columns to graph, in order. |
 | `window`      | no       | `40`                                   | Samples retained. Window span = `window` × the producer's sample cadence. For the `docker.stats` topic that cadence is the `containers` pane's `refresh_ms:` (default 10s → ~7 min of history), adjustable live via the `- Ns +` control on that pane's top border. |
 | `graph`       | no       | `braille`                              | Glyph style. Braille packs 2 samples/column at 4 dot-rows/cell (2× the horizontal resolution of blocks); set `blocks` if your font's braille coverage is poor. A plain config choice — never inferred from color depth (docs/truecolor.md P4). |
@@ -112,6 +114,13 @@ boundary like everything else.
 
 The schema-driven `metrics` default keeps the simple case
 (`type: stats, topic: docker.stats, select_from: containers`) one-line.
+
+**Where the topic comes from.** A producer must `hub.defineTopic()` +
+`hub.publish()` for the topic. That producer can be a framework Component
+(docker publishes `docker.stats`) — or, with no code, a top-level `metrics:`
+block that polls a shell command and publishes its parsed output. That's what
+makes these graphs generic over `top` / `vmstat` / `ps` / etc., not just docker;
+see [metrics-producer.md](metrics-producer.md).
 
 **Schema requirements on the topic.** The producer must
 `hub.defineTopic()` with column types — the panel uses `type` for axis

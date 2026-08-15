@@ -37,6 +37,11 @@ retire in favor of an ordered `layout.columns:` list (see
 [`history/v0.6.2-migrate.md`](history/v0.6.2-migrate.md) for the mechanical
 hand-conversion).
 
+A third, optional top-level block — `metrics:` — declares *headless data
+sources* rather than panes: each entry polls a shell command, extracts numbers
+from its stdout, and publishes them to a hub topic that a `stats` pane can graph.
+It owns no cell in the grid. See [metrics-producer.md](metrics-producer.md).
+
 ```yaml
 panels:                # the pool — every panel keyed by id
   containers:
