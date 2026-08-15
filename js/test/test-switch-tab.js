@@ -89,27 +89,20 @@ describe('[set_active_tab] flips active tab + rewrites legacy fields', () => {
     eq(pane.columnIndex, 0,                 'columnIndex preserved');
     eq(pane.heightPct, 50,                 'heightPct preserved');
     eq(pane.tabs.length, 2,                'tabs list preserved');
-    assert(next.dirty,                     'arrange marked dirty');
+    // A tab switch is TRANSIENT view state, NOT a structural layout edit, so it
+    // must NOT mark the layout dirty (only add/remove column, pool ops, collapse,
+    // drag/reorder dirty). Otherwise merely viewing logs/opening a file nags
+    // `• unsaved (:save-layout)`. `:save-layout` still persists activeTabId.
+    assert(!next.dirty,                    'a tab switch does NOT mark the layout dirty');
   });
 
-  it('transient:true switches the tab WITHOUT marking dirty (system auto-jump, not a user edit)', () => {
-    // The unrouted-stream auto-jump / open-file / docker-shell activations pass
-    // transient:true so merely SHOWING output doesn't nag `• unsaved (:save-layout)`.
-    const slice = buildMultiTabSlice();
-    assert(!slice.dirty, 'precondition: fresh slice is clean');
-    const next = layout.update({
-      type: 'set_active_tab', paneId: 'pane-docker', tabPoolId: 'logs', transient: true,
-    }, slice);
-    eq(next.arrange.columns[0].panels[0].activeTabId, 'logs', 'the tab still switches');
-    assert(!next.dirty, 'a transient activation does NOT mark the layout dirty');
-  });
-
-  it('transient:true preserves an already-dirty layout (never clears user edits)', () => {
+  it('a tab switch preserves an already-dirty layout (never clears a real edit)', () => {
     const slice = { ...buildMultiTabSlice(), dirty: true };
     const next = layout.update({
-      type: 'set_active_tab', paneId: 'pane-docker', tabPoolId: 'logs', transient: true,
+      type: 'set_active_tab', paneId: 'pane-docker', tabPoolId: 'logs',
     }, slice);
-    assert(next.dirty, 'an existing unsaved edit stays flagged through a transient switch');
+    eq(next.arrange.columns[0].panels[0].activeTabId, 'logs', 'the tab still switches');
+    assert(next.dirty, 'an existing unsaved structural edit stays flagged through a tab switch');
   });
 
   it('idempotent — switching to already-active tab returns slice unchanged', () => {

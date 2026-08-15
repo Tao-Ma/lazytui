@@ -304,10 +304,10 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
     // the always-present Transcript needs an explicit set_active_tab (idempotent
     // when already active — no churn if the user is already on Transcript).
     const tj = route.resolveTranscriptTab();
-    // transient — a system auto-jump to SHOW the stream output, not a user layout
-    // edit, so it must not mark the layout dirty (`• unsaved (:save-layout)`).
+    // A system auto-jump to SHOW the stream output — set_active_tab is transient
+    // (layout.js), so it doesn't mark the layout dirty (`• unsaved (:save-layout)`).
     if (tj) require('./loop').dispatchMsg(api.wrap('layout', {
-      type: 'set_active_tab', paneId: tj.paneId, tabPoolId: tj.poolId, transient: true,
+      type: 'set_active_tab', paneId: tj.paneId, tabPoolId: tj.poolId,
     }));
   }
   scheduleRender();

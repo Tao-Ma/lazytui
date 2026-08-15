@@ -792,7 +792,7 @@ via a `mode_set`/`mode_clear` Cmd.
 | `set_arrange{arrange?,dirty?}` | `arrange` (paneId auto-mint, focus/halfView clamp, stale-ptr clear) + `dirty` | `mode_clear{paneMenuMode}` if a target was cleared | ✓ |
 | `pool_hide{id}` / `pool_show{id,columnIndex?,index?}` | `arrange` (strip/insert + hotkey reassign) + focus clamp ★w | `show_selected_info` (on focus move) | ✓ |
 | `pool_show_new_column{id,position}` | `arrange` (spawn column) + focus ★w + `freeConfig.notice` | `show_selected_info` | ✓ |
-| `set_active_tab{paneId,tabPoolId}` | `arrange` (multi-tab active switch, undo push) + focus ★w | `show_selected_info` (if focused) | ✓ |
+| `set_active_tab{paneId,tabPoolId}` | `arrange` (multi-tab active switch — **transient**: no undo push, no `dirty`) + focus ★w | `show_selected_info` (if focused) | ✓ |
 | `activate_tab{paneId,tabPoolId}` | — | `msg→focus_set` **then** `msg→set_active_tab` (the focus+activate pair as one reducer-owned sequence — round-4 arch T3) | ✓ |
 | `panel_collapse_toggle{id}` | `arrange` (flip `collapsed`, undo push) | — | ✓ |
 | `add_column{position}` / `remove_column{columnIndex}` | `arrange` (via `mfc.addColumn`/`removeColumn`) + `freeConfig.notice`; remove clamps focus ★w | `show_selected_info` (remove, on focus move) | ✓ |

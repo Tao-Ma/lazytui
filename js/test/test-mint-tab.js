@@ -51,6 +51,18 @@ describe('[mint-tab] mint a text-view into the focused slot', () => {
     eq(route.getInstanceSlice(focus).lines[0], 'line 1', 'text-view content seeded');
   });
 
+  it('minting a tab does NOT mark the layout dirty (session-only tab, not a structural edit)', () => {
+    sm.bootFresh();
+    const focus = route.getInstanceSlice('layout').focus;
+    assert(!route.getInstanceSlice('layout').dirty, 'precondition: clean layout on boot');
+    dispatchMsg(route.wrap('layout', {
+      type: 'mint_tab', paneId: focus, paneType: 'text-view', title: 'demo', config: { lines: ['x'] },
+    }));
+    // A minted tab isn't serialized (see the session-transient test below), so
+    // opening one must never nag `• unsaved (:save-layout)`.
+    assert(!route.getInstanceSlice('layout').dirty, 'mint_tab is transient — must not dirty the layout');
+  });
+
   it('an id collision / reserved type / unknown pane is a no-op', () => {
     sm.bootFresh();
     const focus = route.getInstanceSlice('layout').focus;

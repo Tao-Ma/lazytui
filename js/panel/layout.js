@@ -52,13 +52,17 @@ const route = require('../panel/route');
  *  panel_collapse_toggle, set_active_tab) — keeps the snapshot timing
  *  and the dirty-flag write in lockstep. */
 function _commitArrange(slice, nextArrange, opts) {
-  // `transient` — a SYSTEM-driven activation that shows the user output by
-  // switching the active tab (the unrouted-stream auto-jump, opening a file /
-  // output as a content tab, a docker-shell bring-forward). It is NOT a user
-  // layout edit, so it neither pushes undo nor marks the layout dirty (the
-  // existing dirty state is preserved) — otherwise merely viewing logs nags
-  // `• unsaved (:save-layout)`. Deliberate user gestures (tab-strip click,
-  // :switch-tab, pane-menu pick) omit the flag and dirty + stay undoable.
+  // `transient` — this arrange change is a tab ACTIVATION or a tab MINT
+  // (set_active_tab / mint_tab), NOT a structural layout edit. Only structural
+  // edits — add/remove column, pool hide/show/swap, drag, reorder, collapse —
+  // mark the layout dirty and are undoable; switching or minting a tab is
+  // transient view state (a minted tab isn't even serialized), so it neither
+  // pushes undo nor marks dirty (the existing dirty is preserved — a real
+  // pending edit stays flagged). This is why merely viewing output — logs, an
+  // opened file, a docker shell, a nav-history jump, auto-Info on navigation —
+  // never nags `• unsaved (:save-layout)`; `:save-layout` still persists the
+  // current activeTabId regardless. Both set_active_tab and mint_tab pass this
+  // UNCONDITIONALLY, so a new system call site can't reintroduce the nag.
   const transient = opts && opts.transient;
   const skipUndo = transient || (opts && opts.skipUndo);
   const withUndo = skipUndo ? slice : mfcCore.pushUndo(slice);
@@ -910,16 +914,17 @@ function update(msg, slice) {
       // mpane.setActiveTab knows the wide-pane shape (legacy Panel
       // fields + Pane fields + placement-only fields); the Component
       // arm just splices the rebuilt pane back into the column.
-      // Push undo before mutating — tab switches change `activeTabId`
-      // which round-trips through :save-layout, so `:switch-tab` from
-      // the cmdline should be revertable via `u` in free-config.
+      // Activation is `transient` (see _commitArrange): switching the active tab
+      // is transient view state, NOT a structural layout edit, so it neither
+      // marks the layout dirty nor pushes undo — every set_active_tab caller
+      // (user strip/:switch-tab AND system auto-jump/open/nav) is treated alike.
       const nextPane = mpane.setActiveTab(pane, tabPoolId, entry);
       const nextArrange = mpool.updateColumn(arrange, loc.columnIndex, panels => {
         const out = panels.slice();
         out[loc.paneIndex] = nextPane;
         return out;
       });
-      const next = _commitArrange(slice, nextArrange, msg.transient ? { transient: true } : undefined);
+      const next = _commitArrange(slice, nextArrange, { transient: true });
       // Focus follow — when the switched pane was focused, retarget
       // focus to the new active tab id. Otherwise render's
       // `focus === p.type` highlight misses the new type and the
@@ -977,7 +982,10 @@ function update(msg, slice) {
         out[loc.paneIndex] = nextPane;
         return out;
       });
-      const next = _commitArrange(slice, a2);
+      // Minting a tab is `transient` (see _commitArrange): a minted tab is
+      // session-only (not serialized), so it never marks the layout dirty nor
+      // pushes undo — opening a file/output/shell tab must not nag `• unsaved`.
+      const next = _commitArrange(slice, a2, { transient: true });
       // The tab is always activated (the visible tab of its slot). Focus FOLLOWS
       // the target slot (mirror set_active_tab): steal keyboard focus only when
       // the target was already focused — so `:text-view` (mints into the focused

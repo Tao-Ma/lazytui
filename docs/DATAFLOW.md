@@ -295,7 +295,9 @@ streams flow to the content slot's dedicated **Transcript** tab — a
 same `tv_*` Msgs (buffer uncapped). `streamCommand` then switches the
 slot's active tab to it (`route.resolveTranscriptTab` → a layout
 `set_active_tab`), preserving the v0.6.7 auto-jump so the user sees
-the new stream. The unrouted slot is a singleton: a same-label re-run
+the new stream. That switch is transient (like every `set_active_tab`)
+— it does not mark the layout dirty, so merely viewing an unrouted
+stream never nags `• unsaved`. The unrouted slot is a singleton: a same-label re-run
 preempts silently; a different-label unrouted run opens a confirm
 overlay (default reject, via the `unrouted_preempt_and_run` Cmd) to
 protect the live transcript. When accepted, that Cmd captures a one-line

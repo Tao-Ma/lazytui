@@ -53,9 +53,9 @@ function addContentTab(groupName, key, label, lines) {
     title: label, hint: { origin: 'open', key }, config: { lines: seedLines },
   }));
   _dispatch(route.wrap('layout', {
-    // transient — opening/viewing a (session-transient) content tab is not a user
-    // layout edit, so it must not mark the layout dirty.
-    type: 'set_active_tab', paneId: slotPaneId, tabPoolId: poolId, transient: true,
+    // set_active_tab / mint_tab are transient (layout.js), so opening/viewing a
+    // (session-only) content tab doesn't mark the layout dirty.
+    type: 'set_active_tab', paneId: slotPaneId, tabPoolId: poolId,
   }));
   updateContentTabLines(groupName, key, seedLines);
 }
