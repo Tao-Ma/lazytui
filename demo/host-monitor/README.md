@@ -17,9 +17,9 @@ code.
 ╰──────────────────╯╰────────────────────────────╯╰───────────────╯
 ```
 
-*(Simplified sketch. The shipped layout adds a **CPU bars** tab on the Processes
-pane — a `gauge` view of the same topic — and a **Network** throughput table
-below it; the **Selected** drill-down sits in the right column.)*
+*(Simplified sketch. The shipped middle column stacks the **CPU bars** `gauge`
+above the **Processes** table (both views of `host.proc`) and a **Network**
+throughput table below; the **Selected** drill-down sits in the right column.)*
 
 ## What it shows
 
@@ -38,11 +38,11 @@ Five producers, each a one-line host command:
 | `host.proc` | `ps` top-by-CPU (pid/cpu/mem/comm) | **Processes table** + **CPU bars** |
 | `host.net` | `/proc/net/dev` rx/tx **counters** → rates | **Network table** (`B/s`) |
 
-The **Processes** table lists the top processes, sorted by CPU (click the
-`‹ cpu↓ ›` control on its border to re-sort). Its **CPU bars** tab renders the
-same topic as a btop-style bar chart (a `gauge` panel — one meter bar per
-process, ordered by CPU). Select a row in either and the **Selected** graph
-drills into that process's own CPU/memory history via `select_from:`. Plus host
+The middle column shows the same `host.proc` topic **two ways at once**: the
+**CPU bars** `gauge` (a btop-style bar chart — one meter bar per process, ordered
+by CPU) above the **Processes** `table` (sorted, columnar; click the `‹ cpu↓ ›`
+control on its border to re-sort). Select a row in the table and the **Selected**
+graph drills into that process's own CPU/memory history via `select_from:`. Plus host
 actions: **top** (live view in a terminal tab), **processes** (a `ps` snapshot),
 and **uptime**.
 
