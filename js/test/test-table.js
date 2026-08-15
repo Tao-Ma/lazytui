@@ -59,6 +59,12 @@ describe('[table] getItems — internal sort', () => {
     eq(table.getItems({ topic: 'nope', nav: {} }), []);
     eq(table.getItems({ nav: {} }), []);
   });
+  it('customFilter matches the row key OR a string column (comm), not just the key', () => {
+    setMetric('t', { '11': [{ cpu: 5, comm: 'nginx' }], '22': [{ cpu: 9, comm: 'postgres' }], '33': [{ cpu: 1, comm: 'redis' }] }, SCHEMA);
+    const base = { topic: 't', columns: ['cpu', 'comm'], nav: { sort: { key: 'cpu', dir: -1 } } };
+    eq(table.getItems({ ...base, nav: { ...base.nav, filter: 'post' } }), ['22'], 'filter by command name');
+    eq(table.getItems({ ...base, nav: { ...base.nav, filter: '3' } }), ['33'], 'filter by row key (pid)');
+  });
 });
 
 // --- integration: register → boot → paint the real screen --------------------
@@ -87,6 +93,22 @@ describe('[table] render — sorted, columnar (real paint)', () => {
     assert(hi >= 0 && mid >= 0 && lo >= 0, 'all three rows rendered (88.5% / 12.0% / 4.0%)');
     assert(hi < mid && mid < lo, 'rows sorted desc by cpu (88.5 → 12.0 → 4.0)');
     assert(/postgres/.test(frame) && /redis/.test(frame) && /awk/.test(frame), 'string cells present');
+  });
+
+  it('selected bottom row stays visible when the list scrolls (header off-by-one fix)', () => {
+    const paneCfg = { id: 'big', type: 'table', title: 'Big', config: { topic: 'p.big', columns: ['cpu'] } };  // native order
+    sm.bootFresh({
+      groups: { g: { label: 'G', containers: [], actions: { a: { cmd: 'echo', label: 'A' } } } },
+      layout: { pool: { big: paneCfg }, columns: [{ panels: [paneCfg] }] },
+    });
+    const series = {};
+    for (let i = 0; i < 40; i++) series['proc' + i] = [{ cpu: i }];   // 40 rows > any test viewport
+    setMetric('p.big', series, SCHEMA);
+    require('../panel/nav-state').setSel('table', 39);                 // cursor on the last row
+    const { frame } = sm.capture(() => sm.render());
+    // Pre-fix, the header pushed row 39 one line past the sliced viewport → invisible.
+    assert(/proc39\b/.test(frame), 'the selected last row (proc39) scrolled into view');
+    assert(!/proc0\b/.test(frame), 'the top rows scrolled out of view');
   });
 });
 

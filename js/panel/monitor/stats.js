@@ -79,10 +79,14 @@ function _resolveSelection(panel) {
   // to follow. See docs/metrics-producer.md §9.
   if (!panel.select_from) return panel.row != null ? String(panel.row) : null;
   const items = apiGetItems(panel.select_from);
+  if (!items.length) return null;
   // Phase 4a — read the cursor via the state helper (resolves the
-  // owning Component's nav slice).
+  // owning Component's nav slice). Clamp to the list length: a data-derived
+  // source (e.g. a `table` of processes) shrinks as rows come and go, and the
+  // cursor isn't re-clamped on shrink — an out-of-range index would blank the
+  // graph instead of following to the last row.
   const sel = require('../nav-state').getSel(panel.select_from);
-  const item = items[sel];
+  const item = items[Math.min(sel, items.length - 1)];
   if (!item) return null;
   // For string-row panels (containers, etc.) the row key IS the item.
   // Future panel types whose items are objects can extend this.

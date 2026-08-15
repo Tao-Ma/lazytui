@@ -27,22 +27,26 @@
  * on different topics. getItems has the slice (topic + columns), so it sorts
  * per-pane correctly. The clickable border sort control still drives nav.sort via
  * the standard set_sort/sort_reverse Msgs.
+ *
+ * KNOWN LIMITATION (select_from + active sort): the nav cursor is POSITIONAL (an
+ * index), and the row list re-sorts as values change. So under an active sort a
+ * fixed cursor tracks a rank, not an entity — the `select_from` drill-down can
+ * jump to a different row as ranks shuffle. Key-anchored selection (follow the
+ * selected rowKey across re-sorts) is a future refinement; native order (no sort)
+ * is stable for a fixed pick.
  */
 'use strict';
 
 const { getModel } = require('../../model/store');
+const route = require('../route');
 const {
   esc, theme, renderPanel, visibleLen,
   getSel, getScroll, getSort, getFilter,
   getItems: apiGetItems, borderControlsFor,
 } = require('../api');
+const { truncate } = require('../../leaves/render/draw');
 const mnav = require('../../leaves/wm/nav');
 const { sortControlText, sortControlHits, NONE_LABEL, ASC, DESC } = require('../../leaves/render/sort-control');
-
-// Render-time cache: the sortable column keys per paneId, stashed by render so
-// the border sort control (whose spec only receives {paneId,type}) can cycle
-// THIS pane's columns. Overwritten every paint; a stale entry is harmless.
-const _colsByPane = new Map();
 
 function _metric(topic) {
   const all = getModel().metrics;
@@ -140,6 +144,19 @@ function getItems(slice) {
       return c !== 0 ? c * dir : A[1] - B[1];   // stable
     }).map(p => p[0]);
   }
+  // Custom filter (the def sets `customFilter`, so the framework's rowKey-only
+  // substring filter is skipped): match the `/` needle against the row KEY OR
+  // any string column (so a process list filters by command name, not just pid).
+  const filter = slice.nav && slice.nav.filter;
+  if (filter) {
+    const needle = String(filter).toLowerCase();
+    const strCols = _columns({ columns: slice.columns }, metric).filter(c => _typeOf(metric, c) === 'string');
+    rows = rows.filter((rk) => {
+      if (String(rk).toLowerCase().includes(needle)) return true;
+      const s = _latest(metric, rk);
+      return !!s && strCols.some(c => String(s[c] == null ? '' : s[c]).toLowerCase().includes(needle));
+    });
+  }
   return rows;
 }
 
@@ -162,32 +179,56 @@ function render(panel, w, h, slice, opts) {
   if (!topic) return _renderEmpty(panel, w, h, '(table needs a topic)', chrome, focused);
   const metric = _metric(topic);
   const cols = _columns(panel, metric);
-  _colsByPane.set(panel.paneId, cols);           // for the sort control (per-pane cycle)
-
   const rows = apiGetItems(panel.paneId);        // sorted + filtered row keys
   if (!metric || !rows.length) {
     return _renderEmpty(panel, w, h, metric ? '(no rows)' : '(no data yet)', chrome, focused);
   }
-  const sel = getSel(panel.paneId);
   const t = theme();
   const innerW = w - 2;
+  const innerH = h - 2;
+  // The header occupies the top inner row (STICKY — windowed render below), so
+  // the scrollable data region is innerH-1. Clamp the cursor to the row count
+  // (the list shrinks as processes come and go, and getSel isn't re-clamped on
+  // shrink), then re-clamp scroll for the header-reduced viewport: the
+  // framework's syncPanelScroll clamps against the full innerH, but the header
+  // steals one row — without this the selected row scrolls out of view and the
+  // last rows become unreachable.
+  const sel = Math.max(0, Math.min(getSel(panel.paneId), rows.length - 1));
+  const dataH = Math.max(1, innerH - 1);
+  let scroll = getScroll(panel.paneId);
+  if (sel < scroll) scroll = sel;
+  else if (sel >= scroll + dataH) scroll = sel - dataH + 1;
+  scroll = Math.max(0, Math.min(scroll, Math.max(0, rows.length - dataH)));
 
-  // Column widths: each value column is fixed (_NUM_W); string columns get a bit
-  // more; the leading identity (rowKey) column takes the remainder.
+  // Column widths: value columns fixed (_NUM_W), string columns wider; the
+  // leading identity (rowKey) column takes the remainder.
   const colW = cols.map(c => (_typeOf(metric, c) === 'string' ? 12 : _NUM_W));
   const used = colW.reduce((a, b) => a + b + 1, 0);   // +1 gutter each
   const idW = Math.max(3, innerW - used - 1);
 
+  // Width-aware, markup-safe cell. `truncate` respects esc'd brackets (`\[` = 1
+  // visible col, never cut mid-escape) and wide/emoji glyphs — a raw
+  // String.slice corrupts both (a lone `\`, a split surrogate) and mis-counts
+  // width. A right-aligned overflow keeps the high-order digits + an ellipsis
+  // (magnitude readable, truncation visible), never a silently-wrong number.
   const cell = (text, width, right) => {
-    const s = String(text);
-    const vis = visibleLen(s);
-    if (vis > width) return s.slice(0, width);        // plain text here (esc'd by caller); simple clip
-    const pad = ' '.repeat(width - vis);
+    let s = String(text);
+    if (visibleLen(s) > width) s = truncate(s, width);
+    const pad = ' '.repeat(Math.max(0, width - visibleLen(s)));
     return right ? pad + s : s + pad;
   };
 
-  // Header (dim) — column names. Line 0; scrolls with the list (sticky header
-  // is a deferred refinement).
+  const buildRow = (rk) => {
+    const s = _latest(metric, rk);
+    const cells = [cell(esc(String(rk)), idW, false)];
+    cols.forEach((c, ci) => {
+      const type = _typeOf(metric, c);
+      cells.push(cell(esc(_fmt(s ? s[c] : NaN, type)), colW[ci], type !== 'string'));
+    });
+    return cells.join(' ');
+  };
+
+  // Sticky header (dim): the active sort column carries its direction glyph.
   const sort = (slice && slice.nav && slice.nav.sort) || null;
   const hdrCells = [cell('', idW, false)];
   cols.forEach((c, i) => {
@@ -196,18 +237,15 @@ function render(panel, w, h, slice, opts) {
   });
   const header = `[${t.dim}]${esc(hdrCells.join(' '))}[/]`;
 
+  // windowed: we slice the data rows to [scroll, scroll+dataH) ourselves and pin
+  // the header at line 0, so renderPanel must NOT re-slice.
   const lines = [header];
-  rows.forEach((rk, i) => {
-    const s = _latest(metric, rk);
-    const cells = [cell(esc(String(rk)), idW, false)];
-    cols.forEach((c, ci) => {
-      const type = _typeOf(metric, c);
-      cells.push(cell(esc(_fmt(s ? s[c] : NaN, type)), colW[ci], type !== 'string'));
-    });
-    const rowStr = cells.join(' ');
-    // Selected row: open the theme `selected` span over the whole line, no inner
-    // markup (PRINCIPLES §8) — cells are already plain (esc'd, no color).
-    lines.push(i === sel && focused ? `[${t.selected}]${rowStr}` : rowStr);
+  rows.slice(scroll, scroll + dataH).forEach((rk, vi) => {
+    const abs = scroll + vi;
+    const rowStr = buildRow(rk);
+    // Selected row: one `[selected]` span over the whole line, no inner markup
+    // (PRINCIPLES §8) — cells are plain (esc'd, no color).
+    lines.push(abs === sel && focused ? `[${t.selected}]${rowStr}` : rowStr);
   });
 
   const m = getModel();
@@ -218,18 +256,26 @@ function render(panel, w, h, slice, opts) {
   return renderPanel({
     width: w, height: h, lines,
     title, hotkey: panel.hotkey, panelType: 'table', focused, chrome,
-    count: rows.length ? [sel + 1, rows.length] : null,
-    scrollOffset: getScroll(panel.paneId),
+    windowed: true,
+    count: [sel + 1, rows.length],
+    scrollOffset: scroll,
     topControls: ctl.filter(c => (c.spec.slot || 'top') !== 'bottom').map(c => c.text),
     bottomControls: ctl.filter(c => (c.spec.slot || 'top') === 'bottom').map(c => c.text),
   });
 }
 
-// --- Border sort control — per-pane columns from the render-time cache -------
+// --- Border sort control — per-pane columns resolved from the slice ----------
 // A table-specific spec (not the generic sortControlSpec): its keys vary per
-// pane (config-driven columns), so it resolves them from `_colsByPane` at
-// render/dispatch time instead of capturing a static list at construction.
-function _colsFor(pane) { return _colsByPane.get(pane && pane.paneId) || []; }
+// pane (config-driven columns), so it resolves them from the pane's own SLICE
+// (topic/columns seeded at init) rather than a static construction-time list.
+// Reading the slice (not a render-time cache) means no paint→dispatch coupling,
+// no per-pane leak, and no pre-first-paint blind spot.
+function _colsFor(pane) {
+  const slice = pane && route.getInstanceSlice(pane.paneId);
+  if (!slice) return [];
+  if (Array.isArray(slice.columns) && slice.columns.length) return slice.columns;
+  return _columns({}, _metric(slice.topic));   // schema-derived when columns unset
+}
 
 const _sortControl = {
   id: 'sort',
@@ -263,7 +309,10 @@ module.exports = {
       getItems,
       getInfo,
       filterable: true,
-      filterText: (rowKey) => String(rowKey),
+      // customFilter: getItems applies the `/` filter itself (matching the row
+      // key OR any string column, e.g. a process's command name) — the
+      // framework's built-in filter only ever sees the row key.
+      customFilter: true,
       idOf: (rowKey) => String(rowKey),
       borderControls: [_sortControl],
       keyHints: 'sort: click ‹col›',
