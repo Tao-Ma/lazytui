@@ -98,20 +98,27 @@ shells are transparent — only the multiplexer layer matters.)
 
 ### action_status
 
-A powerline-style, right-aligned status stamp at the end of an action's output
-pane — the routed tab of a `tab:`-routed action and the Transcript. It shows,
-for the job that produced that pane's output:
+A reverse-filled (powerline-style), right-aligned status bar at the end of an
+action's output pane — the routed tab of a `tab:`-routed action and the
+Transcript. It shows, for the job that produced that pane's output:
 
-- a status glyph — `✓` (exit 0), `✗ N` (non-zero, with the code), `✗ ?` (no
+- a status glyph — `✓ 0` (exit 0), `✗ N` (non-zero, with the code), `✗ ?` (no
   exit code, e.g. a spawn failure), `⊗ SIG` (killed by signal), or a braille
   spinner while running;
 - the run **duration** (ticking live while running, final on completion);
 - the **finish** clock time (shown once the action has ended).
 
-Segments are middot-joined, e.g. `✓ · 4.1s · 14:32:07`.
+Each segment is a **filled block**: the status glyph on its state color (green /
+red / yellow) under a dark ink, then the duration and time on the neutral (footer)
+color. The blocks butt together with **no divider** — the fill color change
+separates them — and the bar floats flush-right with a transparent left, e.g.
+` ✓ 0  4.1s  14:32:07 ` (imagine each group filled). The colors track the active
+`:theme`. No Nerd Font is required (the fills are plain background colors; only
+the optional powerline `` arrow separators would need one).
 
 While the action runs, a **live** line floats at the end of the output (spinner
-+ ticking duration) and is pushed down by new output. On completion it becomes a
++ ticking duration + a clickable ` ✗ cancel ` block that SIGTERMs the job) and is
+pushed down by new output. On completion it becomes a
 line **in the pane's scrollback** (not an ephemeral chrome cell), so it scrolls
 with the output rather than being overwritten in place, and each routed action's
 own tab keeps its stamp; a re-run reseeds its pane like any output does. It

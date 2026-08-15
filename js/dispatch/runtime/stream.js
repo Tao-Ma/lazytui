@@ -111,8 +111,8 @@ function appendStatusLine(line, tabInstId) {
   require('./loop').dispatchMsg(api.wrap(target, { type: 'tv_status', line }));
 }
 
-// The ONE job-termination status seam (pre-release review). The powerline `✓/✗/⊗ · dur ·
-// time` stamp was originally wired only into the normal `close` path, so a spawn
+// The ONE job-termination status seam (pre-release review). The reverse-filled `✓/✗/⊗
+// + dur + time` stamp was originally wired only into the normal `close` path, so a spawn
 // `error` and a preempt (`killJob`) exit were left silently unmarked. Routing
 // all three through here keeps them consistent — and a future exit point is one
 // call, not a re-discovered gap. Returns true when a chip was appended, so the
@@ -381,8 +381,8 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
     if (buffer) { appendDetailLine(esc(buffer), tabInstId); rec.append(buffer); if (fab) rawLines.push(buffer); buffer = ''; }
     if (signal) rec.end(`signal:${signal}`);
     else rec.end(code);
-    // Completion status line — the powerline-style `✓ · dur · time` (`✗ N` /
-    // `⊗ SIG`) stamp, appended as a right-aligned status row (docs/global-
+    // Completion status line — the reverse-filled ` ✓ 0  dur  time ` (` ✗ N ` /
+    // ` ⊗ SIG `) stamp, appended as a right-aligned status row (docs/global-
     // config.md §action_status). It REPLACES the classic plain `Done.`/`Exit N`
     // footer; when the chip is disabled we fall back to that plain footer (the
     // only place the "Done."/"Exit N" words appear) so completion is never silent.

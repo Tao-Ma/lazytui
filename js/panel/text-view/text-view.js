@@ -40,7 +40,7 @@ function init(paneId, seed) {
     select: { active: false, kind: 'char', anchor: { line: 0, col: 0 }, cursor: { line: 0, col: 0 } },
     cursor: { line: 0, col: 0 },
     // Indices of buffer lines that are action-status stamps (the permanent
-    // `✓ · dur · time` completion line). The display transform (_contentLines)
+    // ` ✓ 0  dur  time ` reverse-filled completion line). The display transform (_contentLines)
     // right-aligns these to the current pane width for BOTH render and the
     // interaction reducer — the alignment is a display concern, so the stored
     // text stays width-agnostic and resizes cleanly. Appends never shift existing

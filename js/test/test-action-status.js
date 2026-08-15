@@ -1,8 +1,9 @@
 /**
- * action-status — the powerline-style action-status line on a text-view output
+ * action-status — the reverse-filled action-status bar on a text-view output
  * pane: a right-aligned status stamp floated at the end of the output
- * (live spinner + duration while running; a permanent `✓ Done · …` line on
- * completion, replacing the plain `Done.`/`Exit N` footer). Pins:
+ * (live spinner + duration + a clickable ` ✗ cancel ` block while running; a
+ * permanent ` ✓ 0  dur  time ` line on completion, replacing the plain
+ * `Done.`/`Exit N` footer). Filled blocks, no divider glyph. Pins:
  *   - the pure derivation leaf (resolveConfig, jobForPane, statusLine forms),
  *   - the text-view `tv_status` reducer arm (append + record statusRows) and
  *     the tv_stream_start reset,
@@ -64,11 +65,11 @@ describe('[action-status] jobForPane', () => {
 });
 
 describe('[action-status] statusLine', () => {
-  it('exit 0 → ✓ 0 · duration · finish time (exit value shown, middot-joined)', () => {
+  it('exit 0 → ✓ 0 + duration + finish time (exit value shown, no divider glyph)', () => {
     const s = line(exited0, 9999);
     assert(s.includes('✓ 0'), `success shows the exit value: ${s}`);
     assert(!/Done/.test(s), `no word: ${s}`);
-    assert(s.includes(' · '), `middot separator: ${s}`);
+    assert(!s.includes('·'), `filled blocks have NO middot divider: ${JSON.stringify(s)}`);
     assert(s.includes('2.3s'), s);
     assert(/\d\d:\d\d:\d\d/.test(s), `has clock time: ${s}`);
   });
@@ -462,15 +463,15 @@ describe('[action-status] augmentMsg stamps innerW only when status rows exist (
 // is the SINGLE source both render (.line) and the hit-test (.cancelX0/.cancelX1)
 // read, so a click can't land where the ✗ cancel didn't paint.
 describe('[action-status] runningChip — the ✗ cancel affordance', () => {
-  it('appends a right-aligned `✗ cancel` (✗ red) whose span is the rightmost CANCEL_W cols', () => {
+  it('appends a right-aligned filled ` ✗ cancel ` block whose span is the rightmost CANCEL_W cols', () => {
     const info = astatus.runningChip(running, 2000, undefined, 30);
     assert(info, 'a chip is composed for a running outcome');
     const plain = stripMarkup(info.line);
-    assert(/✗ cancel$/.test(plain), `line ends with the affordance: ${JSON.stringify(plain)}`);
-    assert(info.line.includes('[error]✗[/]'), `the ✗ uses the semantic error token: ${info.line}`);
+    assert(/✗ cancel $/.test(plain), `line ends with the filled affordance (trailing pad): ${JSON.stringify(plain)}`);
+    assert(info.line.includes('chip_ink on error'), `the cancel block fills with the error color: ${info.line}`);
     eq(plain.length, 30);                                          // right-aligned to innerW
-    eq(info.cancelX0, 22); eq(info.cancelX1, 29);                  // rightmost 8 cols (innerW-8 .. innerW-1)
-    eq(plain.slice(info.cancelX0, info.cancelX1 + 1), '✗ cancel'); // the span IS `✗ cancel` (8 wide)
+    eq(info.cancelX0, 20); eq(info.cancelX1, 29);                  // rightmost 10 cols (innerW-10 .. innerW-1)
+    eq(plain.slice(info.cancelX0, info.cancelX1 + 1), ' ✗ cancel '); // the span IS the filled ` ✗ cancel ` block (10 wide)
   });
   it('too-narrow pane → status shown WITHOUT the affordance (cancelX0 = -1)', () => {
     const info = astatus.runningChip(running, 2000, undefined, 5);
@@ -509,7 +510,6 @@ describe('[action-status] ✗ cancel — render draws it where the hit-test fire
   const { applyMsg } = require('../dispatch/control/dispatch');
   if (!sm.api.getComponent('text-view')) sm.api.registerComponent(require('../panel/text-view/text-view'));
   const renderTV = tv.panelTypes['text-view'].render;
-  const CANCEL_W = 8;   // visible width of '✗ cancel' (✗ is 1 display col)
   const ACT = { key: 'logs', label: 'logs', type: 'run', script: 'sleep 5', tab: true };
 
   // Boot a running routed action + resolve the content slot's bounds + slice.
@@ -529,16 +529,20 @@ describe('[action-status] ✗ cancel — render draws it where the hit-test fire
     assert(job && b && b.w > 12, 'a running job + a real content slot');
 
     // Full component render (not a diff) → find `✗ cancel`'s pane-local (line,col).
+    // ci is the ✗ glyph; the filled block extends one pad-space to its left
+    // (ci-1) and one to its right, and the WHOLE block is the clickable button.
     const lines = renderTV({ paneId: slot, hotkey: null }, b.w, b.h, route.getInstanceSlice(instId), {}).split('\n').map(stripMarkup);
     let li = -1, ci = -1;
     for (let i = 0; i < lines.length; i++) { const j = lines[i].indexOf('✗ cancel'); if (j >= 0) { li = i; ci = j; break; } }
     assert(li >= 0, `render drew '✗ cancel' in the pane: ${JSON.stringify(lines.filter((l) => /cancel|[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/.test(l)))}`);
 
-    // Pane-local (li,ci) → screen (b.x+ci, b.y+li). The hit-test must fire there.
-    eq(hitTestActionCancel(b.x + ci, b.y + li), job.id);                 // the ✗ (left edge)
-    eq(hitTestActionCancel(b.x + ci + CANCEL_W - 1, b.y + li), job.id);  // last col of "cancel"
-    eq(hitTestActionCancel(b.x + ci - 1, b.y + li), null);                      // the ` · ` separator — NOT clickable
-    eq(hitTestActionCancel(b.x + ci, b.y + li - 1), null);                      // one row up (log output) — no hit
+    // Pane-local (li,ci) → screen (b.x+ci, b.y+li). The hit-test must fire across
+    // the whole filled block and NOT just left of it / one row up.
+    eq(hitTestActionCancel(b.x + ci - 1, b.y + li), job.id);             // the block's left pad-space (still the button)
+    eq(hitTestActionCancel(b.x + ci, b.y + li), job.id);                 // the ✗
+    eq(hitTestActionCancel(b.x + ci + 7, b.y + li), job.id);             // the last 'l' of "cancel"
+    eq(hitTestActionCancel(b.x + ci - 2, b.y + li), null);               // left of the filled block (neutral fill) — not clickable
+    eq(hitTestActionCancel(b.x + ci, b.y + li - 1), null);               // one row up (log output) — no hit
     killAll();
   });
 
@@ -569,15 +573,18 @@ describe('[action-status] ✗ cancel — render draws it where the hit-test fire
   });
 });
 
-// The chip uses SEMANTIC theme tokens ([success]/[warning]/[error]) rather than a
-// resolved color, so a STORED chip line tracks :theme at paint (ansi resolution is
-// pinned in test-ansi.js). This just asserts statusLine emits the tokens.
-describe('[action-status] the chip uses semantic theme tokens (so it tracks :theme)', () => {
-  it('statusLine emits [success]/[error]/[warning], not a baked color', () => {
-    assert(astatus.statusLine(exited0, 9999, undefined).includes('[success]'), 'exit 0 → [success]');
-    assert(astatus.statusLine(exited2, 9999, undefined).includes('[error]'), 'non-zero → [error]');
-    assert(astatus.statusLine(killed, 9999, undefined).includes('[warning]'), 'killed → [warning]');
-    // No resolved hex/named theme color baked into the glyph.
+// The chip fills with SEMANTIC theme tokens (chip_ink on success/error/warning,
+// plus footer) rather than a resolved color, so a STORED chip line tracks :theme
+// at paint (ansi resolution is pinned in test-ansi.js). This just asserts
+// statusLine emits the tokens.
+describe('[action-status] the chip fills with semantic theme tokens (so it tracks :theme)', () => {
+  it('statusLine fills with `chip_ink on <state>` + footer, not a baked color', () => {
+    assert(astatus.statusLine(exited0, 9999, undefined).includes('chip_ink on success'), 'exit 0 → success fill');
+    assert(astatus.statusLine(exited2, 9999, undefined).includes('chip_ink on error'), 'non-zero → error fill');
+    assert(astatus.statusLine(killed, 9999, undefined).includes('chip_ink on warning'), 'killed → warning fill');
+    assert(astatus.statusLine(exited0, 9999, undefined).includes('[footer]'), 'duration/time fill with the neutral footer slot');
+    // No resolved hex/named theme color baked into the markup (the slot names
+    // resolve to hex only at paint).
     assert(!/\[#|\[green\]|\[red\]|\[yellow\]/.test(astatus.statusLine(exited0, 9999, undefined)), 'no baked color');
   });
 });

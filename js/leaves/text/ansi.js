@@ -3,7 +3,7 @@
  *
  * A tag is space-separated ATOMS, compiled to one SGR sequence in atom order:
  *   attributes  bold · dim · reverse
- *   fg colors   green red yellow blue magenta cyan white · #rrggbb (24-bit)
+ *   fg colors   black green red yellow blue magenta cyan white · #rrggbb (24-bit)
  *   bg          on <named|dark_blue|#rrggbb>
  *   theme slots warning · error · accent · running · … (any THEMES palette key)
  *   reset       [/] (also [/bold], [/dim])
@@ -46,8 +46,8 @@ const RESET = '\x1b[0m';
 // Atom tables. Values are SGR params (joined with ';' in atom order, so
 // 'bold cyan' → '1;36' — byte-identical to the retired CODES table).
 const _ATTRS = { bold: '1', dim: '2', reverse: '7' };
-const _FG = { green: '32', red: '31', yellow: '33', blue: '34', magenta: '35', cyan: '36', white: '37' };
-const _BG = { dark_blue: '44', green: '42', red: '41', yellow: '43', blue: '44', magenta: '45', cyan: '46', white: '47' };
+const _FG = { black: '30', green: '32', red: '31', yellow: '33', blue: '34', magenta: '35', cyan: '36', white: '37' };
+const _BG = { black: '40', dark_blue: '44', green: '42', red: '41', yellow: '43', blue: '44', magenta: '45', cyan: '46', white: '47' };
 const _HEX = /^#([0-9a-fA-F]{6})$/;
 
 function _hexParams(prefix, hex) {

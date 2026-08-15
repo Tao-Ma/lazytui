@@ -119,11 +119,12 @@ describe('[3] esc() — expands \\t to spaces against 8-col tab stops', () => {
 describe('[N] tag parser — named atoms byte-identical to the CODES table', () => {
   const PINS = {
     bold: '\x1b[1m', dim: '\x1b[2m', reverse: '\x1b[7m',
-    green: '\x1b[32m', red: '\x1b[31m', yellow: '\x1b[33m', blue: '\x1b[34m',
+    black: '\x1b[30m', green: '\x1b[32m', red: '\x1b[31m', yellow: '\x1b[33m', blue: '\x1b[34m',
     magenta: '\x1b[35m', cyan: '\x1b[36m', white: '\x1b[37m',
     'bold cyan': '\x1b[1;36m', 'bold yellow': '\x1b[1;33m', 'bold red': '\x1b[1;31m',
     'bold green': '\x1b[1;32m', 'bold magenta': '\x1b[1;35m', 'bold blue': '\x1b[1;34m',
-    'bold white': '\x1b[1;37m', 'on dark_blue': '\x1b[44m',
+    'bold white': '\x1b[1;37m', 'on dark_blue': '\x1b[44m', 'on black': '\x1b[40m',
+    'black on green': '\x1b[30;42m',   // the minimal-theme filled chip (chip_ink on <state>)
   };
   for (const [tag, sgr] of Object.entries(PINS)) {
     it(`[${tag}] emits the exact pre-parser bytes`, () => {

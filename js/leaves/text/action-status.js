@@ -1,24 +1,30 @@
 /**
- * action-status — pure derivation of the powerline-style action-status line: a
+ * action-status — pure derivation of the reverse-filled action-status bar: a
  * right-aligned "command status" stamp shown at the end of a text-view output
- * pane. Two forms, one formatter:
+ * pane. Each segment is a filled block (a state-colored status glyph under a dark
+ * ink, then neutral duration/time), butted together with NO divider — the fill
+ * color change separates them. It floats flush-right with a transparent left.
+ * Two forms, one formatter:
  *
  *   - while running — a LIVE line derived at render (spinner + ticking
- *     duration), floated at the end of the output and pushed down by new
- *     output. Ephemeral (not stored); re-derived each frame from the frame
- *     clock (`model.now`, ticked while a stream job runs — see app/state.js).
+ *     duration + a clickable ` ✗ cancel ` block), floated at the end of the
+ *     output and pushed down by new output. Ephemeral (not stored); re-derived
+ *     each frame from the frame clock (`model.now`, ticked while a stream job
+ *     runs — see app/state.js).
  *   - on completion — a PERMANENT line appended to the buffer by
- *     dispatch/runtime/stream.js (`✓ · dur · time` / `✗ N` / `⊗ SIG`), one per
- *     command, so a newer run never overwrites an older one. It replaces the
+ *     dispatch/runtime/stream.js (` ✓ 0  dur  time ` / ` ✗ N ` / ` ⊗ SIG `), one
+ *     per command, so a newer run never overwrites an older one. It replaces the
  *     classic plain `Done.`/`Exit N` footer (which is the DISABLED-chip fallback
  *     — the "Done"/"Exit N"/"Killed" words live there, never in the chip).
  *
- * PURE: `(outcome, now, cfg, tags) → Rich-markup string`. The caller resolves
- * the outcome (from the feature/jobs mirror while running, or the exit
- * code/signal + history record on completion), the frame clock, the config
- * (`model.config.action_status`) and the theme color tags. No model / io /
- * theme reads here, so it is trivially testable and replay-safe. Right-
- * alignment is the caller's job (it depends on the live pane width).
+ * PURE: `(outcome, now, cfg) → Rich-markup string`. The caller resolves the
+ * outcome (from the feature/jobs mirror while running, or the exit code/signal +
+ * history record on completion), the frame clock and the config
+ * (`model.config.action_status`). The fills are SEMANTIC theme tokens
+ * (`chip_ink`/`success`/`error`/`warning`/`footer`), so no model / io / theme
+ * read happens here — trivially testable, replay-safe, and a stored line
+ * re-colors on :theme at paint. Right-alignment is the caller's job (it depends
+ * on the live pane width).
  *
  * Config (global `action_status:`, docs/global-config.md):
  *   enabled   master on/off (default true; `action_status: false` also disables)
@@ -92,23 +98,31 @@ function _spinner(now, startedAt) {
   return SPINNER[Math.floor(elapsed / 125) % SPINNER.length];
 }
 
-/** The status chip: spinner (running) · ✓ 0 (exit 0) · ✗ N (non-zero, with the
- *  code) · ⊗ SIG (killed, with the signal). `o` = { status, exitCode, signal,
- *  startedAt }. Uses SEMANTIC theme tokens ([warning]/[success]/[error]) so a
- *  STORED chip line tracks :theme at paint (ansi._expandThemeKeys) — no baked
- *  color, no caller-passed palette. */
+// A reverse/filled chip block: `text` padded with one space each side and
+// painted with `fill` (a theme-slot markup body). `fill` is a SEMANTIC token, so
+// a STORED chip line re-colors on :theme at paint (ansi._expandThemeKeys) — and a
+// :theme change forces a full repaint (render/paint.js) so unchanged stored rows
+// re-resolve. The status glyph fills with its state color under a dark ink
+// (`chip_ink on <state>`); duration/time fill with the neutral `footer` slot.
+function _block(fill, text) { return `[${fill}] ${text} [/]`; }
+
+/** The status block: spinner (running) · ✓ 0 (exit 0) · ✗ N (non-zero, with the
+ *  code) · ⊗ SIG (killed, with the signal), each a dark-ink-on-state-color filled
+ *  block. `o` = { status, exitCode, signal, startedAt }. No baked color, no
+ *  caller-passed palette. */
 function _statusChip(o, now) {
-  if (o.status === 'running') return `[warning]${_spinner(now, o.startedAt)}[/]`;
-  if (o.status === 'killed') return `[warning]⊗${o.signal ? ` ${o.signal}` : ''}[/]`;
-  if (o.exitCode === 0) return '[success]✓ 0[/]';   // exit value shown for success too
-  return `[error]✗ ${o.exitCode == null ? '?' : o.exitCode}[/]`;
+  if (o.status === 'running') return _block('chip_ink on warning', _spinner(now, o.startedAt));
+  if (o.status === 'killed') return _block('chip_ink on warning', `⊗${o.signal ? ` ${o.signal}` : ''}`);
+  if (o.exitCode === 0) return _block('chip_ink on success', '✓ 0');   // exit value shown for success too
+  return _block('chip_ink on error', `✗ ${o.exitCode == null ? '?' : o.exitCode}`);
 }
 
 /** Compose the status line for `outcome` as Rich markup, or '' when disabled /
  *  no segments. `outcome` = { status: 'running'|'exited'|'killed', exitCode?,
- *  signal?, startedAt, endedAt? }. Segments render in config order, joined by
- *  ` · `; `time` is omitted while running (no finish time yet). The caller
- *  right-aligns the result to the pane width. */
+ *  signal?, startedAt, endedAt? }. Segments render in config order as filled
+ *  blocks butted together (NO divider — the fill color change separates them);
+ *  `time` is omitted while running (no finish time yet). The caller right-aligns
+ *  the result to the pane width (flush right, transparent to the left). */
 function statusLine(outcome, now, cfg) {
   if (!outcome) return '';
   const conf = resolveConfig(cfg);
@@ -125,19 +139,19 @@ function statusLine(outcome, now, cfg) {
     if (seg === 'status') {
       parts.push(_statusChip(outcome, now));
     } else if (seg === 'duration') {
-      parts.push(`[dim]${fmtDuration(outcome.startedAt, running ? null : outcome.endedAt, now)}[/]`);
+      parts.push(_block('footer', fmtDuration(outcome.startedAt, running ? null : outcome.endedAt, now)));
     } else if (seg === 'time') {
-      if (!running && outcome.endedAt != null) parts.push(`[dim]${fmtClock(outcome.endedAt)}[/]`);
+      if (!running && outcome.endedAt != null) parts.push(_block('footer', fmtClock(outcome.endedAt)));
     }
   }
-  return parts.join(' · ');
+  return parts.join('');
 }
 
-// The clickable cancel affordance on the LIVE running chip: `✗ cancel` (the ✗
-// red, `cancel` dim). Its visible width; the hit-test (chrome-hittest.js) maps a
-// click on the rightmost CANCEL_W content cols of the chip's row to killJob. The
-// ` · ` separator is drawn but is NOT part of the clickable span.
-const CANCEL_W = 8;   // visibleLen('✗ cancel') = ✗(1) + ' '(1) + 'cancel'(6)
+// The clickable cancel affordance on the LIVE running chip: a filled ` ✗ cancel `
+// block (dark ink on the error color — matching the destructive fill). Its visible
+// width; the hit-test (chrome-hittest.js) maps a click on the rightmost CANCEL_W
+// content cols of the chip's row to killJob — the WHOLE filled block is the button.
+const CANCEL_W = 10;   // visibleLen(' ✗ cancel ') = pad(1) + ✗(1) + ' '(1) + cancel(6) + pad(1)
 
 /**
  * Compose the LIVE running chip WITH the trailing clickable cancel affordance,
@@ -154,7 +168,7 @@ function runningChip(outcome, now, cfg, innerW) {
   if (!outcome || outcome.status !== 'running') return null;   // cancel affordance is running-only
   const seg = statusLine(outcome, now, cfg);
   if (!seg) return null;
-  const withCancel = `${seg} · [error]✗[/] [dim]cancel[/]`;
+  const withCancel = seg + _block('chip_ink on error', '✗ cancel');   // butted, no divider
   const wcw = visibleLen(withCancel);
   if (wcw <= innerW) {
     return { line: ' '.repeat(innerW - wcw) + withCancel, cancelX0: innerW - CANCEL_W, cancelX1: innerW - 1 };
