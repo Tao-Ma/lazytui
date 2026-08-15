@@ -100,7 +100,8 @@ describe('[gauge] render — sorted bars, labels, proportional fill (real paint)
     assert(iPg < iNode && iNode < iRedis && iRedis < iAwk, 'bars ordered desc by cpu (postgres → node → redis → awk)');
     assert(/88\.5%/.test(frame) && /47\.0%/.test(frame) && /4\.0%/.test(frame), 'formatted values present');
 
-    // Proportional fill: the higher-cpu bar has strictly more full blocks.
+    // Proportional fill: the higher-cpu bar has strictly more filled cells (█);
+    // the remainder is the dim ░ track, so a █ count is exactly the fill length.
     const grid = screenGrid();
     const full = {};
     for (const y of Object.keys(grid).map(Number)) {
@@ -108,7 +109,7 @@ describe('[gauge] render — sorted bars, labels, proportional fill (real paint)
       if (m) full[m[1]] = (grid[y].match(/█/g) || []).length;
     }
     assert(full.postgres > full.node && full.node > full.redis && full.redis > full.awk,
-      `bar fill is proportional to value (postgres ${full.postgres} > node ${full.node} > redis ${full.redis} > awk ${full.awk})`);
+      `bar fill ∝ value (postgres ${full.postgres} > node ${full.node} > redis ${full.redis} > awk ${full.awk})`);
   });
 
   it('empty states: no topic, no data, no numeric column', () => {
@@ -195,30 +196,49 @@ describe('[gauge] click uses the painted scroll after a row-shrink (divergence r
   });
 });
 
-// Visual: btop-style bounded meter + grey track. The bar is capped at
-// `bar_width` (doesn't sprawl across a wide pane) and the unfilled remainder is a
-// dim `░` track (the whole bar reads as a meter, not a colour stub). See gauge.js
-// `_meter` + the `barMax`/`trailW` logic.
-describe('[gauge] bounded meter + grey track', () => {
-  const FILL = /[█▏▎▍▌▋▊▉]/g, TRACK = /░/g, BAR = /[█▏▎▍▌▋▊▉░]/g;
-  it('caps the bar at bar_width and fills the remainder with a dim track', () => {
+// _meterFill: whole-cell fill count (no partial half-blocks — those show the
+// terminal bg through their empty half). Proportional to value, clamped.
+describe('[gauge] _meterFill — fill cells (whole-cell, proportional)', () => {
+  const f = gauge._meterFill;
+  it('rounds value×width to whole cells', () => { eq(f(0.5, 10), 5); eq(f(0, 10), 0); eq(f(1, 10), 10); eq(f(0.04, 10), 0); eq(f(0.06, 10), 1); });
+  it('clamps out-of-range + non-finite', () => { eq(f(2, 10), 10); eq(f(-1, 10), 0); eq(f(NaN, 10), 0); });
+  it('is proportional to value', () => { assert(f(0.9, 20) > f(0.5, 20) && f(0.5, 20) > f(0.1, 20), 'more value → more fill'); });
+});
+
+// Visual: btop-style bounded meter, colourful fill, solid dim track. The bar is
+// capped at `bar_width` (doesn't sprawl across a wide pane); the fill is coloured
+// by POSITION (a gradient green→red, not one flat colour) and the track is a
+// solid dim block (no terminal-bg showthrough). See gauge.js `_colouredFill`.
+describe('[gauge] bounded meter + colourful fill', () => {
+  function rawFrame() {
+    let raw = '';
+    const orig = process.stdout.write.bind(process.stdout);
+    process.stdout.write = (s) => { raw += s; return true; };
+    rq.forceFullRepaint();
+    sm.render();
+    process.stdout.write = orig;
+    return raw;
+  }
+  it('caps the bar at bar_width; fill is colour-graded, track is a dim solid', () => {
     const paneCfg = { id: 'bw', type: 'gauge', title: 'CPU', config: { topic: 'm.bw', column: 'cpu', bar_width: 10 } };
     sm.bootFresh({
       groups: { grp: { label: 'G', containers: [], actions: { a: { cmd: 'echo', label: 'A' } } } },
       layout: { pool: { bw: paneCfg }, columns: [{ panels: [paneCfg] }] },
     });
-    setMetric('m.bw', { half: [{ cpu: 50 }], zero: [{ cpu: 0 }] }, { cpu: { type: 'percent' } });
+    setMetric('m.bw', { busy: [{ cpu: 90 }], idle: [{ cpu: 20 }] }, { cpu: { type: 'percent' } });
     const grid = screenGrid();
-    let halfLine = '', zeroLine = '';
-    for (const y of Object.keys(grid).map(Number)) {
-      if (/half/.test(grid[y])) halfLine = grid[y];
-      if (/zero/.test(grid[y])) zeroLine = grid[y];
-    }
-    eq((halfLine.match(BAR) || []).length, 10, 'bar bounded to bar_width=10 (not the full ~78-col pane)');
-    const hf = (halfLine.match(FILL) || []).length, ht = (halfLine.match(TRACK) || []).length;
-    assert(hf >= 4 && ht >= 4, `50% → ~half fill, ~half grey track (fill ${hf}, track ${ht})`);
-    eq((zeroLine.match(FILL) || []).length, 0, '0% → no fill');
-    eq((zeroLine.match(TRACK) || []).length, 10, '0% → full grey track (btop shows the whole bar)');
+    let idleLine = '';
+    for (const y of Object.keys(grid).map(Number)) if (/idle/.test(grid[y])) idleLine = grid[y];
+    // Fill █ + track ░ together span exactly bar_width — proves the meter is
+    // BOUNDED (not stretched to the ~78-col pane); idle at 20% → 2 fill, 8 track.
+    const fillN = (idleLine.match(/█/g) || []).length, trackN = (idleLine.match(/░/g) || []).length;
+    eq(fillN + trackN, 10, 'bar bounded to bar_width=10 (not the ~78-col pane)');
+    eq(fillN, 2, '20% of 10 → 2 filled cells');
+    assert(trackN >= 1, 'the rest is a dim ░ track, not blank');
+    // Colourful: a high bar spans several gradient hues (position-coloured fill),
+    // so more than one fg colour is emitted across the frame.
+    const colours = new Set(rawFrame().match(/\x1b\[38;[0-9;]+m/g) || []);
+    assert(colours.size >= 2, `fill is colour-graded — multiple fg colours, got ${colours.size}`);
   });
 });
 

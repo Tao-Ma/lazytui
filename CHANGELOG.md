@@ -12,8 +12,9 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   `metrics:` topic, alongside the `stats` graph and the `table` list: horizontal
   meter bars of the latest sample — btop's mem/disk/process bars. One bar per row,
   ordered by the metered value; each a bounded two-tone meter — the filled portion
-  (`value / max`) coloured through the theme's percent ramp, the remainder a dim
-  `░` track — with the formatted value after it. Config: `topic:`, `column:`
+  (`value / max`) coloured by position through the theme's percent ramp (green→red
+  along the bar, btop-style), the remainder a dim `░` track — with the formatted
+  value after it. Config: `topic:`, `column:`
   (metered column; default the first percent column), `label:` (a string column
   for the bar label), `max:` (denominator for a non-percent column; default auto),
   `bar_width:` (max meter cells, default 20), `sort_dir:`. Rows are selectable, so

@@ -38,18 +38,26 @@ const { truncate } = require('../../leaves/render/draw');
 const { fmt: _fmt } = require('../../leaves/metrics/format');   // shared compact cell formatter (see table.js)
 const mnav = require('../../leaves/wm/nav');
 
-// Two-tone meter geometry: `fill` = filled cells (eighth-block sub-cell leading
-// edge, like stats-graph.meterRow), `track` = the dim remainder. Split so the
-// caller can colour the two runs (gradient fill + dim track) — btop's grey track.
-const _PARTIAL = '▏▎▍▌▋▊▉';   // 1/8..7/8 left-fill (mirrors stats-graph.meterRow)
-function _meter(frac, width) {
-  if (width < 1) return { fill: '', track: '' };
+// Meter geometry: how many of `width` cells are FILLED. Whole cells only — a
+// partial half-block (`▌`) shows the terminal bg through its empty half, which
+// reads as a muddle of colours; a solid block per cell is clean and btop-like.
+function _meterFill(frac, width) {
   const f = Number.isFinite(frac) ? Math.max(0, Math.min(1, frac)) : 0;
-  const eighths = Math.round(f * width * 8);
-  const full = eighths >> 3, rem = eighths & 7;
-  const fill = '█'.repeat(full) + (rem ? _PARTIAL[rem - 1] : '');
-  const track = '░'.repeat(Math.max(0, width - full - (rem ? 1 : 0)));
-  return { fill, track };
+  return Math.max(0, Math.min(width, Math.round(f * width)));
+}
+
+// The FILLED run of a bar, each cell coloured by its POSITION along the full bar
+// (green→red, btop-style — so a high bar goes green→yellow→red, a low one stays
+// green). Adjacent same-colour cells coalesce into one span to limit SGR churn.
+function _colouredFill(fillN, width) {
+  let out = '', run = '', tag = null;
+  for (let i = 0; i < fillN; i++) {
+    const c = gradient('percent', width > 1 ? i / (width - 1) : 1);
+    if (c !== tag) { if (run) out += `[${tag}]${run}[/]`; run = '█'; tag = c; }
+    else run += '█';
+  }
+  if (run) out += `[${tag}]${run}[/]`;
+  return out;
 }
 
 function _metric(topic) {
@@ -225,20 +233,22 @@ function render(panel, w, h, slice, opts) {
   const buildBar = (rk, selected) => {
     const v = valueOf(rk);
     const frac = Number.isFinite(v) ? v / denom : NaN;
-    // Two-tone meter (btop-style): the filled portion in the gradient colour, the
-    // remainder a DIM track — so the whole bar width reads as a meter, not a
-    // colour stub floating in blank space. Distinct GLYPHS (█ fill vs ░ track)
-    // keep the fill legible on the selected row too, where inner colour is dropped.
-    const { fill, track } = _meter(frac, barW);
+    const fillN = _meterFill(frac, barW);
+    const trackN = barW - fillN;
     const label = cell(esc(labelText(rk)), labelW, false);
     const value = cell(esc(_fmt(v, type)), _VALUE_W, true);
     const trail = ' '.repeat(trailW);
-    // Selected row: ONE `[selected]` span over a PLAIN line (no inner colour —
-    // PRINCIPLES §8); the fill/track glyphs still distinguish filled from empty.
-    // The trailing pad is inside the span so the highlight spans the full width.
-    if (selected && focused) return `[${t.selected}]${label} ${fill}${track} ${value}${trail}`;
-    const gradTag = Number.isFinite(frac) ? gradient('percent', Math.max(0, Math.min(1, frac))) : t.dim;
-    return `${label} [${gradTag}]${fill}[/][${t.dim}]${track}[/] ${value}${trail}`;
+    const track = '░'.repeat(trackN);   // dim grey remainder — btop's "grey part";
+                                        // a DIFFERENT glyph from the fill █ so the
+                                        // fill level stays readable (a dim solid █
+                                        // track would make a low bar look full).
+    // Selected row: ONE `[selected]` span over a PLAIN line (flat markup can't
+    // nest colour under it — PRINCIPLES §8). Fill █ vs track ░ stay distinct by
+    // glyph on the selection bg.
+    if (selected && focused) return `[${t.selected}]${label} ${'█'.repeat(fillN)}${track} ${value}${trail}`;
+    // Position-gradient fill (colourful, green→red along the bar) + dim ░ track.
+    const bar = _colouredFill(fillN, barW) + (trackN > 0 ? `[${t.dim}]${track}[/]` : '');
+    return `${label} ${bar} ${value}${trail}`;
   };
 
   const lines = [];
@@ -273,4 +283,5 @@ module.exports = {
   _fmt,
   getItems,
   _meterColumn,
+  _meterFill,
 };

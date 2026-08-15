@@ -313,10 +313,10 @@ history.
 
 **gauge** — the SNAPSHOT. Renders a topic's latest sample as horizontal meter
 bars (btop's mem/disk/process bars) — one bar per row, ordered by the metered
-value. Each bar is a bounded two-tone meter: the filled portion (`value / max`,
-eighth-block resolution) coloured through the theme's percent ramp, the
-remainder a dim `░` track (the whole bar reads as a meter), with the formatted
-value after it. Config: `topic:`, `column:` (the metered column; default the
+value. Each bar is a bounded two-tone meter: the filled portion (`value / max`)
+coloured by POSITION through the theme's percent ramp (green→red along the bar,
+btop-style), the remainder a dim `░` track (the whole bar reads as a meter), with
+the formatted value after it. Config: `topic:`, `column:` (the metered column; default the
 first `percent` column), `label:` (a string column for the bar label; default
 the row key), `max:` (denominator for a non-percent column; default auto — the
 running max across rows; a `percent` column always uses 0–100), `bar_width:`
