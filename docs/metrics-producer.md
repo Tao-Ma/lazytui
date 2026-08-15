@@ -173,13 +173,13 @@ _appSubscriptions(model)              reconcileSubscriptions (finalizer, #D13)
         ├─ for each row:  hub.publish(topic, rowKey, sample)
         └─ GC: hub.delete(topic, rk) for rows in prev set but not this one
                                                 │
-        the existing metrics-mirror Sub (declared by the stats pane) samples
-        hub.matrix(topic) → model.metrics[topic] → stats panel repaints
+        the existing metrics-mirror Sub (declared by a stats/table/gauge pane)
+        samples hub.matrix(topic) → model.metrics[topic] → consumer repaints
 ```
 
 Note the producer stops at `hub.publish`. It never touches
-`model.metrics` — the `metrics-mirror` Sub the `stats` pane already
-declares (v0.6.6 Finding B) throttle-samples the hub into the model, so
+`model.metrics` — the `metrics-mirror` Sub the `stats`/`table`/`gauge` panes
+declare (v0.6.6 Finding B) throttle-samples the hub into the model, so
 `frame = f(model)` (#D5) is preserved unchanged. Producer and consumer
 share nothing but the topic string.
 
