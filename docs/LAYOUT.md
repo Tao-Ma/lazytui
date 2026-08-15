@@ -294,8 +294,8 @@ filesystem; select with `source:` (`declared` / `filesystem` / `both` /
 
 ### Monitor panels (hub consumers)
 
-Two panels render a `metrics:` hub topic (or any producer's topic — see
-[metrics-producer.md](metrics-producer.md)); both scale/format by the topic's
+Three panels render a `metrics:` hub topic (or any producer's topic — see
+[metrics-producer.md](metrics-producer.md)); all scale/format by the topic's
 schema column types.
 
 **stats** — the DRILL-DOWN. Multi-row braille line-graphs of ONE row's history:
@@ -310,6 +310,16 @@ column; desc for a metric). Cells format by schema type; the on-border
 `‹ col↓ ›` sort selector cycles the sort column. Returns string row keys, so a
 `stats` pane can use it as a `select_from` source — select a row, graph its
 history.
+
+**gauge** — the SNAPSHOT. Renders a topic's latest sample as horizontal meter
+bars (btop's mem/disk/process bars) — one bar per row, ordered by the metered
+value and filled `value / max` of the width, coloured through the theme's
+percent ramp, with the formatted value on the right. Config: `topic:`, `column:`
+(the metered column; default the first `percent` column), `label:` (a string
+column for the bar label; default the row key), `max:` (denominator for a
+non-percent column; default auto — the running max across rows; a `percent`
+column always uses 0–100), `sort_dir:` (`desc` default | `asc`). Rows are
+selectable, so a `stats` pane can `select_from` a gauge too.
 
 ## Navigation
 

@@ -8,6 +8,16 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **A snapshot bar-meter panel (`type: gauge`).** The third way to render a
+  `metrics:` topic, alongside the `stats` graph and the `table` list: horizontal
+  meter bars of the latest sample — btop's mem/disk/process bars. One bar per row,
+  ordered by the metered value and filled `value / max` of the width, coloured
+  through the theme's percent ramp, with the formatted value on the right. Config:
+  `topic:`, `column:` (metered column; default the first percent column), `label:`
+  (a string column for the bar label), `max:` (denominator for a non-percent
+  column; default auto), `sort_dir:`. Rows are selectable, so a `stats` pane can
+  `select_from:` a gauge. The host-monitor demo gains a **CPU bars** view (a tab
+  beside the process table). See docs/LAYOUT.md.
 - **Network / disk throughput from counters (`type: counter`).** Mark a metric
   column `counter` and the producer publishes its per-second **rate** instead of
   the raw monotonic tally — so `/proc/net/dev` byte counters (or `/proc/diskstats`

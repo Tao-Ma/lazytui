@@ -411,10 +411,15 @@ multi-row topic **shipped** — `type: table` (`js/panel/monitor/table.js`),
 the list sibling of this drill-down `stats` panel. Select a row in the
 table and a `stats` pane with `select_from: <table>` graphs it.
 
-Still **deferred to their own backlog items** (not this doc): a `gauge`
-panel (btop mem/swap bars — promote the existing `meterRow` in
-`stats-graph.js`) and an aggregate / per-core overlay mode (STATS.md
-already lists this as deferred).
+The snapshot **gauge** consumer also **shipped** — `type: gauge`
+(`js/panel/monitor/gauge.js`), the bar sibling of the graph (`stats`) and
+the list (`table`): it renders a topic's latest sample as horizontal meter
+bars (built on the same `meterRow` primitive in `stats-graph.js` and the
+percent colour ramp), one bar per row, ordered by the metered value. Its
+rows are selectable too, so `select_from: <gauge>` works.
+
+Still **deferred to their own backlog items** (not this doc): an
+aggregate / per-core overlay mode (STATS.md already lists this as deferred).
 
 ## 10. Scope — v1 vs. deferred
 
@@ -436,8 +441,8 @@ the column as `rate`. See §6.1.
   v1 to keep the first cut to two modes.
 - **Live rate-stepping** via `refresh_ladder` + the `- Ns +` control
   (§7).
-- Consumer panels: `gauge`, aggregate/per-core (§9). The process **table**
-  (`type: table`) shipped — see §9.
+- Consumer panels: aggregate/per-core overlay (§9). The process **table**
+  (`type: table`) and the snapshot **gauge** (`type: gauge`) shipped — see §9.
 
 ## 11. Worked examples
 

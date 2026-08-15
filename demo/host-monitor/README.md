@@ -31,14 +31,16 @@ Five producers, each a one-line host command:
 | `host.cpu` | two `/proc/stat` samples → busy% | CPU line graph + meter |
 | `host.mem` | `free` → used% | Memory line graph + meter |
 | `host.load` | `/proc/loadavg` → 1-min load | Load line graph |
-| `host.proc` | `ps` top-by-CPU (pid/cpu/mem/comm) | **Processes table** |
+| `host.proc` | `ps` top-by-CPU (pid/cpu/mem/comm) | **Processes table** + **CPU bars** |
 | `host.net` | `/proc/net/dev` rx/tx **counters** → rates | **Network table** (`B/s`) |
 
 The **Processes** table lists the top processes, sorted by CPU (click the
-`‹ cpu↓ ›` control on its border to re-sort). Select a row and the **Selected**
-graph drills into that process's own CPU/memory history — the table feeds the
-graph via `select_from:`. Plus host actions: **top** (live view in a terminal
-tab), **processes** (a `ps` snapshot), and **uptime**.
+`‹ cpu↓ ›` control on its border to re-sort). Its **CPU bars** tab renders the
+same topic as a btop-style bar chart (a `gauge` panel — one meter bar per
+process, ordered by CPU). Select a row in either and the **Selected** graph
+drills into that process's own CPU/memory history via `select_from:`. Plus host
+actions: **top** (live view in a terminal tab), **processes** (a `ps` snapshot),
+and **uptime**.
 
 ## Requirements
 

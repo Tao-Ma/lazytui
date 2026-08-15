@@ -112,6 +112,16 @@ panels:
     topic: host.proc
     columns: [cpu, mem, comm]   # schema columns to show; pid is the row identity
     sort: cpu                    # default sort (desc for a metric)
+  # The same host.proc topic as a btop-style CPU BAR CHART — one bar per process,
+  # ordered by CPU and filled proportionally. A `gauge` is the SNAPSHOT bar
+  # sibling of the table (list) and the stats graph (history): it reads the same
+  # `metrics:` topic, needs no code, and its rows are selectable too.
+  cpubars:
+    type: gauge
+    title: CPU bars
+    topic: host.proc
+    column: cpu           # the metered value (its schema type `percent` → 0–100 bar)
+    label: comm           # bar label from the command name (not the pid)
   # Drill-down: the CPU/MEM history of the process SELECTED in the table.
   procsel:
     type: stats
@@ -140,7 +150,7 @@ layout:
         - load
     - width: 44
       panels:
-        - procs
+        - { tabs: [procs, cpubars] }   # process table + btop-style CPU bar chart
         - { tabs: [net], height: 34% }
     - panels:
         - procsel
