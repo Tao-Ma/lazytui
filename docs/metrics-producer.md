@@ -102,7 +102,7 @@ metrics:
       row_key: pid
       columns:
         cpu: { type: percent }
-        rss: { type: bytes }
+        rss: { type: number }   # ps reports rss in KiB, not bytes
         comm: { type: string }
 ```
 
@@ -120,7 +120,7 @@ entry defaults to `number`.
 | field | required | default | meaning |
 |---|---|---|---|
 | `cmd` | yes | — | shell command; run `sh -c cmd` via `execAsync` |
-| `interval` | no | `2000` | ms between poll starts |
+| `interval` | no | `2000` | ms between a poll completing and the next starting (polls are sequential — §4.1) |
 | `timeout` | no | `min(interval, 5000)` | ms; SIGTERM a hung poll |
 | `focus_gate` | no | `true` | skip the exec while `model.focused === false` (mirrors docker) |
 | `refresh_ladder` | no | — | `- Ns +` step stops; enables live rate-stepping (§7, fast-follow) |
@@ -152,10 +152,12 @@ for (const [topic, def] of Object.entries((model.config && model.config.metrics)
 ```
 
 `_desiredSubs` folds these in beside the existing app-global sources;
-`reconcileSubscriptions` starts each on boot and stops it on
-`:reload-config` when the entry disappears — the same diff-by-key
-lifecycle every Sub already gets. Keyed `metrics-poll:metrics:<topic>`
-so it is a stable singleton per topic.
+`reconcileSubscriptions` starts each on boot. Today config is immutable
+after boot (no live reload — see §7), so producers start once and are
+never torn down mid-session; the diff-by-key lifecycle (which *would*
+stop a producer whose entry disappeared, on a hypothetical reload) is the
+same every Sub gets. Keyed `metrics-poll:metrics:<topic>` so it is a
+stable singleton per topic.
 
 ```
 _appSubscriptions(model)              reconcileSubscriptions (finalizer, #D13)
@@ -195,18 +197,20 @@ share nothing but the topic string.
     const poll = async () => {
       token.timer = null;
       if (token.stopped) return;
-      const gate = d.focus_gate !== false && getModel().focused === false;
-      if (!token.inFlight && !gate) {
+      const skip = (d.focus_gate !== false && getModel().focused === false) || _replay().isReplaying();
+      if (!token.inFlight && !skip) {
         token.inFlight = true;
         token.ac = new AbortController();
         try {
           const out = await execAsync(d.cmd, { signal: token.ac.signal, timeout: d.timeout || Math.min(ms, 5000) });
           if (!token.stopped) {
             const rows = extract(out, d.extract, (d.schema && d.schema.columns) || {});
-            const seen = new Set();
-            for (const { rowKey, sample } of rows) { seen.add(rowKey); _hub().publish(d.topic, rowKey, sample); }
-            for (const rk of token.prev) if (!seen.has(rk)) _hub().delete(d.topic, rk);   // GC vanished rows
-            token.prev = seen;
+            if (rows.length) {                             // empty/failed poll must NOT wipe the topic
+              const seen = new Set();
+              for (const { rowKey, sample } of rows) { seen.add(rowKey); _hub().publish(d.topic, rowKey, sample); }
+              for (const rk of token.prev) if (!seen.has(rk)) _hub().delete(d.topic, rk);   // GC vanished rows
+              token.prev = seen;
+            }
           }
         } catch (e) { if (!token.stopped) console.error(`[metrics:${d.topic}] ${e && e.message}`); }
         finally { token.inFlight = false; token.ac = null; }
@@ -218,7 +222,8 @@ share nothing but the topic string.
       token.timer = setTimeout(poll, ms);
       if (token.timer.unref) token.timer.unref();
     };
-    setTimeout(poll, 0);                                    // first poll ASAP, not after `interval`
+    token.timer = setTimeout(poll, 0);                     // first poll ASAP; tracked + unref'd so stop() can cancel
+    if (token.timer.unref) token.timer.unref();
     return token;
   },
   stop: (token) => {
@@ -231,22 +236,29 @@ share nothing but the topic string.
 
 Lifecycle guarantees this mirrors from the proven kinds:
 
-- **No pile-up** — self-rearming `setTimeout` (not `setInterval`) plus
-  an `inFlight` latch: if a poll outruns `interval`, later ticks skip
-  the exec rather than overlapping N children (docker's `inFlight`
-  latch; `interval` kind's rearm discipline).
-- **Clean teardown** — `unref`'d timer never holds the process open;
-  `stop()` aborts the in-flight child via the `execAsync` signal, so a
-  producer removed at `:reload-config` (or at quit) cannot publish after
-  teardown (docker's C5 keyed-abort).
+- **No pile-up** — polls are strictly SEQUENTIAL: the next `setTimeout`
+  is armed only *after* the current poll's `await` completes (the
+  `schedule()` call is at the end of `poll`), so overlapping ticks never
+  exist. The gap between polls is therefore `interval` + the command's
+  run time (not a fixed "poll start every `interval`"). The `inFlight`
+  latch is a belt-and-braces re-entry guard on top of that.
+- **Clean teardown** — the timers (including the initial `setTimeout(poll,
+  0)`) are tracked + `unref`'d, so `stop()` cancels them and none holds the
+  process open; `stop()` also aborts the in-flight child via the `execAsync`
+  signal, so a producer torn down (at quit today, or a hypothetical live
+  reload) cannot publish after teardown (docker's C5 keyed-abort). The
+  publish/GC block is additionally gated on `!token.stopped`, so an
+  in-flight poll that resolves *after* `stop()` publishes nothing.
 - **Focus gate** — reads `getModel()` **live** inside the tick (the
   sanctioned pattern: the tick fires after the declaring model is
   stale, exactly like the `overlay-repaint` and `clock` Subs). Skips
   the exec while backgrounded so a hidden TUI doesn't wake the machine.
-- **Row GC** — the producer diffs this tick's rowKeys against the prior
-  set and `hub.delete`s the vanished ones, so an exited process /
-  removed device drops out of the graph (docker deletes rows for
-  non-running containers).
+- **Row GC** — on a **non-empty** tick the producer diffs this tick's
+  rowKeys against the prior set and `hub.delete`s the vanished ones, so an
+  exited process / removed device drops out of the graph (docker deletes
+  rows for non-running containers). An **empty** tick (a failed/timed-out
+  poll — `execAsync` resolves `''`) is skipped, not read as "all rows
+  gone", so one blip can't wipe the graph.
 
 ## 5. Why a Sub kind, not a Component
 
@@ -272,13 +284,19 @@ extract(stdout: string, spec, schemaColumns) -> [{ rowKey, sample }]
 ```
 
 - **`mode: regex`** (single stream, `rowKey = '_'`): for each `field →
-  pattern`, run the regex over `stdout`, take capture group 1, coerce by
-  `schemaColumns[field].type`, assign `sample[field]`. Emits one row.
+  pattern`, run the regex (compiled multiline) over `stdout`, take
+  **capture group 1 if the pattern has one, else the whole match**,
+  coerce by `schemaColumns[field].type`, assign `sample[field]`. Emits
+  one row. Prefer a capture group — a groupless pattern that matches more
+  than the number (e.g. `cpu [0-9.]+`) feeds the whole match to `coerce`
+  and yields `NaN`.
 - **`mode: columns`** (multi-row): drop `skip` leading lines; split each
   remaining line on `delimiter` (`whitespace` → `/\s+/`); for each
   `field → index`, coerce by type; the field named by `row_key` supplies
   the rowKey (kept as a string — `string`-typed fields like `comm` pass
-  through un-coerced).
+  through un-coerced). **Multi-line output needs a `row_key`** — with none,
+  every line is keyed `'_'` and they collide (last line wins), i.e. it is
+  only meaningful for genuinely single-row output.
 
 Coercion by schema type (generalizes docker's `_parsePercent` /
 `_parseMem`, which stay as docker's compound `used / limit` parser):
@@ -299,16 +317,22 @@ mis-parse degrades gracefully instead of throwing.
 
 `reconcileSubscriptions` has a PERF gate (`_lastSubGate`) that skips the
 desired-set rebuild when nothing relevant changed. For **v1 the producer
-cadence is immutable post-boot** — `config.metrics` rides the `arrange`
-ref (a `:reload-config` rebuilds arrange), exactly like docker's
-`_containers()` config gate — so **no gate change is required**.
+set is genuinely immutable post-boot** — there is **no live config
+reload** in lazytui (config is loaded once at boot; `:restore-layout`
+rebuilds `arrange` from the *already-loaded* config, it never re-reads
+`config.metrics`). So the desired producer set never changes after the
+first reconcile, and omitting `config.metrics` from the gate is safe —
+**no gate change is required**.
 
-If a later release wires the existing `- Ns +` refresh control to a
-producer (via `refresh_ladder`), that stepped `refreshMs` becomes
-volatile model state *outside* the layout slice, so it must be folded
-into `_lastSubGate` — the identical treatment docker's `dockerRefresh`
-already gets (`state.js:446`). Called out here so the fast-follow doesn't
-silently break rate-stepping. Out of scope for v1.
+Note the asymmetry with docker, which is worth remembering if live
+reload is ever added: docker's producer rides the `arrange` ref because
+it is a **placed pane**, so an arrange rebuild re-runs its
+`subscriptions()`. A metrics producer is **headless (no pane)**, so an
+arrange rebuild would *not* pick up an added/removed `config.metrics`
+entry. The day live reload lands, `config.metrics` (and any live
+rate-step's `refreshMs`, via a future `- Ns +` on a producer) MUST be
+folded into `_lastSubGate` — the treatment docker's `dockerRefresh`
+already gets (`state.js`) — or producers won't start/stop on a reload.
 
 ## 8. Replay & determinism
 
@@ -318,8 +342,17 @@ break replay:
 - `hub.publish` is recorded in the event log (`hub.js` → injected
   `_recorder`), so a fold replays the exact samples the producer saw.
 - The Sub reconciler is **skipped under replay** (`finalize.js:122`,
-  `if (replay.isReplaying()) return;`), so `metrics-poll` never spawns
-  during a fold — no live command runs while scrubbing history.
+  `if (replay.isReplaying()) return;`), so a fold never *starts* a
+  `metrics-poll`. And a fold is **synchronous** (the driver applies every
+  entry in one loop), so a producer that was already live cannot fire a
+  poll *mid-fold* either — a macrotask timer can't run until the loop
+  yields. The `isReplaying()` check inside `poll` is therefore defensive
+  (it can't observe `true` during a synchronous fold); the same pattern
+  guards the overlay-repaint sub. Caveat: during an *interactive* replay
+  session (playback driven by its own timers, live event loop running), a
+  producer live at entry is not torn down and keeps polling — a known
+  limitation shared with the other always-on polling subs, not specific
+  to metrics.
 
 So the producer is a pure external *source* at record time and a no-op
 at replay time; `frame = f(model)` holds throughout.
@@ -418,19 +451,29 @@ metrics:
       fields: { pid: 0, cpu: 1, rss: 2, comm: 3 }
     schema:
       row_key: pid
-      columns: { cpu: { type: percent }, rss: { type: bytes }, comm: { type: string } }
+      columns: { cpu: { type: percent }, rss: { type: number }, comm: { type: string } }
 ```
+
+> `ps -eo rss=` reports **KiB**, not bytes — so `rss` is typed `number`
+> (the graph shows the KiB value). For a true `bytes` axis, multiply in
+> the command (e.g. pipe through `awk '{$3=$3*1024; print}'`) and type it
+> `bytes`.
 
 ## 12. Testing
 
 - `js/test/test-metrics-extract.js` — the pure leaf: regex + columns
-  modes, each coercion (`47.2%`, `1.2GiB`, `128`, string rowKey),
-  `skip`, alternate delimiters, `NaN` on mis-parse. No spawning.
-- `js/test/smoke/metrics-producer.js` — end-to-end with a deterministic
-  `cmd` (`printf '%s\\n' ...` / `echo`): assert samples land in
-  `hub.snapshot(topic)`, rows GC when they vanish from output, and
-  `stop()` aborts + halts publishing. Uses `hub._reset` /
-  `_resetSubscriptions` for isolation.
+  modes, each coercion (`47.2%`, `1.2GiB`, `128`, string rowKey), `skip`,
+  alternate delimiters, `NaN` on mis-parse, plus the hardening cases
+  (grouped/space numbers → `NaN`, tab-delimited empty column, CRLF). No
+  spawning.
+- `js/test/test-metrics-producer.js` — the sub-kind end-to-end via the
+  real `reconcileSubscriptions` seam: descriptor sourcing from
+  `config.metrics`, `normalize` rejection, a `printf` single-stream poll
+  landing coerced samples in `hub.snapshot(topic)`, and a temp-file-driven
+  sequence proving **row-GC on a successful poll** and that an
+  **empty/failed poll does NOT wipe** surviving rows, then teardown. Uses
+  `hub._reset` / `_resetSubscriptions` for isolation. (There is no
+  separate `smoke/` file; this top-level test is auto-discovered.)
 
 ## 13. File-change checklist
 

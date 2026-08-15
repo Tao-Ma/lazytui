@@ -307,6 +307,22 @@ describe('metrics producers', () => {
   it('columns row_key not in fields throws', () => expectThrow(/row_key.*must name a field/, () => validate(withMetrics({ x: { cmd: 'echo', extract: { mode: 'columns', row_key: 'missing', fields: { a: 0 } } } }), 'test')));
   it('regex invalid pattern throws', () => expectThrow(/not a valid regex/, () => validate(withMetrics({ x: { cmd: 'echo', extract: { mode: 'regex', fields: { a: '([0-9' } } } }), 'test')));
   it('non-positive interval throws', () => expectThrow(/interval' must be a positive/, () => validate(withMetrics({ x: { cmd: 'echo', interval: 0, extract: { fields: { a: 'x' } } } }), 'test')));
+  it('non-positive timeout throws', () => expectThrow(/timeout' must be a positive/, () => validate(withMetrics({ x: { cmd: 'echo', timeout: -1, extract: { fields: { a: 'x' } } } }), 'test')));
+  it('non-boolean focus_gate throws', () => expectThrow(/focus_gate' must be a boolean/, () => validate(withMetrics({ x: { cmd: 'echo', focus_gate: 'yes', extract: { fields: { a: 'x' } } } }), 'test')));
+  // Review 2026-08-15 — validator gaps that silently produced wrong data.
+  it('non-string delimiter throws', () => expectThrow(/delimiter' must be a string/, () => validate(withMetrics({ x: { cmd: 'echo', extract: { mode: 'columns', delimiter: 5, row_key: 'k', fields: { k: 0 } } } }), 'test')));
+  it('non-integer skip throws', () => expectThrow(/skip' must be a non-negative integer/, () => validate(withMetrics({ x: { cmd: 'echo', extract: { fields: { a: 'x' }, skip: 1.5 } } }), 'test')));
+  it('unknown column type throws (catches typos like strng)', () => expectThrow(/type' must be one of/, () => validate(withMetrics({ x: { cmd: 'echo', extract: { fields: { a: 'x' } }, schema: { columns: { a: { type: 'strng' } } } } }), 'test')));
+  it('documented column types (incl. rate/duration) accepted', () => {
+    for (const t of ['number', 'percent', 'bytes', 'rate', 'string', 'duration']) {
+      validate(withMetrics({ x: { cmd: 'echo', extract: { fields: { a: 'x' } }, schema: { columns: { a: { type: t } } } } }), 'test');
+    }
+    assert(true);
+  });
+  it('valid interval/timeout/focus_gate producer passes', () => {
+    validate(withMetrics({ x: { cmd: 'echo', interval: 1000, timeout: 800, focus_gate: false, extract: { fields: { a: 'x' } } } }), 'test');
+    assert(true);
+  });
 });
 
 report();

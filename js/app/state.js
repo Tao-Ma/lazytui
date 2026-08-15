@@ -269,13 +269,17 @@ const _subKinds = {
   // schema once, then self-rearms `execAsync(cmd)` off-tick every `interval`,
   // runs the pure extractor over stdout, and publishes each row to the hub; the
   // existing `metrics-mirror` (declared by a stats pane) samples it into the
-  // model. Mirrors docker's fetch discipline: an `inFlight` latch (no pile-up if
-  // a poll outruns its interval), `unref`'d timer (never holds the process
-  // open), abort-on-stop (kills an in-flight child via execAsync's signal), and
-  // per-row GC (a rowKey gone from this tick's output is hub.delete'd, so an
-  // exited process/removed device drops out). Skips the exec while the TUI is
-  // backgrounded (focus_gate, default on) OR under replay (a fold replays the
-  // recorded publishes; no live command runs — same guard the overlay poll uses).
+  // model. Discipline (docker-style): polls are strictly SEQUENTIAL — the next
+  // timer arms only after the current poll completes, so the gap between polls is
+  // `interval` (+ exec time); an `inFlight` latch guards re-entry belt-and-braces.
+  // Timers are `unref`'d + tracked so stop() cancels them and none holds the loop
+  // open. abort-on-stop kills an in-flight child via execAsync's signal. Per-row
+  // GC hub.delete's a rowKey absent from a SUCCESSFUL tick — but an empty/failed
+  // poll (execAsync resolves '' on timeout/error) is NOT read as "all rows gone":
+  // it keeps prior data, so one blip can't wipe the graph (docker's dropStale).
+  // Skips the exec while backgrounded (focus_gate, default on) or replaying (the
+  // fold is synchronous so a macrotask poll can't fire mid-fold anyway — the guard
+  // is defensive, matching the overlay-repaint sub).
   'metrics-poll': {
     normalize: (d) => (d && d.id && d.topic && d.cmd && d.extract && typeof d.extract === 'object' ? d : null),
     key: (d) => d.id,
@@ -308,10 +312,17 @@ const _subKinds = {
             const out = await execAsync(d.cmd, { signal: token.ac.signal, timeout });
             if (!token.stopped) {
               const rows = extract(out, d.extract, cols);
-              const seen = new Set();
-              for (const { rowKey, sample } of rows) { seen.add(rowKey); hub.publish(d.topic, rowKey, sample); }
-              for (const rk of token.prev) if (!seen.has(rk)) hub.delete(d.topic, rk); // GC vanished rows
-              token.prev = seen;
+              // execAsync never rejects — a timeout, non-zero exit, or blip
+              // resolves as '' → extract() = []. Do NOT read that as "all rows
+              // vanished" and wipe the topic: only publish + GC when we actually
+              // parsed rows; an empty poll leaves prior data + history intact
+              // (docker's dropStale keeps prior maps on a bad fetch).
+              if (rows.length) {
+                const seen = new Set();
+                for (const { rowKey, sample } of rows) { seen.add(rowKey); hub.publish(d.topic, rowKey, sample); }
+                for (const rk of token.prev) if (!seen.has(rk)) hub.delete(d.topic, rk); // GC vanished rows
+                token.prev = seen;
+              }
             }
           } catch (e) {
             if (!token.stopped) console.error(`[metrics:${d.topic}] ${e && e.message}`);
@@ -319,7 +330,10 @@ const _subKinds = {
         }
         schedule();
       };
-      setTimeout(poll, 0); // first poll ASAP, not after `interval`
+      // First poll ASAP (not after `interval`). Tracked + unref'd like every
+      // other timer here so stop() can cancel it and it never holds the loop open.
+      token.timer = setTimeout(poll, 0);
+      if (token.timer.unref) token.timer.unref();
       return token;
     },
     stop: (token) => {
@@ -408,14 +422,19 @@ function _appSubscriptions(model) {
   // per top-level `metrics:` entry. App-global (not pane-owned): a producer
   // runs whenever it's declared, decoupled from whether a consumer pane is
   // placed (a topic with no subscriber drops its publishes cheaply). Config is
-  // boot-immutable (a `:reload-config` rebuilds arrange → the reconcile gate
-  // re-runs this projection), so cadence never re-arms mid-session — a future
-  // live rate-step via the refresh control would fold each producer's ms into
-  // `_lastSubGate` (§7), the same treatment docker's `dockerRefresh` gets.
+  // genuinely boot-immutable — there is NO live config reload (edit.js: "no live
+  // reload — deliberate"; `:restore-layout` rebuilds arrange from the already-
+  // loaded config), so this projection is stable after boot and the gate's
+  // omission of `config.metrics` is safe. NOTE the asymmetry with docker: docker
+  // rides the `arrange` ref because it's a PLACED pane; a metrics producer is
+  // headless, so if live config reload is ever added, `config.metrics` (and a
+  // future live rate-step's ms) MUST be folded into `_lastSubGate` (§7) — an
+  // arrange rebuild alone would not pick up an added/removed producer.
+  // Spread `def` first so the framework-owned kind/id/topic always win.
   const producers = (model && model.config && model.config.metrics) || {};
   for (const [topic, def] of Object.entries(producers)) {
     if (!def || typeof def !== 'object') continue;
-    subs.push({ kind: 'metrics-poll', id: `metrics:${topic}`, topic, ...def });
+    subs.push({ ...def, kind: 'metrics-poll', id: `metrics:${topic}`, topic });
   }
   return subs;
 }
@@ -496,8 +515,8 @@ function reconcileSubscriptions(model) {
   // viewMode = the on-screen-terminal check that gates the #D15 overlay poll)
   // plus the two mode flags that toggle the clock sub. Everything else desired is
   // constant (resize + the 3 store-mirrors) or immutable-post-boot (docker's
-  // `_containers()` config gate — a `:reload-config` rebuilds arrange, so it
-  // rides the arrange ref). So when none of these changed since the last
+  // `_containers()` config gate — config is boot-immutable, there's no live
+  // reload; docker rides the arrange ref as a PLACED pane). So when none of these changed since the last
   // reconcile, the desired set is unchanged and the live subs are already correct
   // — skip the desired-set rebuild + diff (~350µs/dispatch, dominated by the
   // `visibleTerminalSurfaces` on-screen check + the per-pane walk). This was

@@ -32,7 +32,10 @@ const _BYTE_UNITS = {
 
 function parseBytes(s) {
   if (s == null) return NaN;
-  const m = String(s).trim().match(/^([\d.]+)\s*([a-zA-Z]+)?/);
+  // Anchored at both ends: a grouped/garbage value ("1,258,291") must NOT match
+  // and silently truncate to its first group (1) — it yields NaN (renders '—'),
+  // a visible gap instead of a misleadingly-small number.
+  const m = String(s).trim().match(/^([\d.]+)\s*([a-zA-Z]+)?$/);
   if (!m) return NaN;
   const n = parseFloat(m[1]);
   if (!Number.isFinite(n)) return NaN;
@@ -49,8 +52,10 @@ function parsePercent(s) {
 
 function parseNumber(s) {
   if (s == null) return NaN;
-  const n = parseFloat(String(s).trim());
-  return Number.isFinite(n) ? n : NaN;
+  const t = String(s).trim();
+  // Strict single numeric token. parseFloat would truncate "1,024"→1 or "1 2"→1
+  // (a silent wrong number); prefer NaN → '—' over a misleadingly-small value.
+  return /^[+-]?(\d+\.?\d*|\.\d+)$/.test(t) ? parseFloat(t) : NaN;
 }
 
 /**
@@ -102,9 +107,14 @@ function _extractColumns(stdout, spec, cols) {
   const out = [];
   const lines = String(stdout).split('\n').slice(skip);
   for (const rawLine of lines) {
-    const line = rawLine.trim();
-    if (!line) continue;
-    const parts = delim === null ? line.split(/\s+/) : line.split(delim).map(p => p.trim());
+    const raw = rawLine.replace(/\r$/, ''); // tolerate CRLF
+    if (raw.trim() === '') continue;         // skip blank lines
+    // Whitespace mode trims then splits on runs. An explicit delimiter splits the
+    // RAW line — a whole-line trim would eat a leading/trailing empty field (e.g.
+    // a leading tab), shifting every column left and corrupting the row key.
+    const parts = delim === null
+      ? raw.trim().split(/\s+/)
+      : raw.split(delim).map(p => p.trim());
     let rowKey = '_';
     if (rowKeyField != null && fields[rowKeyField] != null) {
       const rk = parts[fields[rowKeyField]];

@@ -188,6 +188,10 @@ function validateQuickKeys(v) {
 const VALID_METRICS_KEYS = new Set(['cmd', 'interval', 'timeout', 'focus_gate', 'refresh_ladder', 'extract', 'schema']);
 const VALID_EXTRACT_KEYS = new Set(['mode', 'fields', 'delimiter', 'skip', 'row_key']);
 const VALID_EXTRACT_MODES = new Set(['regex', 'columns']);
+// Advisory column types (HUB.md §16). A closed set so a typo (`strng`) is caught
+// at parse time rather than silently coercing a label to NaN; the full documented
+// set is allowed, so `rate`/`duration` (deferred derivations) still validate.
+const VALID_COLUMN_TYPES = new Set(['number', 'percent', 'bytes', 'rate', 'string', 'duration']);
 function validateMetrics(v) {
   if (v == null) return; // bare `metrics:` key → no producers (never-brick)
   if (!isMapping(v)) throw new SchemaError("'metrics' must be a mapping (topic → producer)");
@@ -216,8 +220,11 @@ function validateMetrics(v) {
     if (!isMapping(ex.fields) || Object.keys(ex.fields).length === 0) {
       throw new SchemaError(`'${exCtx}.fields' is required and must be a non-empty mapping`);
     }
-    if ('skip' in ex && (typeof ex.skip !== 'number' || ex.skip < 0)) {
-      throw new SchemaError(`'${exCtx}.skip' must be a non-negative number`);
+    if ('skip' in ex && (typeof ex.skip !== 'number' || ex.skip < 0 || !Number.isInteger(ex.skip))) {
+      throw new SchemaError(`'${exCtx}.skip' must be a non-negative integer`);
+    }
+    if ('delimiter' in ex && typeof ex.delimiter !== 'string') {
+      throw new SchemaError(`'${exCtx}.delimiter' must be a string ('whitespace', 'tab', or a literal)`);
     }
     if (mode === 'columns') {
       for (const [f, idx] of Object.entries(ex.fields)) {
@@ -239,8 +246,14 @@ function validateMetrics(v) {
     }
     if ('schema' in def) {
       if (!isMapping(def.schema)) throw new SchemaError(`'${ctx}.schema' must be a mapping`);
-      if ('columns' in def.schema && !isMapping(def.schema.columns)) {
-        throw new SchemaError(`'${ctx}.schema.columns' must be a mapping`);
+      if ('columns' in def.schema) {
+        if (!isMapping(def.schema.columns)) throw new SchemaError(`'${ctx}.schema.columns' must be a mapping`);
+        for (const [cname, cdef] of Object.entries(def.schema.columns)) {
+          if (!isMapping(cdef)) throw new SchemaError(`'${ctx}.schema.columns.${cname}' must be a mapping`);
+          if ('type' in cdef && !VALID_COLUMN_TYPES.has(cdef.type)) {
+            throw new SchemaError(`'${ctx}.schema.columns.${cname}.type' must be one of: ${[...VALID_COLUMN_TYPES].join(', ')}`);
+          }
+        }
       }
     }
   }

@@ -126,4 +126,35 @@ describe('[extract] empty / guard inputs', () => {
   });
 });
 
+// Review 2026-08-15 — hardening against silent-wrong-number + delimiter trim.
+describe('[extract] hardening', () => {
+  it('grouped/space-separated numbers yield NaN, not a truncated value', () => {
+    assert(isNaNv(coerce('1,258,291', 'bytes')), 'bytes: 1,258,291 → NaN (was silently 1)');
+    assert(isNaNv(coerce('1,024', 'number')), 'number: 1,024 → NaN (was silently 1)');
+    assert(isNaNv(parseNumber('1 234')), 'space-separated → NaN');
+    assert(isNaNv(parseBytes('1,258,291')));
+  });
+  it('clean values still parse after the end-anchor', () => {
+    eq(parseBytes('1258291'), 1258291);
+    eq(parseBytes('1.2GiB'), 1.2 * 1024 ** 3);
+    eq(parseNumber('47.2'), 47.2);
+    eq(parseNumber('-5'), -5);
+    eq(parseNumber('.5'), 0.5);
+  });
+  it('tab-delimited leading empty column is not eaten by a whole-line trim', () => {
+    // "\t20": col0 is empty. As the row_key → the row is skipped (no identity).
+    const asKey = extract('\t20\n', { mode: 'columns', delimiter: 'tab', row_key: 'k', fields: { k: 0, v: 1 } }, { v: { type: 'number' } });
+    eq(asKey.length, 0, 'empty row_key column → row skipped, not left-shifted');
+    // Not the row_key → col0 stays '', col1 stays 20 (no column shift).
+    const notKey = extract('\t20\n', { mode: 'columns', delimiter: 'tab', fields: { a: 0, b: 1 } }, { a: { type: 'string' }, b: { type: 'number' } });
+    eq(notKey[0].sample.a, '');
+    eq(notKey[0].sample.b, 20);
+  });
+  it('CRLF line endings tolerated (trailing \\r stripped)', () => {
+    const rows = extract('a,5\r\nb,6\r\n', { mode: 'columns', delimiter: ',', row_key: 'k', fields: { k: 0, v: 1 } }, { v: { type: 'number' } });
+    eq(rows.map(r => r.rowKey), ['a', 'b']);
+    eq(rows[1].sample.v, 6);
+  });
+});
+
 report();

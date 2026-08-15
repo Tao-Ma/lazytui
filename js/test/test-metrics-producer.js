@@ -60,34 +60,72 @@ describe('[metrics-poll] normalize rejects malformed producers', () => {
   });
 });
 
-// --- end-to-end: real poll → parse → publish → teardown -------------------
-// Async chain (setTimeout(0) → execAsync spawn → hub.publish → onUpdate), so it
-// uses section()+direct asserts and the single report() lands in the callback.
+// --- end-to-end: real poll → parse → publish, then GC + empty-poll-no-wipe --
+// Async (execAsync spawn → hub.publish), so it uses section()+direct asserts and
+// the single report() lands at the end of the chain.
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 
-hub._reset();
-state._resetSubscriptions();
+function waitFor(pred, ms, label) {
+  return new Promise((res, rej) => {
+    const t0 = Date.now();
+    const iv = setInterval(() => {
+      if (pred()) { clearInterval(iv); res(); }
+      else if (Date.now() - t0 > ms) { clearInterval(iv); rej(new Error(`timeout: ${label}`)); }
+    }, 20);
+  });
+}
 
-section('[metrics-poll] end-to-end: printf → hub');
+(async () => {
+  // 1) printf single-stream: coercion + basic publish.
+  hub._reset(); state._resetSubscriptions();
+  section('[metrics-poll] end-to-end: printf → hub');
+  hub.subscribe(TOPIC, { window: 10 });
+  state.reconcileSubscriptions(producerModel());
+  assert(state._liveSubKeys().includes(KEY), 'producer sub is live after reconcile');
+  try {
+    await waitFor(() => hub.snapshot(TOPIC).has('_'), 5000, 'first publish');
+    const s = hub.snapshot(TOPIC).get('_');
+    eq(s.cpu, 42.5, 'cpu percent-coerced');
+    eq(s.mem, 128, 'mem bytes-coerced (bare number = bytes)');
+    state._resetSubscriptions();
+    assert(!state._liveSubKeys().includes(KEY), 'producer torn down on reset');
 
-// Subscribe first so the topic has a retention window (else publish drops) and
-// we get notified on the first sample.
-let resolveFirst;
-const firstPublish = new Promise((res) => { resolveFirst = res; });
-hub.subscribe(TOPIC, { window: 10, onUpdate: () => resolveFirst() });
+    // 2) temp-file driven: row-GC on a successful poll, and the MEDIUM fix —
+    //    an empty/failed poll must NOT wipe surviving rows.
+    hub._reset(); state._resetSubscriptions();
+    section('[metrics-poll] end-to-end: GC + empty-poll must not wipe');
+    const TF = path.join(os.tmpdir(), `lazytui-metrics-${process.pid}.txt`);
+    fs.writeFileSync(TF, 'a 5\nb 7\n');
+    const T2 = 'test.e2e';
+    const K2 = `metrics-poll:metrics:${T2}`;
+    const m2 = { config: { metrics: { [T2]: {
+      cmd: `cat ${TF}`, interval: 100, focus_gate: false,
+      extract: { mode: 'columns', row_key: 'k', fields: { k: 0, v: 1 } },
+      schema: { columns: { v: { type: 'number' } } },
+    } } }, jobs: [], modes: {} };
+    const keys = () => [...hub.snapshot(T2).keys()].sort().join(',');
+    hub.subscribe(T2, { window: 10 });
+    state.reconcileSubscriptions(m2);
+    try {
+      await waitFor(() => keys() === 'a,b', 3000, 'initial a,b');
+      eq(hub.snapshot(T2).get('a').v, 5, 'row a value');
 
-const bail = setTimeout(() => { assert(false, 'timed out waiting for first publish'); report(); }, 5000);
+      fs.writeFileSync(TF, 'a 6\n');                         // b vanishes from a good poll
+      await waitFor(() => keys() === 'a', 3000, 'b GC-d');
+      eq(hub.snapshot(T2).get('a').v, 6, 'row a updated');
 
-state.reconcileSubscriptions(producerModel());
-assert(state._liveSubKeys().includes(KEY), 'producer sub is live after reconcile');
+      fs.writeFileSync(TF, '');                              // empty poll → must NOT wipe
+      await new Promise(r => setTimeout(r, 350));            // ~3 empty polls
+      eq(keys(), 'a', 'empty poll did NOT wipe the surviving row');
+      eq(hub.snapshot(T2).get('a').v, 6, 'row a intact after empty polls');
 
-firstPublish.then(() => {
-  clearTimeout(bail);
-  const s = hub.snapshot(TOPIC).get('_');
-  assert(s, 'a single-stream row "_" was published');
-  eq(s.cpu, 42.5, 'cpu percent-coerced');
-  eq(s.mem, 128, 'mem bytes-coerced (bare number = bytes)');
-
-  state._resetSubscriptions();
-  assert(!state._liveSubKeys().includes(KEY), 'producer torn down on reset');
+      state._resetSubscriptions();
+      assert(!state._liveSubKeys().includes(K2), 'producer torn down on reset (2)');
+    } finally { try { fs.unlinkSync(TF); } catch (_) { /* best effort */ } }
+  } catch (e) {
+    assert(false, e.message);
+  }
   report();
-});
+})();
