@@ -431,6 +431,12 @@ function sliceForPane(id, kind) {
   // whose content lives on the kind's canonical instance, and legacy
   // kind-name callers) — explicit primary read, not the (post-P2
   // deleted) getInstanceSlice fallback.
+  // NOTE: a bare pool-id (a `select_from: <table>` target) resolves here to the
+  // kind PRIMARY, i.e. the first-minted pane of that kind — correct only when the
+  // target is that primary (true for the host-monitor demo). Making it address a
+  // SPECIFIC same-kind pane needs pane-id-aware routing across the whole
+  // wrapped-Msg path (a naive `pane-<id>` probe here breaks multi-select routing
+  // — verified). Left for its own arc; see review notes.
   return primarySliceOf(kind);
 }
 

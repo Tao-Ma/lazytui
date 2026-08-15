@@ -43,16 +43,21 @@ const mnav = require('../../leaves/wm/nav');
 // reads as a muddle of colours; a solid block per cell is clean and btop-like.
 function _meterFill(frac, width) {
   const f = Number.isFinite(frac) ? Math.max(0, Math.min(1, frac)) : 0;
-  return Math.max(0, Math.min(width, Math.round(f * width)));
+  let n = Math.round(f * width);
+  if (f > 0 && n === 0) n = 1;                 // any nonzero value shows ≥1 cell
+  if (f < 1 && n === width) n = width - 1;     // only a true 100% fills the whole bar
+  return Math.max(0, Math.min(width, n));
 }
 
 // The FILLED run of a bar, each cell coloured by its POSITION along the full bar
 // (green→red, btop-style — so a high bar goes green→yellow→red, a low one stays
 // green). Adjacent same-colour cells coalesce into one span to limit SGR churn.
-function _colouredFill(fillN, width) {
+// A degenerate 1-cell bar has no position to gradate — colour it by the VALUE
+// (`frac`) so it isn't misleadingly red.
+function _colouredFill(fillN, width, frac) {
   let out = '', run = '', tag = null;
   for (let i = 0; i < fillN; i++) {
-    const c = gradient('percent', width > 1 ? i / (width - 1) : 1);
+    const c = gradient('percent', width > 1 ? i / (width - 1) : Math.max(0, Math.min(1, frac || 0)));
     if (c !== tag) { if (run) out += `[${tag}]${run}[/]`; run = '█'; tag = c; }
     else run += '█';
   }
@@ -219,7 +224,10 @@ function render(panel, w, h, slice, opts) {
   // Label width from ALL rows (stable while scrolling), not just the window.
   // reduce, not Math.max(...spread) — a huge topic would blow the arg limit.
   const maxLabel = rows.reduce((m, rk) => Math.max(m, visibleLen(esc(labelText(rk)))), 3);
-  const labelW = Math.max(3, Math.min(16, maxLabel));
+  // Cap the label so a narrow pane keeps room for a ≥1-cell bar AND the value
+  // (else a long label would push the value off-screen — the bar/value matter
+  // more than a full label). `innerW - _VALUE_W - 3` = 2 gaps + a 1-cell bar.
+  const labelW = Math.max(3, Math.min(16, maxLabel, innerW - _VALUE_W - 3));
   const avail = innerW - labelW - _VALUE_W - 2;               // two single-space gaps
   const barW = Math.max(1, Math.min(slice.barMax || 20, avail));
   const trailW = Math.max(0, innerW - (labelW + 1 + barW + 1 + _VALUE_W));
@@ -250,7 +258,7 @@ function render(panel, w, h, slice, opts) {
     // glyph on the selection bg.
     if (selected && focused) return `[${t.selected}]${label} ${'█'.repeat(fillN)}${track} ${value}${trail}`;
     // Position-gradient fill (colourful, green→red along the bar) + dim ░ track.
-    const bar = _colouredFill(fillN, barW) + (trackN > 0 ? `[${t.dim}]${track}[/]` : '');
+    const bar = _colouredFill(fillN, barW, frac) + (trackN > 0 ? `[${t.dim}]${track}[/]` : '');
     return `${label} ${bar} ${value}${trail}`;
   };
 

@@ -209,7 +209,13 @@ describe('[gauge] init — bar_width floored to whole cells', () => {
 
 describe('[gauge] _meterFill — fill cells (whole-cell, proportional)', () => {
   const f = gauge._meterFill;
-  it('rounds value×width to whole cells', () => { eq(f(0.5, 10), 5); eq(f(0, 10), 0); eq(f(1, 10), 10); eq(f(0.04, 10), 0); eq(f(0.06, 10), 1); });
+  it('rounds value×width to whole cells', () => { eq(f(0.5, 10), 5); eq(f(0, 10), 0); eq(f(1, 10), 10); });
+  it('honest ends: any nonzero → ≥1 cell, any sub-100% → ≤ width-1', () => {
+    eq(f(0.001, 20), 1);   // a sliver is visible, not empty
+    eq(f(0.999, 20), 19);  // near-full is not shown as full…
+    eq(f(1, 20), 20);      // …only a true 100% fills the bar
+    eq(f(0, 20), 0);       // and zero is empty
+  });
   it('clamps out-of-range + non-finite', () => { eq(f(2, 10), 10); eq(f(-1, 10), 0); eq(f(NaN, 10), 0); });
   it('is proportional to value', () => { assert(f(0.9, 20) > f(0.5, 20) && f(0.5, 20) > f(0.1, 20), 'more value → more fill'); });
 });

@@ -13,7 +13,8 @@
  *     title: Stats
  *     topic: docker.stats
  *     select_from: containers
- *     metrics: [cpu, mem]   # optional, defaults to all percent/bytes columns
+ *     metrics: [cpu, mem]   # optional; defaults to percent/bytes/rate columns
+ *                           # (number is metadata-ambiguous — list it explicitly)
  *     window: 40            # optional, default 40
  *     graph: braille        # optional: braille (default) | blocks
  */
@@ -53,10 +54,17 @@ function subscriptions(paneDef, _model) {
   return [{ kind: 'metrics-mirror', topic: paneDef.topic, window: paneDef.window || 40 }];
 }
 
+// Auto-selected metrics when a pane omits `metrics:`: percent / bytes / rate
+// columns (all unambiguously measurements), minus `string` and `meta:` columns.
+// `number` is deliberately NOT auto-graphed — a number column is often metadata
+// (a timestamp / id / count), which would draw a useless ramp; graph one by
+// listing it in `metrics:` explicitly. `rate` (counter-derived, always a real
+// per-second measurement) WAS wrongly excluded — added here.
+const _GRAPHABLE = new Set(['percent', 'bytes', 'rate']);
 function _defaultMetrics(schema) {
   if (!schema || !schema.columns) return [];
   return Object.entries(schema.columns)
-    .filter(([, c]) => c && (c.type === 'percent' || c.type === 'bytes') && !c.meta)
+    .filter(([, c]) => c && _GRAPHABLE.has(c.type) && !c.meta)
     .map(([k]) => k);
 }
 

@@ -282,18 +282,19 @@ describe('[7] parsePercent', () => {
 // --- default metrics inference ---
 
 describe('[8] _defaultMetrics: filters by schema column type', () => {
-  it('only percent + bytes pass through, meta excluded', () => {
+  it('percent/bytes/rate pass through; string, meta, and (ambiguous) number excluded', () => {
     const schema = {
       columns: {
         cpu:      { type: 'percent' },
         mem:      { type: 'bytes' },
+        rx:       { type: 'rate' },                 // counter-derived rate — graphable
         memLimit: { type: 'bytes', meta: true },   // scale ref, not graphable
         label:    { type: 'string' },
-        ts:       { type: 'number' },
+        ts:       { type: 'number' },               // metadata (timestamp) — NOT auto-graphed
       },
     };
     const ms = stats._defaultMetrics(schema);
-    eq(ms, ['cpu', 'mem'], 'meta + non-numeric columns excluded');
+    eq(ms, ['cpu', 'mem', 'rx'], 'rate included; string + meta + number excluded');
   });
   it('null schema → empty', () => eq(stats._defaultMetrics(null), []));
   it('schema without columns → empty', () => eq(stats._defaultMetrics({}), []));
