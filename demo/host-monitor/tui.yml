@@ -105,6 +105,8 @@ panels:
     title: Load (1m)
     topic: host.load
     row: _
+    metrics: [load]        # `load` is type:number — list it explicitly (auto-infer
+                           # only picks percent/bytes), else the pane graphs nothing
   # The process TABLE — lists host.proc's rows, sorted by CPU, selectable.
   procs:
     type: table
