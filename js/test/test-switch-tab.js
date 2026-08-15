@@ -124,6 +124,26 @@ describe('[set_active_tab] flips active tab + rewrites legacy fields', () => {
   });
 });
 
+// Closing a tab mirrors minting one: a SESSION-transient (minted) tab closing —
+// e.g. a spawn/terminal tab auto-closed on clean exit — is transient view state,
+// NOT a structural edit, so it must not dirty. Closing a serialized CONFIG tab is
+// a real change to the saved layout, so it still dirties.
+describe('[remove_tab] dirties only when a serialized (config) tab is closed', () => {
+  it('closing a session-transient (minted) tab does NOT dirty (mirror of mint_tab)', () => {
+    const slice = buildMultiTabSlice();
+    slice.arrange.pool.logs = { ...slice.arrange.pool.logs, transient: true };  // minted, session-only
+    const next = layout.update({ type: 'remove_tab', paneId: 'pane-docker', tabPoolId: 'logs' }, slice);
+    assert(!next.dirty, 'a transient tab auto-closing (e.g. spawn exit 0) must not nag • unsaved');
+    assert(!next.arrange.pool.logs, 'its transient pool entry is evicted');
+  });
+
+  it('closing a serialized (config) tab DOES dirty (a real structural edit)', () => {
+    const slice = buildMultiTabSlice();   // `logs` is a normal, non-transient config tab
+    const next = layout.update({ type: 'remove_tab', paneId: 'pane-docker', tabPoolId: 'logs' }, slice);
+    assert(next.dirty, 'closing a configured tab changes the saved layout → marks it unsaved');
+  });
+});
+
 describe('[set_active_tab] focus follow', () => {
   it('retargets focus + emits show_selected_info when switched pane is focused (by pane.id)', () => {
     // T3.5 — focus is canonically paneId-form post-arch-arc. The

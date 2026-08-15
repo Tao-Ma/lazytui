@@ -1018,8 +1018,14 @@ function update(msg, slice) {
         return out;
       });
       const removedEntry = (arrange.pool || {})[tabPoolId];
-      if (removedEntry && removedEntry.transient) a1 = mpool.removePoolEntry(a1, tabPoolId);
-      const next = _commitArrange(slice, a1);
+      // Closing a SESSION-transient (minted) tab is itself transient — the mirror
+      // of mint_tab, which doesn't dirty. Otherwise a spawn/terminal tab
+      // auto-closing on clean exit (pty-lifecycle _handlePaneExit, exit 0) would
+      // nag `• unsaved` for a tab that was never serialized. Closing a CONFIGURED
+      // (non-transient) tab IS a structural edit to the saved layout → still dirties.
+      const wasTransient = !!(removedEntry && removedEntry.transient);
+      if (wasTransient) a1 = mpool.removePoolEntry(a1, tabPoolId);
+      const next = _commitArrange(slice, a1, { transient: wasTransient });
       // Focus follow — only when the pane was focused AND the active tab changed
       // (removing a background tab leaves focus + the active tab untouched).
       const wasFocused = mpane.paneMatchesFocus(loc.pane, slice.focus);
