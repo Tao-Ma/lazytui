@@ -195,4 +195,31 @@ describe('[gauge] click uses the painted scroll after a row-shrink (divergence r
   });
 });
 
+// Visual: btop-style bounded meter + grey track. The bar is capped at
+// `bar_width` (doesn't sprawl across a wide pane) and the unfilled remainder is a
+// dim `░` track (the whole bar reads as a meter, not a colour stub). See gauge.js
+// `_meter` + the `barMax`/`trailW` logic.
+describe('[gauge] bounded meter + grey track', () => {
+  const FILL = /[█▏▎▍▌▋▊▉]/g, TRACK = /░/g, BAR = /[█▏▎▍▌▋▊▉░]/g;
+  it('caps the bar at bar_width and fills the remainder with a dim track', () => {
+    const paneCfg = { id: 'bw', type: 'gauge', title: 'CPU', config: { topic: 'm.bw', column: 'cpu', bar_width: 10 } };
+    sm.bootFresh({
+      groups: { grp: { label: 'G', containers: [], actions: { a: { cmd: 'echo', label: 'A' } } } },
+      layout: { pool: { bw: paneCfg }, columns: [{ panels: [paneCfg] }] },
+    });
+    setMetric('m.bw', { half: [{ cpu: 50 }], zero: [{ cpu: 0 }] }, { cpu: { type: 'percent' } });
+    const grid = screenGrid();
+    let halfLine = '', zeroLine = '';
+    for (const y of Object.keys(grid).map(Number)) {
+      if (/half/.test(grid[y])) halfLine = grid[y];
+      if (/zero/.test(grid[y])) zeroLine = grid[y];
+    }
+    eq((halfLine.match(BAR) || []).length, 10, 'bar bounded to bar_width=10 (not the full ~78-col pane)');
+    const hf = (halfLine.match(FILL) || []).length, ht = (halfLine.match(TRACK) || []).length;
+    assert(hf >= 4 && ht >= 4, `50% → ~half fill, ~half grey track (fill ${hf}, track ${ht})`);
+    eq((zeroLine.match(FILL) || []).length, 0, '0% → no fill');
+    eq((zeroLine.match(TRACK) || []).length, 10, '0% → full grey track (btop shows the whole bar)');
+  });
+});
+
 report();

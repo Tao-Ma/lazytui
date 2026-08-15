@@ -36,8 +36,21 @@ const {
 } = require('../api');
 const { truncate } = require('../../leaves/render/draw');
 const { fmt: _fmt } = require('../../leaves/metrics/format');   // shared compact cell formatter (see table.js)
-const { meterRow } = require('./stats-graph');
 const mnav = require('../../leaves/wm/nav');
+
+// Two-tone meter geometry: `fill` = filled cells (eighth-block sub-cell leading
+// edge, like stats-graph.meterRow), `track` = the dim remainder. Split so the
+// caller can colour the two runs (gradient fill + dim track) — btop's grey track.
+const _PARTIAL = '▏▎▍▌▋▊▉';   // 1/8..7/8 left-fill (mirrors stats-graph.meterRow)
+function _meter(frac, width) {
+  if (width < 1) return { fill: '', track: '' };
+  const f = Number.isFinite(frac) ? Math.max(0, Math.min(1, frac)) : 0;
+  const eighths = Math.round(f * width * 8);
+  const full = eighths >> 3, rem = eighths & 7;
+  const fill = '█'.repeat(full) + (rem ? _PARTIAL[rem - 1] : '');
+  const track = '░'.repeat(Math.max(0, width - full - (rem ? 1 : 0)));
+  return { fill, track };
+}
 
 function _metric(topic) {
   const all = getModel().metrics;
@@ -89,6 +102,7 @@ function init(paneId, seed) {
     column: pd.column || null,
     label: pd.label || null,
     max: (typeof pd.max === 'number' && pd.max > 0) ? pd.max : null,
+    barMax: (typeof pd.bar_width === 'number' && pd.bar_width > 0) ? pd.bar_width : 20,   // bounded meter (btop-style)
     sortDir: pd.sort_dir === 'asc' ? 1 : -1,   // bars sort by metered value; desc default
     // The cursor/scroll live in this slice's nav entry (getSel/getScroll read it
     // via mnav.entryOf), so the click/keyboard nav_select can move the selection.
@@ -188,11 +202,16 @@ function render(panel, w, h, slice, opts) {
     denom = finite.length ? Math.max(1, ...finite) : 1;
   }
 
-  // Widths: label left (capped + truncated), value right (fixed), bar fills the
-  // rest. Label width from ALL rows (stable while scrolling), not just the window.
+  // Widths: label left (capped + truncated), value right (fixed). The bar is a
+  // BOUNDED meter (btop-style) — capped at `bar_width` (default 20) so it doesn't
+  // sprawl across a wide pane; it still shrinks to fit a narrow one. The row is
+  // padded to full width after the value so the selection highlight spans it.
+  // Label width from ALL rows (stable while scrolling), not just the window.
   const maxLabel = Math.max(3, ...rows.map(rk => visibleLen(esc(labelText(rk)))));
   const labelW = Math.max(3, Math.min(16, maxLabel));
-  const barW = Math.max(1, innerW - labelW - _VALUE_W - 2);   // two single-space gaps
+  const avail = innerW - labelW - _VALUE_W - 2;               // two single-space gaps
+  const barW = Math.max(1, Math.min(slice.barMax || 20, avail));
+  const trailW = Math.max(0, innerW - (labelW + 1 + barW + 1 + _VALUE_W));
 
   // Width-aware, markup-safe cell (respects esc'd brackets + wide/emoji glyphs;
   // a raw String.slice would corrupt both) — same clip the table cell uses.
@@ -206,16 +225,20 @@ function render(panel, w, h, slice, opts) {
   const buildBar = (rk, selected) => {
     const v = valueOf(rk);
     const frac = Number.isFinite(v) ? v / denom : NaN;
-    const bar = meterRow(Number.isFinite(frac) ? frac : NaN, barW);
+    // Two-tone meter (btop-style): the filled portion in the gradient colour, the
+    // remainder a DIM track — so the whole bar width reads as a meter, not a
+    // colour stub floating in blank space. Distinct GLYPHS (█ fill vs ░ track)
+    // keep the fill legible on the selected row too, where inner colour is dropped.
+    const { fill, track } = _meter(frac, barW);
     const label = cell(esc(labelText(rk)), labelW, false);
     const value = cell(esc(_fmt(v, type)), _VALUE_W, true);
-    // Selected row: ONE `[selected]` span over a PLAIN line (no inner color —
-    // PRINCIPLES §8), so the highlight reads cleanly; the gradient is dropped
-    // on the selected bar. Unselected bars carry their fill color.
-    if (selected && focused) return `[${t.selected}]${label} ${bar} ${value}`;
-    const clamped = Math.max(0, Math.min(1, frac));
-    const barCol = Number.isFinite(frac) ? `[${gradient('percent', clamped)}]${bar}[/]` : `[${t.dim}]${bar}[/]`;
-    return `${label} ${barCol} ${value}`;
+    const trail = ' '.repeat(trailW);
+    // Selected row: ONE `[selected]` span over a PLAIN line (no inner colour —
+    // PRINCIPLES §8); the fill/track glyphs still distinguish filled from empty.
+    // The trailing pad is inside the span so the highlight spans the full width.
+    if (selected && focused) return `[${t.selected}]${label} ${fill}${track} ${value}${trail}`;
+    const gradTag = Number.isFinite(frac) ? gradient('percent', Math.max(0, Math.min(1, frac))) : t.dim;
+    return `${label} [${gradTag}]${fill}[/][${t.dim}]${track}[/] ${value}${trail}`;
   };
 
   const lines = [];
