@@ -238,6 +238,12 @@ const _frame = {
   // full repaint when it changes (the highlight path leaves tint the cell-diff
   // baseline doesn't know about — see the force logic in render()).
   prevDiffMode:     'off',
+  // Last frame's model.theme. A :theme switch recolors every STORED row's
+  // semantic theme tokens at PAINT (ansi._expandThemeKeys), but the main-frame
+  // diff compares MARKUP strings — an unchanged row is byte-identical across the
+  // switch, so it would be skipped and keep the old palette on screen. Force a
+  // full repaint on a theme change so every row re-resolves (see render()).
+  prevTheme:        null,
 };
 
 /**
@@ -745,6 +751,17 @@ function render(model) {
   // append-time snapshots are the arc's accepted design; never read in a
   // reducer). Noted per the 2026-08 pre-release review.
   setTheme(model.theme);
+  // A :theme change recolors every STORED row's semantic theme tokens
+  // ([warning]/[error]/[success]/…) at paint via ansi._expandThemeKeys, but the
+  // main-frame diff (paintFrame) compares MARKUP strings — an unchanged row's
+  // markup (`[warning]Cancelled.[/]`, the completion chip, any stored transcript
+  // line) is byte-identical across the switch, so the diff would skip it and the
+  // OLD theme's resolved ANSI would linger on screen; only rows that changed for
+  // some other reason picked up the new palette. Force a full repaint so every
+  // row re-resolves under the new theme. (user-found 2026-08-14: the chip +
+  // Cancelled footer didn't recolor on :theme until the next run.)
+  if (_frame.prevTheme && _frame.prevTheme !== model.theme) _frame.forceFull = true;
+  _frame.prevTheme = model.theme;
   // `model` is the TEA root model (js/model/store.js; reduced by
   // js/dispatch/update/reducer.js), threaded in by the owner (the program).
   // The view reads migrated slices (currently `viewMode`) from this param,
