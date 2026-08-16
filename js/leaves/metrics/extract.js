@@ -132,10 +132,55 @@ function _extractColumns(stdout, spec, cols) {
   return out;
 }
 
+// Resolve a dotted/bracketed path against a parsed-JSON value. Accepts `$.a.b`,
+// `a.b`, `a[0].b`, `a.0.b`, `a['k']`. A missing step yields undefined (→ coerce
+// to NaN/'' → renders '—'), never throws. Dep-free — no jq / jsonpath lib.
+function _getPath(obj, path) {
+  if (obj == null || path == null) return undefined;
+  const parts = String(path)
+    .replace(/^\$\.?/, '')                        // strip a leading `$` / `$.`
+    .replace(/\[(\d+)\]/g, '.$1')                 // a[0]      → a.0
+    .replace(/\[['"]?([^\]'"]+)['"]?\]/g, '.$1')  // a['k']    → a.k
+    .split('.').filter((s) => s !== '');
+  let cur = obj;
+  for (const p of parts) {
+    if (cur == null || typeof cur !== 'object') return undefined;
+    cur = cur[p];
+  }
+  return cur;
+}
+
+// json mode — parse stdout as JSON, read each field by a dotted path. Single
+// stream ('_') by default; with `row_key` set AND an array root (the parsed
+// value, or `spec.root` pointing at an array), emit one row per element with
+// each field path resolved WITHIN the element (mirrors columns mode's row_key).
+// Bad JSON → no rows (a gap), never a throw.
+function _extractJson(stdout, spec, cols) {
+  let data;
+  try { data = JSON.parse(stdout); } catch (_) { return []; }
+  const fields = spec.fields || {};
+  const root = spec.root != null ? _getPath(data, spec.root) : data;
+  if (spec.row_key != null && Array.isArray(root)) {
+    const out = [];
+    for (const el of root) {
+      const rk = _getPath(el, fields[spec.row_key]);
+      if (rk == null || rk === '') continue;      // no identity → skip
+      const sample = {};
+      for (const [field, p] of Object.entries(fields)) sample[field] = coerce(_getPath(el, p), _typeOf(cols, field));
+      out.push({ rowKey: String(rk).trim(), sample });
+    }
+    return out;
+  }
+  const sample = {};
+  for (const [field, p] of Object.entries(fields)) sample[field] = coerce(_getPath(data, p), _typeOf(cols, field));
+  return [{ rowKey: '_', sample }];
+}
+
 function extract(stdout, spec, schemaColumns) {
   if (!spec || stdout == null || stdout === '') return [];
   const cols = schemaColumns || {};
   if (spec.mode === 'columns') return _extractColumns(stdout, spec, cols);
+  if (spec.mode === 'json') return _extractJson(stdout, spec, cols);
   return _extractRegex(stdout, spec.fields, cols); // default / 'regex'
 }
 

@@ -194,8 +194,8 @@ function validateQuickKeys(v) {
 // not consume it (only the docker pane does). Accepting it would be a validated
 // no-op; it returns when live rate-stepping wires it (metrics-producer.md §7).
 const VALID_METRICS_KEYS = new Set(['cmd', 'interval', 'timeout', 'focus_gate', 'extract', 'schema']);
-const VALID_EXTRACT_KEYS = new Set(['mode', 'fields', 'delimiter', 'skip', 'row_key']);
-const VALID_EXTRACT_MODES = new Set(['regex', 'columns']);
+const VALID_EXTRACT_KEYS = new Set(['mode', 'fields', 'delimiter', 'skip', 'row_key', 'root']);
+const VALID_EXTRACT_MODES = new Set(['regex', 'columns', 'json']);
 // Advisory column types (HUB.md §16). A closed set so a typo (`strng`) is caught
 // at parse time rather than silently coercing a label to NaN; the full documented
 // set is allowed, so `rate`/`duration` (deferred derivations) still validate.
@@ -246,6 +246,18 @@ function validateMetrics(v) {
       }
       if ('row_key' in ex && !(ex.row_key in ex.fields)) {
         throw new SchemaError(`'${exCtx}.row_key' ('${ex.row_key}') must name a field in extract.fields`);
+      }
+    } else if (mode === 'json') {
+      for (const [f, p] of Object.entries(ex.fields)) {
+        if (typeof p !== 'string' || !p) {
+          throw new SchemaError(`'${exCtx}.fields.${f}' must be a non-empty path string (json mode, e.g. '$.load.1m')`);
+        }
+      }
+      if ('row_key' in ex && !(ex.row_key in ex.fields)) {
+        throw new SchemaError(`'${exCtx}.row_key' ('${ex.row_key}') must name a field in extract.fields`);
+      }
+      if ('root' in ex && typeof ex.root !== 'string') {
+        throw new SchemaError(`'${exCtx}.root' must be a path string (json mode)`);
       }
     } else { // regex
       for (const [f, pat] of Object.entries(ex.fields)) {

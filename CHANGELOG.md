@@ -6,6 +6,23 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`json` extract mode for `metrics:` producers.** `extract.mode: json` reads
+  each field by a dotted/bracketed path (`$.load.1m`, `cores[0].pct`) via
+  `JSON.parse` — dep-free, no `jq`. Single stream by default; an array root with
+  `row_key` (or a `root:` path to a nested array) emits one row per element. A
+  missing path renders `—`; malformed JSON is a gap, never a crash. See
+  docs/metrics-producer.md §6.
+
+### Fixed
+
+- **`select_from` now resolves the specific named pane, not the kind-primary.**
+  A panel's `select_from:` to a table/gauge that wasn't the first-minted of its
+  kind used to collapse onto the primary; it now cursor-follows the pane it
+  names, independent of layout order (B-F3). Removes the demo's table-ordering
+  workaround.
+
 ## [0.6.18] — 2026-08-16
 
 ### Added

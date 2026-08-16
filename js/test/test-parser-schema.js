@@ -306,6 +306,10 @@ describe('metrics producers', () => {
   it('columns non-integer index throws', () => expectThrow(/column index/, () => validate(withMetrics({ x: { cmd: 'echo', extract: { mode: 'columns', fields: { a: 'notnum' } } } }), 'test')));
   it('columns row_key not in fields throws', () => expectThrow(/row_key.*must name a field/, () => validate(withMetrics({ x: { cmd: 'echo', extract: { mode: 'columns', row_key: 'missing', fields: { a: 0 } } } }), 'test')));
   it('regex invalid pattern throws', () => expectThrow(/not a valid regex/, () => validate(withMetrics({ x: { cmd: 'echo', extract: { mode: 'regex', fields: { a: '([0-9' } } } }), 'test')));
+  it('json mode: a valid producer (path fields + optional root) passes', () => { validate(withMetrics({ x: { cmd: 'echo', extract: { mode: 'json', root: '$.data', row_key: 'id', fields: { id: 'id', v: '$.v' } }, schema: { columns: { v: { type: 'number' } } } } }), 'test'); assert(true); });
+  it('json non-string field path throws', () => expectThrow(/must be a non-empty path string/, () => validate(withMetrics({ x: { cmd: 'echo', extract: { mode: 'json', fields: { a: 5 } } } }), 'test')));
+  it('json non-string root throws', () => expectThrow(/root' must be a path string/, () => validate(withMetrics({ x: { cmd: 'echo', extract: { mode: 'json', root: 7, fields: { a: 'x' } } } }), 'test')));
+  it('json row_key not in fields throws', () => expectThrow(/row_key.*must name a field/, () => validate(withMetrics({ x: { cmd: 'echo', extract: { mode: 'json', row_key: 'missing', fields: { a: 'x' } } } }), 'test')));
   it('non-positive interval throws', () => expectThrow(/interval' must be a positive/, () => validate(withMetrics({ x: { cmd: 'echo', interval: 0, extract: { fields: { a: 'x' } } } }), 'test')));
   it('non-positive timeout throws', () => expectThrow(/timeout' must be a positive/, () => validate(withMetrics({ x: { cmd: 'echo', timeout: -1, extract: { fields: { a: 'x' } } } }), 'test')));
   it('non-boolean focus_gate throws', () => expectThrow(/focus_gate' must be a boolean/, () => validate(withMetrics({ x: { cmd: 'echo', focus_gate: 'yes', extract: { fields: { a: 'x' } } } }), 'test')));

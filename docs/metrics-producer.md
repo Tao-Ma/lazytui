@@ -73,7 +73,7 @@ metrics:
     timeout: 2000                        # ms; kill a hung poll (default min(interval, 5000))
     focus_gate: true                     # skip the poll while the TUI is backgrounded (default true)
     extract:
-      mode: regex                        # regex | columns
+      mode: regex                        # regex | columns | json
       fields:
         cpu: '([0-9.]+)\s+us'            # field -> where to read it (a capture group)
     schema:
@@ -301,6 +301,14 @@ extract(stdout: string, spec, schemaColumns) -> [{ rowKey, sample }]
   through un-coerced). **Multi-line output needs a `row_key`** — with none,
   every line is keyed `'_'` and they collide (last line wins), i.e. it is
   only meaningful for genuinely single-row output.
+- **`mode: json`** (single stream, or multi-row): `JSON.parse(stdout)`,
+  then each `field → path` reads a **dotted/bracketed path** (`$.load.1m`,
+  `a.b`, `cores[0].pct`, `cores.0.pct`) — dep-free, no `jq`. One row keyed
+  `'_'` by default; with `row_key` set **and** an array root (the parsed
+  value, or a `root:` path pointing at an array) it emits **one row per
+  element**, each field path resolved *within* the element. A missing path
+  → `NaN`/`''` (renders `—`); malformed JSON → no rows (a gap), never a
+  throw.
 
 Coercion by schema type (generalizes docker's `_parsePercent` /
 `_parseMem`, which stay as docker's compound `used / limit` parser):
@@ -452,10 +460,11 @@ The **`counter` → `rate` derivation** (net/disk throughput) **shipped** —
 `type: counter` on a field makes the producer publish `Δ/Δt` and advertise
 the column as `rate`. See §6.1.
 
+The **`json` extract mode** also **shipped** — `mode: json` reads dotted-path
+`fields:` (`$.load.1m`, `cores[0].pct`) via `JSON.parse`, dep-free; an array
+root + `row_key` (or a `root:` path) emits one row per element. See §6.
+
 **Deferred (own backlog items — [[project_host_monitor_arc]]):**
-- **`json` extract mode.** `JSON.parse` + a dotted path (`fields: { cpu:
-  '$.load.1m' }`) — dep-free (no `jq`), a clean fast-follow. Left out of
-  v1 to keep the first cut to two modes.
 - **Live rate-stepping** via `refresh_ladder` + the `- Ns +` control
   (§7).
 - Consumer panels: aggregate/per-core overlay (§9). The process **table**

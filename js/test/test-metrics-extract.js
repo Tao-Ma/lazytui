@@ -157,4 +157,44 @@ describe('[extract] hardening', () => {
   });
 });
 
+describe('[extract] json mode', () => {
+  it('single stream: reads fields by dotted path ($ prefix optional), coerces by schema type', () => {
+    const out = extract('{"load":{"1m":0.42},"mem":{"pct":"73%"}}',
+      { mode: 'json', fields: { load: '$.load.1m', mem: 'mem.pct' } },
+      { load: { type: 'number' }, mem: { type: 'percent' } });
+    eq(out.length, 1); eq(out[0].rowKey, '_');
+    eq(out[0].sample.load, 0.42);
+    eq(out[0].sample.mem, 73);
+  });
+  it('array index in a path (a[0] and a.1 both work)', () => {
+    const out = extract('{"cores":[{"pct":"12%"},{"pct":"88%"}]}',
+      { mode: 'json', fields: { c0: 'cores[0].pct', c1: 'cores.1.pct' } },
+      { c0: { type: 'percent' }, c1: { type: 'percent' } });
+    eq(out[0].sample.c0, 12); eq(out[0].sample.c1, 88);
+  });
+  it('array root + row_key → one row per element (paths resolved within element)', () => {
+    const out = extract('[{"pid":"11","cpu":"2.5"},{"pid":"22","cpu":"9.0"}]',
+      { mode: 'json', row_key: 'pid', fields: { pid: 'pid', cpu: 'cpu' } },
+      { pid: { type: 'string' }, cpu: { type: 'number' } });
+    eq(out.length, 2);
+    eq(out[0].rowKey, '11'); eq(out[0].sample.cpu, 2.5);
+    eq(out[1].rowKey, '22'); eq(out[1].sample.cpu, 9.0);
+  });
+  it('nested array addressed via `root` path', () => {
+    const out = extract('{"data":{"procs":[{"id":"a","v":"1"}]}}',
+      { mode: 'json', root: '$.data.procs', row_key: 'id', fields: { id: 'id', v: 'v' } },
+      { id: { type: 'string' }, v: { type: 'number' } });
+    eq(out.length, 1); eq(out[0].rowKey, 'a'); eq(out[0].sample.v, 1);
+  });
+  it('bad JSON → no rows (a gap), never throws', () => {
+    eq(extract('not json{', { mode: 'json', fields: { x: 'x' } }, {}).length, 0);
+  });
+  it('missing path → NaN (numeric) / empty (string), never throws', () => {
+    const out = extract('{"a":1}', { mode: 'json', fields: { miss: '$.b.c', lbl: 'nope' } },
+      { miss: { type: 'number' }, lbl: { type: 'string' } });
+    assert(Number.isNaN(out[0].sample.miss), 'missing numeric → NaN');
+    eq(out[0].sample.lbl, '');
+  });
+});
+
 report();
