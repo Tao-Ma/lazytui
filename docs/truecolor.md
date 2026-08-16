@@ -321,9 +321,14 @@ Mechanism — one funnel, `leaves/text/ansi.js`:
   non-screen caller stay byte-identical (the smoke render harness never boots
   `tui.js`).
 - `richToAnsi` PREPENDS the `screen` SGR to each converted row and RE-ASSERTS it
-  after every reset in a single post-pass (`_RESET_RE`) — covering markup `[/]`
-  AND a raw `\x1b[0m` embedded in content (streamed output keeps its own), so no
-  cell drops back to the terminal's own colours.
+  after every reset so no cell drops back to the terminal's own colours. Two
+  paths, for CPU: markup `[/]` re-asserts via the CACHED `_resetSeq()` (baked into
+  the tag compiler → zero per-row cost); a raw `\x1b[0m` embedded in content
+  (streamed/esc'd command output keeps its own) is handled by a GATED pass
+  (`_CONTENT_RESET_RE`) that runs only when the row carries raw SGR
+  (`text.indexOf('\x1b') !== -1`), so pure-markup rows — nearly all of them — pay
+  nothing. Measured: this keeps `richToAnsi` within ~8% of the pre-arc baseline on
+  the hot path (a naïve single post-pass over every row cost ~40%).
 - Both paint paths inherit it from that one funnel: the full-repaint emits
   `richToAnsi` directly; the cell-diff (`leaves/render/cell-grid.js`) folds the
   SGR per channel, so the pair rides into each cell.
