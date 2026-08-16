@@ -8,6 +8,30 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Themed screen colours.** Each built-in theme now carries its scheme's
+  canonical `<fg> on <bg>` pair (`screen` slot) and the renderer paints it across
+  *every* cell — panels, borders, footer, and overlays — so a theme colours the
+  whole surface, not just the accent text. The pair is load-bearing: a background
+  without a paired foreground leaves plain / dim / reverse content at the
+  terminal's default foreground, which has no guaranteed contrast against the
+  forced background (it went invisible on light terminals, `minimal` worst-hit).
+  Done at the single markup→ANSI funnel (`ansi.js`): the pair is prepended to each
+  row and re-asserted after every reset, so a `[/]` never drops a cell back to the
+  terminal's own colours, and the cell-diff path inherits it by folding the SGR
+  per channel. Embedded terminal tabs keep their child program's own colours;
+  256/16-colour terminals get it quantised at the write boundary. Screen clears
+  (`\x1b[2J`, and the cmdline dropdown's `\x1b[K`) set the theme colours *before*
+  erasing, so they clear to the theme background rather than the terminal's own —
+  otherwise a full repaint flashes the terminal background (white on a light
+  terminal) before the themed rows paint over it.
+
+- **A light theme, `solarized-light`.** All the other built-ins are dark schemes;
+  with themed backgrounds now painted across the whole surface, a light terminal
+  had no matching option. `solarized-light` is dark ink on the Solarized base3
+  canvas. Its accents are darkened from canonical Solarized (~4.6:1 on the light
+  background) — the stock Solarized accents read only ~3:1 on base3, a well-known
+  weakness — so status colours stay legible on the light surface.
+
 - **A row detail card in the viewer's Info tab.** Selecting a row in a `table`
   or `gauge` now fills the focused viewer's Info tab with a labelled card of
   every *non-meta* schema column of that row — not just the columns the panel

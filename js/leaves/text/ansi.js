@@ -21,6 +21,19 @@
  * compiled tag theme-DEPENDENT, so the memo is invalidated when `theme()` flips
  * (richToAnsi); non-slot tags stay a pure `tag → bytes` memo.
  *
+ * SCREEN COLOURS (themed-background arc, Approach B): when the app calls
+ * `enableScreenColors(true)` at boot, richToAnsi paints the active theme's
+ * `screen` slot — a `<fg> on <bg>` PAIR — across every cell: the SGR is PREPENDED
+ * to each converted row and RE-ASSERTED after every reset, so a `[/]` (or an
+ * unknown-atom RESET) never drops a cell back to the terminal's own colours. The
+ * pair is load-bearing: a bg without a paired fg leaves plain / `dim` / `reverse`
+ * content at the terminal's default foreground, which has no guaranteed contrast
+ * against the forced bg. OFF by default, so the pinned `tag → bytes` contract
+ * (test-ansi.js) and every non-screen caller are byte-unchanged. One funnel
+ * themes the WHOLE surface: panels, borders (draw.js), footer, and overlays all
+ * convert through here, and the cell-diff path inherits it for free — it folds
+ * richToAnsi's SGR per channel, so the re-asserted pair rides into each cell.
+ *
  * Two dependencies back `charWidth` (the width truth function — a standard,
  * spec-evolving problem; see charWidth's doc): `eastasianwidth` (UAX #11, the
  * WIDE axis) and `wcwidth` (POSIX, the ZERO-WIDTH axis). Otherwise pure string
@@ -54,6 +67,36 @@ function _hexParams(prefix, hex) {
   return `${prefix};2;${parseInt(hex.slice(0, 2), 16)};${parseInt(hex.slice(2, 4), 16)};${parseInt(hex.slice(4, 6), 16)}`;
 }
 
+// --- Screen colours (themed-background arc, Approach B) --------------------
+// OFF by default: `_screenSeq` is '' so richToAnsi's prepend is a no-op and every
+// reset stays a bare `\x1b[0m` — byte-identical to the pinned contract. The app
+// flips it on at boot (tui.js) via enableScreenColors(); the smoke render harness
+// and unit tests never boot tui.js, so their bytes are unaffected. `_screenSeq`
+// is recomputed from the active theme's `screen` slot on the same `_lastTheme`
+// flip that clears the tag cache (richToAnsi), so it tracks `:theme` for free.
+let _screenColorsOn = false;
+let _screenSeq = '';              // active theme's fg+bg SGR ('' when off / no slot)
+
+function enableScreenColors(on) {
+  const next = on !== false;
+  if (next === _screenColorsOn) return;
+  _screenColorsOn = next;
+  _lastTheme = null;              // force richToAnsi to recompute _screenSeq + drop the tag cache
+}
+
+// The theme's `screen` slot is a compilable `<fg> on <bg>` body (themes.js);
+// reuse the atom compiler so hex→38;2/48;2 / named→3x;4x math lives in exactly
+// one place (no RGB literal escapes into this file — the color-tripwire depends
+// on that).
+function _computeScreenSeq(th) {
+  const v = th && th.screen;
+  return (v && _compileTag(v)) || '';
+}
+
+// A reset that returns to the SCREEN default: bare `\x1b[0m` when off, else the
+// reset followed by a re-assertion of the theme's fg+bg so the next cell keeps it.
+function _resetSeq() { return _screenSeq ? RESET + _screenSeq : RESET; }
+
 // Semantic theme tokens (truecolor arc 3b): an atom naming a theme palette slot
 // (warning, error, accent, running, partial, …) expands to that slot's CURRENT
 // value — a hex, a named-16 color, or a compound `bold #hex` / `#fg on #bg` body.
@@ -83,7 +126,7 @@ function _expandThemeKeys(tag) {
 
 /** Compile one tag body to SGR, or null when any atom is unknown. */
 function _compileTag(tag) {
-  if (tag === '/' || tag === '/bold' || tag === '/dim') return RESET;
+  if (tag === '/' || tag === '/bold' || tag === '/dim') return _resetSeq();
   const toks = _expandThemeKeys(tag).split(' ');
   const codes = [];
   for (let i = 0; i < toks.length; i++) {
@@ -119,7 +162,7 @@ let _lastTheme = null;
 function _tagSgr(tag) {
   let v = _TAG_CACHE.get(tag);
   if (v === undefined) {
-    v = _compileTag(tag) || RESET;
+    v = _compileTag(tag) || _resetSeq();
     if (_TAG_CACHE.size >= _TAG_CACHE_MAX) _TAG_CACHE.clear();
     _TAG_CACHE.set(tag, v);
   }
@@ -155,15 +198,18 @@ const _SENTINEL_RE = new RegExp(_BRACKET_SENTINEL, 'g');
 // guards: it must agree with richToAnsi on what is a tag (visibleLen pads
 // what richToAnsi renders).
 function richToAnsi(text) {
-  // Invalidate the tag cache on a :theme change so semantic theme tokens re-resolve.
+  // Invalidate the tag cache on a :theme change so semantic theme tokens re-resolve,
+  // and recompute the screen-bg SGR under the new palette — both key off _lastTheme.
   const th = theme();
-  if (th !== _lastTheme) { _TAG_CACHE.clear(); _lastTheme = th; }
+  if (th !== _lastTheme) { _TAG_CACHE.clear(); _lastTheme = th; _screenSeq = _screenColorsOn ? _computeScreenSeq(th) : ''; }
   // Protect escaped brackets
   let result = text.replace(/\\\[/g, _BRACKET_SENTINEL);
   // Replace tags
   result = result.replace(/(?<!\x1b)\[([^\]\x1b]*)\]/g, (_, tag) => _tagSgr(tag));
-  // Restore escaped brackets
-  return result.replace(_SENTINEL_RE, '[');
+  // Restore escaped brackets, then paint the themed fg+bg across the whole row.
+  // No-op when screen colours are off (_screenSeq is ''); when on, the prepend
+  // covers the leading run and every inner reset re-asserts it (_resetSeq).
+  return _screenSeq + result.replace(_SENTINEL_RE, '[');
 }
 
 /**
@@ -372,4 +418,4 @@ function wrapColor(color, content) {
   return `[${color}]${rewritten}[/]`;
 }
 
-module.exports = { richToAnsi, stripMarkup, visibleLen, charWidth, esc, wrapColor, stripControls, RESET };
+module.exports = { richToAnsi, stripMarkup, visibleLen, charWidth, esc, wrapColor, stripControls, enableScreenColors, RESET };

@@ -348,6 +348,12 @@ function main() {
     require('../render/paint').setColorDepth((getModel().config || {}).color_depth);
   }
 
+  // Themed screen colours (Approach B): paint each theme's `screen` fg+bg pair
+  // across every cell. A boot-time flip (not per-frame) so richToAnsi's byte
+  // contract stays intact for unit tests + the smoke render harness, which never
+  // reach here.
+  require('../leaves/text/ansi').enableScreenColors(true);
+
   // Built-in Components (TEA shape), in registration order. The list is
   // single-sourced in app/components.js so the replay harness registers the
   // identical set. See that file + docs/v0.5-layering.md.

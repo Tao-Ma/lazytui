@@ -83,7 +83,11 @@ function renderCmdline() {
     const newTop = Math.max(0, ROWS - panelH - 1);
     require('../leaves/infra/render-queue').invalidateRows(oldTop, newTop);
     for (let y = oldTop; y < newTop; y++) {
-      buf += `\x1b[${y + 1};1H\x1b[K`;
+      // Themed screen colours before the erase so `\x1b[K` clears the vacated row
+      // to the theme bg (bce), not the terminal default — otherwise the shrinking
+      // dropdown flashes white on a light terminal before the base layer repaints.
+      // `richToAnsi('')` is the screen-colour prefix ('' when the feature is off).
+      buf += `\x1b[${y + 1};1H` + richToAnsi('') + '\x1b[K';
     }
   }
   _lastPanelH = panelH;

@@ -8,6 +8,16 @@
  * `minimal` deliberately keeps the restrained named-16 look.
  * User selects via YAML: theme: dracula
  *
+ * The `screen` slot is the SCREEN default colour PAIR — each scheme's canonical
+ * `<fg> on <bg>` — painted across every cell by the render pipeline when the app
+ * calls ansi.enableScreenColors() at boot (truecolor arc: themed-background,
+ * Approach B). It MUST carry a foreground as well as a background: a bg without a
+ * paired fg leaves plain / `dim` / `reverse` content at the terminal's default
+ * foreground, which has no guaranteed contrast against the forced bg (it went
+ * invisible on light-background terminals — esp. `minimal`, which leans on the
+ * terminal's own fg/bg). A theme omitting `screen` renders transparent (the
+ * terminal's own colours show through).
+ *
  * GRADS holds per-theme gradient ANCHORS (start/mid/end hex triples) for
  * value-mapped graph coloring; `gradient(name, frac)` resolves a fraction to
  * a hex through a lazily built ~100-step ramp, cached per (theme, name) —
@@ -31,6 +41,7 @@ const THEMES = {
   // Monokai — warm yellow accents (default)
   monokai: {
     focus: '#e6db74',
+    screen: '#f8f8f2 on #272822', // default fg+bg pair painted across the whole surface (ansi.enableScreenColors)
     dim: 'dim',
     selected: '#f8f8f2 on #49483e',
     accent: '#e6db74',
@@ -55,6 +66,7 @@ const THEMES = {
   // Dracula — purple/cyan accents
   dracula: {
     focus: '#ff79c6',
+    screen: '#f8f8f2 on #282a36',
     dim: 'dim',
     selected: '#f8f8f2 on #44475a',
     accent: '#8be9fd',
@@ -79,6 +91,7 @@ const THEMES = {
   // Solarized — blue/cyan, muted
   solarized: {
     focus: '#2aa198',
+    screen: '#eee8d5 on #002b36', // base2 fg (not base1): keeps `dim` legible (~3.8:1) against the dark base03 bg
     dim: 'dim',
     selected: '#eee8d5 on #586e75',
     accent: '#2aa198',
@@ -100,9 +113,37 @@ const THEMES = {
     match_current: '#002b36 on #b58900',
   },
 
+  // Solarized Light — the LIGHT-background scheme (dark ink on the base3 canvas).
+  // The Solarized accents are tuned to read on BOTH base03 (dark) and base3
+  // (light), so they carry over; only the fg/bg pairs invert.
+  'solarized-light': {
+    focus: '#2075b0',
+    screen: '#586e75 on #fdf6e3', // base01 ink on base3 canvas (dark-on-light)
+    dim: 'dim',
+    selected: '#fdf6e3 on #586e75',
+    accent: '#2075b0',            // accents DARKENED from canonical Solarized (~4.6:1 on the light
+    running: '#687700',          // canvas): the dark-theme accents read ~3:1 on base3 — the well-known
+    stopped: '#d3302d',          // Solarized-on-light weakness. Hues preserved, luminance dropped.
+    partial: '#8d6b00',
+    unknown: 'dim',
+    footer: '#586e75 on #eee8d5',
+    chip_ink: '#fdf6e3',          // light ink ON a filled (accent-coloured) chip — inverse of the dark themes
+    bold_current: 'bold #2075b0',
+    chrome_collapse: '#8d6b00',
+    chrome_expand:   '#687700',
+    chrome_close:    '#d3302d',
+    chrome_trigger:  'bold #2075b0',
+    success: '#687700',
+    warning: '#8d6b00',
+    error:   '#d3302d',
+    match:   '#8d6b00',
+    match_current: '#002b36 on #8d6b00',
+  },
+
   // Gruvbox — warm orange/yellow
   gruvbox: {
     focus: '#fabd2f',
+    screen: '#ebdbb2 on #282828',
     dim: 'dim',
     selected: '#fbf1c7 on #665c54',
     accent: '#fabd2f',
@@ -127,6 +168,7 @@ const THEMES = {
   // Nord — cool blue
   nord: {
     focus: '#81a1c1',
+    screen: '#d8dee9 on #2e3440',
     dim: 'dim',
     selected: '#eceff4 on #4c566a',
     accent: '#88c0d0',
@@ -152,6 +194,7 @@ const THEMES = {
   // pure-16-color theme: nothing here needs quantization).
   minimal: {
     focus: 'white',
+    screen: 'white on black',    // named-16 fg+bg pair (stays non-hex — test-themes §minimal)
     dim: 'dim',
     selected: 'reverse',
     accent: 'white',
@@ -181,6 +224,7 @@ const GRADS = {
   monokai:   { percent: ['#a6e22e', '#e6db74', '#f92672'] },
   dracula:   { percent: ['#50fa7b', '#f1fa8c', '#ff5555'] },
   solarized: { percent: ['#859900', '#b58900', '#dc322f'] },
+  'solarized-light': { percent: ['#687700', '#8d6b00', '#d3302d'] },
   gruvbox:   { percent: ['#b8bb26', '#fabd2f', '#fb4934'] },
   nord:      { percent: ['#a3be8c', '#ebcb8b', '#bf616a'] },
   minimal:   { percent: ['#4d4d4d', '#a6a6a6', '#ffffff'] },

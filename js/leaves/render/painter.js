@@ -131,7 +131,12 @@ function paintFrame(prevRows, newRows, force, opts) {
   let didFull = false;
   const hl = opts && opts.mode && opts.mode !== 'off' ? opts : null;
   if (force || prevRows.length !== n) {
-    ansi += '\x1b[2J\x1b[H';
+    // Set the themed screen colours BEFORE the erase so `\x1b[2J` clears to the
+    // theme's background (bce), not the terminal's default. Without this, a full
+    // repaint flashes the whole screen to the terminal bg (white on a light
+    // terminal) before the themed rows paint over it. `richToAnsi('')` is exactly
+    // the screen-colour prefix, and '' when the feature is off (contract intact).
+    ansi += richToAnsi('') + '\x1b[2J\x1b[H';
     for (let i = 0; i < n; i++) {
       // No trailing `\x1b[K`: `\x1b[2J` already cleared the screen and every row
       // is exactly `cols` wide (composeRows / _normalizeRender invariant), so
