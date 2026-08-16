@@ -56,6 +56,15 @@ const nav = require('../panel/nav-state');
 const rq = require('../leaves/infra/render-queue');
 if (!api.getComponent('gauge')) api.registerComponent(require('../panel/monitor/gauge'));
 
+// Pin truecolor so the gradient-fill colour assertions below are env-independent.
+// Color depth is detected from COLORTERM/TERM at paint load; a bare CI env (no
+// COLORTERM) detects 16-color, which downgrades the gradient's `38;2;…` fg to a
+// `3X` code — invisible to the `\x1b[38;…m` colour-count checks, so the "fill is
+// colour-graded" assertion read 0 and the suite failed ONLY on CI (the v0.6.18
+// release-workflow failure). setColorDepth is process-local; this file is spawned
+// in its own process by run-tests.js, so it can't leak into other suites.
+require('../render/paint').setColorDepth('truecolor');
+
 // Decode the painted frame → screen-row → { text, procKey } so a test can find
 // the ACTUAL screen y a given bar rendered at (paint uses absolute cursor moves).
 function screenGrid() {
