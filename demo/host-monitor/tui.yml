@@ -109,6 +109,22 @@ metrics:
       row_key: iface
       columns: { rx: { type: counter }, tx: { type: counter } }
 
+  # Total network throughput — the SAME /proc/net/dev counters summed across all
+  # real interfaces (skip `lo`) into a SINGLE stream, so a `stats` graph can plot
+  # it with `row: _` (btop's up/down trend). This is a single-stream sibling of
+  # host.net, deliberately NOT a `select_from` of the net table: select_from
+  # resolves its target to the kind-PRIMARY table (a known limitation), and the
+  # net table is not the primary here — so an aggregate stream is both correct
+  # and more btop-faithful (total up/down, not one selected iface).
+  host.nettotal:
+    cmd: "cat /proc/net/dev | tail -n +3 | tr -d ':' | awk '$1!=\"lo\"{r+=$2;t+=$10} END{printf \"%d %d\\n\",r,t}'"
+    interval: 2000
+    extract:
+      mode: columns
+      fields: { rx: 0, tx: 1 }
+    schema:
+      columns: { rx: { type: counter }, tx: { type: counter } }
+
   # Disk USAGE — `df` per mount (real filesystems only; pseudo FS excluded). The
   # awk drops the `%` from the capacity column and converts df's KiB blocks to
   # bytes. One row per mount point: `pct` (used %) drives the gauge, `used`/`size`
@@ -200,14 +216,15 @@ panels:
     topic: host.net
     columns: [rx, tx]
     sort: rx
-  # Network throughput GRAPH — the trend of the interface SELECTED in the net
-  # table (btop's up/down braille). `stats` is the history sibling of the table;
-  # `select_from: net` graphs whichever iface is picked, both rates overlaid.
+  # Network throughput GRAPH — total up/down over time (btop's net braille),
+  # from the single-stream host.nettotal producer. A single stream → pin `row: _`
+  # (like cpu/mem/load); rx and tx overlaid. (Not a select_from of the net table —
+  # see host.nettotal's note.)
   netgraph:
     type: stats
-    title: Net (sel)
-    topic: host.net
-    select_from: net
+    title: Network
+    topic: host.nettotal
+    row: _
     metrics: [rx, tx]
   # Disk USAGE — a btop-style gauge, one bar per mount, filled by used %. Same
   # `gauge` panel as the CPU bars; `pct` is the metered column, `mount` the label.
@@ -237,25 +254,31 @@ layout:
   # Three concern-grouped columns (btop-style). Panels are placed DIRECTLY (not
   # tabbed): a multi-tab slot only renders its strip for content panes, so metrics
   # panels — table/gauge/stats — each own their column slot. `actions` must sit in
-  # the LAST column (framework rule), which soft-caps at 3 panes — so the drill-
-  # down / actions / output trio lives there and the rest fills columns 1–2.
+  # the LAST column (framework rule), which soft-caps at 3 panes.
+  #
+  # ORDERING MATTERS: `procs` must be the FIRST `table` pane minted, because a
+  # `select_from` target (procsel → procs) resolves to the kind-PRIMARY table
+  # (the first minted). So column 1 holds ONLY graphs/gauges (no table) — the net
+  # trend graph is single-stream (host.nettotal), not a select_from of the net
+  # table — and the tables (procs, then net/diskio) all live in column 2 with
+  # procs first.
   columns:
-    # System + storage: the CPU/mem/load graphs, disk usage, disk I/O.
+    # System dashboard — all the trend graphs + the disk-usage gauge (no table).
     - width: 30
       panels:
         - cpu
         - mem
         - load
         - disk                          # disk USAGE gauge (df → used% per mount)
-        - diskio                        # disk THROUGHPUT table (counter → B/s)
-    # Processes + network: the CPU-bar gauge, the process table, then the network
-    # throughput table and its trend graph.
+        - netgraph                      # total network throughput graph (host.nettotal)
+    # The data tables — CPU bars, the process table (FIRST table = select_from
+    # primary), then network + disk-I/O throughput tables.
     - width: 44
       panels:
         - cpubars                       # btop-style CPU bar chart (gauge)
-        - procs                         # process table (same host.proc topic)
+        - procs                         # process table (host.proc) — the select_from primary
         - net                           # network throughput table (counter → B/s)
-        - netgraph                      # network trend graph (of the selected iface)
+        - diskio                        # disk THROUGHPUT table (counter → B/s)
     # Selected-process drill-down, host actions, and the Output pane (whose Info
     # tab is the process detail card).
     - panels:

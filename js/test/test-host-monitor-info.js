@@ -19,6 +19,7 @@
 const path = require('path');
 const { describe, it, eq, assert, report } = require('./test-runner');   // auto-registers layout/detail/groups
 const api = require('../panel/api');
+const route = require('../panel/route');
 
 // The host-monitor demo places actions / stats / table / gauge panes.
 for (const p of ['navigator/actions', 'navigator/groups', 'monitor/stats', 'monitor/table', 'monitor/gauge']) {
@@ -46,6 +47,16 @@ getModel().metrics = {
   'host.net': {
     schema: cfg.metrics['host.net'].schema,
     series: { eth0: [{ rx: 2048, tx: 512 }] },
+  },
+  // Distinct row keys per topic so a select_from/kind-primary COLLAPSE is
+  // detectable (a disk device leaking into a process/net drill-down).
+  'host.diskio': {
+    schema: cfg.metrics['host.diskio'].schema,
+    series: { vda: [{ read: 4096, write: 8192 }] },
+  },
+  'host.nettotal': {
+    schema: cfg.metrics['host.nettotal'].schema,
+    series: { _: [{ rx: 9000, tx: 3000 }] },
   },
 };
 
@@ -122,8 +133,46 @@ describe('[host-monitor] storage & network panels are placed directly (click-saf
     const typeOnTopic = (topic) => panes.filter(pn => pn.topic === topic).map(pn => pn.type);
     assert(typeOnTopic('host.disk').includes('gauge'), 'disk usage → gauge');
     assert(typeOnTopic('host.diskio').includes('table'), 'disk I/O → table');
-    assert(typeOnTopic('host.net').includes('stats'), 'network trend graph (stats on host.net) is placed');
+    assert(typeOnTopic('host.nettotal').includes('stats'), 'network trend graph (stats on host.nettotal) is placed');
     assert(typeOnTopic('host.net').includes('table'), 'network throughput table is placed');
+  });
+});
+
+// select_from resolves its TARGET to the kind-PRIMARY table (first minted) — the
+// deferred B-F3 limitation. So a select_from drill-down only works when its
+// target is that primary. The demo must therefore keep `procs` the first table
+// (any table placed before it steals the primary and the drill-down silently
+// graphs the wrong topic — a regression this guards). This EXERCISES the
+// resolution (`apiGetItems(select_from)` — what _resolveSelection reads), which
+// the "placed & wired" test above does not.
+describe('[host-monitor] select_from drill-downs resolve their intended table', () => {
+  function placedPanes() {
+    const layout = api.getInstanceSlice('layout');
+    const out = [];
+    for (const col of (layout.arrange.columns || [])) for (const pn of (col.panels || [])) if (pn && pn.paneId) out.push(pn);
+    return out;
+  }
+
+  it('procs is the first-minted table → the select_from primary', () => {
+    eq(route.sliceForPane('procs', 'table').topic, 'host.proc', 'the table primary is procs (host.proc), not diskio/net');
+    // The first `table` in layout order must be procs (else it steals the primary).
+    const firstTable = placedPanes().find(pn => pn.type === 'table');
+    eq(firstTable && firstTable.id, 'procs', 'the first placed table is procs');
+  });
+
+  it('procsel (select_from: procs) reads the PROCESS rows, not a disk device', () => {
+    const procsel = placedPanes().find(pn => pn.type === 'stats' && pn.select_from);
+    eq(procsel.select_from, 'procs');
+    const items = api.getItems(procsel.select_from);   // exactly what stats._resolveSelection reads
+    assert(items.includes('404185'), `procsel resolves host.proc rows (got ${JSON.stringify(items)}) — a disk device here would be the B-F3 collapse`);
+    assert(!items.includes('vda'), 'must NOT be the diskio rows');
+  });
+
+  it('the network graph avoids select_from entirely (single-stream host.nettotal)', () => {
+    const ng = placedPanes().find(pn => pn.type === 'stats' && pn.topic === 'host.nettotal');
+    assert(ng, 'netgraph is placed');
+    assert(!ng.select_from, 'no select_from (would collapse to the primary table)');
+    eq(ng.row, '_', 'pinned to the single stream');
   });
 });
 
