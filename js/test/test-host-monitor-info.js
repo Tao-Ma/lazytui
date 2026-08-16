@@ -153,25 +153,33 @@ describe('[host-monitor] select_from drill-downs resolve their intended table', 
     return out;
   }
 
-  it('procs is the first-minted table → the select_from primary', () => {
-    eq(route.sliceForPane('procs', 'table').topic, 'host.proc', 'the table primary is procs (host.proc), not diskio/net');
-    // The first `table` in layout order must be procs (else it steals the primary).
-    const firstTable = placedPanes().find(pn => pn.type === 'table');
-    eq(firstTable && firstTable.id, 'procs', 'the first placed table is procs');
+  it('a NON-primary table target resolves to its OWN rows, independent of mint order (B-F3 fixed)', () => {
+    // procs is the kind-PRIMARY table; diskio is NOT. A bare pool-id still
+    // collapses to the primary — which is why resolution must happen at the
+    // select_from read site (route.resolveSourcePaneId), addressing the specific
+    // pane. This is the exact path stats._resolveSelection now takes.
+    const bareDiskio = api.getItems('diskio');
+    assert(bareDiskio.includes('404185') && !bareDiskio.includes('vda'),
+      '(documents) a BARE pool-id collapses to the primary table — why the fix lives at the call site');
+    const diskio = api.getItems(route.resolveSourcePaneId('diskio'));
+    assert(diskio.includes('vda') && !diskio.includes('404185'),
+      `resolveSourcePaneId(diskio) reads the DISK rows (got ${JSON.stringify(diskio)}), not the primary — no mint-order dependency`);
+    assert(api.getItems(route.resolveSourcePaneId('procs')).includes('404185'),
+      'procs still resolves to its own host.proc rows');
   });
 
-  it('procsel (select_from: procs) reads the PROCESS rows, not a disk device', () => {
+  it('procsel (select_from: procs) reads the PROCESS rows via the resolved pane', () => {
     const procsel = placedPanes().find(pn => pn.type === 'stats' && pn.select_from);
     eq(procsel.select_from, 'procs');
-    const items = api.getItems(procsel.select_from);   // exactly what stats._resolveSelection reads
-    assert(items.includes('404185'), `procsel resolves host.proc rows (got ${JSON.stringify(items)}) — a disk device here would be the B-F3 collapse`);
+    const items = api.getItems(route.resolveSourcePaneId(procsel.select_from));   // exactly what stats._resolveSelection now reads
+    assert(items.includes('404185'), `procsel resolves host.proc rows (got ${JSON.stringify(items)})`);
     assert(!items.includes('vda'), 'must NOT be the diskio rows');
   });
 
   it('the network graph avoids select_from entirely (single-stream host.nettotal)', () => {
     const ng = placedPanes().find(pn => pn.type === 'stats' && pn.topic === 'host.nettotal');
     assert(ng, 'netgraph is placed');
-    assert(!ng.select_from, 'no select_from (would collapse to the primary table)');
+    assert(!ng.select_from, 'no select_from — an aggregate single-stream (host.nettotal), a design choice (no longer a B-F3 workaround)');
     eq(ng.row, '_', 'pinned to the single stream');
   });
 });

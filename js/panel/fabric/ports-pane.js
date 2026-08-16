@@ -45,9 +45,12 @@ function _fabricComponents() {
 // [key, action] tuple (actions pane) yields its key; a string row IS the name.
 function _selectionName(paneId) {
   if (!paneId) return null;
+  // B-F3: resolve a bare pool-id `select_from` target to its specific pane
+  // instance when minted (else unchanged); idempotent on an already-resolved id.
+  const src = require('../route').resolveSourcePaneId(paneId);
   let items = [];
-  try { items = apiGetItems(paneId); } catch { return null; }
-  const item = items[getSel(paneId)];
+  try { items = apiGetItems(src); } catch { return null; }
+  const item = items[getSel(src)];
   if (Array.isArray(item)) return typeof item[0] === 'string' ? item[0] : null;
   return typeof item === 'string' ? item : null;
 }

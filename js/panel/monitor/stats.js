@@ -93,14 +93,19 @@ function _resolveSelection(panel) {
   // host.cpu): render the static `row:` (default '_') when there's no cursor
   // to follow. See docs/metrics-producer.md §9.
   if (!panel.select_from) return panel.row != null ? String(panel.row) : null;
-  const items = apiGetItems(panel.select_from);
+  // B-F3: resolve the bare pool-id to the SPECIFIC pane when one is minted, so a
+  // follower graph tracks the intended table even with several same-kind tables
+  // placed (else it collapses onto the first-minted). hasInstance-guarded →
+  // single-pane / service targets behave exactly as before.
+  const src = require('../route').resolveSourcePaneId(panel.select_from);
+  const items = apiGetItems(src);
   if (!items.length) return null;
   // Phase 4a — read the cursor via the state helper (resolves the
   // owning Component's nav slice). Clamp to the list length: a data-derived
   // source (e.g. a `table` of processes) shrinks as rows come and go, and the
   // cursor isn't re-clamped on shrink — an out-of-range index would blank the
   // graph instead of following to the last row.
-  const sel = require('../nav-state').getSel(panel.select_from);
+  const sel = require('../nav-state').getSel(src);
   const item = items[Math.min(sel, items.length - 1)];
   if (!item) return null;
   // For string-row panels (containers, etc.) the row key IS the item.

@@ -256,12 +256,10 @@ layout:
   # panels — table/gauge/stats — each own their column slot. `actions` must sit in
   # the LAST column (framework rule), which soft-caps at 3 panes.
   #
-  # ORDERING MATTERS: `procs` must be the FIRST `table` pane minted, because a
-  # `select_from` target (procsel → procs) resolves to the kind-PRIMARY table
-  # (the first minted). So column 1 holds ONLY graphs/gauges (no table) — the net
-  # trend graph is single-stream (host.nettotal), not a select_from of the net
-  # table — and the tables (procs, then net/diskio) all live in column 2 with
-  # procs first.
+  # `select_from` resolves the SPECIFIC named pane (B-F3), so table mint order no
+  # longer matters — a follower graph tracks the pane it names regardless of which
+  # table is the kind-primary. The net trend graph stays single-stream on the
+  # host.nettotal aggregate by choice, not necessity.
   columns:
     # System dashboard — all the trend graphs + the disk-usage gauge (no table).
     - width: 30
@@ -276,7 +274,7 @@ layout:
     - width: 44
       panels:
         - cpubars                       # btop-style CPU bar chart (gauge)
-        - procs                         # process table (host.proc) — the select_from primary
+        - procs                         # process table (host.proc) — procsel's select_from target
         - net                           # network throughput table (counter → B/s)
         - diskio                        # disk THROUGHPUT table (counter → B/s)
     # Selected-process drill-down, host actions, and the Output pane (whose Info

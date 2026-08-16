@@ -451,6 +451,26 @@ function setInstanceSlice(id, slice) {
 
 function hasInstance(id) { return _resolveActive(id) in _instances; }
 
+/**
+ * Resolve a `select_from:` value (a bare pool-id) to the SPECIFIC pane instance
+ * for that pool-id when one is minted, else the bare id (its old kind-primary /
+ * service behaviour). Callers feed the result to the READ-path resolvers
+ * (getItems / getSel / sliceForPane) so a follower pane cursor-follows the
+ * intended pane even when several same-kind panes exist — instead of collapsing
+ * onto the first-minted one (B-F3). `hasInstance`-guarded, so single-pane and
+ * service targets are byte-identical to before; idempotent on an
+ * already-resolved `pane-<id>` (its `pane-pane-<id>` has no instance → returned
+ * unchanged). READ-ONLY: never use on the WRITE path — nav writes key on
+ * `hasInstance(id) ? id : compName`, and a divergent read id breaks multi-select
+ * (the hazard flagged in the sliceForPane arm-2 NOTE, which is why the fix lives
+ * at the call sites, not in the shared resolver).
+ */
+function resolveSourcePaneId(poolId) {
+  if (poolId == null) return poolId;
+  const pid = require('../leaves/wm/pane').newPaneId(poolId);
+  return hasInstance(pid) ? pid : poolId;
+}
+
 function disposeInstance(id) {
   const inst = _instances[id];
   if (!inst) return;
@@ -783,7 +803,7 @@ module.exports = {
   registerPanelOwner, componentForPanel, paneTypeOf, bundle, resetGroupOwners,
   getFocus,
   setInstance, getInstance, getInstanceSlice, sliceForPane, setInstanceSlice,
-  hasInstance, disposeInstance, instanceKind, eachInstance,
+  hasInstance, resolveSourcePaneId, disposeInstance, instanceKind, eachInstance,
   setActiveInstanceMap, setInstancePaneId, activeInstanceOf, restoreInstanceSlice,
   setService, serviceSlice, isService,
   getPrimaryByKind, primarySliceOf,
