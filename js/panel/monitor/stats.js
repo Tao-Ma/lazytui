@@ -211,29 +211,74 @@ function _renderSection(metric, samples, schema, width, graphHeight, style, colo
   return out;
 }
 
+// Reduce a set of aligned values for one column. `mode` 'avg'|'sum'|'max' forces
+// that reducer; `true` (or anything else truthy) uses the per-type default:
+// percent → avg (mean load across rows), everything else → sum (total).
+function _reduceVals(vals, type, mode) {
+  const red = (mode === 'avg' || mode === 'sum' || mode === 'max')
+    ? mode : (type === 'percent' ? 'avg' : 'sum');
+  if (red === 'max') return Math.max(...vals);
+  const sum = vals.reduce((a, b) => a + b, 0);
+  return red === 'avg' ? sum / vals.length : sum;
+}
+
+// Aggregate mode: fold ALL rows of a topic into ONE synthetic series (e.g.
+// per-core CPU → a single avg/total line), so a stats pane can graph the whole
+// topic without a select_from cursor. Reduces each numeric column across rows at
+// each sample index, right-anchored so a shorter (just-appeared) row aligns to the
+// most-recent end. Meta/string columns are skipped (not graphable). Pure.
+function _aggregateSamples(series, schema, window, mode) {
+  const rows = Object.values(series || {}).map((s) => (s || []).slice(-window)).filter((s) => s.length);
+  if (!rows.length) return [];
+  const maxLen = Math.max(...rows.map((r) => r.length));
+  const cols = schema.columns || {};
+  const out = [];
+  for (let i = 0; i < maxLen; i++) {
+    const sample = {};
+    for (const [col, cdef] of Object.entries(cols)) {
+      if (cdef && (cdef.type === 'string' || cdef.meta)) continue;
+      const vals = [];
+      for (const r of rows) {
+        const idx = i - (maxLen - r.length);   // right-align shorter rows
+        const v = idx >= 0 && r[idx] ? r[idx][col] : undefined;
+        if (Number.isFinite(v)) vals.push(v);
+      }
+      sample[col] = vals.length ? _reduceVals(vals, cdef && cdef.type, mode) : NaN;
+    }
+    out.push(sample);
+  }
+  return out;
+}
+
 function render(panel, w, h, _slice, opts) {
   const chrome = opts && opts.chrome;
   // v0.6.4 Theme A Phase 5 — per-pane focus (opts.focused). stats reads
   // ANOTHER pane's cursor via panel.select_from (cross-pane by design),
   // so its own slice is empty; only the focus flag is per-pane here.
   const focused = !!(opts && opts.focused);
-  if (!panel.topic || (!panel.select_from && panel.row == null)) {
-    return _renderEmpty(panel, w, h, '(stats panel needs topic + select_from or row)', chrome, focused);
+  if (!panel.topic || (!panel.select_from && panel.row == null && !panel.aggregate)) {
+    return _renderEmpty(panel, w, h, '(stats panel needs topic + select_from / row / aggregate)', chrome, focused);
   }
   const window = panel.window || 40;
 
-  const rowKey = _resolveSelection(panel);
-  if (!rowKey) return _renderEmpty(panel, w, h, '(no selection)', chrome, focused);
-
   // Finding B — read the store-mirror'd snapshot off the model, not the hub bus
-  // live. The metrics-mirror Sub keeps model.metrics[topic] current (throttled);
-  // selection changes (a different rowKey) repaint via their own nav dispatch and
-  // read the row already present here. Slice to this pane's window.
+  // live. The metrics-mirror Sub keeps model.metrics[topic] current (throttled).
   const metric = getModel().metrics[panel.topic];
-  const samples = ((metric && metric.series[rowKey]) || []).slice(-window);
-  if (!samples.length) return _renderEmpty(panel, w, h, '(no data yet)', chrome, focused);
-
   const schema = (metric && metric.schema) || { columns: {} };
+
+  // `aggregate:` folds ALL rows of the topic into one synthetic series (no cursor
+  // to follow); otherwise follow the select_from cursor / static row and slice to
+  // this pane's window.
+  let samples;
+  let rowKey = '_';   // aggregate has no single row → '_' keeps the plain title (no per-row suffix)
+  if (panel.aggregate) {
+    samples = _aggregateSamples((metric && metric.series) || {}, schema, window, panel.aggregate);
+  } else {
+    rowKey = _resolveSelection(panel);
+    if (!rowKey) return _renderEmpty(panel, w, h, '(no selection)', chrome, focused);
+    samples = ((metric && metric.series[rowKey]) || []).slice(-window);
+  }
+  if (!samples.length) return _renderEmpty(panel, w, h, '(no data yet)', chrome, focused);
   const metrics = panel.metrics || _defaultMetrics(schema);
   if (!metrics.length) return _renderEmpty(panel, w, h, '(no graphable metrics)', chrome, focused);
 
@@ -300,6 +345,7 @@ module.exports = {
   },
   // Test-only internals.
   _defaultMetrics,
+  _aggregateSamples,
   _fmtBytes,
   _fmtPercent,
   _fmtRate,

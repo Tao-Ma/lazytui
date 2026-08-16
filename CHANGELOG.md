@@ -8,6 +8,12 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`aggregate:` mode for `stats` panels.** Folds *all* rows of a topic into one
+  synthetic series — graph total/average across cores, devices, or interfaces with
+  no `select_from` cursor. `aggregate: true` reduces per column type (percent →
+  average, everything else → sum); `avg` / `sum` / `max` force one reducer. Reuses
+  the existing graph renderer. See docs/metrics-producer.md.
+
 - **`json` extract mode for `metrics:` producers.** `extract.mode: json` reads
   each field by a dotted/bracketed path (`$.load.1m`, `cores[0].pct`) via
   `JSON.parse` — dep-free, no `jq`. Single stream by default; an array root with

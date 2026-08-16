@@ -503,4 +503,46 @@ describe('[16] metrics_synced arm — hub series mirrored into model.metrics (Fi
   });
 });
 
+describe('[stats] aggregate — fold all rows into one synthetic series', () => {
+  const schema = { columns: { pct: { type: 'percent' }, bytes: { type: 'bytes' }, name: { type: 'string' } } };
+  const series = {
+    core0: [{ pct: 20, bytes: 100, name: 'a' }, { pct: 40, bytes: 200, name: 'a' }],
+    core1: [{ pct: 60, bytes: 300, name: 'b' }, { pct: 80, bytes: 400, name: 'b' }],
+  };
+  it('per-type default (true): percent → avg, bytes → sum; string skipped', () => {
+    const out = stats._aggregateSamples(series, schema, 40, true);
+    eq(out.length, 2);
+    eq(out[0].pct, 40); eq(out[1].pct, 60);          // avg(20,60), avg(40,80)
+    eq(out[0].bytes, 400); eq(out[1].bytes, 600);    // sum(100,300), sum(200,400)
+    eq('name' in out[0], false, 'string column not aggregated');
+  });
+  it('explicit reducer applies to all columns', () => {
+    eq(stats._aggregateSamples(series, schema, 40, 'sum')[0].pct, 80);   // sum(20,60)
+    eq(stats._aggregateSamples(series, schema, 40, 'max')[0].pct, 60);   // max(20,60)
+  });
+  it('right-anchors a shorter (just-appeared) row to the most-recent end', () => {
+    const s = { a: [{ pct: 10 }, { pct: 20 }], b: [{ pct: 90 }] };   // b has 1 sample
+    const out = stats._aggregateSamples(s, { columns: { pct: { type: 'percent' } } }, 40, true);
+    eq(out.length, 2);
+    eq(out[0].pct, 10);   // only a at the older index
+    eq(out[1].pct, 55);   // avg(20, 90) at the newest index — b aligned to the end
+  });
+  it('empty / no-row series → []', () => {
+    eq(stats._aggregateSamples({}, schema, 40, true).length, 0);
+  });
+  it('full render() of an aggregate pane does not throw and shows the title', () => {
+    // guards render()'s title/rowKey path — the scoping bug that a select_from /
+    // aggregate pane hit (rowKey referenced outside its block) only surfaces on a
+    // FULL render, which the rasterizer tests above never exercise.
+    const { getModel } = require('../app/runtime');
+    getModel().metrics = getModel().metrics || {};
+    getModel().metrics['m.aggR'] = {
+      schema: { columns: { pct: { type: 'percent' } } },
+      series: { c0: [{ pct: 10 }, { pct: 20 }], c1: [{ pct: 30 }, { pct: 40 }] },
+    };
+    const out = stats.panelTypes.stats.render({ topic: 'm.aggR', aggregate: true, title: 'CPU', window: 40 }, 30, 8, {}, { focused: false });
+    assert(typeof out === 'string' && out.includes('CPU'), `aggregate render produced a titled panel, got ${JSON.stringify(String(out).slice(0, 60))}`);
+  });
+});
+
 report();

@@ -467,8 +467,11 @@ root + `row_key` (or a `root:` path) emits one row per element. See §6.
 **Deferred (own backlog items — [[project_host_monitor_arc]]):**
 - **Live rate-stepping** via `refresh_ladder` + the `- Ns +` control
   (§7).
-- Consumer panels: aggregate/per-core overlay (§9). The process **table**
-  (`type: table`) and the snapshot **gauge** (`type: gauge`) shipped — see §9.
+- Consumer panels: per-core **overlay** (multi-series in one grid) — needs a
+  multi-series rasterizer (§9). The **`aggregate:`** stats mode shipped — it folds
+  all rows of a topic into one synthetic series (`aggregate: true` → percent avg /
+  else sum; or `avg`/`sum`/`max`), no `select_from` cursor needed. The process
+  **table** (`type: table`) and snapshot **gauge** (`type: gauge`) also shipped.
 
 ## 11. Worked examples
 
