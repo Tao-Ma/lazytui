@@ -34,11 +34,12 @@
 
 ## Scope decisions (user-pinned 2026-08-03)
 
-1. **Full-app tuned background — OUT.** btop paints its own `bg`
-   everywhere; that drags in background-color-erase / clear-color
-   strategy and terminal-transparency interactions. Selection + footer
-   bg (Phase 3) captures most of the perceived value. Revisit as its
-   own arc if wanted.
+1. **Full-app tuned background — OUT** *(SUPERSEDED — shipped v0.6.18 as
+   the themed-screen-colours arc; see §Themed screen colours below).*
+   btop paints its own `bg` everywhere; that drags in background-color-erase
+   / clear-color strategy and terminal-transparency interactions. Selection +
+   footer bg (Phase 3) captured most of the perceived value at the time; the
+   full-surface version landed later once the erase-ordering was worked out.
 2. **Terminal-pane color — follow-on arc, not this one.** The embedded
    PTY pane renders monochrome text *by documented design*
    (`js/io/term-screen.js` header; [foreign-components.md]). Coloring
@@ -306,3 +307,46 @@ recorded here; gradient tick linear in bytes and materially under the
   depth-independent per P3) — the cap is defensive only.
 
 [foreign-components.md]: foreign-components.md
+
+## Themed screen colours (v0.6.18 — Approach B)
+
+Supersedes scope-decision 1 above. Each theme carries a `screen` slot — a
+compilable `<fg> on <bg>` PAIR (its scheme's canonical window colours) — painted
+across **every** cell so a theme colours the whole surface, not just accent text.
+`solarized-light` (dark ink on the base3 canvas) is the first light theme.
+
+Mechanism — one funnel, `leaves/text/ansi.js`:
+- `enableScreenColors(true)` (called once at boot, `app/tui.js`) flips it ON.
+  OFF by default, so `richToAnsi`'s pinned `tag → bytes` contract and every
+  non-screen caller stay byte-identical (the smoke render harness never boots
+  `tui.js`).
+- `richToAnsi` PREPENDS the `screen` SGR to each converted row and RE-ASSERTS it
+  after every reset in a single post-pass (`_RESET_RE`) — covering markup `[/]`
+  AND a raw `\x1b[0m` embedded in content (streamed output keeps its own), so no
+  cell drops back to the terminal's own colours.
+- Both paint paths inherit it from that one funnel: the full-repaint emits
+  `richToAnsi` directly; the cell-diff (`leaves/render/cell-grid.js`) folds the
+  SGR per channel, so the pair rides into each cell.
+
+Why the PAIR (not a bg alone): a background without a paired foreground leaves
+plain / `dim` / `reverse` content at the terminal's default fg, which has no
+guaranteed contrast against the forced bg — it went invisible on light terminals
+(`minimal` worst-hit). The `screen` slot MUST carry both (guarded in
+test-themes.js).
+
+Screen CLEARS carry the bg too: `painter.js`'s `\x1b[2J` and the cmdline
+dropdown's `\x1b[K` emit the `screen` SGR *before* erasing, so they clear to the
+theme background (via background-color-erase) rather than the terminal's own —
+otherwise a full repaint flashes the terminal bg (white on a light terminal)
+before the themed rows paint. On a terminal without bce the fix is a no-op (never
+worse than the pre-arc default-bg clear). This per-cell + clear-ordering work is
+exactly what Approach A (OSC 11, setting the terminal default bg) would have
+avoided; Approach B was chosen to keep terminal state un-dirtied (nothing to
+restore on exit/crash).
+
+The embedded terminal pane is NOT overpainted (it renders monochrome by design —
+scope-decision 2). Bench note: the A2 cell-diff "−85% on localized updates"
+figures are the screen-colours-OFF baseline; with screen colours ON every cell
+carries fg+bg, so localized savings are ~10 pts lower and scroll ~14 pts lower
+(still a clear win), plus a ~0.03 ms/full-frame quantize tax on 256/16 terminals
+only (truecolor pays nothing).

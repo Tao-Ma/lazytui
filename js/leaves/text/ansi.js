@@ -93,9 +93,10 @@ function _computeScreenSeq(th) {
   return (v && _compileTag(v)) || '';
 }
 
-// A reset that returns to the SCREEN default: bare `\x1b[0m` when off, else the
-// reset followed by a re-assertion of the theme's fg+bg so the next cell keeps it.
-function _resetSeq() { return _screenSeq ? RESET + _screenSeq : RESET; }
+// Re-assertion of the theme fg+bg after a reset happens as a single post-pass in
+// richToAnsi (see `_RESET_RE`), NOT baked into the tag compiler — so it covers BOTH
+// markup `[/]` AND raw `\x1b[0m` embedded in content (streamed command output keeps
+// its own resets), which the compiler never sees.
 
 // Semantic theme tokens (truecolor arc 3b): an atom naming a theme palette slot
 // (warning, error, accent, running, partial, …) expands to that slot's CURRENT
@@ -126,7 +127,7 @@ function _expandThemeKeys(tag) {
 
 /** Compile one tag body to SGR, or null when any atom is unknown. */
 function _compileTag(tag) {
-  if (tag === '/' || tag === '/bold' || tag === '/dim') return _resetSeq();
+  if (tag === '/' || tag === '/bold' || tag === '/dim') return RESET;
   const toks = _expandThemeKeys(tag).split(' ');
   const codes = [];
   for (let i = 0; i < toks.length; i++) {
@@ -162,7 +163,7 @@ let _lastTheme = null;
 function _tagSgr(tag) {
   let v = _TAG_CACHE.get(tag);
   if (v === undefined) {
-    v = _compileTag(tag) || _resetSeq();
+    v = _compileTag(tag) || RESET;
     if (_TAG_CACHE.size >= _TAG_CACHE_MAX) _TAG_CACHE.clear();
     _TAG_CACHE.set(tag, v);
   }
@@ -185,6 +186,12 @@ const _BRACKET_SENTINEL = '';
 // `stripMarkup` run per visible row per panel per frame; rebuilding
 // the sentinel-restore regex on every call was real allocation churn.
 const _SENTINEL_RE = new RegExp(_BRACKET_SENTINEL, 'g');
+// Reset sequences in the FINAL output — `\x1b[m` / `\x1b[0m` / `\x1b[00m` (empty or
+// zero params = full reset). The screen-colour post-pass re-asserts the theme fg+bg
+// after each, so no cell drops to the terminal's own colours — whether the reset
+// came from markup `[/]` OR from a raw `\x1b[0m` embedded in content (streamed
+// command output keeps its own). Hoisted like _SENTINEL_RE (hot path).
+const _RESET_RE = /\x1b\[0*m/g;
 
 // Tag guard (defensive, truecolor arc 1a): a tag's `[` must not be preceded
 // by ESC (lookbehind) and its interior may not contain ESC. On UNESCAPED
@@ -206,10 +213,15 @@ function richToAnsi(text) {
   let result = text.replace(/\\\[/g, _BRACKET_SENTINEL);
   // Replace tags
   result = result.replace(/(?<!\x1b)\[([^\]\x1b]*)\]/g, (_, tag) => _tagSgr(tag));
-  // Restore escaped brackets, then paint the themed fg+bg across the whole row.
-  // No-op when screen colours are off (_screenSeq is ''); when on, the prepend
-  // covers the leading run and every inner reset re-asserts it (_resetSeq).
-  return _screenSeq + result.replace(_SENTINEL_RE, '[');
+  // Restore escaped brackets → the final ANSI (content's own SGR is real again).
+  result = result.replace(_SENTINEL_RE, '[');
+  // Screen colours OFF → pristine byte contract (test-ansi.js) + every non-screen
+  // caller unchanged. ON → paint the theme fg+bg across the whole row: prepend it,
+  // and re-assert after EVERY reset (markup `[/]` and raw content `\x1b[0m` alike)
+  // so no cell falls back to the terminal's own colours. The cell-diff path inherits
+  // this for free (it folds richToAnsi's SGR per channel).
+  if (!_screenSeq) return result;
+  return _screenSeq + result.replace(_RESET_RE, (m) => m + _screenSeq);
 }
 
 /**

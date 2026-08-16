@@ -12,6 +12,12 @@
  * implementation in leaves/render/cell-grid.js (distinct from the replay
  * highlighter leaves/render/cell-diff.js). Run:
  *   node js/test/bench-cell-grid.js
+ *
+ * NOTE: these numbers are the screen-colours-OFF baseline (this bench never calls
+ * ansi.enableScreenColors). PRODUCTION runs screen colours ON (app/tui.js), where
+ * every cell carries an explicit fg+bg — so localized-update savings are ~10 pts
+ * lower and scroll ~14 pts lower than reported here (still a clear win). See
+ * docs/truecolor.md §Themed screen colours.
  */
 'use strict';
 

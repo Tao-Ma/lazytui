@@ -102,6 +102,16 @@ describe('[4] palette contracts', () => {
       assert(!value.includes('#'), `minimal.${slot} must stay non-hex, got '${value}'`);
     }
   });
+  it('screen is a fg+bg PAIR — a bg without a paired fg goes invisible on some terminals', () => {
+    // The themed-background feature paints `screen` across every cell. A background
+    // without a paired foreground leaves plain/dim/reverse content at the terminal
+    // default fg, which has no guaranteed contrast against the forced bg (the
+    // minimal-invisible regression). Every theme MUST carry both, hex or named-16.
+    for (const [name, palette] of Object.entries(THEMES)) {
+      assert(/^(#[0-9a-f]{6}|[a-z_]+) on (#[0-9a-f]{6}|[a-z_]+)$/i.test(palette.screen),
+        `${name}.screen must be a '<fg> on <bg>' pair, got '${palette.screen}'`);
+    }
+  });
 });
 
 report();

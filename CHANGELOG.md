@@ -16,10 +16,12 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   terminal's default foreground, which has no guaranteed contrast against the
   forced background (it went invisible on light terminals, `minimal` worst-hit).
   Done at the single markup→ANSI funnel (`ansi.js`): the pair is prepended to each
-  row and re-asserted after every reset, so a `[/]` never drops a cell back to the
+  row and re-asserted after every reset — markup `[/]` and a raw `\x1b[0m` embedded
+  in content (colored command output) alike — so no cell drops back to the
   terminal's own colours, and the cell-diff path inherits it by folding the SGR
-  per channel. Embedded terminal tabs keep their child program's own colours;
-  256/16-colour terminals get it quantised at the write boundary. Screen clears
+  per channel. The embedded terminal region isn't overpainted (its panes render
+  monochrome by design); 256/16-colour terminals get it quantised at the write
+  boundary. Screen clears
   (`\x1b[2J`, and the cmdline dropdown's `\x1b[K`) set the theme colours *before*
   erasing, so they clear to the theme background rather than the terminal's own —
   otherwise a full repaint flashes the terminal background (white on a light

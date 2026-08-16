@@ -598,5 +598,8 @@ see PLUGINS.md.
 ### Themes
 
 Set via YAML `theme:` field. Built-in: monokai (default), dracula,
-solarized, gruvbox, nord, minimal. Themes control border colors,
-selection style, status indicators, and footer.
+solarized, solarized-light, gruvbox, nord, minimal. Themes control the
+whole-surface background (each theme's `screen` fg+bg pair, painted behind
+every cell), border colors, selection style, status indicators, and footer.
+`solarized-light` is the light-background theme (dark ink on a light canvas)
+for light terminals.

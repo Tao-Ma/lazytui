@@ -18,13 +18,14 @@
 'use strict';
 
 const { describe, it, eq, assert, report } = require('./test-runner');
-const { richToAnsi, enableScreenColors, RESET } = require('../leaves/text/ansi');
+const { richToAnsi, enableScreenColors, esc, RESET } = require('../leaves/text/ansi');
 const { diffRowToAnsi } = require('../leaves/render/cell-grid');
 const { setTheme } = require('../leaves/infra/themes');
 
 const MONOKAI = '\x1b[38;2;248;248;242;48;2;39;40;34m';   // #f8f8f2 on #272822
 const DRACULA = '\x1b[38;2;248;248;242;48;2;40;42;54m';   // #f8f8f2 on #282a36
 const MINIMAL = '\x1b[37;40m';                            // white on black (named-16)
+const SOLLIGHT = '\x1b[38;2;88;110;117;48;2;253;246;227m';// #586e75 on #fdf6e3 (dark ink on light)
 
 describe('[1] OFF by default — richToAnsi is byte-identical to its pinned contract', () => {
   it('plain text carries no screen prefix', () => {
@@ -48,6 +49,17 @@ describe('[2] ON — the fg+bg pair is prepended and re-asserted after every res
   });
   it('an unknown atom (compiles to reset) also re-asserts the pair', () => {
     eq(richToAnsi('[bogus]z'), MONOKAI + RESET + MONOKAI + 'z');
+  });
+  it('re-asserts the pair after a RAW reset embedded in content (colored command output)', () => {
+    // streamed output keeps its own \x1b[0m; the run after it must return to the
+    // theme, NOT the terminal default (the "whole surface" gap: visible as a
+    // mismatched patch when terminal bg != theme bg, e.g. a light theme on a dark term)
+    eq(richToAnsi('\x1b[34mdir\x1b[0m file'),
+       MONOKAI + '\x1b[34mdir\x1b[0m' + MONOKAI + ' file');
+  });
+  it('...and via esc() — the real content path (SGR survives the sentinel round-trip)', () => {
+    assert(richToAnsi(esc('\x1b[34mx\x1b[0my')).includes('\x1b[0m' + MONOKAI),
+      'a content reset routed through esc() must still be followed by the theme pair');
   });
 
   enableScreenColors(false);   // restore the default for any later block in this file
@@ -78,6 +90,9 @@ describe('[4] the pair tracks the active theme', () => {
   enableScreenColors(true);
   it('dracula', () => { setTheme('dracula'); eq(richToAnsi('a'), DRACULA + 'a'); });
   it('minimal uses the named-16 pair', () => { setTheme('minimal'); eq(richToAnsi('a'), MINIMAL + 'a'); });
+  it('solarized-light is DARK ink on a LIGHT bg (the light-terminal theme)', () => {
+    setTheme('solarized-light'); eq(richToAnsi('a'), SOLLIGHT + 'a');
+  });
   setTheme('monokai');
   enableScreenColors(false);
 });
