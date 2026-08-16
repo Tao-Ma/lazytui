@@ -10,6 +10,19 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    # Run the suite at each color depth. Color depth is detected from
+    # COLORTERM/TERM at paint load; a bare CI env detects 16-color, but a dev
+    # shell usually advertises 256/truecolor — so a test that asserts on a
+    # specific SGR form (e.g. truecolor `38;2;…`) can pass locally and fail only
+    # on CI (the v0.6.18 test-gauge failure). Exercising all three here catches
+    # depth-fragile assertions at whichever depth they break. LAZYTUI_COLOR
+    # overrides detection (leaves/render/color-depth.js). fail-fast:false so one
+    # depth's failure doesn't mask the others.
+    strategy:
+      fail-fast: false
+      matrix:
+        color_depth: ['16', '256', 'truecolor']
+
     steps:
       - uses: actions/checkout@v4
 
@@ -21,5 +34,7 @@ jobs:
       - name: Install Node deps
         run: npm install --omit=dev
 
-      - name: Run JS test suites
+      - name: Run JS test suites (color depth ${{ matrix.color_depth }})
         run: npm test
+        env:
+          LAZYTUI_COLOR: ${{ matrix.color_depth }}
