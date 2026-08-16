@@ -174,6 +174,20 @@ describe('[parse] selection/editor pass-through (the pre-existing drop)', () => 
     try { parse(bad); } catch (e) { threw = /'editor' must be a non-empty string/.test(e.message); }
     assert(threw, 'non-string editor rejects at parse');
   });
+  it('theme_background: false survives parse; absent defaults null (= ON); non-boolean rejects', () => {
+    const off = write('tbg.yml', fs.readFileSync(MINIMAL, 'utf8') + '\ntheme_background: false\n');
+    eq(parse(off).theme_background, false, 'explicit opt-out survives');
+    eq(parse(MINIMAL).theme_background, null, 'absent = null sentinel (tui.js reads !== false → ON)');
+    const on = write('tbg-on.yml', fs.readFileSync(MINIMAL, 'utf8') + '\ntheme_background: true\n');
+    eq(parse(on).theme_background, true);
+    const bad = write('tbg-bad.yml', fs.readFileSync(MINIMAL, 'utf8') + '\ntheme_background: nope\n');
+    let threw = false;
+    try { parse(bad); } catch (e) { threw = /'theme_background' must be a boolean/.test(e.message); }
+    assert(threw, 'non-boolean theme_background rejects at parse');
+  });
+  it('global theme_background:false lands on the parsed output (project unset)', () => {
+    eq(parse(MINIMAL, { global: { theme_background: false } }).theme_background, false);
+  });
 });
 
 describe('[json] resolved-shape configs — keyed sections layer, editor null counts as unset', () => {

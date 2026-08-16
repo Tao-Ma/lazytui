@@ -20,6 +20,7 @@ theme: nord                 # wholesale — a project theme: wins
 selection: true             # wholesale — global text-selection default
 editor: nvim                # wholesale — see §editor below
 color_depth: auto           # wholesale — auto | truecolor | 256 | 16 (see below)
+theme_background: true      # wholesale — false = transparent (theme colours text only)
 keyboard_protocol: auto     # wholesale — auto | legacy | kitty (see below)
 action_status:              # global-only — action-status chip (see below)
   segments: [status, duration, time]
@@ -48,8 +49,8 @@ The global file layers UNDER the project config:
   that same key/gesture.
 - **`context-menu`** is a list: global entries first, project entries after.
 - **Scalars** (`theme`, `selection`, `editor`, `color_depth`,
-  `keyboard_protocol`) are wholesale — a project value wins; absent, the
-  global value applies. For `color_depth` and `keyboard_protocol`, a project
+  `theme_background`, `keyboard_protocol`) are wholesale — a project value
+  wins; absent, the global value applies. For `color_depth` and `keyboard_protocol`, a project
   `auto` ALSO counts as absent: `auto` means "no override opinion, decide
   from the environment", so an explicit global value applies under it.
 - **`action_status`** and **`quick_keys`** are global-only (not project top

@@ -316,10 +316,14 @@ across **every** cell so a theme colours the whole surface, not just accent text
 `solarized-light` (dark ink on the base3 canvas) is the first light theme.
 
 Mechanism — one funnel, `leaves/text/ansi.js`:
-- `enableScreenColors(true)` (called once at boot, `app/tui.js`) flips it ON.
-  OFF by default, so `richToAnsi`'s pinned `tag → bytes` contract and every
+- `enableScreenColors(...)` is called once at boot (`app/tui.js`). The ansi-module
+  flag is OFF by default, so `richToAnsi`'s pinned `tag → bytes` contract and every
   non-screen caller stay byte-identical (the smoke render harness never boots
-  `tui.js`).
+  `tui.js`). Production is ON unless the user opts out with `theme_background: false`
+  (project or global config) → transparent: the theme colours text only and the
+  terminal's own background shows through (light terminals / transparency setups).
+  The key is a boolean; absent → `null` sentinel (default ON, global-override-safe),
+  and tui.js enables unless the value is exactly `false`.
 - `richToAnsi` PREPENDS the `screen` SGR to each converted row and RE-ASSERTS it
   after every reset so no cell drops back to the terminal's own colours. Two
   paths, for CPU: markup `[/]` re-asserts via the CACHED `_resetSeq()` (baked into

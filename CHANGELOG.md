@@ -21,7 +21,9 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   terminal's own colours, and the cell-diff path inherits it by folding the SGR
   per channel. The embedded terminal region isn't overpainted (its panes render
   monochrome by design); 256/16-colour terminals get it quantised at the write
-  boundary. Screen clears
+  boundary. Opt out with **`theme_background: false`** (project or global config)
+  → transparent: the theme colours text only and the terminal's own background
+  shows through (for light terminals / transparency setups). Screen clears
   (`\x1b[2J`, and the cmdline dropdown's `\x1b[K`) set the theme colours *before*
   erasing, so they clear to the theme background rather than the terminal's own —
   otherwise a full repaint flashes the terminal background (white on a light

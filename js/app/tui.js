@@ -349,10 +349,12 @@ function main() {
   }
 
   // Themed screen colours (Approach B): paint each theme's `screen` fg+bg pair
-  // across every cell. A boot-time flip (not per-frame) so richToAnsi's byte
-  // contract stays intact for unit tests + the smoke render harness, which never
-  // reach here.
-  require('../leaves/text/ansi').enableScreenColors(true);
+  // across every cell. Default ON; `theme_background: false` (project or global
+  // config) opts out → transparent (theme colours text only, the terminal's own
+  // background shows through — for light terminals / transparency setups). A
+  // boot-time flip (not per-frame) so richToAnsi's byte contract stays intact for
+  // unit tests + the smoke render harness, which never reach here.
+  require('../leaves/text/ansi').enableScreenColors((getModel().config || {}).theme_background !== false);
 
   // Built-in Components (TEA shape), in registration order. The list is
   // single-sourced in app/components.js so the replay harness registers the

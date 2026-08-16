@@ -20,13 +20,13 @@ const VALID_ACTION_TYPES = new Set(['run', 'spawn', 'background']);
 // the new run below (a status-over-time log). See docs/DATAFLOW.md.
 const VALID_ACTION_OUTPUT_MODES = new Set(['replace', 'append']);
 
-const VALID_TOP_KEYS    = new Set(['project_dir', 'groups', 'vars', 'helpers', 'files', 'layout', 'theme', 'plugins', 'register', 'keys', 'keymap', 'mouse', 'context-menu', 'panels', 'selection', 'editor', 'color_depth', 'keyboard_protocol', 'metrics']);
+const VALID_TOP_KEYS    = new Set(['project_dir', 'groups', 'vars', 'helpers', 'files', 'layout', 'theme', 'plugins', 'register', 'keys', 'keymap', 'mouse', 'context-menu', 'panels', 'selection', 'editor', 'color_depth', 'theme_background', 'keyboard_protocol', 'metrics']);
 
 // Global user config (~/.config/lazytui/config.yml, docs/global-config) — only
 // the APP-BEHAVIOR sections are honored there; project content (groups,
 // layout, vars, …) belongs to the per-project config. Anything else in the
 // global file warns and is ignored — a global file must never brick a project.
-const GLOBAL_TOP_KEYS = new Set(['theme', 'keys', 'keymap', 'mouse', 'context-menu', 'selection', 'editor', 'color_depth', 'keyboard_protocol', 'action_status', 'quick_keys']);
+const GLOBAL_TOP_KEYS = new Set(['theme', 'keys', 'keymap', 'mouse', 'context-menu', 'selection', 'editor', 'color_depth', 'theme_background', 'keyboard_protocol', 'action_status', 'quick_keys']);
 
 // action-status — the reverse-filled command-finish status line on a
 // text-view output pane. `segments` are the fields (subset + order); `time` =
@@ -105,6 +105,11 @@ function validate(data, _sourceFile, warnings) {
   // `select:` on a panel pool entry overrides it.
   if ('selection' in data && typeof data.selection !== 'boolean') {
     throw new SchemaError("'selection' must be a boolean");
+  }
+  // Themed screen background (docs/truecolor.md §Themed screen colours); default
+  // ON. `false` = transparent (the theme colours text only, terminal bg shows through).
+  if ('theme_background' in data && typeof data.theme_background !== 'boolean') {
+    throw new SchemaError("'theme_background' must be a boolean");
   }
   if ('editor' in data) validateEditor(data.editor);
   if ('color_depth' in data) validateColorDepth(data.color_depth);
@@ -314,6 +319,9 @@ function validateGlobal(data, warnings) {
   }
   if ('selection' in out && typeof out.selection !== 'boolean') {
     throw new SchemaError("'selection' must be a boolean");
+  }
+  if ('theme_background' in out && typeof out.theme_background !== 'boolean') {
+    throw new SchemaError("'theme_background' must be a boolean");
   }
   if ('editor' in out)   validateEditor(out.editor);
   if ('color_depth' in out) validateColorDepth(out.color_depth);

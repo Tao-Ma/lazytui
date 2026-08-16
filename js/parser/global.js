@@ -76,7 +76,8 @@ function loadGlobal(env) {
  *       keymap              (`normal` merges per key; `version` project-wins)
  *   - `context-menu` is a LIST: global entries first, project's appended
  *   - scalars are wholesale, project-wins: theme, selection, editor,
- *     color_depth + keyboard_protocol (where 'auto' also counts as unset)
+ *     theme_background, color_depth + keyboard_protocol (where 'auto' also
+ *     counts as unset)
  */
 function mergeGlobal(project, global) {
   if (!global) return project;
@@ -84,7 +85,7 @@ function mergeGlobal(project, global) {
   // action_status + quick_keys are global-only (not project top keys), so the
   // project never carries them — this just lifts the global value onto the
   // merged config.
-  for (const k of ['theme', 'selection', 'editor', 'action_status', 'quick_keys']) {
+  for (const k of ['theme', 'selection', 'editor', 'action_status', 'quick_keys', 'theme_background']) {
     // null counts as unset: parse() stamps `editor: null` on its output, so
     // a resolved-shape .json config must not block a global editor with the
     // stamped "not set" default (v0.6.12 review MED). theme/selection are

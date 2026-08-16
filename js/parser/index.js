@@ -757,6 +757,12 @@ function parse(yamlPath, opts) {
     // and mergeGlobal treats 'auto' as unset so a stamped 'auto' in a
     // resolved-shape .json never blocks a global value.
     color_depth: data.color_depth !== undefined ? String(data.color_depth) : 'auto',
+    // Themed screen background (docs/truecolor.md §Themed screen colours). Default
+    // ON; `false` = transparent (theme colours text only, terminal bg shows through).
+    // Absent → `null` (not `true`): the mergeGlobal "unset" sentinel, so a stamped
+    // default in a resolved-shape .json never blocks a global override (the
+    // action_status lesson above). tui.js enables unless the value is exactly false.
+    theme_background: data.theme_background !== undefined ? data.theme_background : null,
     // Keyboard input protocol (kitty-keyboard arc, docs/kitty-keyboard.md).
     // 'auto' (default) = detection handshake; 'legacy' = tokenizer only;
     // 'kitty' = force-enable. LAZYTUI_KBD env overrides at boot (tui.js).
