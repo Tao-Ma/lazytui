@@ -238,13 +238,15 @@ describe('[hitTestTrigger] multi-viewer — each glyph opens its own pane', () =
     // U2f — a viewer's `[≡]` shows when it's a multi-tab CONTENT slot; build each
     // as a role:'content' position container with its seeded Info + Transcript
     // position-tabs, so triggerVisible is true (a >1-tab slot always shows).
-    const contentSlot = (paneId, id) => ({
-      paneId, type: 'info', id, role: 'content', activeTabId: `info-${paneId}`,
+    // A real placed viewer pane carries a hotkey, so `[≡]` sits after `╭─(k)` at
+    // local col 5 — matching the `mx 6 / 56` glyph band the assertions use.
+    const contentSlot = (paneId, id, hotkey) => ({
+      paneId, type: 'info', id, role: 'content', hotkey, activeTabId: `info-${paneId}`,
       tabs: [{ id: `info-${paneId}`, poolId: `info-${paneId}` }, { id: `transcript-${paneId}`, poolId: `transcript-${paneId}` }],
     });
     layoutSlice.arrange = { columns: [
-      { panels: [contentSlot('pane-left', 'l')] },
-      { panels: [contentSlot('pane-right', 'r')] },
+      { panels: [contentSlot('pane-left', 'l', '1')] },
+      { panels: [contentSlot('pane-right', 'r', '2')] },
     ], pool: {
       'info-pane-left':  { id: 'info-pane-left',  type: 'info', title: 'Info' },
       'transcript-pane-left':  { id: 'transcript-pane-left',  type: 'text-view', title: 'Transcript', hint: 'transcript' },
@@ -280,6 +282,48 @@ describe('[hitTestTrigger] multi-viewer — each glyph opens its own pane', () =
       eq(overlay.hitTestTrigger(6, 0), null, 'left glyph dead under chain mode');
       eq(overlay.hitTestTrigger(56, 0), null, 'right glyph dead under chain mode');
     });
+  });
+});
+
+// Regression — a pane with NO hotkey draws `[≡]` flush at local col 2 (`╭─[≡]`),
+// not col 5. The trigger hit-zone must follow the glyph (derive from the hotkey
+// width), else clicking the visible `[≡]` misses by 3 cells and the user has to
+// aim right of it. Reproduced on the host-monitor demo's hotkey-less middle
+// column; the fix reads the offset from `pane.hotkey`.
+describe('[hitTestTrigger] hotkey-less pane — [≡] hit-zone follows the glyph (col 2)', () => {
+  const overlay = require('../overlay/pane-menu');
+  const api = require('../panel/api');
+  const { getModel } = require('../app/runtime');
+  try { api.registerComponent(layout); } catch (e) { /* already registered */ }
+  const layoutSlice = api.getInstanceSlice('layout');
+
+  function withHotkeylessSlot(fn) {
+    const saved = { bounds: layoutSlice.paneBounds, arrange: layoutSlice.arrange, pm: layoutSlice.paneMenu, fc: layoutSlice.freeConfig };
+    const md = getModel().modes;
+    const savedModes = { paneMenuMode: md.paneMenuMode, freeConfigMode: md.freeConfigMode, cmdMode: md.cmdMode };
+    layoutSlice.paneBounds = { 'pane-x': { x: 0, y: 0, w: 40, h: 20 } };
+    layoutSlice.arrange = { columns: [{ panels: [{
+      paneId: 'pane-x', type: 'info', id: 'x', role: 'content', /* no hotkey */ activeTabId: 'info-pane-x',
+      tabs: [{ id: 'info-pane-x', poolId: 'info-pane-x' }, { id: 'transcript-pane-x', poolId: 'transcript-pane-x' }],
+    }] }], pool: {
+      'info-pane-x': { id: 'info-pane-x', type: 'info', title: 'Info' },
+      'transcript-pane-x': { id: 'transcript-pane-x', type: 'text-view', title: 'Transcript', hint: 'transcript' },
+    } };
+    layoutSlice.paneMenu = { targetPaneId: null, cursor: 0, scroll: 0 };
+    layoutSlice.freeConfig = { drag: null };
+    md.paneMenuMode = false; md.freeConfigMode = false; md.cmdMode = false;
+    try { return fn(); } finally { Object.assign(layoutSlice, saved); Object.assign(md, savedModes); }
+  }
+
+  it('clicking the glyph at col 2/3/4 opens the menu', () => {
+    withHotkeylessSlot(() => {
+      eq(overlay.hitTestTrigger(2, 0), 'pane-x', 'the `[` at col 2');
+      eq(overlay.hitTestTrigger(3, 0), 'pane-x', 'the `≡` at col 3');
+      eq(overlay.hitTestTrigger(4, 0), 'pane-x', 'the `]` at col 4');
+    });
+  });
+  it('clicking the OLD fixed offset (col 5) — 3 cells right of the glyph — misses', () => {
+    withHotkeylessSlot(() => eq(overlay.hitTestTrigger(5, 0), null, 'no phantom hit-zone right of the glyph'));
   });
 });
 

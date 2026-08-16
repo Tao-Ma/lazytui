@@ -65,6 +65,13 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The `[≡]` pane-menu glyph was unclickable on panes without a hotkey.** Its
+  click hit-zone was pinned to a fixed column (assuming a one-character hotkey
+  `╭─(k)[≡]`), but a hotkey-less pane draws `[≡]` flush at the corner (`╭─[≡]`) —
+  three cells to the left. So on such panes (common in a busy layout, e.g. the
+  host-monitor demo's middle column) you had to click three cells right of the
+  visible glyph to open the menu. The hit-zone now follows the glyph, derived
+  from the pane's hotkey width to match what's painted.
 - **Clicking a row in the process table selected the wrong process.** The table's
   sticky column header sits at the top of the pane, ahead of the data rows, so a
   click landed one row too low — you clicked a process and its neighbour below got

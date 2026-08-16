@@ -46,10 +46,21 @@ const VIEWPORT = 12;
 // `[≡]` glyph geometry — the pane's top row is `╭─(o)[≡]─Title…─╮`.
 //   `╭`        col 0
 //   `─`        col 1
-//   `(o)`      cols 2..4   (hotkey display)
-//   `[≡]`      cols 5..7   (trigger glyph)
-const TRIGGER_X_OFFSET = 5;
+//   `(hk)`     cols 2..     (hotkey display, `(${hotkey})` — ONLY if the pane
+//                            has a hotkey; a hotkey-less pane omits it entirely)
+//   `[≡]`      the next 3 cols (trigger glyph), so its start column depends on
+//              the hotkey width — see `_triggerX`. (draw.js builds the same
+//              leftPart: `╭─` + `(hk)?` + `[≡]`.)
 const TRIGGER_VIS_W = 3;
+
+// Column (local to the pane's left border) where the `[≡]` glyph's `[` sits.
+// A hotkey-less pane draws it flush at col 2; a hotkey adds `(${hotkey})`. The
+// old fixed offset (5) assumed a 1-char hotkey, so on hotkey-less panes the
+// hit-zone sat 3 cells RIGHT of the painted glyph — clicks on `[≡]` missed.
+function _triggerX(pane) {
+  const hk = pane && pane.hotkey;
+  return 2 + (hk ? String(hk).length + 2 : 0);   // `╭─` + optional `(hk)` width
+}
 
 // Residue tracking — the dropdown shrinks/closes by overwriting only
 // the rows it painted last frame (same pattern as overlay/cmdline).
@@ -212,10 +223,11 @@ function hitTestTrigger(mx, my) {
     if (!triggerVisible(p.paneId)) continue;
     const b = _paneBounds(p.paneId);
     if (!b) continue;
-    if (b.w < TRIGGER_X_OFFSET + TRIGGER_VIS_W + 2) continue;
+    const triggerX = _triggerX(p);   // hotkey-dependent — mirrors draw.js leftPart
+    if (b.w < triggerX + TRIGGER_VIS_W + 2) continue;
     if (my !== b.y) continue;
-    if (mx < b.x + TRIGGER_X_OFFSET) continue;
-    if (mx >= b.x + TRIGGER_X_OFFSET + TRIGGER_VIS_W) continue;
+    if (mx < b.x + triggerX) continue;
+    if (mx >= b.x + triggerX + TRIGGER_VIS_W) continue;
     return p.paneId;
   }
   return null;

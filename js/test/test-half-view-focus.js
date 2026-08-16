@@ -213,8 +213,8 @@ describe('[chrome glyphs] half-mode collapse-button click can\'t hit off-screen 
     slice.arrange = {
       columns: [
         { width: 32, panels: [
-          { type: 'groups',  id: 'groups',  paneId: 'pane-groups',  tabs: [{ id: 'groups',  poolId: 'groups'  }] },
-          { type: 'actions', id: 'actions', paneId: 'pane-actions', tabs: [{ id: 'actions', poolId: 'actions' }] },
+          { type: 'groups',  id: 'groups',  paneId: 'pane-groups',  hotkey: 'g', tabs: [{ id: 'groups',  poolId: 'groups'  }] },
+          { type: 'actions', id: 'actions', paneId: 'pane-actions', hotkey: 'a', tabs: [{ id: 'actions', poolId: 'actions' }] },
         ] },
         { panels: [
           { type: 'detail', id: 'detail', paneId: 'pane-detail', tabs: [{ id: 'detail', poolId: 'detail' }] },
@@ -265,7 +265,7 @@ describe('[pane-menu trigger] hit-test honors hidden (nothing-to-swap) state', (
     slice.arrange = {
       columns: [
         { width: 32, panels: [
-          { type: 'groups', id: 'groups', paneId: 'pane-groups', tabs: [{ id: 'groups', poolId: 'groups' }] },
+          { type: 'groups', id: 'groups', paneId: 'pane-groups', hotkey: 'g', tabs: [{ id: 'groups', poolId: 'groups' }] },
         ] },
         { panels: [
           { type: 'detail', id: 'detail', paneId: 'pane-detail', tabs: [{ id: 'detail', poolId: 'detail' }] },
@@ -293,8 +293,8 @@ describe('[pane-menu trigger] hit-test honors hidden (nothing-to-swap) state', (
     slice.arrange = {
       columns: [
         { width: 32, panels: [
-          { type: 'groups',  id: 'groups',  paneId: 'pane-groups',  tabs: [{ id: 'groups',  poolId: 'groups'  }] },
-          { type: 'actions', id: 'actions', paneId: 'pane-actions', tabs: [{ id: 'actions', poolId: 'actions' }] },
+          { type: 'groups',  id: 'groups',  paneId: 'pane-groups',  hotkey: 'g', tabs: [{ id: 'groups',  poolId: 'groups'  }] },
+          { type: 'actions', id: 'actions', paneId: 'pane-actions', hotkey: 'a', tabs: [{ id: 'actions', poolId: 'actions' }] },
         ] },
         { panels: [
           { type: 'detail', id: 'detail', paneId: 'pane-detail', tabs: [{ id: 'detail', poolId: 'detail' }] },
