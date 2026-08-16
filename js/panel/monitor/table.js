@@ -155,8 +155,10 @@ function getItems(slice) {
 function getInfo(rowKey, paneId) {
   // sliceForPane (not the strict getInstanceSlice) is the read-path resolver:
   // arm 1 returns THIS pane's own slice by paneId — load-bearing here because a
-  // config can place two table panes (the demo's procs + net), and the kind-
-  // primary fallback would show one pane's topic under the other's selection.
+  // config can place several table panes (the demo has procs / net / diskio), and
+  // the kind-primary fallback would show one pane's topic under another's cursor.
+  // (getInfo receives the live focused paneId, so arm 1 always fires — unlike a
+  // bare pool-id `select_from` target, which does hit the kind-primary fallback.)
   const slice = paneId != null ? route.sliceForPane(paneId, 'table') : null;
   const metric = _metric(slice && slice.topic);
   return metric ? rowInfo(metric, rowKey) : [`row: ${rowKey}`];

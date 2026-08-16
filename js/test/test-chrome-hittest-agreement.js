@@ -14,6 +14,12 @@
  * else on that row. Any future divergence (paint moves the glyph, or a hit-test
  * bakes a new assumption) fails here regardless of how the offset is computed.
  *
+ * SCOPE: covers the POSITION axis on panes wide enough that `[≡]` IS painted (the
+ * demo columns are 30/44/flex). It does NOT cover the PRESENCE axis — a very
+ * narrow pane where renderPanel drops all chrome yet the width-proxy hit-test
+ * still reports a hit (see the KNOWN GAP note in pane-menu.hitTestTrigger); that
+ * needs the paint to publish its drawn chrome regions — its own arc.
+ *
  * Run: node js/test/test-chrome-hittest-agreement.js
  */
 'use strict';

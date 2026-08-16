@@ -70,6 +70,15 @@ describe('[metrics/row-info] rowInfo(metric, rowKey)', () => {
     eq(lines[0], '[bold]_[/]');
     eq(lines[2], '[dim]cpu[/]  12.0%');
   });
+
+  it('label padding is by VISIBLE width — a wide/CJK key aligns the value column', () => {
+    // `内存` is 2 cells per glyph → visible width 4; `cpu` is 3. The narrower key
+    // gets ONE pad cell so both values start at column 4 (+ the 2-space gap).
+    const m = { schema: { columns: { cpu: { type: 'percent' }, '内存': { type: 'percent' } } }, series: { r: [{ cpu: 1, '内存': 2 }] } };
+    const lines = rowInfo(m, 'r').slice(2);
+    eq(lines[0], '[dim]cpu [/]  1.0%');    // 'cpu' + 1 pad = visible width 4
+    eq(lines[1], '[dim]内存[/]  2.0%');    // already width 4, no pad
+  });
 });
 
 report();

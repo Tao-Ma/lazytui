@@ -218,6 +218,14 @@ function hitTestTrigger(mx, my) {
     const b = _paneBounds(p.paneId);
     if (!b) continue;
     const triggerX = _triggerX(p);   // hotkey-dependent — mirrors draw.js leftPart
+    // KNOWN GAP (pre-existing, class-wide): this is a width PROXY for "is `[≡]`
+    // painted". renderPanel drops ALL chrome (bare border, no glyph) when the
+    // whole top row — title + the RIGHT [X]/[_]/controls cluster — doesn't fit
+    // (draw.js `fits`), which this left-only check can't see; so a very narrow
+    // pane can report a hit where nothing is drawn. Same proxy weakness as the
+    // collapse/close hit-tests (chrome-hittest.js *_MIN_W). Not reachable in
+    // normal layouts (panes are far wider); a real fix means the paint publishing
+    // its actually-drawn chrome regions for the hit-test to read (its own arc).
     if (b.w < triggerX + TRIGGER_VIS_W + 2) continue;
     if (my !== b.y) continue;
     if (mx < b.x + triggerX) continue;

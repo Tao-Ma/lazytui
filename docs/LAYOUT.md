@@ -327,8 +327,8 @@ selectable, so a `stats` pane can `select_from` a gauge too — and, like the
 table, the selected row fills the Info tab's detail card.
 
 **Row detail card** — selecting a row in a `table` or `gauge` projects it into
-the focused viewer's **Info tab** as a labelled card of *every* schema column
-(not just the columns the panel tables), each formatted by its type. Carry
+the focused viewer's **Info tab** as a labelled card of every *non-meta* schema
+column (not just the columns the panel tables), each formatted by its type. Carry
 extra columns on the producer's `schema:` — even ones no panel shows — and they
 appear here; the schema's column ORDER is the card's order. This makes the
 viewer a per-process (per-row) detail popup, btop-style. No config on the panel:

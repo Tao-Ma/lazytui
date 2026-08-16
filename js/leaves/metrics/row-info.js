@@ -17,7 +17,7 @@
 'use strict';
 
 const { fmt } = require('./format');
-const { esc } = require('../text/ansi');
+const { esc, visibleLen } = require('../text/ansi');
 
 function _latest(metric, rowKey) {
   const s = metric && metric.series && metric.series[rowKey];
@@ -39,14 +39,16 @@ function rowInfo(metric, rowKey) {
   const cols = _cols(metric);
   if (!cols.length) return [head];
   const sample = _latest(metric, rowKey);
-  // Left-align labels to the widest key so the values form a clean column. The
-  // padding rides INSIDE the `[dim]` span (trailing spaces are invisible), so
-  // visible width — and thus alignment — is unaffected by the markup.
-  const w = Math.max(...cols.map(([k]) => k.length));
+  // Left-align labels to the widest key so the values form a clean column. Pad by
+  // VISIBLE width (charWidth), not code-unit `.length` — a CJK/wide column key
+  // (`内存`) is 2 cells per glyph, so `.length` would misalign the value column.
+  // The padding rides INSIDE the `[dim]` span (trailing spaces are invisible).
+  const w = Math.max(...cols.map(([k]) => visibleLen(k)));
   const lines = [head, ''];
   for (const [k, c] of cols) {
     const v = sample ? sample[k] : undefined;
-    lines.push(`[dim]${esc(k.padEnd(w))}[/]  ${esc(fmt(v, (c && c.type) || 'number'))}`);
+    const label = k + ' '.repeat(Math.max(0, w - visibleLen(k)));
+    lines.push(`[dim]${esc(label)}[/]  ${esc(fmt(v, (c && c.type) || 'number'))}`);
   }
   return lines;
 }

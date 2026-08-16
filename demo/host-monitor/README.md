@@ -13,18 +13,19 @@ declared in YAML — no plugin code.
 │ ██████▊          │╭─Processes───‹ cpu↓ ›────╮│ > top (live)  │
 ├──────────────────┤│      cpu↓  mem comm      ││   processes   │
 │ Disk / ████░ 77% ││ 240 90.0% 0.3% node      ││   uptime      │
-│ Disk I/O rd  wr  ││ 404 62.0% 4.0% claude    │╰───────────────╯
-│ vda   1M   2M    │├──────────────‹ rx↓ ›────┤╭─Output─Info───╮
-│                  ││ Network  rx     tx       ││ pid 240       │
-│                  ││ eth0    20K    5K        ││ command node… │
-│                  ││ Net (sel) ▁▂▃▅▆          ││ cpu    90.0%  │
+│                  ││ 404 62.0% 4.0% claude    │╰───────────────╯
+│ Network          │├─Network──────‹ rx↓ ›────┤╭─Output─Info───╮
+│ ▁▂▂▃▅▆▇          ││ eth0    20K    5K        ││ pid 240       │
+│                  │├─Disk I/O───‹ write↓ ›───┤│ command node… │
+│                  ││ vda     1M    2M         ││ cpu    90.0%  │
 ╰──────────────────╯╰────────────────────────╯╰───────────────╯
 ```
 
 *(Simplified sketch. Column 1 stacks the CPU/MEM/LOAD graphs, the **Disk** usage
-gauge and **Disk I/O** table; column 2 the **CPU bars** gauge, **Processes**
-table, **Network** table + **trend graph**; column 3 the **Selected** drill-down,
-host actions, and the **Output** pane whose Info tab is the process detail card.)*
+gauge, and the total **Network** throughput graph; column 2 the **CPU bars**
+gauge, **Processes** table, **Network** table, and **Disk I/O** table; column 3
+the **Selected** drill-down, host actions, and the **Output** pane whose Info tab
+is the process detail card.)*
 
 ## What it shows
 
@@ -33,25 +34,26 @@ This is the first demo with **no container at all**. It exercises the
 a top-level `metrics:` block turns plain host commands into live hub data —
 graphed by the `stats` panel and listed by the `table` panel, no plugin code.
 
-Seven producers, each a one-line host command:
+Eight producers, each a one-line host command:
 
 | Topic | Command (summarised) | Rendered as |
 |---|---|---|
-| `host.cpu` | two `/proc/stat` samples → busy% | CPU line graph |
-| `host.mem` | `free` → used% | Memory line graph |
+| `host.cpu` | two `/proc/stat` samples → busy% | CPU line graph + meter |
+| `host.mem` | `free` → used% | Memory line graph + meter |
 | `host.load` | `/proc/loadavg` → 1-min load | Load line graph |
 | `host.proc` | `ps` top-by-CPU (pid/cpu/mem/comm + state/rss/…/cmdline) | **Processes table** + **CPU bars** + **detail card** |
-| `host.net` | `/proc/net/dev` rx/tx **counters** → rates | **Network table** + **trend graph** (`B/s`) |
+| `host.net` | `/proc/net/dev` per-iface rx/tx **counters** → rates | **Network table** (`B/s`) |
+| `host.nettotal` | same, summed across ifaces → one stream | **Network trend graph** (total `B/s`) |
 | `host.disk` | `df` → used% per mount | **Disk gauge** (usage bars) |
 | `host.diskio` | `/proc/diskstats` sectors **counters** → rates | **Disk I/O table** (`B/s`) |
 
-Three concern-grouped columns. **Column 1** is system + storage: the CPU / memory
-/ load graphs, the **Disk** usage gauge (one bar per mount), and the **Disk I/O**
-table (per-device read/write `B/s`). **Column 2** is the process column — the
-**CPU bars** `gauge` (a btop-style bar chart, one meter bar per process) above the
+Three concern-grouped columns. **Column 1** is the system dashboard: the CPU /
+memory / load graphs, the **Disk** usage gauge (one bar per mount), and the total
+**Network** throughput graph. **Column 2** holds the data tables: the **CPU bars**
+`gauge` (a btop-style bar chart, one meter bar per process) above the
 **Processes** `table` (sorted, columnar; click the `‹ cpu↓ ›` control to re-sort),
-then the **Network** throughput table and its **trend graph**. **Column 3** holds
-the selected-process drill-down, the host actions, and the **Output** pane.
+then the **Network** and **Disk I/O** throughput tables. **Column 3** holds the
+selected-process drill-down, the host actions, and the **Output** pane.
 
 Select a process and two things happen: the **Selected** graph drills into that
 process's own CPU/memory history via `select_from:`, and the **Output** pane's

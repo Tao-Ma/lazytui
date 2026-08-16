@@ -424,7 +424,7 @@ rows are selectable too, so `select_from: <gauge>` works.
 
 The **row detail card** shipped alongside — selecting a row in a `table`
 or `gauge` projects it into the viewer's **Info tab** as a labelled card of
-**every** schema column (not just the tabled subset), each formatted by its
+every **non-meta** schema column (not just the tabled subset), each formatted by its
 type. This is `getInfo(rowKey, paneId)` on both panels: it resolves the
 pane's topic (via `sliceForPane` — arm 1 keys off the paneId, so two panes
 on different topics don't collapse) and hands the row to the pure
