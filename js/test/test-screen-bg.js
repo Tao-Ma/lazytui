@@ -61,6 +61,27 @@ describe('[2] ON — the fg+bg pair is prepended and re-asserted after every res
     assert(richToAnsi(esc('\x1b[34mx\x1b[0my')).includes('\x1b[0m' + MONOKAI),
       'a content reset routed through esc() must still be followed by the theme pair');
   });
+  it('COMPOUND content reset (reset+fg) tops up only the missing bg — keeps the content fg', () => {
+    // `\x1b[0;31m` = reset then red fg. The 0 cleared the bg, but the content set
+    // its own fg → re-assert the theme BG only (not fg), so red survives on the theme bg.
+    const MONO_BG = '\x1b[48;2;39;40;34m';
+    const out = richToAnsi('\x1b[0;31mred');
+    assert(out.includes('\x1b[0;31m' + MONO_BG), `reset+fg tops up bg only, got ${JSON.stringify(out)}`);
+    assert(!out.includes('\x1b[0;31m' + MONOKAI), 'must NOT re-assert the theme fg (would clobber the content red)');
+  });
+  it('a content reset that sets its OWN bg is left alone (no theme bg override)', () => {
+    // `\x1b[0;41m` = reset + red BG. Content owns the bg → top up fg only, never bg.
+    const MONO_FG = '\x1b[38;2;248;248;242m';
+    const out = richToAnsi('\x1b[0;41mx');
+    assert(out.includes('\x1b[0;41m' + MONO_FG), `reset+bg tops up fg only, got ${JSON.stringify(out)}`);
+    assert(!out.includes('\x1b[0;41m\x1b[48'), 'must NOT re-assert a theme bg over the content red bg');
+  });
+  it('a colour-index 0 (\\x1b[38;5;0m) is NOT mistaken for a reset', () => {
+    // the standalone-0 detector must skip 38/48 operands, or a black 256-colour fg
+    // would spuriously trigger a full theme re-assert.
+    const out = richToAnsi('\x1b[38;5;0mx');
+    assert(!out.includes('\x1b[38;5;0m\x1b['), `index-0 must not trigger re-assert, got ${JSON.stringify(out)}`);
+  });
 
   enableScreenColors(false);   // restore the default for any later block in this file
 });

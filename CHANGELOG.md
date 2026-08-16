@@ -17,6 +17,13 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Themed background survives compound resets in command output.** A raw
+  `\x1b[0;31m` (reset + set) embedded in streamed/colored output cleared the
+  themed background; the theme background is now re-asserted after content resets
+  — including compound forms — topping up only the channel the content didn't set
+  (so a colored `ls`/`git` token keeps its foreground on the theme background). A
+  256-color index-0 (`\x1b[38;5;0m`) is correctly not mistaken for a reset.
+
 - **`select_from` now resolves the specific named pane, not the kind-primary.**
   A panel's `select_from:` to a table/gauge that wasn't the first-minted of its
   kind used to collapse onto the primary; it now cursor-follows the pane it

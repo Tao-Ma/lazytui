@@ -76,6 +76,8 @@ function _hexParams(prefix, hex) {
 // flip that clears the tag cache (richToAnsi), so it tracks `:theme` for free.
 let _screenColorsOn = false;
 let _screenSeq = '';              // active theme's fg+bg SGR ('' when off / no slot)
+let _screenFgSeq = '';            // fg-only half — topped up after a content reset that set its OWN bg
+let _screenBgSeq = '';            // bg-only half — topped up after a content reset that set its OWN fg
 
 function enableScreenColors(on) {
   const next = on !== false;
@@ -88,16 +90,63 @@ function enableScreenColors(on) {
 // reuse the atom compiler so hex→38;2/48;2 / named→3x;4x math lives in exactly
 // one place (no RGB literal escapes into this file — the color-tripwire depends
 // on that).
-function _computeScreenSeq(th) {
+// Returns the combined screen SGR plus its fg-only / bg-only halves, so a content
+// reset that set ONE channel can be topped up with just the MISSING one.
+function _computeScreenParts(th) {
   const v = th && th.screen;
-  return (v && _compileTag(v)) || '';
+  if (!v) return { seq: '', fg: '', bg: '' };
+  const seq = _compileTag(v) || '';
+  const m = /^(.*?)\s+on\s+(.+)$/.exec(v);   // '<fg> on <bg>'
+  return {
+    seq,
+    fg: m ? (_compileTag(m[1]) || '') : seq,
+    bg: m ? (_compileTag('on ' + m[2]) || '') : '',
+  };
+}
+
+// Parse an SGR param list → which channels it touched. Distinguishes a standalone
+// reset `0` from a colour-INDEX `0` by skipping the operands of an extended-colour
+// intro (38/48/58 ; 2;r;g;b or 5;n). 39/49 (default fg/bg) are deliberately NOT
+// counted as "set" — a content default should still resolve to the THEME default,
+// so its channel gets re-asserted.
+function _sgrHas(params) {
+  let reset = false, fg = false, bg = false;
+  for (let i = 0; i < params.length; i++) {
+    const n = params[i] === '' ? 0 : parseInt(params[i], 10);
+    if (!Number.isFinite(n)) continue;
+    if (n === 0) { reset = true; continue; }
+    if (n === 38 || n === 48 || n === 58) {
+      if (n === 38) fg = true; else if (n === 48) bg = true;
+      const kind = parseInt(params[i + 1], 10);
+      i += kind === 2 ? 4 : kind === 5 ? 2 : 0;   // skip the colour-spec operands
+      continue;
+    }
+    if ((n >= 30 && n <= 37) || (n >= 90 && n <= 97)) fg = true;
+    else if ((n >= 40 && n <= 47) || (n >= 100 && n <= 107)) bg = true;
+  }
+  return { reset, fg, bg };
+}
+
+// After a CONTENT-embedded SGR, what to top up so no cell drops to the terminal's
+// own colours. Only a reset clears the prepend's bg, so non-reset SGRs need
+// nothing. A reset restores the theme channel(s) the content did NOT itself set:
+// both (bare `\x1b[0m`), bg-only (`\x1b[0;31m`), fg-only (`\x1b[0;41m`), or nothing
+// (reset that set both). '' when screen colours are off.
+function _reassertAfter(params) {
+  if (!_screenSeq) return '';
+  const h = _sgrHas(params);
+  if (!h.reset) return '';
+  if (!h.fg && !h.bg) return _screenSeq;
+  if (!h.bg) return _screenBgSeq;
+  if (!h.fg) return _screenFgSeq;
+  return '';
 }
 
 // A reset that returns to the SCREEN default: bare `\x1b[0m` when off, else the
 // reset + a re-assertion of the theme fg+bg so the next cell keeps it. Baked into
 // the tag compiler and CACHED (`_TAG_CACHE`), so markup `[/]` re-asserts at ZERO
 // per-row cost. Content-embedded raw resets (which the compiler never sees) are
-// handled separately + GATED in richToAnsi (`_CONTENT_RESET_RE`), so pure-markup
+// handled separately + GATED in richToAnsi (`_reassertAfter`), so pure-markup
 // rows — nearly all of them — pay nothing.
 function _resetSeq() { return _screenSeq ? RESET + _screenSeq : RESET; }
 
@@ -189,13 +238,14 @@ const _BRACKET_SENTINEL = '';
 // `stripMarkup` run per visible row per panel per frame; rebuilding
 // the sentinel-restore regex on every call was real allocation churn.
 const _SENTINEL_RE = new RegExp(_BRACKET_SENTINEL, 'g');
-// A RAW reset embedded in CONTENT (streamed/esc'd command output keeps its own
-// `\x1b[0m`) — matched at the PRE-TAG stage, where its `[` is either raw or the
-// escaped-bracket sentinel, and where markup resets are still `[/]` (uncompiled).
-// So every ESC-prefixed reset here is content: the screen-colour pass re-asserts
-// the theme after it with NO double-emit and no lookahead. Fixed (theme-independent)
-// → hoisted like _SENTINEL_RE. Only rows that actually carry raw SGR run it.
-const _CONTENT_RESET_RE = new RegExp('\\x1b(?:\\[|' + _BRACKET_SENTINEL + ')0*m', 'g');
+// ANY SGR embedded in CONTENT (streamed/esc'd command output keeps its own) —
+// matched at the PRE-TAG stage, where its `[` is either raw or the escaped-bracket
+// sentinel, and where markup resets are still `[/]` (uncompiled). So every
+// ESC-prefixed SGR here is content. The capture is the PARAM LIST — the pass reads
+// it (`_reassertAfter`) to top up the theme channel(s) after a content RESET,
+// including compound forms (`\x1b[0;31m`). Fixed (theme-independent) → hoisted like
+// _SENTINEL_RE. Only rows that actually carry raw SGR run it.
+const _CONTENT_SGR_RE = new RegExp('\\x1b(?:\\[|' + _BRACKET_SENTINEL + ')([0-9;]*)m', 'g');
 
 // Tag guard (defensive, truecolor arc 1a): a tag's `[` must not be preceded
 // by ESC (lookbehind) and its interior may not contain ESC. On UNESCAPED
@@ -212,7 +262,11 @@ function richToAnsi(text) {
   // Invalidate the tag cache on a :theme change so semantic theme tokens re-resolve,
   // and recompute the screen-bg SGR under the new palette — both key off _lastTheme.
   const th = theme();
-  if (th !== _lastTheme) { _TAG_CACHE.clear(); _lastTheme = th; _screenSeq = _screenColorsOn ? _computeScreenSeq(th) : ''; }
+  if (th !== _lastTheme) {
+    _TAG_CACHE.clear(); _lastTheme = th;
+    const parts = _screenColorsOn ? _computeScreenParts(th) : { seq: '', fg: '', bg: '' };
+    _screenSeq = parts.seq; _screenFgSeq = parts.fg; _screenBgSeq = parts.bg;
+  }
   // Protect escaped brackets
   let result = text.replace(/\\\[/g, _BRACKET_SENTINEL);
   // GATED content-reset re-assertion (screen colours on): pure-markup rows — nearly
@@ -220,10 +274,15 @@ function richToAnsi(text) {
   // the cached `_resetSeq()` for their `[/]` resets (zero per-row cost). Only rows
   // carrying raw SGR (streamed/esc'd command output) run it, and at THIS stage markup
   // resets are still `[/]` (uncompiled), so every ESC-prefixed reset is CONTENT — the
-  // theme is re-asserted after it with no double-emit. (Appended `_screenSeq` is
-  // ESC-prefixed, so the tag pass below and the sentinel restore leave it intact.)
+  // theme is re-asserted after it with no double-emit. Compound resets
+  // (`\x1b[0;31m` = reset+red-fg) top up only the MISSING channel (here: bg), so a
+  // content colour survives on the theme background. (Appended SGR is ESC-prefixed,
+  // so the tag pass below and the sentinel restore leave it intact.)
   if (_screenSeq && text.indexOf('\x1b') !== -1) {
-    result = result.replace(_CONTENT_RESET_RE, (m) => m + _screenSeq);
+    result = result.replace(_CONTENT_SGR_RE, (m, params) => {
+      const add = _reassertAfter(params.split(';'));
+      return add ? m + add : m;
+    });
   }
   // Replace tags (markup `[/]` → cached `_resetSeq()` = reset + theme fg+bg)
   result = result.replace(/(?<!\x1b)\[([^\]\x1b]*)\]/g, (_, tag) => _tagSgr(tag));
