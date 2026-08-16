@@ -1,25 +1,30 @@
 # host-monitor demo — a btop-style system monitor
 
-A small **system monitor** for the host: live CPU, memory, and load-average
-graphs alongside a sorted process table with per-process drill-down. It looks
-like `btop`/`top`, but every graph and column is declared in YAML — no plugin
-code.
+A small **system monitor** for the host: live CPU / memory / load graphs, disk
+usage + I/O, network throughput, and a sorted process table with a per-process
+detail card. It looks like `btop`/`top`, but every graph, bar, and column is
+declared in YAML — no plugin code.
 
 ```
-╭─(1)─CPU──────────╮╭─(4)─Processes────‹ cpu↓ ›─╮╭─(7)─Host──────╮
-│ CPU        47.2% ││        cpu↓   mem comm     ││ > top (live)  │
-│ ⣀⣠⣴⣾⣿⣷⣄⡀⣀⣠⣶  ││ 240   50.0%  0.3% node     ││   processes   │
-│ MEM        24.1% ││ 404    2.2%  4.0% claude   ││   uptime      │
-│ ▂▃▃▄▄▅▅▅▆▆▆    ││ 166    2.1%  0.4% agent    │╰───────────────╯
-│ LOAD       0.56  │╰──────────────────1 of 20──╯╭─(o)─Output────╮
-│ ▁▁▂▂▃▃▃▃      ││ Selected: 240              ││ ...           │
-│                  ││ CPU  50.0%  ████████       ││               │
-╰──────────────────╯╰────────────────────────────╯╰───────────────╯
+╭─(1)─CPU──────────╮╭──CPU bars──────────────╮╭─Selected──────╮
+│ CPU        47.2% ││ node   ████████░░ 90%   ││ ▁▂▃▄▅▆▇       │
+│ █████████▏       ││ claude ██████░░░░ 62%   │╰───────────────╯
+│ MEM        24.1% │╰────────────────────────╯╭─(7)─Host──────╮
+│ ██████▊          │╭─Processes───‹ cpu↓ ›────╮│ > top (live)  │
+├──────────────────┤│      cpu↓  mem comm      ││   processes   │
+│ Disk / ████░ 77% ││ 240 90.0% 0.3% node      ││   uptime      │
+│ Disk I/O rd  wr  ││ 404 62.0% 4.0% claude    │╰───────────────╯
+│ vda   1M   2M    │├──────────────‹ rx↓ ›────┤╭─Output─Info───╮
+│                  ││ Network  rx     tx       ││ pid 240       │
+│                  ││ eth0    20K    5K        ││ command node… │
+│                  ││ Net (sel) ▁▂▃▅▆          ││ cpu    90.0%  │
+╰──────────────────╯╰────────────────────────╯╰───────────────╯
 ```
 
-*(Simplified sketch. The shipped middle column stacks the **CPU bars** `gauge`
-above the **Processes** table (both views of `host.proc`) and a **Network**
-throughput table below; the **Selected** drill-down sits in the right column.)*
+*(Simplified sketch. Column 1 stacks the CPU/MEM/LOAD graphs, the **Disk** usage
+gauge and **Disk I/O** table; column 2 the **CPU bars** gauge, **Processes**
+table, **Network** table + **trend graph**; column 3 the **Selected** drill-down,
+host actions, and the **Output** pane whose Info tab is the process detail card.)*
 
 ## What it shows
 
@@ -28,28 +33,41 @@ This is the first demo with **no container at all**. It exercises the
 a top-level `metrics:` block turns plain host commands into live hub data —
 graphed by the `stats` panel and listed by the `table` panel, no plugin code.
 
-Five producers, each a one-line host command:
+Seven producers, each a one-line host command:
 
 | Topic | Command (summarised) | Rendered as |
 |---|---|---|
-| `host.cpu` | two `/proc/stat` samples → busy% | CPU line graph + meter |
-| `host.mem` | `free` → used% | Memory line graph + meter |
+| `host.cpu` | two `/proc/stat` samples → busy% | CPU line graph |
+| `host.mem` | `free` → used% | Memory line graph |
 | `host.load` | `/proc/loadavg` → 1-min load | Load line graph |
-| `host.proc` | `ps` top-by-CPU (pid/cpu/mem/comm) | **Processes table** + **CPU bars** |
-| `host.net` | `/proc/net/dev` rx/tx **counters** → rates | **Network table** (`B/s`) |
+| `host.proc` | `ps` top-by-CPU (pid/cpu/mem/comm + state/rss/…/cmdline) | **Processes table** + **CPU bars** + **detail card** |
+| `host.net` | `/proc/net/dev` rx/tx **counters** → rates | **Network table** + **trend graph** (`B/s`) |
+| `host.disk` | `df` → used% per mount | **Disk gauge** (usage bars) |
+| `host.diskio` | `/proc/diskstats` sectors **counters** → rates | **Disk I/O table** (`B/s`) |
 
-The middle column shows the same `host.proc` topic **two ways at once**: the
-**CPU bars** `gauge` (a btop-style bar chart — one meter bar per process, ordered
-by CPU) above the **Processes** `table` (sorted, columnar; click the `‹ cpu↓ ›`
-control on its border to re-sort). Select a row in the table and the **Selected**
-graph drills into that process's own CPU/memory history via `select_from:`. Plus host
-actions: **top** (live view in a terminal tab), **processes** (a `ps` snapshot),
-and **uptime**.
+Three concern-grouped columns. **Column 1** is system + storage: the CPU / memory
+/ load graphs, the **Disk** usage gauge (one bar per mount), and the **Disk I/O**
+table (per-device read/write `B/s`). **Column 2** is the process column — the
+**CPU bars** `gauge` (a btop-style bar chart, one meter bar per process) above the
+**Processes** `table` (sorted, columnar; click the `‹ cpu↓ ›` control to re-sort),
+then the **Network** throughput table and its **trend graph**. **Column 3** holds
+the selected-process drill-down, the host actions, and the **Output** pane.
+
+Select a process and two things happen: the **Selected** graph drills into that
+process's own CPU/memory history via `select_from:`, and the **Output** pane's
+**Info tab** shows a **detail card** — the full command line, state, RSS, thread
+count, parent pid, and user (btop's process-detail popup). That card is just the
+process topic carrying a few extra `schema:` columns; the `table`/`gauge`
+`getInfo` projects them, no plugin code. The network graph works the same way —
+it `select_from:` the network table, graphing the selected interface's rate.
+Plus host actions: **top** (live view in a terminal tab), **processes** (a `ps`
+snapshot), and **uptime**.
 
 ## Requirements
 
-- **Linux** — the CPU and load producers read `/proc/stat` and
-  `/proc/loadavg`; memory uses `free`. (`awk` and `sh` are assumed present.)
+- **Linux** — the producers read `/proc/stat`, `/proc/loadavg`,
+  `/proc/net/dev`, `/proc/diskstats`, and run `free` / `df` / `ps`. (`awk` and
+  `sh` are assumed present.)
 - `top` for the live process tab (optional — the graphs work without it).
 - No Docker, no build step.
 
@@ -64,9 +82,9 @@ Keys: `up`/`dn` select an action, `Enter` run, `h`/`l` move between panels,
 
 ## Extending it
 
-- **Per-core CPU**, network, or disk are natural next producers — see the
-  worked examples in [docs/metrics-producer.md](../../docs/metrics-producer.md)
-  (`mpstat -P ALL` for per-core). Per-core would drop straight into a second
-  `table` (row per core) the same way `host.proc` does.
+- **Per-core CPU** is a natural next producer — see the worked example in
+  [docs/metrics-producer.md](../../docs/metrics-producer.md) (`mpstat -P ALL`).
+  Per-core would drop straight into a second `table` (row per core) the same way
+  `host.proc` does, or a `gauge` (a bar per core) like `host.disk`.
 - Change a poll rate by editing `interval:` on a producer, or repoint a
   producer's `cmd:` at any command that prints a number.

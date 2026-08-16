@@ -8,6 +8,17 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **A row detail card in the viewer's Info tab.** Selecting a row in a `table`
+  or `gauge` now fills the focused viewer's Info tab with a labelled card of
+  *every* schema column of that row — not just the columns the panel tables —
+  each formatted by its type. Carry extra columns on a `metrics:` producer's
+  `schema:` (even ones no panel shows) and they surface in the card; the schema's
+  column order is the card's order. The host-monitor demo's process topic gains
+  state / threads / RSS / parent-pid / user / full command line, turning the
+  Output pane into btop's process-detail popup — no plugin code. Implemented as
+  the panels' `getInfo` over a shared pure `rowInfo` projection
+  (`js/leaves/metrics/row-info.js`); it resolves the pane's own topic by paneId,
+  so two panes on different topics don't collapse. See docs/metrics-producer.md §9.
 - **A snapshot bar-meter panel (`type: gauge`).** The third way to render a
   `metrics:` topic, alongside the `stats` graph and the `table` list: horizontal
   meter bars of the latest sample — btop's mem/disk/process bars. One bar per row,
@@ -19,14 +30,20 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   for the bar label), `max:` (denominator for a non-percent column; default auto),
   `bar_width:` (max meter cells, default 20), `sort_dir:`. Rows are selectable, so
   a `stats` pane can `select_from:` a gauge. The host-monitor demo gains a
-  **CPU bars** view (a tab beside the process table). See docs/LAYOUT.md.
+  **CPU bars** view (a pane beside the process table). See docs/LAYOUT.md.
 - **Network / disk throughput from counters (`type: counter`).** Mark a metric
   column `counter` and the producer publishes its per-second **rate** instead of
   the raw monotonic tally — so `/proc/net/dev` byte counters (or `/proc/diskstats`
   sectors) graph as live `B/s`. The topic advertises the column as `rate`, and
   the `stats`/`table` panels format it in bytes/sec. A counter reset or the first
   sample shows `—` for one tick (never a bogus negative spike). The host-monitor
-  demo gains a `Network` throughput table. See docs/metrics-producer.md §6.1.
+  demo gains `Network` and `Disk I/O` throughput tables. See
+  docs/metrics-producer.md §6.1.
+- **host-monitor demo — storage & network panels.** The demo now covers the two
+  btop panels it was missing: a **Disk** usage gauge (one bar per mount, from
+  `df`) and a **Network trend graph** (a `stats` pane that `select_from:` the
+  network table, graphing the selected interface's rate) — plus the disk-I/O
+  table above. All config-only, no plugin code; see demo/host-monitor.
 - **A sortable process table (`type: table`).** A new panel that lists the rows
   of a hub topic as a columnar, sortable, selectable table — a live process list
   in the btop mould. It reads the same `metrics:` topics the graphs do, formats

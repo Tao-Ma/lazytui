@@ -32,10 +32,11 @@
 const { getModel } = require('../../model/store');
 const {
   esc, theme, gradient, renderPanel, visibleLen,
-  getSel, getScroll, getItems: apiGetItems,
+  getSel, getScroll, getItems: apiGetItems, sliceForPane,
 } = require('../api');
 const { truncate } = require('../../leaves/render/draw');
 const { fmt: _fmt } = require('../../leaves/metrics/format');   // shared compact cell formatter (see table.js)
+const { rowInfo } = require('../../leaves/metrics/row-info');   // shared row → detail-card projection (see table.js)
 const mnav = require('../../leaves/wm/nav');
 
 // Meter geometry: how many of `width` cells are FILLED. Whole cells only — a
@@ -161,8 +162,13 @@ function getItems(slice) {
   return rows;
 }
 
-function getInfo(rowKey) {
-  return [`row: ${rowKey}`];
+// getInfo — the SELECTED bar's row as a detail card in the viewer's Info tab
+// (see table.js: same shared `rowInfo` projection, so the two panels agree).
+function getInfo(rowKey, paneId) {
+  // sliceForPane arm 1 resolves THIS pane's own slice by paneId (see table.js).
+  const slice = paneId != null ? sliceForPane(paneId, 'gauge') : null;
+  const metric = _metric(slice && slice.topic);
+  return metric ? rowInfo(metric, rowKey) : [`row: ${rowKey}`];
 }
 
 function _renderEmpty(panel, w, h, msg, chrome, focused) {

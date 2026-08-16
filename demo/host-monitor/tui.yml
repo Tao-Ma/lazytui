@@ -57,18 +57,42 @@ metrics:
     schema:
       columns: { load: { type: number } }
 
-  # Top processes by CPU — a multi-row topic (one row per pid) for the process
-  # TABLE. pcpu/pmem are percentages; comm is the command name.
+  # Top processes by CPU — a multi-row topic (one row per pid). The TABLE and the
+  # CPU-bars GAUGE show a few columns (cpu/mem/comm); the extra columns (state,
+  # threads, rss, ppid, user, full command line) are carried so that SELECTING a
+  # process shows them all as a detail card in the Output pane's Info tab (btop's
+  # process popup — the `getInfo` row projection, docs/metrics-producer.md §9).
+  #
+  # `args` (the full command line) has embedded spaces, so the whitespace column
+  # extractor can't take it as one field — the awk re-emits each row TAB-delimited
+  # (fixed single-token columns, then `args` joined as the trailing field) and
+  # converts `rss` from ps's KiB to bytes for the `bytes` formatter.
   host.proc:
-    cmd: "ps -eo pid=,pcpu=,pmem=,comm= --sort=-pcpu | head -20"
+    cmd: |-
+      ps -eo pid=,pcpu=,pmem=,stat=,nlwp=,rss=,ppid=,user=,comm=,args= --sort=-pcpu | head -20 | awk '{c="";for(i=10;i<=NF;i++)c=c (i>10?" ":"") $i; printf "%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s\t%s\t%s\n",$1,$2,$3,$4,$5,$6*1024,$7,$8,$9,c}'
     interval: 3000
     extract:
       mode: columns
+      delimiter: tab
       row_key: pid
-      fields: { pid: 0, cpu: 1, mem: 2, comm: 3 }
+      fields: { pid: 0, cpu: 1, mem: 2, state: 3, threads: 4, rss: 5, ppid: 6, user: 7, comm: 8, command: 9 }
+    # Column ORDER here is the DETAIL CARD's order (rowInfo walks schema columns).
+    # Lead with what identifies the process at a glance — the full command, then
+    # cpu/mem/rss — so the useful fields sit above the fold in a short pane; the
+    # rarer ones (threads/ppid/user) trail. The table's own `columns:` list is
+    # independent of this order.
     schema:
       row_key: pid
-      columns: { cpu: { type: percent }, mem: { type: percent }, comm: { type: string } }
+      columns:
+        command: { type: string }
+        cpu: { type: percent }
+        mem: { type: percent }
+        rss: { type: bytes }
+        state: { type: string }
+        threads: { type: number }
+        ppid: { type: number }
+        user: { type: string }
+        comm: { type: string }
 
   # Network throughput — /proc/net/dev gives MONOTONIC byte counters per
   # interface (rx = col 1, tx = col 9, after stripping the `iface:` colon and the
@@ -84,6 +108,43 @@ metrics:
     schema:
       row_key: iface
       columns: { rx: { type: counter }, tx: { type: counter } }
+
+  # Disk USAGE — `df` per mount (real filesystems only; pseudo FS excluded). The
+  # awk drops the `%` from the capacity column and converts df's KiB blocks to
+  # bytes. One row per mount point: `pct` (used %) drives the gauge, `used`/`size`
+  # (bytes) show in the detail card. Polled slowly — usage barely moves.
+  host.disk:
+    cmd: |-
+      df -Pk -x tmpfs -x devtmpfs -x overlay -x squashfs | awk 'NR>1{gsub(/%/,"",$5); printf "%s\t%s\t%d\t%d\n",$6,$5,$3*1024,$2*1024}'
+    interval: 5000
+    extract:
+      mode: columns
+      delimiter: tab
+      row_key: mount
+      fields: { mount: 0, pct: 1, used: 2, size: 3 }
+    schema:
+      row_key: mount
+      columns:
+        pct: { type: percent }
+        used: { type: bytes }
+        size: { type: bytes }
+
+  # Disk THROUGHPUT — /proc/diskstats sector counters (field 6 = sectors read,
+  # field 10 = sectors written; a sector is 512 B). The awk skips loop/ram/dm
+  # devices and idle disks, and pre-multiplies to a monotonic BYTE tally so the
+  # `counter` derivation publishes a byte/s RATE (same mechanism as host.net).
+  host.diskio:
+    cmd: |-
+      awk '$3 !~ /^(loop|ram|dm-)/ && ($6+$10)>0 {printf "%s\t%d\t%d\n",$3,$6*512,$10*512}' /proc/diskstats
+    interval: 2000
+    extract:
+      mode: columns
+      delimiter: tab
+      row_key: dev
+      fields: { dev: 0, read: 1, write: 2 }
+    schema:
+      row_key: dev
+      columns: { read: { type: counter }, write: { type: counter } }
 
 # --- Panels --------------------------------------------------------------------
 panels:
@@ -139,24 +200,66 @@ panels:
     topic: host.net
     columns: [rx, tx]
     sort: rx
+  # Network throughput GRAPH — the trend of the interface SELECTED in the net
+  # table (btop's up/down braille). `stats` is the history sibling of the table;
+  # `select_from: net` graphs whichever iface is picked, both rates overlaid.
+  netgraph:
+    type: stats
+    title: Net (sel)
+    topic: host.net
+    select_from: net
+    metrics: [rx, tx]
+  # Disk USAGE — a btop-style gauge, one bar per mount, filled by used %. Same
+  # `gauge` panel as the CPU bars; `pct` is the metered column, `mount` the label.
+  disk:
+    type: gauge
+    title: Disk
+    topic: host.disk
+    column: pct
+    label: mount
+  # Disk THROUGHPUT TABLE — per-device read/write rates (host.diskio counters →
+  # B/s), the disk sibling of the network table.
+  diskio:
+    type: table
+    title: Disk I/O
+    topic: host.diskio
+    columns: [read, write]
+    sort: write
+  # The Output pane. Its Info tab is the process DETAIL CARD: focus the process
+  # table (or CPU bars) and it shows the selected process's full column set —
+  # state, threads, RSS, parent pid, user, command line. Host-action output
+  # (ps/uptime) lands in its Transcript tab.
   detail:
     type: detail
     title: Output
 
 layout:
+  # Three concern-grouped columns (btop-style). Panels are placed DIRECTLY (not
+  # tabbed): a multi-tab slot only renders its strip for content panes, so metrics
+  # panels — table/gauge/stats — each own their column slot. `actions` must sit in
+  # the LAST column (framework rule), which soft-caps at 3 panes — so the drill-
+  # down / actions / output trio lives there and the rest fills columns 1–2.
   columns:
-    - width: 32
+    # System + storage: the CPU/mem/load graphs, disk usage, disk I/O.
+    - width: 30
       panels:
         - cpu
         - mem
         - load
+        - disk                          # disk USAGE gauge (df → used% per mount)
+        - diskio                        # disk THROUGHPUT table (counter → B/s)
+    # Processes + network: the CPU-bar gauge, the process table, then the network
+    # throughput table and its trend graph.
     - width: 44
       panels:
-        - cpubars                       # btop-style CPU bar chart (gauge) — visible on boot
-        - procs                         # process table (same host.proc topic, list view)
-        - { tabs: [net], heightPct: 30 }  # network throughput table (counter→rate)
+        - cpubars                       # btop-style CPU bar chart (gauge)
+        - procs                         # process table (same host.proc topic)
+        - net                           # network throughput table (counter → B/s)
+        - netgraph                      # network trend graph (of the selected iface)
+    # Selected-process drill-down, host actions, and the Output pane (whose Info
+    # tab is the process detail card).
     - panels:
-        - procsel
+        - procsel                       # CPU/MEM history of the selected process
         - actions
         - { tabs: [detail], height: 40% }
 

@@ -46,6 +46,7 @@ const {
 } = require('../api');
 const { truncate } = require('../../leaves/render/draw');
 const { fmt: _fmt } = require('../../leaves/metrics/format');   // shared compact cell formatter (see gauge.js)
+const { rowInfo } = require('../../leaves/metrics/row-info');   // shared row → detail-card projection (see gauge.js)
 const mnav = require('../../leaves/wm/nav');
 const { sortControlText, sortControlHits, NONE_LABEL, ASC, DESC } = require('../../leaves/render/sort-control');
 
@@ -147,8 +148,18 @@ function getItems(slice) {
   return rows;
 }
 
-function getInfo(rowKey) {
-  return [`row: ${rowKey}`];
+// getInfo — project the SELECTED row into the viewer's Info tab as a detail card
+// (every schema column, not just the tabled subset). `paneId` (threaded by
+// dispatch.showSelectedInfo) resolves this pane's topic → metric; the pure
+// `rowInfo` leaf does the formatting. No topic yet → the bare-row fallback.
+function getInfo(rowKey, paneId) {
+  // sliceForPane (not the strict getInstanceSlice) is the read-path resolver:
+  // arm 1 returns THIS pane's own slice by paneId — load-bearing here because a
+  // config can place two table panes (the demo's procs + net), and the kind-
+  // primary fallback would show one pane's topic under the other's selection.
+  const slice = paneId != null ? route.sliceForPane(paneId, 'table') : null;
+  const metric = _metric(slice && slice.topic);
+  return metric ? rowInfo(metric, rowKey) : [`row: ${rowKey}`];
 }
 
 function _renderEmpty(panel, w, h, msg, chrome, focused) {

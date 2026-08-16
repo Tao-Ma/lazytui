@@ -422,6 +422,19 @@ bars (built on the same `meterRow` primitive in `stats-graph.js` and the
 percent colour ramp), one bar per row, ordered by the metered value. Its
 rows are selectable too, so `select_from: <gauge>` works.
 
+The **row detail card** shipped alongside — selecting a row in a `table`
+or `gauge` projects it into the viewer's **Info tab** as a labelled card of
+**every** schema column (not just the tabled subset), each formatted by its
+type. This is `getInfo(rowKey, paneId)` on both panels: it resolves the
+pane's topic (via `sliceForPane` — arm 1 keys off the paneId, so two panes
+on different topics don't collapse) and hands the row to the pure
+`rowInfo(metric, rowKey)` leaf (`js/leaves/metrics/row-info.js`), the
+row-detail sibling of the compact cell `fmt`. Carry extra columns on the
+producer's `schema` — even ones no panel tables — and they surface in the
+card: the host-monitor demo's `host.proc` carries state / threads / rss /
+ppid / user / full command line, turning the Output pane's Info tab into
+btop's process-detail popup. Column ORDER in the schema is the card's order.
+
 Still **deferred to their own backlog items** (not this doc): an
 aggregate / per-core overlay mode (STATS.md already lists this as deferred).
 

@@ -309,7 +309,8 @@ show, in order — the row key is the leading identity column), `sort:` (default
 column; desc for a metric). Cells format by schema type; the on-border
 `‹ col↓ ›` sort selector cycles the sort column. Returns string row keys, so a
 `stats` pane can use it as a `select_from` source — select a row, graph its
-history.
+history. Selecting a row also fills the viewer's **Info tab** with a detail
+card of that row's full column set (see *Row detail card* below).
 
 **gauge** — the SNAPSHOT. Renders a topic's latest sample as horizontal meter
 bars (btop's mem/disk/process bars) — one bar per row, ordered by the metered
@@ -322,7 +323,16 @@ the row key), `max:` (denominator for a non-percent column; default auto — the
 running max across rows; a `percent` column always uses 0–100), `bar_width:`
 (max meter cells, default 20 — the bar shrinks to fit a narrow pane but won't
 sprawl across a wide one), `sort_dir:` (`desc` default | `asc`). Rows are
-selectable, so a `stats` pane can `select_from` a gauge too.
+selectable, so a `stats` pane can `select_from` a gauge too — and, like the
+table, the selected row fills the Info tab's detail card.
+
+**Row detail card** — selecting a row in a `table` or `gauge` projects it into
+the focused viewer's **Info tab** as a labelled card of *every* schema column
+(not just the columns the panel tables), each formatted by its type. Carry
+extra columns on the producer's `schema:` — even ones no panel shows — and they
+appear here; the schema's column ORDER is the card's order. This makes the
+viewer a per-process (per-row) detail popup, btop-style. No config on the panel:
+it is the panels' `getInfo`, the same hook a navigator uses to fill the Info tab.
 
 ## Navigation
 
