@@ -33,7 +33,7 @@
 
 const { getModel } = require('../model/store');
 const { getInstanceSlice, theme } = require('../panel/api');
-const { renderPanel, viewportDims, writeOut } = require('../leaves/render/draw');
+const { renderPanel, viewportDims, writeOut, leftBorderPrefix } = require('../leaves/render/draw');
 const { richToAnsi, RESET, esc, visibleLen } = require('../leaves/text/ansi');
 const { isChainActive } = require('../leaves/input/modes');
 const mpool = require('../leaves/wm/pool');
@@ -43,23 +43,17 @@ const route = require('../panel/route');
 const MAX_W = 50;
 const VIEWPORT = 12;
 
-// `[≡]` glyph geometry — the pane's top row is `╭─(o)[≡]─Title…─╮`.
-//   `╭`        col 0
-//   `─`        col 1
-//   `(hk)`     cols 2..     (hotkey display, `(${hotkey})` — ONLY if the pane
-//                            has a hotkey; a hotkey-less pane omits it entirely)
-//   `[≡]`      the next 3 cols (trigger glyph), so its start column depends on
-//              the hotkey width — see `_triggerX`. (draw.js builds the same
-//              leftPart: `╭─` + `(hk)?` + `[≡]`.)
+// `[≡]` is 3 visible cells (`[`, `≡`, `]`). Its START column is NOT fixed — it
+// follows the `╭─(hotkey)?` prefix — so we take it from the SAME geometry the
+// paint uses (draw.leftBorderPrefix), never a local formula. A hotkey-less pane
+// draws `[≡]` flush at col 2; a hotkey pushes it right by `(${hotkey})`. (The old
+// hardcoded col-5 offset assumed a 1-char hotkey and broke on hotkey-less panes.)
 const TRIGGER_VIS_W = 3;
 
-// Column (local to the pane's left border) where the `[≡]` glyph's `[` sits.
-// A hotkey-less pane draws it flush at col 2; a hotkey adds `(${hotkey})`. The
-// old fixed offset (5) assumed a 1-char hotkey, so on hotkey-less panes the
-// hit-zone sat 3 cells RIGHT of the painted glyph — clicks on `[≡]` missed.
+// Column (local to the pane's left border) where the `[≡]` glyph's `[` sits —
+// resolved through the shared render geometry so paint + hit-test can't drift.
 function _triggerX(pane) {
-  const hk = pane && pane.hotkey;
-  return 2 + (hk ? String(hk).length + 2 : 0);   // `╭─` + optional `(hk)` width
+  return leftBorderPrefix(pane && pane.hotkey).triggerCol;
 }
 
 // Residue tracking — the dropdown shrinks/closes by overwriting only

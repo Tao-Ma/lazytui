@@ -21,6 +21,19 @@ const BORDER = { tl: '╭', tr: '╮', bl: '╰', br: '╯', h: '─', v: '│' 
 const THUMB = '▐';
 const CLOSE_GLYPH = '\\[X]';
 
+// The painted left border UP TO the `[≡]` trigger: `╭─` + the optional
+// `(hotkey)` display. This is the SINGLE source of truth for where `[≡]` sits —
+// `renderPanel` builds its top border from `.prefix`, and the trigger hit-test
+// (overlay/pane-menu.js) probes `.triggerCol`. Sharing one function is
+// deliberate: the two once computed this independently and drifted — the
+// hit-test hardcoded col 5 (assuming a 1-char hotkey), so on a hotkey-less pane
+// (`╭─[≡]`, col 2) the clickable zone sat 3 cells right of the painted glyph.
+// PURE — a function of the hotkey label only.
+function leftBorderPrefix(hotkey) {
+  const prefix = `${BORDER.tl}${BORDER.h}` + (hotkey ? `(${hotkey})` : '');
+  return { prefix, triggerCol: visibleLen(prefix) };
+}
+
 /**
  * Truncate text to max visible width — MARKUP-AWARE.
  *
@@ -152,12 +165,11 @@ function renderPanel({
     rightPart += b.tr;
     const rightVis = visibleLen(rightPart);
 
-    let leftPart = `${b.tl}${b.h}`;
-    if (hotkey) leftPart += `(${hotkey})`;
+    // `leftBorderPrefix` owns the `╭─` + `(hotkey)` geometry (shared with the
+    // trigger hit-test — see its definition). [≡] then sits flush against it (no
+    // separator dash), so its column IS `leftBorderPrefix(hotkey).triggerCol`.
+    let leftPart = leftBorderPrefix(hotkey).prefix;
     if (wantLeftTrigger) {
-      // Eat the title-separator dash so [≡] sits flush against `(hk)`,
-      // matching the post-injection geometry: `╭─(o)[≡]─title…`. When
-      // there's no hotkey, [≡] sits flush against the corner dash.
       leftPart += _tabTriggerMarkup(chrome.tabTrigger, focused, fc);
     }
     if (title) leftPart += `${b.h}${title}`;
@@ -427,5 +439,5 @@ function renderOverlay({ lines, title, count = null, maxWidth = 44, anchor = nul
 module.exports = {
   renderPanel, renderOverlay, overlayBox, truncate, viewportDims, setDimsProvider,
   setWriter, writeOut,
-  chromeFor, _collapseGlyphMarkup, _closeGlyphMarkup,
+  chromeFor, leftBorderPrefix, _collapseGlyphMarkup, _closeGlyphMarkup,
 };
