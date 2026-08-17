@@ -23,6 +23,7 @@ const BUILTIN_COMPONENTS = [
   require('../panel/monitor/stats'),
   require('../panel/monitor/table'),
   require('../panel/monitor/gauge'),
+  require('../panel/monitor/composite'),   // btop-density boxes (docs/compact-panes.md)
   require('../panel/navigator/history'),
   require('../panel/navigator/groups'),
   require('../panel/fabric/ports-pane'),   // component-ports (dataflow fabric, P1.5)

@@ -106,11 +106,12 @@ function subscriptions(paneDef, _model) {
   return [{ kind: 'metrics-mirror', topic: paneDef.topic, window: paneDef.window || 1 }];
 }
 
-function init(paneId, seed) {
-  // Per-pane config is HOISTED onto seed.paneDef (topic/column/label/… at top
-  // level — the parser hoists panel fields onto the placed pane); seed.config is
-  // the whole model config. Read the pane def.
-  const pd = (seed && seed.paneDef) || {};
+// The slice-shaped SPEC renderBody + getItems read (topic / column / label / max /
+// barMax / sortDir), derived from a raw pane/widget config (`bar_width` → `barMax`,
+// `sort_dir` → `sortDir`). Single-sourced here so `init` (standalone pane) and the
+// `composite` panel (per-widget, docs/compact-panes.md §5) normalize identically.
+function specFrom(cfg) {
+  const pd = cfg || {};
   return {
     topic: pd.topic,
     column: pd.column || null,
@@ -120,6 +121,16 @@ function init(paneId, seed) {
     // width desyncs the two render paths (`repeat` floors, the fill loop doesn't).
     barMax: (typeof pd.bar_width === 'number' && pd.bar_width >= 1) ? Math.floor(pd.bar_width) : 20,
     sortDir: pd.sort_dir === 'asc' ? 1 : -1,   // bars sort by metered value; desc default
+  };
+}
+
+function init(paneId, seed) {
+  // Per-pane config is HOISTED onto seed.paneDef (topic/column/label/… at top
+  // level — the parser hoists panel fields onto the placed pane); seed.config is
+  // the whole model config. Read the pane def.
+  const pd = (seed && seed.paneDef) || {};
+  return {
+    ...specFrom(pd),
     // The cursor/scroll live in this slice's nav entry (getSel/getScroll read it
     // via mnav.entryOf), so the click/keyboard nav_select can move the selection.
     nav: mnav.init(),
@@ -317,8 +328,10 @@ module.exports = {
       idOf: (rowKey) => String(rowKey),
     },
   },
-  // Border-less body reused by the `composite` panel (docs/compact-panes.md).
+  // Border-less body + spec normalizer reused by the `composite` panel
+  // (docs/compact-panes.md).
   renderBody,
+  specFrom,
   // Test-only internals.
   _fmt,
   getItems,
