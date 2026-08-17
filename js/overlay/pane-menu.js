@@ -33,7 +33,8 @@
 
 const { getModel } = require('../model/store');
 const { getInstanceSlice, theme } = require('../panel/api');
-const { renderPanel, viewportDims, writeOut, leftBorderPrefix } = require('../leaves/render/draw');
+const { renderPanel, viewportDims, writeOut } = require('../leaves/render/draw');
+const chromeRegions = require('../panel/chrome-regions');
 const { richToAnsi, RESET, esc, visibleLen } = require('../leaves/text/ansi');
 const { isChainActive } = require('../leaves/input/modes');
 const mpool = require('../leaves/wm/pool');
@@ -43,18 +44,9 @@ const route = require('../panel/route');
 const MAX_W = 50;
 const VIEWPORT = 12;
 
-// `[≡]` is 3 visible cells (`[`, `≡`, `]`). Its START column is NOT fixed — it
-// follows the `╭─(hotkey)?` prefix — so we take it from the SAME geometry the
-// paint uses (draw.leftBorderPrefix), never a local formula. A hotkey-less pane
-// draws `[≡]` flush at col 2; a hotkey pushes it right by `(${hotkey})`. (The old
-// hardcoded col-5 offset assumed a 1-char hotkey and broke on hotkey-less panes.)
-const TRIGGER_VIS_W = 3;
-
-// Column (local to the pane's left border) where the `[≡]` glyph's `[` sits —
-// resolved through the shared render geometry so paint + hit-test can't drift.
-function _triggerX(pane) {
-  return leftBorderPrefix(pane && pane.hotkey).triggerCol;
-}
+// `[≡]` presence + column both come from chrome-regions now (the range paint drew
+// it at — hotkey-dependent via draw.leftBorderPrefix). The local `_triggerX` width
+// proxy retired with the phantom-hit fix; hitTestTrigger reads the published range.
 
 // Residue tracking — the dropdown shrinks/closes by overwriting only
 // the rows it painted last frame (same pattern as overlay/cmdline).
@@ -217,20 +209,14 @@ function hitTestTrigger(mx, my) {
     if (!triggerVisible(p.paneId)) continue;
     const b = _paneBounds(p.paneId);
     if (!b) continue;
-    const triggerX = _triggerX(p);   // hotkey-dependent — mirrors draw.js leftPart
-    // KNOWN GAP (pre-existing, class-wide): this is a width PROXY for "is `[≡]`
-    // painted". renderPanel drops ALL chrome (bare border, no glyph) when the
-    // whole top row — title + the RIGHT [X]/[_]/controls cluster — doesn't fit
-    // (draw.js `fits`), which this left-only check can't see; so a very narrow
-    // pane can report a hit where nothing is drawn. Same proxy weakness as the
-    // collapse/close hit-tests (chrome-hittest.js *_MIN_W). Not reachable in
-    // normal layouts (panes are far wider); a real fix means the paint publishing
-    // its actually-drawn chrome regions for the hit-test to read (its own arc).
-    if (b.w < triggerX + TRIGGER_VIS_W + 2) continue;
-    if (my !== b.y) continue;
-    if (mx < b.x + triggerX) continue;
-    if (mx >= b.x + triggerX + TRIGGER_VIS_W) continue;
-    return p.paneId;
+    // Presence + column from chrome-regions — the range paint ACTUALLY drew the
+    // `[≡]` at (hotkey-dependent, via leftBorderPrefix). renderPanel drops the
+    // whole chrome cluster when the top row can't fit title + the right
+    // [X]/[_]/controls (its `fits`), and this reads that decision directly — so a
+    // very narrow pane can no longer report a hit where nothing painted. (The old
+    // left-only width proxy couldn't see the right-cluster drop — the KNOWN GAP.)
+    const g = (chromeRegions.get(p.paneId) || {}).trigger;
+    if (g && my === b.y && mx >= b.x + g.x0 && mx <= b.x + g.x1) return p.paneId;
   }
   return null;
 }

@@ -145,6 +145,7 @@ function renderPanel({
   // undefined `top` slipped past BOTH and painted an empty row, so
   // every pane lost its top border during any free-config drag.
   let top = null;
+  let chromeDrew = false;   // did the [≡]/[X]/[_] cluster actually paint (fits)?
   const wantLeftTrigger  = chrome && chrome.tabTrigger;
   const wantRightCollapse = chrome && chrome.collapse;
   const wantRightClose    = chrome && chrome.close;
@@ -189,6 +190,7 @@ function renderPanel({
     // which guarantees midFill >= 1. Otherwise the pre-P4 `midFill >= 1` gate.
     const fits = hasControls ? (leftCap >= 2) : (midFill >= 1);
     if (fits) {
+      chromeDrew = true;
       top = wrapColor(fc, leftPart + b.h.repeat(Math.max(1, midFill)) + rightPart);
     } else {
       // Chrome + title doesn't fit. Drop chrome; fall back to plain
@@ -215,6 +217,22 @@ function renderPanel({
     } else {
       top = wrapColor(fc, `${b.tl}${titleText}${b.tr}`);
     }
+  }
+
+  // Publish the ACTUALLY-DRAWN clickable chrome for the hit-tests (pane-local
+  // x-ranges; a null glyph = dropped by the `fits` fallback above). close/collapse
+  // are right-anchored (`─[X] [_]╮`, the same constants chrome-hittest read); the
+  // `[≡]` trigger follows the hotkey prefix (leftBorderPrefix — the source paint
+  // uses). `fits` is all-or-nothing, so when it drops, ALL three go null and the
+  // narrow-pane phantom hit can't fire. Emitted through the injected sink; a null
+  // ambient paneId (overlays / direct callers) is dropped by the registry.
+  if (_chromeSink) {
+    const tcol = leftBorderPrefix(hotkey).triggerCol;
+    _chromeSink({
+      trigger:  chromeDrew && wantLeftTrigger   ? { x0: tcol, x1: tcol + 2 } : null,
+      close:    chromeDrew && wantRightClose    ? { x0: width - 8, x1: width - 6 } : null,
+      collapse: chromeDrew && wantRightCollapse ? { x0: width - 4, x1: width - 2 } : null,
+    });
   }
 
   // --- Bottom border ---
@@ -320,6 +338,16 @@ function viewportDims() {
 // want (they assert overlay geometry/state, never pixels).
 let _writer = null;
 function setWriter(fn) { _writer = fn; }
+
+// Chrome-region publish seam. renderPanel emits the pane-local x-ranges of the
+// clickable border glyphs it ACTUALLY drew (or null per glyph when the narrow-pane
+// `fits` fallback dropped the whole cluster) so the hit-tests read real geometry
+// instead of a width proxy — the paint↔hit-test agreement fix for the narrow-pane
+// phantom hit. This bottom leaf can't import the panel-layer registry, so paint
+// wires this sink to panel/chrome-regions.publish(<ambient paneId>, …). Unset in
+// CLI/tests / for overlays with no ambient pane → renderPanel skips the emit.
+let _chromeSink = null;
+function setChromeSink(fn) { _chromeSink = fn; }
 // Direct write-through for overlays that compose their OWN screen bytes
 // (cmdline, pane-menu) instead of going through renderOverlay. Review Track
 // 1/2 HIGH (truecolor arc): those overlays wrote io/term stdout directly,
@@ -438,6 +466,6 @@ function renderOverlay({ lines, title, count = null, maxWidth = 44, anchor = nul
 
 module.exports = {
   renderPanel, renderOverlay, overlayBox, truncate, viewportDims, setDimsProvider,
-  setWriter, writeOut,
+  setWriter, setChromeSink, writeOut,
   chromeFor, leftBorderPrefix, _collapseGlyphMarkup, _closeGlyphMarkup,
 };

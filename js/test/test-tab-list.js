@@ -21,6 +21,17 @@
 
 const { describe, it, eq, assert, report } = require('./test-runner');
 const layout = require('../panel/layout');
+const chromeRegions = require('../panel/chrome-regions');
+const { leftBorderPrefix } = require('../leaves/render/draw');
+
+// hitTestTrigger now reads chrome-regions — the `[≡]` range paint ACTUALLY drew —
+// instead of a width proxy. These slice-level tests don't paint, so seed the range
+// paint would publish for a pane (hotkey-dependent column via leftBorderPrefix,
+// pane-local; the reader adds the pane's screen x). Mirrors a real frame.
+function seedTrigger(paneId, hotkey) {
+  const tc = leftBorderPrefix(hotkey || '').triggerCol;
+  chromeRegions.publish(paneId, { trigger: { x0: tc, x1: tc + 2 }, close: null, collapse: null });
+}
 
 function applyUpdate(slice, msg) {
   const r = layout.update(msg, slice);
@@ -256,7 +267,10 @@ describe('[hitTestTrigger] multi-viewer — each glyph opens its own pane', () =
     layoutSlice.paneMenu = { targetPaneId: null, cursor: 0, scroll: 0 };
     layoutSlice.freeConfig = { drag: null };
     md.paneMenuMode = false; md.freeConfigMode = false; md.cmdMode = false;
+    seedTrigger('pane-left', '1');
+    seedTrigger('pane-right', '2');
     try { return fn(); } finally {
+      chromeRegions.clear();
       layoutSlice.paneBounds = saved.bounds;
       layoutSlice.arrange = saved.arrange;
       layoutSlice.paneMenu = saved.pm;
@@ -312,7 +326,8 @@ describe('[hitTestTrigger] hotkey-less pane — [≡] hit-zone follows the glyph
     layoutSlice.paneMenu = { targetPaneId: null, cursor: 0, scroll: 0 };
     layoutSlice.freeConfig = { drag: null };
     md.paneMenuMode = false; md.freeConfigMode = false; md.cmdMode = false;
-    try { return fn(); } finally { Object.assign(layoutSlice, saved); Object.assign(md, savedModes); }
+    seedTrigger('pane-x', '');   // hotkey-less → `[≡]` flush at local col 2
+    try { return fn(); } finally { chromeRegions.clear(); Object.assign(layoutSlice, saved); Object.assign(md, savedModes); }
   }
 
   it('clicking the glyph at col 2/3/4 opens the menu', () => {

@@ -241,13 +241,14 @@ describe('[chrome glyphs] half-mode collapse-button click can\'t hit off-screen 
     // would be inside the visible `groups` pane (which is x=0..59, y=0..23).
     // Test that the click doesn't toggle actions.
     eq(decor.hitTestCollapseButton(29, 12), null, 'off-screen actions [_] inert');
-    // Sanity: the visible groups [_] still fires. groups bounds w=60,
-    // [_] at x = b.x + b.w - 3 = 57. h=24 — but COLLAPSE_MIN_W requires
-    // b.w >= some threshold; if w=60 is enough, the hit fires.
-    // For now just assert visible groups [_] doesn't return null at
-    // its own glyph position.
-    const groupsHit = decor.hitTestCollapseButton(57, 0);
-    assert(groupsHit === 'groups' || groupsHit === null, 'visible groups [_] resolved correctly (or filtered by COLLAPSE_MIN_W)');
+    // Sanity: the visible groups [_] DOES fire. Presence now comes from
+    // chrome-regions (what paint drew), so seed the range paint publishes for a
+    // w=60 pane: right-anchored [_] at pane-local [w-4 .. w-2] = [56..58] (screen
+    // [56..58] at b.x=0). A click at 57 lands on it. (off-screen `actions` above
+    // is filtered by visibleBoundsFor before the registry is even consulted.)
+    const chromeRegions = require('../panel/chrome-regions');
+    chromeRegions.publish('pane-groups', { trigger: null, close: null, collapse: { x0: 56, x1: 58 } });
+    eq(decor.hitTestCollapseButton(57, 0), 'groups', 'visible groups [_] fires on the drawn glyph');
   });
 });
 
@@ -314,7 +315,14 @@ describe('[pane-menu trigger] hit-test honors hidden (nothing-to-swap) state', (
       'pane-detail':  { x: 32, y: 0, w: 48, h: 24 },
     };
     getModel().modes.paneMenuMode = false;
-    // Two non-detail panes → swap target exists → trigger live.
+    // Presence + column now come from chrome-regions (what paint drew), not a
+    // width proxy — so seed the range paint would publish for pane-groups' `[≡]`
+    // (hotkey 'g' → triggerCol 5), mirroring a real frame. Two non-detail panes →
+    // swap target exists → trigger live.
+    const chromeRegions = require('../panel/chrome-regions');
+    const { leftBorderPrefix } = require('../leaves/render/draw');
+    const tc = leftBorderPrefix('g').triggerCol;
+    chromeRegions.publish('pane-groups', { trigger: { x0: tc, x1: tc + 2 }, close: null, collapse: null });
     eq(paneMenu.hitTestTrigger(6, 0), 'pane-groups', 'returns paneId when swap available');
   });
 });

@@ -23,6 +23,15 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **No phantom click on a narrow pane's dropped border chrome.** When a pane is
+  too narrow to fit its title plus the `[≡]`/`[X]`/`[_]` cluster, `renderPanel`
+  drops the whole cluster — but the hit-tests used static width proxies that
+  couldn't see that drop, so a click near the edge fired a phantom
+  collapse/close/menu action where nothing was painted. Paint now publishes each
+  pane's *actually-drawn* glyph ranges to a per-frame registry and the three
+  hit-tests read it, so a dropped glyph is unclickable. Extends
+  `test-chrome-hittest-agreement` with a presence-axis sweep.
+
 - **Themed background survives compound resets in command output.** A raw
   `\x1b[0;31m` (reset + set) embedded in streamed/colored output cleared the
   themed background; the theme background is now re-asserted after content resets

@@ -33,7 +33,8 @@ const geo = require('../leaves/wm/geometry');
 const mpool = require('../leaves/wm/pool');
 const mpane = require('../leaves/wm/pane');
 const { theme, setTheme } = require('../leaves/infra/themes');
-const { truncate, setWriter: _setDrawWriter } = require('../leaves/render/draw');
+const { truncate, setWriter: _setDrawWriter, setChromeSink: _setDrawChromeSink } = require('../leaves/render/draw');
+const chromeRegions = require('../panel/chrome-regions');
 const { detectColorDepth, downgradeAnsi } = require('../leaves/render/color-depth');
 
 // Truecolor arc 1b (docs/truecolor.md P3) — color depth is a DEVICE property,
@@ -98,6 +99,13 @@ let _routeRef; const _route = () => (_routeRef ||= require('../panel/route'));
 let _decorRef; const _decor = () => (_decorRef ||= require('../leaves/render/draw'));
 let _paneMenuRef; const _paneMenu = () => (_paneMenuRef ||= require('../overlay/pane-menu'));
 let _selViewRef; const _selView = () => (_selViewRef ||= require('../panel/select-view'));
+
+// Route renderPanel's drawn-chrome emit to the ambient pane's registry entry. The
+// ambient paneId is set by _safeRender's enterPane around each pane's render(), so
+// during the leaf's emit currentPaneId() is the pane being drawn (null for
+// overlays → dropped). Collapsed panes bypass the leaf and publish directly in
+// _renderCollapsed. See panel/chrome-regions.
+_setDrawChromeSink((region) => chromeRegions.publish(_selView().currentPaneId(), region));
 
 // Shared chrome-glyph inputs for composeRects / renderHalf / renderFull.
 // v0.6.4 Theme B — the scalar setup (chromeFor, viewer tab count, tab-
@@ -178,11 +186,21 @@ function _renderCollapsed(p, w, chrome) {
     // leftPart is `╭─` + titleText = 2 + titleVis visible cells.
     const midFill = w - 2 - titleVis - rightVis;
     if (midFill >= 1) {
+      // Right-anchored, same constants as the expanded top border (`─[X] [_]╮`),
+      // so the hit-test reads one geometry across collapsed + expanded. [+]/[X]
+      // ARE clickable on a collapsed pane (unlike its border controls).
+      chromeRegions.publish(p.paneId, {
+        trigger:  null,
+        close:    chrome && chrome.close    ? { x0: w - 8, x1: w - 6 } : null,
+        collapse: chrome && chrome.collapse ? { x0: w - 4, x1: w - 2 } : null,
+      });
       return wrapColor(fc, `╭─${titleText}${'─'.repeat(midFill)}${rightPart}`);
     }
     // Doesn't fit — fall through to bare collapsed bar.
   }
 
+  // Bare bar — no chrome painted, so record none (a click finds nothing).
+  chromeRegions.publish(p.paneId, { trigger: null, close: null, collapse: null });
   const fill = innerW - visibleLen(titleText);
   if (fill >= 2)      return wrapColor(fc, `╭─${titleText}${'─'.repeat(fill - 1)}╮`);
   else if (fill === 1) return wrapColor(fc, `╭${titleText}─╮`);
@@ -858,6 +876,10 @@ function render(model) {
       else _frame.forceFull = true;   // no recorded bounds — reclaim conservatively
     }
   }
+  // Drop last frame's drawn-chrome map before the pane pass repopulates it, so a
+  // pane that stopped rendering (off-screen in half/full) leaves no stale hit
+  // region. Repopulated synchronously below; hit-tests only read between frames.
+  chromeRegions.clear();
   const viewMode = layoutSlice.viewMode;
   if (viewMode === 'half') mainDidFull = renderHalf(model, previewArrange);
   else if (viewMode === 'full') mainDidFull = renderFull(model, previewArrange);

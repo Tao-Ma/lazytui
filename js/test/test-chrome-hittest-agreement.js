@@ -14,11 +14,14 @@
  * else on that row. Any future divergence (paint moves the glyph, or a hit-test
  * bakes a new assumption) fails here regardless of how the offset is computed.
  *
- * SCOPE: covers the POSITION axis on panes wide enough that `[≡]` IS painted (the
- * demo columns are 30/44/flex). It does NOT cover the PRESENCE axis — a very
- * narrow pane where renderPanel drops all chrome yet the width-proxy hit-test
- * still reports a hit (see the KNOWN GAP note in pane-menu.hitTestTrigger); that
- * needs the paint to publish its drawn chrome regions — its own arc.
+ * SCOPE: covers BOTH axes.
+ *   - POSITION — on panes wide enough that `[≡]` IS painted (demo cols 30/44/flex),
+ *     the click lands exactly on the painted glyph and nowhere else on the row.
+ *   - PRESENCE — squeezing the terminal drops a pane's whole `[≡]`/`[X]`/`[_]`
+ *     cluster (renderPanel's all-or-nothing `fits`); the hit-tests must then report
+ *     NOTHING at the would-be glyph columns. This is the former KNOWN GAP: the fix
+ *     has paint publish each drawn glyph range to panel/chrome-regions and the
+ *     hit-tests read it, so a dropped glyph is unclickable.
  *
  * Run: node js/test/test-chrome-hittest-agreement.js
  */
@@ -113,6 +116,52 @@ describe('[chrome agreement] the painted [≡] glyph is exactly what hitTestTrig
       eq(paneMenu.hitTestTrigger(eqX - 2, b.y), null, 'one cell left of [ is dead');
     });
   }
+});
+
+// PRESENCE axis — the phantom-hit fix. Squeeze the terminal so panes fall into the
+// drop band (below ~120 many columns clamp to ~10 cols; even at the demo's own 120
+// one pane already drops). For each triggerVisible pane: where `[≡]` is painted a
+// click still opens it (agreement holds at narrow widths too); where the cluster is
+// DROPPED, the would-be `[≡]` and `[_]` columns are DEAD — the bug was a phantom hit
+// there. A non-vacuity check proves the sweep exercised both a paint and a drop.
+const { leftBorderPrefix } = require('../leaves/render/draw');
+const chromeHit = require('../panel/chrome-hittest');
+
+describe('[chrome agreement] PRESENCE — a dropped [≡]/[_] cluster is unclickable (no phantom)', () => {
+  let drew = 0, dropped = 0;
+  for (const W of [120, 60]) {
+    sm.resize(W, 40);
+    const rows = paintedRows();
+    const layout = api.getInstanceSlice('layout');
+    const panes = [];
+    for (const col of (layout.arrange.columns || [])) for (const pn of (col.panels || [])) if (pn.paneId) panes.push(pn);
+    for (const pn of panes) {
+      if (!paneMenu.triggerVisible(pn.paneId)) continue;
+      const b = visibleBoundsFor(layout, pn.paneId, route.resolveViewerPaneId());
+      if (!b || b.h < 1) continue;
+      const line = rows[b.y + 1] || [];
+      let eqX = -1;
+      for (let x = b.x + 1; x <= b.x + b.w; x++) { if (line[x] === '≡') { eqX = x - 1; break; } }   // 0-based screen x
+      if (eqX >= 0) {
+        drew++;
+        it(`W=${W} ${pn.paneId} (w=${b.w}): painted [≡] still opens it`, () => {
+          eq(paneMenu.hitTestTrigger(eqX, b.y), pn.paneId);
+        });
+      } else {
+        dropped++;
+        const trigX = b.x + leftBorderPrefix(pn.hotkey || '').triggerCol + 1;   // would-be ≡ center
+        const collX = b.x + b.w - 3;                                             // would-be [_] center
+        it(`W=${W} ${pn.paneId} (w=${b.w}): dropped cluster is dead (no phantom)`, () => {
+          eq(paneMenu.hitTestTrigger(trigX, b.y), null, 'would-be [≡] column is dead');
+          eq(chromeHit.hitTestCollapseButton(collX, b.y), null, 'would-be [_] column is dead');
+        });
+      }
+    }
+  }
+  it('the sweep exercised BOTH a painted and a dropped [≡] (non-vacuous)', () => {
+    assert(drew >= 1, `expected ≥1 painted [≡] across the sweep, got ${drew}`);
+    assert(dropped >= 1, `expected ≥1 dropped [≡] across the sweep, got ${dropped}`);
+  });
 });
 
 report();

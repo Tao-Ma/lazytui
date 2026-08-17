@@ -5,13 +5,15 @@
  * the pane whose `[_]`/`[+]` or `[X]` glyph sits there. Consumed by
  * dispatch/control/input.js (dispatch→panel, legal).
  *
- * Glyph geometry (all glyphs are 3 cells wide):
+ * Glyph geometry (all glyphs are 3 cells wide, right-anchored):
  *   [_]/[+]  → cols [b.x+b.w-4 .. b.x+b.w-2]
  *   [X]      → cols [b.x+b.w-8 .. b.x+b.w-6]   (gap left of [_])
  *
- * Min top-border width to host the glyphs:
- *   normal       → 9  cols  (╭(hk)─[_]╮)
- *   free-config  → 13 cols  (╭(hk)─[X] [_]╮)
+ * PRESENCE is not inferred from width here: paint publishes each pane's drawn
+ * glyph range to panel/chrome-regions (only where renderPanel's all-or-nothing
+ * `fits` actually drew it), and the collapse/close hit-tests read that range —
+ * so a pane too narrow to host the cluster reports no hit (no phantom). The
+ * border-control STRIP still gates on bc.fits, which already mirrors paint.
  */
 'use strict';
 
@@ -21,6 +23,7 @@ const mpool = require('../leaves/wm/pool');
 const mpane = require('../leaves/wm/pane');
 const { visibleBoundsFor } = require('../leaves/wm/geometry');
 const bc = require('../leaves/render/border-controls');
+const chromeRegions = require('./chrome-regions');
 
 // Which top-border controls a pane type carries is a Component-declared
 // capability (`panelTypes[type].borderControls`) resolved via api.borderControlsFor
@@ -28,11 +31,12 @@ const bc = require('../leaves/render/border-controls');
 // Docker-first; other panes join by declaring their own control specs.
 
 const GLYPH_W = 3;
-const COLLAPSE_MIN_W = 9;
-const CLOSE_PLUS_COLLAPSE_MIN_W = 13;
 
+// Pane-local `[_]`/`[+]` start column, right-anchored one cell in from the corner
+// — still the top-strip anchor `hitTestBorderControls` places controls left of.
+// The collapse/close CLICK presence now comes from chrome-regions (below), which
+// paint publishes only where the glyph actually drew.
 function _collapseGlyphX0(b) { return b.x + b.w - 1 - GLYPH_W; }
-function _closeGlyphX0(b)    { return b.x + b.w - 1 - GLYPH_W - 1 - GLYPH_W; }
 
 /** Non-detail placed panels in current layout order, with each pane's live
  *  visible bounds (visibleBoundsFor by paneId) attached. Both renderers +
@@ -60,27 +64,27 @@ function _placedWidgetTargets() {
 }
 
 /** Hit-test the `[_]`/`[+]` glyphs. Returns the panel id under (mx, my)
- *  or null. */
+ *  or null. Presence + geometry come from chrome-regions — the range paint
+ *  ACTUALLY drew this frame — so a narrow pane whose chrome was dropped reports
+ *  no hit (the old `b.w < COLLAPSE_MIN_W` proxy couldn't see that drop). */
 function hitTestCollapseButton(mx, my) {
   const targets = _placedWidgetTargets();
   if (!targets) return null;
   for (const { p, b } of targets) {
-    if (b.w < COLLAPSE_MIN_W) continue;
-    const x0 = _collapseGlyphX0(b);
-    if (my === b.y && mx >= x0 && mx < x0 + GLYPH_W) return p.id;
+    const g = (chromeRegions.get(p.paneId) || {}).collapse;
+    if (g && my === b.y && mx >= b.x + g.x0 && mx <= b.x + g.x1) return p.id;
   }
   return null;
 }
 
-/** Hit-test the `[X]` glyphs. Returns the panel id under (mx, my)
- *  or null. */
+/** Hit-test the `[X]` glyphs. Returns the panel id under (mx, my) or null.
+ *  Presence + geometry from chrome-regions (see hitTestCollapseButton). */
 function hitTestCloseButton(mx, my) {
   const targets = _placedWidgetTargets();
   if (!targets) return null;
   for (const { p, b } of targets) {
-    if (b.w < CLOSE_PLUS_COLLAPSE_MIN_W) continue;
-    const x0 = _closeGlyphX0(b);
-    if (my === b.y && mx >= x0 && mx < x0 + GLYPH_W) return p.id;
+    const g = (chromeRegions.get(p.paneId) || {}).close;
+    if (g && my === b.y && mx >= b.x + g.x0 && mx <= b.x + g.x1) return p.id;
   }
   return null;
 }
