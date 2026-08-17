@@ -1,16 +1,18 @@
 /**
- * host-monitor demo — process/row DETAIL CARD integration. Parses the REAL
- * demo/host-monitor/tui.yml and drives the shipped `table`/`gauge` panels'
- * getInfo through the actual pane-instance routing (the parser mints `pane-*`
- * ids + the per-pane instance map), then injects a metric sample and asserts the
- * selected row projects into a full detail card.
+ * host-monitor demo — integration over the REAL demo/host-monitor/tui.yml after
+ * the compact-pane reshape (docs/compact-panes.md). Guards, against the actual
+ * parsed + placed layout:
+ *   1. The dashboard is COMPOSITE boxes (CPU/Memory/Network) — the density win —
+ *      each carrying its widget list; the placed-pane count stays btop-low.
+ *   2. The two kept TABLES (procs = host.proc, diskio = host.diskio) each resolve
+ *      ITS OWN topic via the pane-instance routing (sliceForPane arm 1 by paneId),
+ *      not the kind primary — and the enriched host.proc schema reaches the card.
+ *   3. select_from drill-downs (procsel → procs) resolve their intended table
+ *      (B-F3), and a NON-primary table (diskio) resolves to its own rows.
+ *   4. No metrics pane sits in a multi-tab slot (the middle-column click bug).
  *
- * Guards two things point-tests can't:
- *   1. Per-pane resolution — the demo has TWO table panes (procs + net); each
- *      getInfo must resolve ITS OWN topic (sliceForPane arm 1 by paneId), not
- *      collapse onto the kind primary.
- *   2. The demo config itself — the enriched host.proc schema (state / threads /
- *      rss / ppid / user / command) reaches the card, incl. off-table columns.
+ * (The detail-card PROJECTION itself is unit-tested in test-metrics-row-info; the
+ * composite split/subscriptions in test-composite. This is the demo-shape guard.)
  *
  * Run: node js/test/test-host-monitor-info.js
  */
@@ -21,8 +23,8 @@ const { describe, it, eq, assert, report } = require('./test-runner');   // auto
 const api = require('../panel/api');
 const route = require('../panel/route');
 
-// The host-monitor demo places actions / stats / table / gauge panes.
-for (const p of ['navigator/actions', 'navigator/groups', 'monitor/stats', 'monitor/table', 'monitor/gauge']) {
+// The reshaped demo places actions / stats / table / composite panes.
+for (const p of ['navigator/actions', 'navigator/groups', 'monitor/stats', 'monitor/table', 'monitor/gauge', 'monitor/composite']) {
   const c = require('../panel/' + p);
   if (!api.getComponent(c.name)) { try { api.registerComponent(c); } catch (_) { /* order-guarded */ } }
 }
@@ -37,49 +39,70 @@ getModel().config = cfg;
 getModel().projectDir = cfg.project_dir;
 initState();
 
-// Inject one sample per topic (the producers are async; the card reads the
-// mirror the same way render does — frame = f(model)).
+// Inject one sample per asserted topic (the producers are async; the card reads
+// the mirror the same way render does — frame = f(model)). procs + diskio are the
+// two selectable tables; distinct row keys make a kind-primary COLLAPSE detectable.
 getModel().metrics = {
   'host.proc': {
     schema: cfg.metrics['host.proc'].schema,
     series: { '404185': [{ cpu: 2.3, mem: 4.0, state: 'Sl+', threads: 10, rss: 800296960, ppid: 185, user: 'root', comm: 'claude', command: 'claude --resume' }] },
   },
-  'host.net': {
-    schema: cfg.metrics['host.net'].schema,
-    series: { eth0: [{ rx: 2048, tx: 512 }] },
-  },
-  // Distinct row keys per topic so a select_from/kind-primary COLLAPSE is
-  // detectable (a disk device leaking into a process/net drill-down).
   'host.diskio': {
     schema: cfg.metrics['host.diskio'].schema,
     series: { vda: [{ read: 4096, write: 8192 }] },
   },
-  'host.nettotal': {
-    schema: cfg.metrics['host.nettotal'].schema,
-    series: { _: [{ rx: 9000, tx: 3000 }] },
-  },
 };
 
-// Resolve real placed pane ids by type from the arrange (mirror pane-select.js).
-function panesOfType(type) {
+function placedPanes() {
   const layout = api.getInstanceSlice('layout');
   const out = [];
-  for (const col of (layout.arrange.columns || [])) {
-    for (const pn of (col.panels || [])) {
-      if (pn && pn.type === type && pn.paneId) out.push(pn.paneId);
-      for (const t of ((pn && pn.tabs) || [])) if (t && t.type === type && t.paneId) out.push(t.paneId);
-    }
-  }
+  for (const col of (layout.arrange.columns || [])) for (const pn of (col.panels || [])) if (pn && pn.paneId) out.push(pn);
   return out;
 }
 
-describe('[host-monitor] process detail card via the real pane routing', () => {
-  const tables = panesOfType('table');   // pane-procs, pane-net
-  const gauges = panesOfType('gauge');   // pane-cpubars
+// Resolve real placed pane ids by type from the arrange (mirror pane-select.js).
+function panesOfType(type) {
+  return placedPanes().filter(pn => pn.type === type).map(pn => pn.paneId);
+}
 
-  it('parses two table panes (procs, net) + a gauge (cpubars)', () => {
+describe('[host-monitor] composite dashboard + density', () => {
+  const panes = placedPanes();
+
+  it('the CPU / Memory / Network dashboards are composite boxes with widgets', () => {
+    const composites = panes.filter(p => p.type === 'composite');
+    eq(composites.length, 3, `three composite boxes, got ${composites.map(p => p.paneId).join(',')}`);
+    for (const c of composites) {
+      assert(Array.isArray(c.widgets) && c.widgets.length >= 2, `${c.paneId} carries ≥2 widgets`);
+    }
+  });
+
+  it('the composites fold the dashboard topics into widgets (graph + bars)', () => {
+    const topics = new Set();
+    for (const c of panes.filter(p => p.type === 'composite')) for (const w of (c.widgets || [])) topics.add(w.topic);
+    for (const t of ['host.cpu', 'host.core', 'host.mem', 'host.disk', 'host.nettotal', 'host.net']) {
+      assert(topics.has(t), `a composite widget covers ${t}`);
+    }
+  });
+
+  it('density: the reshape holds the placed-pane count btop-low (was 12)', () => {
+    assert(panes.length <= 8, `expected ≤8 placed panes, got ${panes.length}: ${panes.map(p => p.paneId).join(',')}`);
+  });
+
+  it('no metrics pane sits in a multi-tab slot (no phantom tab strip / misrouted click)', () => {
+    const bad = panes.filter(pn => ['table', 'gauge', 'stats', 'composite'].includes(pn.type)
+      && Array.isArray(pn.tabs) && pn.tabs.length > 1);
+    eq(bad.map(p => p.paneId), [], 'metrics panels must each own a single-tab slot');
+  });
+});
+
+describe('[host-monitor] detail card + per-pane topic resolution (two tables)', () => {
+  const tables = panesOfType('table');   // pane-procs, pane-diskio
+
+  it('two table panes on distinct topics (procs = host.proc, diskio = host.diskio)', () => {
     assert(tables.length >= 2, `expected ≥2 table panes, got ${tables.join(',')}`);
-    assert(gauges.length >= 1, `expected a gauge pane, got ${gauges.join(',')}`);
+    const topics = tables.map(id => api.getInstanceSlice(id).topic).sort();
+    assert(topics.includes('host.proc') && topics.includes('host.diskio'),
+      `tables on host.proc + host.diskio, got ${topics.join(',')}`);
   });
 
   it('the process table card shows OFF-TABLE columns, formatted by type', () => {
@@ -94,76 +117,22 @@ describe('[host-monitor] process detail card via the real pane routing', () => {
     assert(/\[dim\]command\[\/]  claude --resume/.test(body), 'full command line (tab-delimited field)');
   });
 
-  it('each pane resolves ITS OWN topic — no kind-primary collapse', () => {
+  it('each table resolves ITS OWN topic — no kind-primary collapse', () => {
     const procs = tables.find(id => api.getInstanceSlice(id).topic === 'host.proc');
-    const net = tables.find(id => api.getInstanceSlice(id).topic === 'host.net');
-    assert(procs && net && procs !== net, 'two distinct table panes on distinct topics');
-    eq(api.getPanelDef(net).getInfo('eth0', net)[0], '[bold]iface eth0[/]', 'net card keyed by iface (not collapsed to procs/pid)');
-  });
-
-  it('the CPU-bars gauge shares the same card projection (same topic as the table)', () => {
-    const g = gauges.find(id => api.getInstanceSlice(id).topic === 'host.proc');   // not the disk gauge
-    eq(api.getPanelDef(g).getInfo('404185', g)[0], '[bold]pid 404185[/]');
+    const diskio = tables.find(id => api.getInstanceSlice(id).topic === 'host.diskio');
+    assert(procs && diskio && procs !== diskio, 'two distinct table panes on distinct topics');
+    eq(api.getPanelDef(diskio).getInfo('vda', diskio)[0], '[bold]dev vda[/]', 'diskio card keyed by dev (not collapsed to procs/pid)');
   });
 });
 
-// The storage & network panels each get their OWN column slot (placed directly).
-// A multi-tab slot only renders its strip for content panes, so a metrics panel
-// in a multi-tab group would show invisible tabs AND misroute title clicks onto
-// phantom tab hit-zones — the middle-column click bug. Guard the layout against
-// reintroducing that, and pin that the disk/net panels wire to their topics.
-describe('[host-monitor] storage & network panels are placed directly (click-safe)', () => {
-  function placedPanes() {
-    const layout = api.getInstanceSlice('layout');
-    const out = [];
-    for (const col of (layout.arrange.columns || [])) for (const pn of (col.panels || [])) if (pn && pn.paneId) out.push(pn);
-    return out;
-  }
-
-  it('no metrics pane sits in a multi-tab slot (no phantom tab strip / misrouted click)', () => {
-    const bad = placedPanes().filter(pn => ['table', 'gauge', 'stats'].includes(pn.type) && Array.isArray(pn.tabs) && pn.tabs.length > 1);
-    eq(bad.map(p => p.paneId), [], 'metrics panels must each own a single-tab slot');
-  });
-
-  it('disk gauge, disk-I/O table, and network graph are placed and wired to their topics', () => {
-    // Read the topic off the PLACED PANE (`pn.topic`, hoisted by the arrange):
-    // table/gauge also store it in their slice, but a stats pane keeps an empty
-    // slice and reads its topic from the pane def at render.
-    const panes = placedPanes();
-    const typeOnTopic = (topic) => panes.filter(pn => pn.topic === topic).map(pn => pn.type);
-    assert(typeOnTopic('host.disk').includes('gauge'), 'disk usage → gauge');
-    assert(typeOnTopic('host.diskio').includes('table'), 'disk I/O → table');
-    assert(typeOnTopic('host.nettotal').includes('stats'), 'network trend graph (stats on host.nettotal) is placed');
-    assert(typeOnTopic('host.net').includes('table'), 'network throughput table is placed');
-  });
-});
-
-// select_from resolves its TARGET to the kind-PRIMARY table (first minted) — the
-// deferred B-F3 limitation. So a select_from drill-down only works when its
-// target is that primary. The demo must therefore keep `procs` the first table
-// (any table placed before it steals the primary and the drill-down silently
-// graphs the wrong topic — a regression this guards). This EXERCISES the
-// resolution (`apiGetItems(select_from)` — what _resolveSelection reads), which
-// the "placed & wired" test above does not.
 describe('[host-monitor] select_from drill-downs resolve their intended table', () => {
-  function placedPanes() {
-    const layout = api.getInstanceSlice('layout');
-    const out = [];
-    for (const col of (layout.arrange.columns || [])) for (const pn of (col.panels || [])) if (pn && pn.paneId) out.push(pn);
-    return out;
-  }
-
-  it('a NON-primary table target resolves to its OWN rows, independent of mint order (B-F3 fixed)', () => {
-    // procs is the kind-PRIMARY table; diskio is NOT. A bare pool-id still
-    // collapses to the primary — which is why resolution must happen at the
-    // select_from read site (route.resolveSourcePaneId), addressing the specific
-    // pane. This is the exact path stats._resolveSelection now takes.
+  it('a NON-primary table (diskio) resolves to its OWN rows, independent of mint order (B-F3)', () => {
     const bareDiskio = api.getItems('diskio');
     assert(bareDiskio.includes('404185') && !bareDiskio.includes('vda'),
       '(documents) a BARE pool-id collapses to the primary table — why the fix lives at the call site');
     const diskio = api.getItems(route.resolveSourcePaneId('diskio'));
     assert(diskio.includes('vda') && !diskio.includes('404185'),
-      `resolveSourcePaneId(diskio) reads the DISK rows (got ${JSON.stringify(diskio)}), not the primary — no mint-order dependency`);
+      `resolveSourcePaneId(diskio) reads the DISK rows (got ${JSON.stringify(diskio)}), not the primary`);
     assert(api.getItems(route.resolveSourcePaneId('procs')).includes('404185'),
       'procs still resolves to its own host.proc rows');
   });
@@ -171,16 +140,9 @@ describe('[host-monitor] select_from drill-downs resolve their intended table', 
   it('procsel (select_from: procs) reads the PROCESS rows via the resolved pane', () => {
     const procsel = placedPanes().find(pn => pn.type === 'stats' && pn.select_from);
     eq(procsel.select_from, 'procs');
-    const items = api.getItems(route.resolveSourcePaneId(procsel.select_from));   // exactly what stats._resolveSelection now reads
+    const items = api.getItems(route.resolveSourcePaneId(procsel.select_from));   // exactly what stats._resolveSelection reads
     assert(items.includes('404185'), `procsel resolves host.proc rows (got ${JSON.stringify(items)})`);
     assert(!items.includes('vda'), 'must NOT be the diskio rows');
-  });
-
-  it('the network graph avoids select_from entirely (single-stream host.nettotal)', () => {
-    const ng = placedPanes().find(pn => pn.type === 'stats' && pn.topic === 'host.nettotal');
-    assert(ng, 'netgraph is placed');
-    assert(!ng.select_from, 'no select_from — an aggregate single-stream (host.nettotal), a design choice (no longer a B-F3 workaround)');
-    eq(ng.row, '_', 'pinned to the single stream');
   });
 });
 

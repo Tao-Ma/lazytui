@@ -98,11 +98,11 @@ panel accepts, plus:
 
 | field | meaning |
 |---|---|
-| `type` | `graph` \| `bars` \| `meter` (§5) — which body renders |
+| `type` | `graph` \| `bars` (§5) — which body renders |
 | `topic` | hub topic (a `metrics:` producer, or a Component like docker) |
 | `height` | `N%` of the box's inner height (anchored); omit → flex share (§6) |
-| `label` | optional 1-row dim sub-header above the widget (default: none) |
-| *(kind-specific)* | `graph`: `row`/`select_from`/`aggregate`, `metrics`, `window`, `graph`, `graph_color` — as `stats`. `bars`/`meter`: `column`, `label`, `max`, `sort_dir` — as `gauge`. |
+| `heading` | optional 1-row dim sub-header above the widget (default: none). Distinct from a `bars` widget's `label` (which names the *metered column* for bar labels). |
+| *(kind-specific)* | `graph`: `row`/`select_from`/`aggregate`, `metrics`, `window`, `graph`, `graph_color` — as `stats`. `bars`: `column`, `label`, `max`, `bar_width`, `sort_dir` — as `gauge`. |
 
 `type` here is the **widget** kind, not a pane type — it never reaches the pane
 dispatch. The composite Component owns the `composite` panelType; it interprets
@@ -112,11 +112,13 @@ dispatch. The composite Component owns the `composite` panelType; it interprets
 
 | kind | body reused | renders |
 |---|---|---|
-| `graph` | `stats._renderSection` (per metric) | braille/blocks line graph(s) for the topic — single stream (`row: _`), `select_from`, or `aggregate`. A `height: 1` graph *is* a sparkline. |
-| `bars` | `gauge` bar loop | one horizontal meter bar per row (per-core, per-mount, per-process), ordered by value — btop's bar chart. |
-| `meter` | `stats` percent-meter (`meterRow`) | a single-value bar for a single-stream topic (e.g. `host.cpu` → one CPU meter). |
+| `graph` | `stats.renderBody` (per-metric sections) | braille/blocks line graph(s) for the topic — single stream (`row: _`), `select_from`, or `aggregate`. A percent metric's section already draws a **current-value meter row** under its header. A `height: 1` graph *is* a sparkline. |
+| `bars` | `gauge.renderBody` (display mode) | one horizontal meter bar per row (per-core, per-mount, per-process), ordered by value — btop's bar chart. |
 
-No `sparkline` kind: it is `graph` at `height: 1`. No `table` widget in Tier 1 —
+**Shipped kinds are `graph` + `bars`.** A standalone `meter` kind (a single-value
+bar) was dropped as redundant: a `graph` on a percent topic already renders a meter
+row under its header, so `graph(host.mem)` *is* the memory graph **and** its MEM%
+meter. No `sparkline` kind: it is `graph` at `height: 1`. No `table` widget in Tier 1 —
 a `table` carries a border-embedded sort control + cursor/scroll (interactive),
 which is the Tier-2 case (§8); the read-only process list stays its own pane.
 
@@ -143,9 +145,9 @@ return renderPanel({ width: w, height: h, lines,
 ```
 
 `renderBodyFor` dispatches on `widget.type` to the reused body:
-`graph → stats.renderBody`, `bars → gauge.renderBody`, `meter → stats meter
-primitive`. Each body takes `(widgetSpec, innerW, innerH, ctx)` and returns
-border-less lines — no `renderPanel` call, no cursor read.
+`graph → stats.renderBody`, `bars → gauge.renderBody` (display mode). Each body
+takes `(widgetSpec, innerW, innerH[, ctx])` and returns border-less lines — no
+`renderPanel` call, no cursor read.
 
 ### 6.1 Height budget
 
@@ -156,7 +158,8 @@ without a `height` share the remainder equally, everything floors at a minimum,
 and anchored widgets scale down proportionally if they overflow. Label rows (1
 each) and inter-widget gaps are subtracted first. A widget allocated too few rows
 to draw degrades to a one-line `(too short)` marker (as `stats` does today) —
-never a broken frame. Reuse or mirror the existing leaf; do not fork the math.
+never a broken frame. Reuse the existing leaf; do not fork the math. (`heading`
+rows, not `label`, are the per-widget sub-headers subtracted here — §4.1.)
 
 ### 6.2 Display-only bodies (the cursor question)
 
@@ -165,8 +168,9 @@ never a broken frame. Reuse or mirror the existing leaf; do not fork the math.
 widget has **no paneId of its own** (the composite pane owns the one paneId), so
 its `bars` body renders in **display mode**: sorted rows, no highlight, clipped
 to the allocated height (top-N that fit). This is the deliberate Tier-1 boundary
-— see §8. `graph` and `meter` are already cursor-less, so their bodies need no
-change beyond the border peel.
+— see §8. `graph` is already cursor-less, so its body needs no change beyond the
+border peel; `gauge.renderBody` takes the cursor via `ctx` and omitting it is
+display mode.
 
 ## 7. Subscriptions — the one non-obvious wiring
 
@@ -238,7 +242,7 @@ later nicety, not per-core's answer.
 ## 10. The demo, reshaped
 
 ```
-   TODAY (12 panes)                    TIER-1 COMPOSITES (4 metric boxes + chrome)
+   TODAY (12 panes)                    SHIPPED (3 composites + procs/diskio tables)
 ┌CPU──────┐ ┌CPU bars──────┐        ┌CPU───────────┐ ┌Processes─────┐
 └─────────┘ └──────────────┘        │ ▁▂▃▅▆▇ graph  │ │ pid  cpu comm│
 ┌Memory───┐ ┌Processes─────┐        │ core0 ███░ 72%│ │ 240 90%  node │
@@ -253,49 +257,55 @@ later nicety, not per-core's answer.
                                     └──────────────┘
 ```
 
-The 8 *metric* panes (`cpu, mem, load, disk, netgraph, cpubars, net, diskio`)
-fold into **4 composite boxes** — CPU, Memory, Network, Processes. That **is**
-btop parity. `Selected` / `Host` / `Output` are lazytui-specific chrome btop has
-no equivalent for; they stay. Representative composites:
+**As shipped:** the dashboard panes (`cpu, mem, load, disk, netgraph, cpubars,
+net`) fold into **3 composite boxes** — CPU, Memory, Network. `cpubars` is dropped
+(redundant with the process table); the `load` trend is dropped (shown by the
+`uptime` action). The interactive **`procs`** table stays its own pane (btop's PROC
+box) and **`diskio`** stays a second selectable table (a second topic that keeps
+the per-pane-resolution + drill-down showcase). Net: **12 → 8 panes** — the CPU /
+Memory / Network dashboards now read like btop's boxes. `Selected` / `Host` /
+`Output` are lazytui-specific chrome. The shipped composites:
 
 ```yaml
 cpu_box:
   type: composite
   title: CPU
   widgets:
-    - { type: graph, topic: host.cpu,  row: _, height: 50% }
-    - { type: bars,  topic: host.core, column: busy, label: core }
+    - { type: graph, topic: host.cpu,  row: _, metrics: [cpu], height: 55% }
+    - { type: bars,  topic: host.core, column: busy, heading: Cores }   # per-core
 
 mem_box:
   type: composite
   title: Memory
   widgets:
-    - { type: graph, topic: host.mem,  row: _, height: 55% }
-    - { type: meter, topic: host.mem,  row: _, column: mem }
-    - { type: bars,  topic: host.disk, column: pct, label: mount }   # disk usage
+    # a percent graph draws its own MEM% meter row — no separate meter widget
+    - { type: graph, topic: host.mem,  row: _, metrics: [mem], height: 60% }
+    - { type: bars,  topic: host.disk, column: pct, heading: Disk usage }
 
 net_box:
   type: composite
   title: Network
   widgets:
     - { type: graph, topic: host.nettotal, row: _, metrics: [rx, tx], height: 55% }
-    - { type: bars,  topic: host.net,       column: rx, label: iface }
+    - { type: bars,  topic: host.net,       column: rx, heading: Iface rx/s }
 ```
 
-The exact final demo layout (which of `diskio`/`cpubars` fold where) is settled
-during implementation; the mechanism above is what this doc fixes.
+(See `demo/host-monitor/tui.yml` for the full shipped layout.)
 
 ## 11. Scope — v1 vs deferred
 
 **In v1 (this doc):**
-- `type: composite` panel + `widgets:` list; parser recognition + validation.
+- `type: composite` panel + `widgets:` list (no parser change — the lenient
+  `validatePanels` + `normalizePoolEntry` pass `widgets:` through as config).
 - `renderBody` split for `stats` + `gauge` (border-less body reuse).
-- Widget kinds `graph` / `bars` / `meter`; per-widget explicit `height:`.
+- Widget kinds `graph` / `bars`; per-widget explicit `height:` + optional `heading:`.
 - `subscriptions` union across widget topics.
 - `host.core` producer (per-core bars) added to the demo.
 - Demo reshaped to CPU/MEM/NET composites (+ PROC table + chrome).
 
 **Deferred:**
+- A standalone `meter` widget kind — redundant while a percent `graph` draws its
+  own meter row; revisit if a meter-without-a-graph is ever wanted.
 - Interactive sub-widgets (cursor / `select_from` / click) inside a composite (§8).
 - Group box — one border around N independently-focusable panes (§8).
 - Multi-series overlay rasterizer (§9) — a later net up/down nicety, not per-core.
@@ -305,9 +315,8 @@ during implementation; the mechanism above is what this doc fixes.
 - **`renderBody` parity** — for `stats` and `gauge`, assert
   `render(...)` output equals `renderPanel({..., lines: renderBody(...)})` (the
   border peel is behaviour-preserving for a standalone pane).
-- **Height split** — `splitWidgetHeights` unit cases: all-flex, mixed
-  anchored+flex, overflow scaling, the too-short degradation, label/gap
-  reservation.
+- **Height split** — the composite's `_split` (over `distributeColumnHeights`):
+  all-flex, mixed anchored+flex, `heading`/gap reservation. (test-composite.js)
 - **Composite render** — a headless demo composite renders one border with N
   widget bodies stacked; the rect contract holds (h lines × w cells); a
   too-short box degrades per widget, not the whole frame.
@@ -317,18 +326,20 @@ during implementation; the mechanism above is what this doc fixes.
 
 ## 13. File-change checklist
 
-1. `js/parser/index.js` — recognize `type: composite` + `widgets:`; validate each
-   widget has `type` + `topic`; collect `config.warnings` for malformed widgets.
-2. `js/panel/monitor/stats.js` — extract `renderBody` (the `_renderSection`
-   stack) from `render`; export it + the meter primitive.
-3. `js/panel/monitor/gauge.js` — extract `renderBody` (the bar loop) in a
-   cursor-less display mode; export it.
+1. Parser — **no change**: the lenient `validatePanels` + `normalizePoolEntry`
+   already pass `type: composite` + `widgets:` through as pane config. Malformed
+   widgets degrade to a dim marker at render (lenient-parser philosophy).
+2. `js/panel/monitor/stats.js` — extract + export `renderBody` (the section
+   stack) from `render`.
+3. `js/panel/monitor/gauge.js` — extract + export `renderBody` (the bar loop) with
+   the cursor threaded via `ctx` (omit → display mode); + `specFrom` normalizer.
 4. `js/panel/monitor/composite.js` — **NEW** Component: `render` (stack bodies +
-   one border), `subscriptions` (union), empty slice/`update` (like `stats`).
-5. `js/leaves/wm/geometry.js` — reuse `distributeColumnHeights` for widgets, or a
-   small sibling `splitWidgetHeights` mirroring its anchored+flex math.
-6. `demo/host-monitor/tui.yml` — `host.core` producer + CPU/MEM/NET composites;
-   update `demo/host-monitor/README.md` sketch.
+   one border via `_split`), `subscriptions` (union), empty slice/`update` (like
+   `stats`); registered in `js/app/components.js`.
+5. Height split — the composite's `_split` reuses `distributeColumnHeights`
+   directly (widgets as pseudo-panes with `heightPct`); no new geometry leaf.
+6. `demo/host-monitor/tui.yml` — `host.core` producer + CPU/MEM/NET composites
+   (drop `cpubars`/`load`/standalone dashboard panes); update README + this doc.
 7. Tests (§12).
 8. Docs — cross-ref from STATS.md (the body it reuses), LAYOUT.md (a new panel
    type), PLUGINS.md; CHANGELOG `[Unreleased]`.

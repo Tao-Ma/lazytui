@@ -37,6 +37,22 @@ metrics:
     schema:
       columns: { cpu: { type: percent, unit: '%' } }
 
+  # Per-core busy% — one row per core, for the CPU box's per-core BAR strip (btop's
+  # signature). `mpstat -P ALL` prints a line per core; the awk skips the "all"
+  # aggregate row ($2 is a core number, not "all") and emits busy = 100 - %idle
+  # ($NF). Needs `mpstat` (sysstat) — OPTIONAL: without it the poll fails and the
+  # per-core bars just read "(no data yet)"; every other panel is unaffected.
+  host.core:
+    cmd: "mpstat -P ALL 1 1 | awk '/^[0-9]/ && $2 ~ /^[0-9]+$/ {print $2, 100-$NF}'"
+    interval: 2000
+    extract:
+      mode: columns
+      row_key: core
+      fields: { core: 0, busy: 1 }
+    schema:
+      row_key: core
+      columns: { busy: { type: percent, unit: '%' } }
+
   # Memory used% — from `free` (used / total * 100).
   host.mem:
     cmd: "free | awk '/^Mem/{printf \"%.1f\", $3/$2*100}'"
@@ -46,16 +62,6 @@ metrics:
       fields: { mem: '([0-9.]+)' }
     schema:
       columns: { mem: { type: percent, unit: '%' } }
-
-  # 1-minute load average.
-  host.load:
-    cmd: "awk '{print $1}' /proc/loadavg"
-    interval: 2000
-    extract:
-      mode: regex
-      fields: { load: '([0-9.]+)' }
-    schema:
-      columns: { load: { type: number } }
 
   # Top processes by CPU — a multi-row topic (one row per pid). The TABLE and the
   # CPU-bars GAUGE show a few columns (cpu/mem/comm); the extra columns (state,
@@ -163,122 +169,99 @@ metrics:
       columns: { read: { type: counter }, write: { type: counter } }
 
 # --- Panels --------------------------------------------------------------------
+# btop-density COMPOSITE boxes (docs/compact-panes.md): each `type: composite`
+# stacks several border-less widget bodies — a `graph` (stats line graph) and
+# `bars` (gauge meter bars) — in ONE bordered pane, so the CPU / Memory / Network
+# dashboards read like btop's boxes instead of one pane per metric. The one
+# load-bearing INTERACTIVE surface (the process table + its drill-down) stays its
+# own pane — composite widgets are display-only (Tier 1). `widgets[].height: N%`
+# anchors a widget's share of the box; the rest flex.
 panels:
   actions:
     type: actions
     title: Host
-  cpu:
-    type: stats
+  # CPU box — the aggregate busy% trend graph (with its own % meter) above a
+  # per-core BAR strip (host.core, one bar per core). btop's CPU box in one pane.
+  cpu_box:
+    type: composite
     title: CPU
-    topic: host.cpu
-    row: _                 # single-stream topic → pin the one row (no select_from)
-  mem:
-    type: stats
+    widgets:
+      - { type: graph, topic: host.cpu,  row: _, metrics: [cpu], height: 55% }
+      - { type: bars,  topic: host.core, column: busy, heading: Cores }
+  # Memory box — the used% trend graph (the graph draws its own MEM% meter) above
+  # a disk-USAGE bar per mount (host.disk, filled by used %). btop puts disks here.
+  mem_box:
+    type: composite
     title: Memory
-    topic: host.mem
-    row: _
-  load:
-    type: stats
-    title: Load (1m)
-    topic: host.load
-    row: _
-    metrics: [load]        # `load` is type:number (metadata-ambiguous, not auto-
-                           # graphed) — list it explicitly to graph the trend
-  # The process TABLE — lists host.proc's rows, sorted by CPU, selectable.
+    widgets:
+      - { type: graph, topic: host.mem,  row: _, metrics: [mem], height: 60% }
+      - { type: bars,  topic: host.disk, column: pct, heading: Disk usage }
+  # Network box — total up/down throughput graph (host.nettotal, rx+tx overlaid as
+  # two stacked series) above per-interface rx rates as bars (host.net).
+  net_box:
+    type: composite
+    title: Network
+    widgets:
+      # rx + tx are two stacked graph sections, so give the graph the larger share.
+      - { type: graph, topic: host.nettotal, row: _, metrics: [rx, tx], height: 62% }
+      - { type: bars,  topic: host.net,      column: rx, heading: Iface rx/s }
+  # The process TABLE — host.proc rows, sorted by CPU, SELECTABLE. This is the
+  # interactive surface: select a row → the Selected drill-down graphs its history
+  # and the Output pane's Info tab shows its detail card. FIRST table = the
+  # select_from primary.
   procs:
     type: table
     title: Processes
     topic: host.proc
     columns: [cpu, mem, comm]   # schema columns to show; pid is the row identity
     sort: cpu                    # default sort (desc for a metric)
-  # The same host.proc topic as a btop-style CPU BAR CHART — one bar per process,
-  # ordered by CPU and filled proportionally. A `gauge` is the SNAPSHOT bar
-  # sibling of the table (list) and the stats graph (history): it reads the same
-  # `metrics:` topic, needs no code, and its rows are selectable too.
-  cpubars:
-    type: gauge
-    title: CPU bars
-    topic: host.proc
-    column: cpu           # the metered value (its schema type `percent` → 0–100 bar)
-    label: comm           # bar label from the command name (not the pid)
-  # Drill-down: the CPU/MEM history of the process SELECTED in the table.
-  procsel:
-    type: stats
-    title: Selected
-    topic: host.proc
-    select_from: procs
-    metrics: [cpu, mem]
-  # Network throughput TABLE — per-interface rx/tx rates (derived from the
-  # counter fields; the table shows live B/s).
-  net:
-    type: table
-    title: Network
-    topic: host.net
-    columns: [rx, tx]
-    sort: rx
-  # Network throughput GRAPH — total up/down over time (btop's net braille),
-  # from the single-stream host.nettotal producer. A single stream → pin `row: _`
-  # (like cpu/mem/load); rx and tx overlaid. (Not a select_from of the net table —
-  # see host.nettotal's note.)
-  netgraph:
-    type: stats
-    title: Network
-    topic: host.nettotal
-    row: _
-    metrics: [rx, tx]
-  # Disk USAGE — a btop-style gauge, one bar per mount, filled by used %. Same
-  # `gauge` panel as the CPU bars; `pct` is the metered column, `mount` the label.
-  disk:
-    type: gauge
-    title: Disk
-    topic: host.disk
-    column: pct
-    label: mount
   # Disk THROUGHPUT TABLE — per-device read/write rates (host.diskio counters →
-  # B/s), the disk sibling of the network table.
+  # B/s), kept as its own selectable table (a second topic alongside procs).
   diskio:
     type: table
     title: Disk I/O
     topic: host.diskio
     columns: [read, write]
     sort: write
+  # Drill-down: the CPU/MEM history of the process SELECTED in the procs table.
+  procsel:
+    type: stats
+    title: Selected
+    topic: host.proc
+    select_from: procs
+    metrics: [cpu, mem]
   # The Output pane. Its Info tab is the process DETAIL CARD: focus the process
-  # table (or CPU bars) and it shows the selected process's full column set —
-  # state, threads, RSS, parent pid, user, command line. Host-action output
-  # (ps/uptime) lands in its Transcript tab.
+  # table and it shows the selected process's full column set — state, threads,
+  # RSS, parent pid, user, command line. Host-action output (ps/uptime) lands in
+  # its Transcript tab.
   detail:
     type: detail
     title: Output
 
 layout:
-  # Three concern-grouped columns (btop-style). Panels are placed DIRECTLY (not
-  # tabbed): a multi-tab slot only renders its strip for content panes, so metrics
-  # panels — table/gauge/stats — each own their column slot. `actions` must sit in
-  # the LAST column (framework rule), which soft-caps at 3 panes.
-  #
-  # `select_from` resolves the SPECIFIC named pane (B-F3), so table mint order no
-  # longer matters — a follower graph tracks the pane it names regardless of which
-  # table is the kind-primary. The net trend graph stays single-stream on the
-  # host.nettotal aggregate by choice, not necessity.
+  # Three concern-grouped columns (btop-style). Column 1 is the composite
+  # dashboard (CPU / Memory / Network boxes); column 2 the interactive data tables;
+  # column 3 the drill-down + actions + Output. Panels are placed DIRECTLY (not
+  # tabbed): a multi-tab slot only renders its strip for content panes, so a
+  # metrics pane in one would show invisible tabs. `actions` must sit in the LAST
+  # column (framework rule). `select_from` resolves the SPECIFIC named pane (B-F3),
+  # so procs stays the drill-down target regardless of table mint order.
   columns:
-    # System dashboard — all the trend graphs + the disk-usage gauge (no table).
-    - width: 30
+    # The CPU + Memory composite boxes (each graph + a bar strip). Two per column
+    # so each box gets the vertical room its graph needs.
+    - width: 34
       panels:
-        - cpu
-        - mem
-        - load
-        - disk                          # disk USAGE gauge (df → used% per mount)
-        - netgraph                      # total network throughput graph (host.nettotal)
-    # The data tables — CPU bars, the process table (FIRST table = select_from
-    # primary), then network + disk-I/O throughput tables.
-    - width: 44
+        - cpu_box                       # composite: cpu graph + per-core bars
+        - mem_box                       # composite: mem graph + disk-usage bars
+    # The Network composite (graph + per-iface bars) above the two interactive
+    # tables — the process list (select_from primary) and disk-I/O throughput.
+    - width: 46
       panels:
-        - cpubars                       # btop-style CPU bar chart (gauge)
-        - procs                         # process table (host.proc) — procsel's select_from target
-        - net                           # network throughput table (counter → B/s)
-        - diskio                        # disk THROUGHPUT table (counter → B/s)
-    # Selected-process drill-down, host actions, and the Output pane (whose Info
-    # tab is the process detail card).
+        # net_box carries a 2-series graph — anchor it taller so both series + the
+        # per-iface bars fit; procs + diskio flex-share the rest.
+        - { tabs: [net_box], heightPct: 45 }   # composite: net up/down graph + per-iface bars
+        - procs                                # process table (host.proc) — procsel's select_from target
+        - diskio                               # disk THROUGHPUT table (counter → B/s)
     - panels:
         - procsel                       # CPU/MEM history of the selected process
         - actions

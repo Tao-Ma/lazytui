@@ -8,6 +8,17 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Composite panels (`type: composite`) for btop-density dashboards.** A
+  composite stacks several border-less widget bodies — a `graph` (stats line
+  graph) and `bars` (gauge meter bars) — in ONE bordered pane, still a single
+  draggable/focusable pane. Each widget is a today-pane's config minus the border,
+  plus `height: N%` (its share of the box) and an optional `heading:`. The
+  `stats`/`gauge` renderers were split into a reusable `renderBody` seam; the
+  composite's `subscriptions` union the widgets' topics. Display-only for now
+  (no cursor inside a box). The host-monitor demo folds its CPU / Memory / Network
+  dashboards into three composite boxes (with a new `host.core` per-core producer)
+  — 12 panes → 8. See docs/compact-panes.md.
+
 - **`aggregate:` mode for `stats` panels.** Folds *all* rows of a topic into one
   synthetic series — graph total/average across cores, devices, or interfaces with
   no `select_from` cursor. `aggregate: true` reduces per column type (percent →

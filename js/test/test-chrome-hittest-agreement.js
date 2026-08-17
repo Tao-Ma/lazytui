@@ -36,7 +36,7 @@ const paint = require('../render/paint');
 const paneMenu = require('../overlay/pane-menu');
 const { visibleBoundsFor } = require('../leaves/wm/geometry');
 
-for (const p of ['navigator/actions', 'navigator/groups', 'monitor/stats', 'monitor/table', 'monitor/gauge']) {
+for (const p of ['navigator/actions', 'navigator/groups', 'monitor/stats', 'monitor/table', 'monitor/gauge', 'monitor/composite']) {
   const c = require('../panel/' + p);
   if (!api.getComponent(c.name)) { try { api.registerComponent(c); } catch (_) { /* order-guarded */ } }
 }
