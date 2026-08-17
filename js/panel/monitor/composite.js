@@ -98,6 +98,13 @@ function render(panel, w, h, _slice, opts) {
   let lines;
   if (!widgets.length) {
     lines = [`[${t.dim}](composite needs a widgets: list)[/]`];
+  } else if (innerW < 1 || innerH < 1) {
+    // Too small to render any widget body — a full-viewed box on a ≤2-row / ≤1-col
+    // terminal hands render() h<2 or w<2, so the inner dims go negative. Emit no
+    // content and let renderPanel draw a minimal (clamped) box: the reused stats /
+    // gauge bodies aren't hardened for a negative width (the graph rasterizer would
+    // `new Array(<negative>)` → RangeError). renderPanel itself is negative-dim safe.
+    lines = [];
   } else {
     const heights = _split(widgets, innerH);
     lines = [];
@@ -114,8 +121,10 @@ function render(panel, w, h, _slice, opts) {
     // bodyAvail floors at one row per widget). A composite has NO scroll, so cap
     // the lines to innerH — otherwise renderPanel infers `totalItems > innerH` and
     // paints a phantom (unscrollable) scrollbar thumb. renderPanel would clip the
-    // display anyway; this just keeps the inferred total honest.
-    if (lines.length > innerH) lines.length = innerH;
+    // display anyway; this just keeps the inferred total honest. Clamp at 0: a pane
+    // shorter than its own border (innerH < 0 at h < 2 — e.g. a full-viewed box on a
+    // ≤2-row terminal) would make `lines.length = <negative>` throw RangeError.
+    if (lines.length > innerH) lines.length = Math.max(0, innerH);
   }
 
   return renderPanel({

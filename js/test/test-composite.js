@@ -98,6 +98,19 @@ describe('[composite] render — stacks bodies in one border', () => {
       { title: 'X', widgets: [{ type: 'bogus', topic: 'c.cpu' }] }, 30, 6, {}, {});
     assert(stripMarkup(out).includes('unknown widget type'), 'marker shown');
   });
+
+  it('a sub-2 degenerate size degrades gracefully, never throws (round-3 review)', () => {
+    // A full-viewed box on a ≤2-row / ≤1-col terminal hands render() h<2 or w<2, so
+    // innerH/innerW go negative. The phantom-scrollbar cap (`lines.length = innerH`)
+    // and renderPanel's countless bottom border (`repeat(innerW)`) both must clamp
+    // at 0 rather than RangeError — matching gauge's graceful degradation.
+    for (const [w, h] of [[1, 1], [40, 1], [1, 12], [2, 2], [40, 2]]) {
+      let out;
+      try { out = composite.panelTypes.composite.render(panel, w, h, {}, {}); }
+      catch (e) { assert(false, `render ${w}x${h} threw: ${e && e.message}`); }
+      assert(typeof out === 'string' && !out.includes('▐'), `${w}x${h}: string, no phantom thumb`);
+    }
+  });
 });
 
 report();

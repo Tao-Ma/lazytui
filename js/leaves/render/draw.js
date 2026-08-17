@@ -282,7 +282,9 @@ function renderPanel({
       bottom = `[${fc}]${b.bl}${countText.slice(0, innerW)}${b.br}[/]`;
     }
   } else {
-    bottom = `[${fc}]${b.bl}${b.h.repeat(innerW)}${b.br}[/]`;
+    // clamp: a sub-2-col pane (innerW < 0, e.g. a full-viewed box on a 1-col
+    // terminal) with no count reaches here — repeat(<negative>) throws RangeError.
+    bottom = `[${fc}]${b.bl}${b.h.repeat(Math.max(0, innerW))}${b.br}[/]`;
   }
 
   // --- Scrollbar ---
