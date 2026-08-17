@@ -6,33 +6,30 @@ per-process detail card, and disk-I/O throughput. It looks like `btop`/`top`, bu
 every graph, bar, and column is declared in YAML — no plugin code.
 
 ```
-╭─(1)─CPU───────────╮╭─(4)─Processes──────────╮╭─Selected──────╮
-│ CPU        47.2%  ││      cpu↓  mem comm     ││ ▁▂▃▄▅▆▇       │
-│ █████████▏        ││ 240 90.0% 0.3% node     │╰───────────────╯
-│ ⣠⣴⣾⣿⣿⣷⣄⡀ (graph)  ││ 404 62.0% 4.0% claude   │╭─(6)─Host──────╮
-│ Cores             │╰────────────────────────╯│ > top (live)  │
-│ core0 ███████░ 72%│╭─(5)─Disk I/O─‹ write↓ ›─╮│   processes   │
-│ core1 ████░░░░ 41%││ vda    1M     2M        ││   uptime      │
-├─(2)─Memory────────┤╰────────────────────────╯╰───────────────╯
-│ MEM        24.1%  │                          ╭─Output─Info───╮
-│ ██████▊           │                          │ pid 240       │
-│ ⣀⣠⣤ (graph)       │                          │ command node… │
+╭─(1)─CPU───────────╮╭─(3)─Network────────────╮╭─Selected──────╮
+│ CPU        47.2%  ││ ⣀⣠⣴⣶⣾ (up/down graph)  ││ ▁▂▃▄▅▆▇       │
+│ █████████▏        ││ Iface rx/s             │╰───────────────╯
+│ ⣠⣴⣾⣿⣿⣷⣄⡀ (graph)  ││ eth0 ███░ 20K          │╭─(6)─Host──────╮
+│ Cores             │├─(4)─Processes─‹ cpu↓ ›──┤│ > top (live)  │
+│ core0 ███████░ 72%││      cpu↓  mem comm     ││   processes   │
+│ core1 ████░░░░ 41%││ 240 90.0% 0.3% node     ││   uptime      │
+├─(2)─Memory────────┤│ 404 62.0% 4.0% claude   │╰───────────────╯
+│ MEM        24.1%  │├─(5)─Disk I/O─‹ write↓ ›─┤╭─Output─Info───╮
+│ ██████▊           ││ vda    1M     2M        ││ pid 240       │
+│ ⣀⣠⣤ (graph)       │╰────────────────────────╯│ command node… │
 │ Disk usage        │                          │ cpu    90.0%  │
 │ / ████░ 77%       │                          ╰───────────────╯
-├─(3)─Network───────┤
-│ ⣀⣠⣴⣶⣾ (up/down)   │
-│ Iface rx/s        │
-│ eth0 ███░ 20K     │
 ╰───────────────────╯
 ```
 
-*(Simplified sketch.) The dashboard is three **composite** boxes — the density move
-(docs/compact-panes.md): each stacks a line **graph** and a **bar** strip in one
-bordered pane. **CPU** = busy% graph + per-core bars; **Memory** = used% graph +
-disk-usage bars; **Network** = up/down graph + per-interface bars. Column 2 keeps
-the interactive **Processes** and **Disk I/O** tables; column 3 the **Selected**
-drill-down, host actions, and the **Output** pane whose Info tab is the process
-detail card.*
+*(Simplified sketch.) The CPU / Memory / Network dashboards are **composite** boxes
+— the density move (docs/compact-panes.md): each stacks a line **graph** and a
+**bar** strip in one bordered pane. **CPU** = busy% graph + per-core bars;
+**Memory** = used% graph + disk-usage bars; **Network** = up/down graph +
+per-interface bars. Column 1 stacks the CPU + Memory boxes; column 2 the Network
+box above the interactive **Processes** and **Disk I/O** tables; column 3 the
+**Selected** drill-down, host actions, and the **Output** pane whose Info tab is
+the process detail card.*
 
 ## What it shows
 
@@ -59,11 +56,13 @@ Eight producers, each a one-line host command:
 | `host.proc` | `ps` top-by-CPU (pid/cpu/mem/comm + state/rss/…/cmdline) | **Processes table** + **detail card** |
 | `host.diskio` | `/proc/diskstats` sectors **counters** → rates | **Disk I/O table** (`B/s`) |
 
-Three concern-grouped columns. **Column 1** is the composite dashboard: the **CPU**,
-**Memory**, and **Network** boxes (each a `graph` + `bars`). **Column 2** holds the
-interactive data tables: the **Processes** `table` (sorted, columnar; click the
-`‹ cpu↓ ›` control to re-sort) and the **Disk I/O** throughput table. **Column 3**
-holds the selected-process drill-down, the host actions, and the **Output** pane.
+Three concern-grouped columns. **Column 1** stacks the **CPU** and **Memory**
+composite boxes (each a `graph` + `bars`). **Column 2** leads with the **Network**
+composite box (anchored taller so its up/down graph + per-interface bars fit),
+then the interactive data tables: the **Processes** `table` (sorted, columnar;
+click the `‹ cpu↓ ›` control to re-sort) and the **Disk I/O** throughput table.
+**Column 3** holds the selected-process drill-down, the host actions, and the
+**Output** pane.
 
 Select a process and two things happen: the **Selected** graph drills into that
 process's own CPU/memory history via `select_from:`, and the **Output** pane's

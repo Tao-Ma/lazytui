@@ -87,8 +87,8 @@ panels:
     type: composite
     title: CPU                        # ONE border title for the whole box
     widgets:
-      - { type: graph, topic: host.cpu,  row: _, height: 45% }   # aggregate line graph + meter
-      - { type: bars,  topic: host.core, column: busy, label: core }   # per-core bars (host.core producer)
+      - { type: graph, topic: host.cpu,  row: _, metrics: [cpu], height: 55% }  # graph (+ its % meter)
+      - { type: bars,  topic: host.core, column: busy, heading: Cores }         # per-core bars
 ```
 
 ### 4.1 Widget fields
@@ -160,6 +160,13 @@ each) and inter-widget gaps are subtracted first. A widget allocated too few row
 to draw degrades to a one-line `(too short)` marker (as `stats` does today) —
 never a broken frame. Reuse the existing leaf; do not fork the math. (`heading`
 rows, not `label`, are the per-widget sub-headers subtracted here — §4.1.)
+
+> Author note: the intended shape is **one anchored `height:` widget + the rest
+> flex** (as the demo boxes do) — the flex widgets absorb the remainder evenly. If
+> you anchor EVERY widget with percentages summing to <100%, the leftover rows fall
+> on the LAST widget (inherited from `distributeColumnHeights`' flex-remainder
+> rule, which assumes unclaimed space is for flex panes). Leave at least one widget
+> unanchored, or make the percentages sum to ~100%.
 
 ### 6.2 Display-only bodies (the cursor question)
 
@@ -286,7 +293,7 @@ net_box:
   type: composite
   title: Network
   widgets:
-    - { type: graph, topic: host.nettotal, row: _, metrics: [rx, tx], height: 55% }
+    - { type: graph, topic: host.nettotal, row: _, metrics: [rx, tx], height: 62% }
     - { type: bars,  topic: host.net,       column: rx, heading: Iface rx/s }
 ```
 

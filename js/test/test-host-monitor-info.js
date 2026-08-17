@@ -78,7 +78,10 @@ describe('[host-monitor] composite dashboard + density', () => {
 
   it('the composites fold the dashboard topics into widgets (graph + bars)', () => {
     const topics = new Set();
-    for (const c of panes.filter(p => p.type === 'composite')) for (const w of (c.widgets || [])) topics.add(w.topic);
+    for (const c of panes.filter(p => p.type === 'composite')) for (const w of (c.widgets || [])) {
+      topics.add(w.topic);
+      assert(w.type === 'graph' || w.type === 'bars', `widget type is graph|bars, got ${JSON.stringify(w.type)}`);
+    }
     for (const t of ['host.cpu', 'host.core', 'host.mem', 'host.disk', 'host.nettotal', 'host.net']) {
       assert(topics.has(t), `a composite widget covers ${t}`);
     }

@@ -1,10 +1,11 @@
 # lazytui demo — host-monitor (a btop-style system monitor).
 #
 # The first demo with NO container at all: it monitors the HOST. Live CPU,
-# memory, and load graphs come entirely from the top-level `metrics:` block —
-# each entry polls a plain host command, extracts a number from stdout, and
-# publishes it to a hub topic that a `stats` panel graphs. No docker, no
-# framework code: the whole data path is declared here in YAML.
+# memory, and network graphs (+ per-core / disk / per-iface bars) come entirely
+# from the top-level `metrics:` block — each entry polls a plain host command,
+# extracts numbers from stdout, and publishes them to a hub topic that a `stats`
+# graph or `gauge` bar renders — stacked into btop-style `composite` boxes. No
+# docker, no framework code: the whole data path is declared here in YAML.
 #
 # This is what the metrics-producer feature (docs/metrics-producer.md) unlocks —
 # the same braille line-graphs that used to be docker-only, now over `/proc`,
@@ -15,8 +16,9 @@
 #   cd demo/host-monitor && ./run
 #   node js/app/tui.js demo/host-monitor/tui.yml     # equivalent, from repo root
 #
-# Requires: Linux (reads /proc/stat, /proc/loadavg), `free`, `awk`. `top` for
-# the live process tab.
+# Requires: Linux (reads /proc/stat, /proc/net/dev, /proc/diskstats), `free`,
+# `df`, `ps`, `awk`. `mpstat` (sysstat) for the per-core bars — OPTIONAL (that one
+# producer just reads "(no data yet)" without it). `top` for the live process tab.
 
 project_dir: ../..
 theme: monokai
@@ -239,10 +241,11 @@ panels:
     title: Output
 
 layout:
-  # Three concern-grouped columns (btop-style). Column 1 is the composite
-  # dashboard (CPU / Memory / Network boxes); column 2 the interactive data tables;
-  # column 3 the drill-down + actions + Output. Panels are placed DIRECTLY (not
-  # tabbed): a multi-tab slot only renders its strip for content panes, so a
+  # Three concern-grouped columns (btop-style). Column 1 stacks the CPU + Memory
+  # composite boxes; column 2 the Network composite ABOVE the interactive data
+  # tables (procs + disk-I/O) — net_box is anchored taller so its 2-series graph +
+  # bars fit; column 3 the drill-down + actions + Output. Panels are placed DIRECTLY
+  # (not tabbed): a multi-tab slot only renders its strip for content panes, so a
   # metrics pane in one would show invisible tabs. `actions` must sit in the LAST
   # column (framework rule). `select_from` resolves the SPECIFIC named pane (B-F3),
   # so procs stays the drill-down target regardless of table mint order.
