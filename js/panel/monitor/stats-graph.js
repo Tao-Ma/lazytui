@@ -126,6 +126,8 @@ function rasterizeBraille(samples, { width, height, min, max }) {
  * NaN when the whole group is gaps. Returns `width` entries in [0,1]|NaN.
  */
 function columnNorms(samples, { width, min, max, group = 1 }) {
+  if (width < 1) return [];   // degenerate width (a sub-2-col pane) — match the
+                              // rasterizers' guard; else `new Array(<negative>)` throws.
   const cut = _cut(samples, width * group);
   const norms = new Array(width);
   for (let c = 0; c < width; c++) {

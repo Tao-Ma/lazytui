@@ -125,6 +125,10 @@ describe('[4c] columnNorms: grouping + peaks + gaps', () => {
   it('group=1 aligns with blocks columns', () => {
     eq(columnNorms([0, 50, 100], { width: 3, min: 0, max: 100, group: 1 }).join(','), '0,0.5,1');
   });
+  it('degenerate width → [] (matches the rasterizers; a sub-2-col pane, else RangeError)', () => {
+    eq(columnNorms([1, 2, 3], { width: 0, min: 0, max: 10, group: 1 }), []);
+    eq(columnNorms([1, 2, 3], { width: -1, min: 0, max: 10, group: 2 }), []);
+  });
   it('group=2 takes the max of each pair (peaks win)', () => {
     eq(columnNorms([10, 90, 40, 20], { width: 2, min: 0, max: 100, group: 2 }).join(','), '0.9,0.4');
   });
