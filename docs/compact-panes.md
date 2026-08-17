@@ -206,12 +206,14 @@ render; producers (`metrics:`) and the mirror are untouched.
 
 Tier 1 ships **display composites only**. Explicitly out of scope this phase:
 
-- **Interactive sub-widgets.** No cursor, `select_from`, or click-to-select
-  *inside* a composite. The demo's one load-bearing interactive pane — `procs`
-  (feeds the `procsel` drill-down + the detail card) — **stays its own pane**,
-  which is what btop's PROC box is anyway. Composites don't change the hub /
-  selection model, so a *separate* `stats` pane can still `select_from:` a
-  *standalone* table as today.
+- **Interactive sub-widgets.** A composite has no cursor of its OWN: a widget's
+  own rows aren't selectable and a click inside just focuses the box. The demo's
+  one load-bearing interactive pane — `procs` (feeds the `procsel` drill-down + the
+  detail card) — **stays its own pane**, which is what btop's PROC box is anyway.
+  (A `graph` widget CAN still `select_from:` an *external* pane — that's a cross-pane
+  cursor read, exactly like a standalone `stats` pane, so it works and gives a
+  follower graph inside the box. What Tier 1 lacks is a cursor *for the composite's
+  own widgets*.) Composites don't change the hub / selection model.
 - **Group box** (one border around N *independently focusable* panes). That
   needs a nesting level through geometry / paint / free-config / nav routing —
   high WM cost for UX btop itself doesn't have. Deferred; may never be needed

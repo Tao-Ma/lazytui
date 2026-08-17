@@ -78,6 +78,15 @@ describe('[composite] render — stacks bodies in one border', () => {
     assert(body.includes('c1'), 'a per-core bar (row c1) is drawn');
   });
 
+  it('a too-short box does not paint a phantom scrollbar (composites do not scroll)', () => {
+    // At h=6 (innerH 4) the graph + heading + gap + bars stack overflows innerH;
+    // renderPanel must not infer a scrollable total and paint a thumb.
+    const out = composite.panelTypes.composite.render(panel, 40, 6, {}, {});
+    const rows = out.split('\n');
+    eq(rows.length, 6, 'exactly h rows');
+    assert(!rows.some((r) => r.includes('▐')), `no scrollbar thumb on an over-full composite — ${JSON.stringify(rows)}`);
+  });
+
   it('empty widgets → a dim hint, still a bordered box of h rows', () => {
     const out = composite.panelTypes.composite.render({ title: 'X', widgets: [] }, 30, 6, {}, {});
     eq(out.split('\n').length, 6);

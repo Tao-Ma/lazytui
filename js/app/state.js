@@ -237,6 +237,13 @@ const _subKinds = {
     // model.metrics[topic] field) — coalesce to the LARGEST window so the
     // wider-history pane isn't starved, and the tightest cadence. Each pane
     // still slices its own `window` from the shared series at render.
+    // CAVEAT (pre-existing, low): `merge` only runs while BUILDING the desired set,
+    // and reconcile skips restart for an already-live key — so a wider-window
+    // consumer placed onto an already-live topic AT RUNTIME (pool_show / pane-select)
+    // does NOT grow the live mirror; it keeps the old (smaller) retention until the
+    // topic is fully torn down and re-established. Correct at boot (one-pass merge).
+    // Fixing it means restart-on-window-grow in the metrics-mirror kind — a general
+    // change, not composite-specific. (Found in the compact-pane arc round-2 review.)
     merge: (a, b) => ({ topic: b.topic, window: Math.max(a.window, b.window), ms: Math.min(a.ms, b.ms) }),
     start: (d, ctx) => {
       const token = { hubToken: null, timer: null, stopped: false };

@@ -4,8 +4,12 @@
  * Stacks several border-less widget BODIES — reused verbatim from the stats
  * (line-graph) and gauge (meter-bar) renderers via their `renderBody` seam — in
  * ONE bordered pane. A composite is still a single draggable, focusable pane; the
- * WM sees a flat pane (no nesting). This is Tier 1: DISPLAY-only widgets (no
- * cursor / select_from / click inside the box). See docs/compact-panes.md.
+ * WM sees a flat pane (no nesting). This is Tier 1: DISPLAY-only widgets — the box
+ * has no cursor of its own, so a widget's OWN rows aren't selectable and a click
+ * inside just focuses the box. (A `graph` widget may still `select_from` an
+ * EXTERNAL pane — that's a cross-pane cursor read, exactly like a standalone stats
+ * pane, so it works and yields a follower graph inside the box.) See
+ * docs/compact-panes.md.
  *
  * YAML shape:
  *   cpu_box:
@@ -106,6 +110,12 @@ function render(panel, w, h, _slice, opts) {
       const body = _bodyLines(widget, innerW, bh);
       for (let r = 0; r < bh; r++) lines.push(body[r] != null ? body[r] : '');
     });
+    // At a tiny innerH the heading/gap rows push the stack past innerH (`_split`'s
+    // bodyAvail floors at one row per widget). A composite has NO scroll, so cap
+    // the lines to innerH — otherwise renderPanel infers `totalItems > innerH` and
+    // paints a phantom (unscrollable) scrollbar thumb. renderPanel would clip the
+    // display anyway; this just keeps the inferred total honest.
+    if (lines.length > innerH) lines.length = innerH;
   }
 
   return renderPanel({
