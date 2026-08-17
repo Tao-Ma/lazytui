@@ -113,16 +113,68 @@ function _resolveSelection(panel) {
   return typeof item === 'string' ? item : null;
 }
 
-function _renderEmpty(panel, w, h, msg, chrome, focused) {
+// Border-less body — the composable half of render (docs/compact-panes.md §2).
+// Resolves this pane's samples (aggregate / select_from cursor / static row) and
+// builds the stacked line-graph SECTIONS to fit `innerW × innerH` — no border, no
+// title. `render` wraps it in renderPanel; a `composite` panel stacks it beside
+// other widget bodies. Returns { lines, rowKey } — rowKey is the resolved row
+// ('_' for aggregate / single-stream / any empty case) so the caller can suffix a
+// drill-down title; the border-less lines carry every empty/short state as a dim
+// message (so the wrapper draws a bordered box either way). Pure of chrome/focus:
+// the height-mapped graph colour doesn't depend on focus. `spec` is the pane/widget
+// config (topic, row/select_from/aggregate, metrics, window, graph, graph_color).
+function renderBody(spec, innerW, innerH) {
   const t = theme();
-  return renderPanel({
-    width: w, height: h,
-    lines: [`[${t.dim}]${esc(msg)}[/]`],
-    title: panel.title, hotkey: panel.hotkey,
-    panelType: 'stats',
-    focused: !!focused,
-    chrome,
+  const dim = (msg) => ({ lines: [`[${t.dim}]${esc(msg)}[/]`], rowKey: '_' });
+  if (!spec.topic || (!spec.select_from && spec.row == null && !spec.aggregate)) {
+    return dim('(stats panel needs topic + select_from / row / aggregate)');
+  }
+  const window = spec.window || 40;
+  const metric = getModel().metrics[spec.topic];
+  const schema = (metric && metric.schema) || { columns: {} };
+
+  // `aggregate:` folds ALL rows into one synthetic series (no cursor); otherwise
+  // follow the select_from cursor / static row, sliced to this pane's window.
+  let samples;
+  let rowKey = '_';
+  if (spec.aggregate) {
+    samples = _aggregateSamples((metric && metric.series) || {}, schema, window, spec.aggregate);
+  } else {
+    rowKey = _resolveSelection(spec);
+    if (!rowKey) return dim('(no selection)');
+    samples = ((metric && metric.series[rowKey]) || []).slice(-window);
+  }
+  if (!samples.length) return dim('(no data yet)');
+  const metrics = spec.metrics || _defaultMetrics(schema);
+  if (!metrics.length) return dim('(no graphable metrics)');
+
+  // Graph style: braille by default, `graph: blocks` opts out (P4 — a plain
+  // per-pane config choice; render never consults the device's color depth).
+  const style = spec.graph === 'blocks' ? 'blocks' : 'braille';
+  // Graph color mapping. `height` (DEFAULT, btop-style) colors by vertical
+  // position — static per row, so a sample shift moves the glyphs but recolors
+  // nothing (cell-diff sends only the changed cells). `value` colors each column
+  // by its value through the full percent ramp (highest signal, most wire bytes);
+  // `banded` keeps value-mapping quantized to 8 bands (a middle ground). See
+  // docs/truecolor.md + STATS.md.
+  const colorMode = (spec.graph_color === 'value' || spec.graph_color === 'banded')
+    ? spec.graph_color : 'height';
+
+  const sepRows = Math.max(0, metrics.length - 1);
+  const headerRows = metrics.length;
+  // Percent metrics carry a one-row current-value meter under the header.
+  const meterRows = metrics
+    .filter((m) => ((schema.columns || {})[m] || {}).type === 'percent').length;
+  const graphRowsTotal = innerH - sepRows - headerRows - meterRows;
+  const perMetric = Math.floor(graphRowsTotal / metrics.length);
+  if (perMetric < 2) return dim('(panel too short for graph)');
+
+  const lines = [];
+  metrics.forEach((m, i) => {
+    if (i > 0) lines.push('');
+    lines.push(..._renderSection(m, samples, schema, innerW, perMetric, style, colorMode));
   });
+  return { lines, rowKey };
 }
 
 /**
@@ -256,68 +308,14 @@ function render(panel, w, h, _slice, opts) {
   // ANOTHER pane's cursor via panel.select_from (cross-pane by design),
   // so its own slice is empty; only the focus flag is per-pane here.
   const focused = !!(opts && opts.focused);
-  if (!panel.topic || (!panel.select_from && panel.row == null && !panel.aggregate)) {
-    return _renderEmpty(panel, w, h, '(stats panel needs topic + select_from / row / aggregate)', chrome, focused);
-  }
-  const window = panel.window || 40;
-
-  // Finding B — read the store-mirror'd snapshot off the model, not the hub bus
-  // live. The metrics-mirror Sub keeps model.metrics[topic] current (throttled).
-  const metric = getModel().metrics[panel.topic];
-  const schema = (metric && metric.schema) || { columns: {} };
-
-  // `aggregate:` folds ALL rows of the topic into one synthetic series (no cursor
-  // to follow); otherwise follow the select_from cursor / static row and slice to
-  // this pane's window.
-  let samples;
-  let rowKey = '_';   // aggregate has no single row → '_' keeps the plain title (no per-row suffix)
-  if (panel.aggregate) {
-    samples = _aggregateSamples((metric && metric.series) || {}, schema, window, panel.aggregate);
-  } else {
-    rowKey = _resolveSelection(panel);
-    if (!rowKey) return _renderEmpty(panel, w, h, '(no selection)', chrome, focused);
-    samples = ((metric && metric.series[rowKey]) || []).slice(-window);
-  }
-  if (!samples.length) return _renderEmpty(panel, w, h, '(no data yet)', chrome, focused);
-  const metrics = panel.metrics || _defaultMetrics(schema);
-  if (!metrics.length) return _renderEmpty(panel, w, h, '(no graphable metrics)', chrome, focused);
-
-  // Graph style: braille by default, `graph: blocks` opts out (P4 — a plain
-  // per-pane config choice; render never consults the device's color depth).
-  const style = panel.graph === 'blocks' ? 'blocks' : 'braille';
-  // Graph color mapping. `height` (DEFAULT, btop-style) colors by vertical
-  // position — static per row, so a sample shift moves the glyphs but recolors
-  // nothing: cell-diff sends only the changed cells (~−81% wire bytes/tick vs
-  // `value`). Opt out per pane: `value` colors each column by its value through
-  // the full percent ramp (highest signal, but the 101-step ramp recolors nearly
-  // every column each tick); `banded` keeps value-mapping quantized to 8 bands
-  // (~−38%, a middle ground). See docs/truecolor.md + STATS.md.
-  const colorMode = (panel.graph_color === 'value' || panel.graph_color === 'banded')
-    ? panel.graph_color : 'height';
-
-  const innerW = w - 2;
-  const innerH = h - 2;
-  const sepRows = Math.max(0, metrics.length - 1);
-  const headerRows = metrics.length;
-  // Percent metrics carry a one-row current-value meter under the header.
-  const meterRows = metrics
-    .filter((m) => ((schema.columns || {})[m] || {}).type === 'percent').length;
-  const graphRowsTotal = innerH - sepRows - headerRows - meterRows;
-  const perMetric = Math.floor(graphRowsTotal / metrics.length);
-  if (perMetric < 2) {
-    return _renderEmpty(panel, w, h, '(panel too short for graph)', chrome, focused);
-  }
-
-  const lines = [];
-  metrics.forEach((m, i) => {
-    if (i > 0) lines.push('');
-    lines.push(..._renderSection(m, samples, schema, innerW, perMetric, style, colorMode));
-  });
-
+  // Finding B — renderBody reads the store-mirror'd model.metrics[topic] (kept
+  // current by the metrics-mirror Sub), so this is a pure render over the model.
+  const { lines, rowKey } = renderBody(panel, w - 2, h - 2);
   return renderPanel({
     width: w, height: h, lines,
-    // Single-stream topics use the sentinel rowKey '_' (no entity to name) —
-    // show the bare title; drill-down topics append the selected row.
+    // Single-stream topics use the sentinel rowKey '_' (no entity to name) — show
+    // the bare title; a drill-down row (select_from) appends the selected row. Any
+    // empty state resolves rowKey '_' too, so its box keeps the plain title.
     title: rowKey === '_' ? panel.title : `${panel.title}: ${esc(rowKey)}`,
     hotkey: panel.hotkey,
     panelType: 'stats',
@@ -343,6 +341,8 @@ module.exports = {
       render,
     },
   },
+  // Border-less body reused by the `composite` panel (docs/compact-panes.md).
+  renderBody,
   // Test-only internals.
   _defaultMetrics,
   _aggregateSamples,

@@ -32,7 +32,7 @@
 const { getModel } = require('../../model/store');
 const {
   esc, theme, gradient, renderPanel, visibleLen,
-  getSel, getScroll, getItems: apiGetItems, sliceForPane,
+  getSel, getScroll, sliceForPane,
 } = require('../api');
 const { truncate } = require('../../leaves/render/draw');
 const { fmt: _fmt } = require('../../leaves/metrics/format');   // shared compact cell formatter (see table.js)
@@ -171,42 +171,50 @@ function getInfo(rowKey, paneId) {
   return metric ? rowInfo(metric, rowKey) : [`row: ${rowKey}`];
 }
 
-function _renderEmpty(panel, w, h, msg, chrome, focused) {
+// Border-less body — the composable half of render (docs/compact-panes.md §2).
+// Builds the meter-bar lines for a topic to fill `innerW × innerH`: one bar per
+// row, sorted by the metered value (getItems), coloured by fill position. No
+// border, no title, no count — `render` wraps it in renderPanel; a `composite`
+// panel stacks it beside other widget bodies.
+//
+// `spec` is the slice-shaped config (topic / column / label / max / barMax /
+// sortDir — the shape init() produces; the composite normalizes each widget to
+// it). `ctx` carries the interactive cursor: { sel, scroll, focused } from the
+// STANDALONE pane's live nav state (highlight + windowed scroll). A composite
+// widget OMITS sel → DISPLAY mode: top rows that fit, no cursor highlight. Pure of
+// the paneId read (the impure getSel/getScroll stay in `render`). Returns
+// { lines, rowCount, sel, scroll } so the wrapper can draw the `N of M` count +
+// scrollbar; an empty state carries a dim message line + rowCount 0 (the wrapper
+// then draws a plain bordered box with no count — matching the pre-split
+// _renderEmpty).
+function renderBody(spec, innerW, innerH, ctx) {
+  ctx = ctx || {};
   const t = theme();
-  return renderPanel({
-    width: w, height: h, lines: [`[${t.dim}]${esc(msg)}[/]`],
-    title: panel.title, hotkey: panel.hotkey, panelType: 'gauge', focused: !!focused, chrome,
-  });
-}
-
-function render(panel, w, h, slice, opts) {
-  const focused = !!(opts && opts.focused);
-  const chrome = opts && opts.chrome;
-  const topic = panel.topic;
-  if (!topic) return _renderEmpty(panel, w, h, '(gauge needs a topic)', chrome, focused);
-  const metric = _metric(topic);
-  const rows = apiGetItems(panel.paneId);        // sorted row keys
-  if (!metric || !rows.length) {
-    return _renderEmpty(panel, w, h, metric ? '(no rows)' : '(no data yet)', chrome, focused);
-  }
-  const col = _meterColumn(slice, metric);
-  if (!col) return _renderEmpty(panel, w, h, '(gauge needs a numeric column)', chrome, focused);
+  const dim = (msg) => ({ lines: [`[${t.dim}]${esc(msg)}[/]`], rowCount: 0, sel: 0, scroll: 0 });
+  if (!spec.topic) return dim('(gauge needs a topic)');
+  const metric = _metric(spec.topic);
+  const rows = getItems(spec);                    // sorted row keys — pure over spec
+  if (!metric || !rows.length) return dim(metric ? '(no rows)' : '(no data yet)');
+  const col = _meterColumn(spec, metric);
+  if (!col) return dim('(gauge needs a numeric column)');
   const type = _typeOf(metric, col);
-  const t = theme();
-  const innerW = w - 2;
-  const innerH = h - 2;
 
-  // Cursor + scroll (windowed render below). No header row, so the whole inner
-  // region is the data window; scroll follows the cursor. getSel isn't re-clamped
-  // on row-shrink (processes come and go), so clamp it to the row count here.
-  const sel = Math.max(0, Math.min(getSel(panel.paneId), rows.length - 1));
-  let scroll = getScroll(panel.paneId);
-  if (sel < scroll) scroll = sel;
-  else if (sel >= scroll + innerH) scroll = sel - innerH + 1;
-  scroll = Math.max(0, Math.min(scroll, Math.max(0, rows.length - innerH)));
+  // Cursor + scroll. No header row, so the whole inner region is the data window.
+  // A standalone pane threads its live cursor (interactive: highlight + windowed
+  // scroll); a composite widget omits it → display mode (top rows, no highlight).
+  // getSel isn't re-clamped on row-shrink (processes come and go), so clamp here.
+  const interactive = Number.isFinite(ctx.sel);
+  const focused = !!ctx.focused;
+  let sel = interactive ? Math.max(0, Math.min(ctx.sel, rows.length - 1)) : -1;
+  let scroll = interactive ? (ctx.scroll || 0) : 0;
+  if (interactive) {
+    if (sel < scroll) scroll = sel;
+    else if (sel >= scroll + innerH) scroll = sel - innerH + 1;
+    scroll = Math.max(0, Math.min(scroll, Math.max(0, rows.length - innerH)));
+  }
 
   const valueOf = (rk) => { const s = _latest(metric, rk); return s ? s[col] : NaN; };
-  const labelCol = slice.label && _typeOf(metric, slice.label) === 'string' ? slice.label : null;
+  const labelCol = spec.label && _typeOf(metric, spec.label) === 'string' ? spec.label : null;
   const labelText = (rk) => {
     if (labelCol) { const s = _latest(metric, rk); const lv = s ? s[labelCol] : null; if (lv != null) return String(lv); }
     return String(rk);
@@ -217,7 +225,7 @@ function render(panel, w, h, slice, opts) {
   // (auto-scale, stable under scroll).
   let denom;
   if (type === 'percent') denom = 100;
-  else if (slice.max) denom = slice.max;
+  else if (spec.max) denom = spec.max;
   else {
     // reduce, not Math.max(...spread) — a huge topic would blow the arg limit.
     denom = rows.reduce((m, rk) => { const v = valueOf(rk); return Number.isFinite(v) && v > m ? v : m; }, 1);
@@ -235,7 +243,7 @@ function render(panel, w, h, slice, opts) {
   // more than a full label). `innerW - _VALUE_W - 3` = 2 gaps + a 1-cell bar.
   const labelW = Math.max(3, Math.min(16, maxLabel, innerW - _VALUE_W - 3));
   const avail = innerW - labelW - _VALUE_W - 2;               // two single-space gaps
-  const barW = Math.max(1, Math.min(slice.barMax || 20, avail));
+  const barW = Math.max(1, Math.min(spec.barMax || 20, avail));
   const trailW = Math.max(0, innerW - (labelW + 1 + barW + 1 + _VALUE_W));
 
   // Width-aware, markup-safe cell (respects esc'd brackets + wide/emoji glyphs;
@@ -273,12 +281,25 @@ function render(panel, w, h, slice, opts) {
     const abs = scroll + vi;
     lines.push(buildBar(rk, abs === sel));
   });
+  return { lines, rowCount: rows.length, sel: interactive ? sel : 0, scroll };
+}
 
+function render(panel, w, h, slice, opts) {
+  const focused = !!(opts && opts.focused);
+  const chrome = opts && opts.chrome;
+  // Live cursor/scroll (impure per-pane nav reads) stay here; renderBody is pure
+  // of the paneId. `slice` is this pane's own slice (topic/column/… from init()).
+  const { lines, rowCount, sel, scroll } = renderBody(slice, w - 2, h - 2, {
+    sel: getSel(panel.paneId), scroll: getScroll(panel.paneId), focused,
+  });
   return renderPanel({
     width: w, height: h, lines,
     title: panel.title, hotkey: panel.hotkey, panelType: 'gauge', focused, chrome,
-    windowed: true,
-    count: [sel + 1, rows.length],
+    // Empty (rowCount 0) draws a plain bordered box — no count/scrollbar/windowing
+    // — exactly as the pre-split _renderEmpty did (these all fall to renderPanel's
+    // defaults). Data rows get the windowed `N of M` count + scrollbar.
+    windowed: rowCount > 0,
+    count: rowCount > 0 ? [sel + 1, rowCount] : null,
     scrollOffset: scroll,
   });
 }
@@ -296,6 +317,8 @@ module.exports = {
       idOf: (rowKey) => String(rowKey),
     },
   },
+  // Border-less body reused by the `composite` panel (docs/compact-panes.md).
+  renderBody,
   // Test-only internals.
   _fmt,
   getItems,
