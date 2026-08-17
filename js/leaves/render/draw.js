@@ -146,6 +146,7 @@ function renderPanel({
   // every pane lost its top border during any free-config drag.
   let top = null;
   let chromeDrew = false;   // did the [≡]/[X]/[_] cluster actually paint (fits)?
+  let triggerReg = null;    // the [≡] pane-local x-range IFF it survived leftPart truncation
   const wantLeftTrigger  = chrome && chrome.tabTrigger;
   const wantRightCollapse = chrome && chrome.collapse;
   const wantRightClose    = chrome && chrome.close;
@@ -169,7 +170,8 @@ function renderPanel({
     // `leftBorderPrefix` owns the `╭─` + `(hotkey)` geometry (shared with the
     // trigger hit-test — see its definition). [≡] then sits flush against it (no
     // separator dash), so its column IS `leftBorderPrefix(hotkey).triggerCol`.
-    let leftPart = leftBorderPrefix(hotkey).prefix;
+    const lbp = leftBorderPrefix(hotkey);
+    let leftPart = lbp.prefix;
     if (wantLeftTrigger) {
       leftPart += _tabTriggerMarkup(chrome.tabTrigger, focused, fc);
     }
@@ -182,6 +184,7 @@ function renderPanel({
     // may use the full width and the whole chrome row drops if it and the glyphs
     // don't fit.
     const leftCap = hasControls ? (innerW + 2 - rightVis - 1) : (innerW + 2 - 2);
+    const leftVisFull = visibleLen(leftPart);   // BEFORE truncation — for [≡] survival
     leftPart = truncate(leftPart, Math.max(0, leftCap));
 
     const leftVis  = visibleLen(leftPart);
@@ -191,6 +194,17 @@ function renderPanel({
     const fits = hasControls ? (leftCap >= 2) : (midFill >= 1);
     if (fits) {
       chromeDrew = true;
+      // The [≡] lives INSIDE leftPart, which `truncate` cuts INDEPENDENTLY of
+      // `fits` (a border-control strip or a long title shrinks leftCap and can
+      // clip the glyph while the row still composites). So the trigger is painted
+      // — hence clickable — only when it actually survived that truncation: either
+      // leftPart wasn't truncated, or the cut kept through the glyph's last cell
+      // (its end column tcol+3 ≤ the kept width `leftCap-1`). Right-anchored
+      // close/collapse are never truncated, so they stay gated on `chromeDrew`.
+      if (wantLeftTrigger &&
+          (leftVisFull <= leftCap || (leftCap - 1) >= lbp.triggerCol + 3)) {
+        triggerReg = { x0: lbp.triggerCol, x1: lbp.triggerCol + 2 };
+      }
       top = wrapColor(fc, leftPart + b.h.repeat(Math.max(1, midFill)) + rightPart);
     } else {
       // Chrome + title doesn't fit. Drop chrome; fall back to plain
@@ -220,16 +234,17 @@ function renderPanel({
   }
 
   // Publish the ACTUALLY-DRAWN clickable chrome for the hit-tests (pane-local
-  // x-ranges; a null glyph = dropped by the `fits` fallback above). close/collapse
-  // are right-anchored (`─[X] [_]╮`, the same constants chrome-hittest read); the
-  // `[≡]` trigger follows the hotkey prefix (leftBorderPrefix — the source paint
-  // uses). `fits` is all-or-nothing, so when it drops, ALL three go null and the
-  // narrow-pane phantom hit can't fire. Emitted through the injected sink; a null
-  // ambient paneId (overlays / direct callers) is dropped by the registry.
+  // x-ranges; a null glyph = not painted). close/collapse are right-anchored
+  // (`─[X] [_]╮`, the same constants chrome-hittest read) and never truncated, so
+  // they follow `chromeDrew` (the whole-cluster `fits`). The `[≡]` trigger is
+  // left-anchored INSIDE the independently-truncated leftPart, so it carries its
+  // own survival check (`triggerReg`, set above) — `fits` alone would over-report
+  // it (the residual narrow-pane phantom the registry-read must not fire on).
+  // Emitted through the injected sink; a null ambient paneId (overlays / direct
+  // callers) is dropped by the registry.
   if (_chromeSink) {
-    const tcol = leftBorderPrefix(hotkey).triggerCol;
     _chromeSink({
-      trigger:  chromeDrew && wantLeftTrigger   ? { x0: tcol, x1: tcol + 2 } : null,
+      trigger:  triggerReg,
       close:    chromeDrew && wantRightClose    ? { x0: width - 8, x1: width - 6 } : null,
       collapse: chromeDrew && wantRightCollapse ? { x0: width - 4, x1: width - 2 } : null,
     });

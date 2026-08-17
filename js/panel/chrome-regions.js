@@ -7,11 +7,15 @@
  * from a width proxy.
  *
  * This is the paint↔hit-test agreement fix (docs reference_paint_hittest_agreement)
- * for the narrow-pane PHANTOM HIT: renderPanel drops its whole `[≡]`/`[X]`/`[_]`
- * cluster when the top row can't fit title + glyphs, but the old hit-tests gated
- * on static width floors (`*_MIN_W`, a `triggerX` proxy) that couldn't see the
- * drop, so a very narrow pane reported a hit where nothing was drawn. A dropped
- * cluster now leaves a null glyph here → the click finds nothing.
+ * for the narrow-pane PHANTOM HIT: on a narrow pane renderPanel drops chrome — the
+ * whole `[≡]`/`[X]`/`[_]` cluster when the top row can't fit (`fits`), AND the
+ * left-anchored `[≡]` on its own when `leftPart` truncation clips it (independent
+ * of `fits` — a long title or a border-control strip). The old hit-tests gated on
+ * static width floors (`*_MIN_W`, a `triggerX` proxy) that saw neither, so a narrow
+ * pane reported a hit where nothing was drawn. Each glyph is published here ONLY
+ * where it actually painted (right-anchored close/collapse follow `fits`; the
+ * trigger carries its own truncation-survival check), so a dropped/clipped glyph
+ * leaves null here → the click finds nothing.
  *
  * Coordinates are PANE-LOCAL columns (0-based, inclusive); the reader adds the
  * pane's screen origin (visibleBoundsFor .x) before comparing to a click. Every

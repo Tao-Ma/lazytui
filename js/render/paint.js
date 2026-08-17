@@ -188,7 +188,10 @@ function _renderCollapsed(p, w, chrome) {
     if (midFill >= 1) {
       // Right-anchored, same constants as the expanded top border (`─[X] [_]╮`),
       // so the hit-test reads one geometry across collapsed + expanded. [+]/[X]
-      // ARE clickable on a collapsed pane (unlike its border controls).
+      // ARE clickable on a collapsed pane (unlike its border controls). The close
+      // x0 (w-8) assumes close SITS LEFT of collapse — valid because chromeFor
+      // gates both behind `!isDetail`, so a collapsed non-detail pane always has
+      // `collapse` (never close-only); close-without-collapse can't occur here.
       chromeRegions.publish(p.paneId, {
         trigger:  null,
         close:    chrome && chrome.close    ? { x0: w - 8, x1: w - 6 } : null,
@@ -388,6 +391,10 @@ function _safeRender(panel, w, h, opts) {
     const blank = ' '.repeat(w);
     const rows = [errLine];
     for (let i = 1; i < h; i++) rows.push(blank);
+    // The error block paints NO chrome. If render() published a chrome region via
+    // the sink before it threw, wipe it so a click can't land on a glyph the error
+    // block overwrote (same-frame; next frame's clear() handles the steady state).
+    chromeRegions.publish(panel.paneId, { trigger: null, close: null, collapse: null });
     return rows.join('\n');
   } finally {
     selectView.exitPane();
