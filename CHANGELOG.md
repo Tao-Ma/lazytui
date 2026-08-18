@@ -6,6 +6,21 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A metrics-mirror now grows its live retention when a wider consumer joins a
+  topic at runtime.** Several panes on one metrics topic share a single mirror
+  keyed by `topic` (it writes the one `model.metrics[topic]` field), so its merged
+  `window` / `ms` live outside the subscription key. A wider-window pane placed
+  onto an already-live topic at runtime (`pool_show` / pane-select) used to leave
+  the live mirror at its old, smaller retention until the topic was fully torn
+  down — the reconciler skipped restart for any already-live key. The
+  metrics-mirror kind now opts into a `changed` hook and the reconciler restarts
+  it **start-before-stop**, so the overlapping hub subscription holds `max(window)`
+  across the swap and the ring buffer is preserved and grown rather than trimmed
+  to zero by a stop-first unsubscribe. The boot path was already correct; this
+  closes the runtime path (found in the compact-pane arc round-2 review).
+
 ## [0.6.20] — 2026-08-18
 
 ### Changed

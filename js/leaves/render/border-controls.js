@@ -79,4 +79,4 @@ function bottomX0(paneX) {
   return paneX + 2;   // corner + lead dash
 }
 
-module.exports = { GAP, reservedW, fits, placeX0s, bottomFits, bottomX0 };
+module.exports = { reservedW, fits, placeX0s, bottomFits, bottomX0 };

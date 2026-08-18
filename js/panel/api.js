@@ -709,7 +709,7 @@ module.exports = {
   registerComponent, registerEffect, wrap,
   _components: _componentsMap,  // v0.6.3 Phase B — internal use by initState + fanout
   getComponent, getComponentOwningPanel, getFocus,
-  paneBorderControlSpecs, borderControlsFor, paneTypeHasBottomBar,
+  borderControlsFor, paneTypeHasBottomBar,
   // Tab-instance registry surface.
   setInstance, getInstance, getInstanceSlice, sliceForPane, setInstanceSlice,
   hasInstance, disposeInstance, instanceKind, eachInstance,

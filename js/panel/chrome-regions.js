@@ -45,7 +45,4 @@ function get(paneId) {
   return (paneId && _regions.get(paneId)) || null;
 }
 
-// Test/introspection only.
-function _size() { return _regions.size; }
-
-module.exports = { clear, publish, get, _size };
+module.exports = { clear, publish, get };

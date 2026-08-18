@@ -237,14 +237,16 @@ const _subKinds = {
     // model.metrics[topic] field) — coalesce to the LARGEST window so the
     // wider-history pane isn't starved, and the tightest cadence. Each pane
     // still slices its own `window` from the shared series at render.
-    // CAVEAT (pre-existing, low): `merge` only runs while BUILDING the desired set,
-    // and reconcile skips restart for an already-live key — so a wider-window
-    // consumer placed onto an already-live topic AT RUNTIME (pool_show / pane-select)
-    // does NOT grow the live mirror; it keeps the old (smaller) retention until the
-    // topic is fully torn down and re-established. Correct at boot (one-pass merge).
-    // Fixing it means restart-on-window-grow in the metrics-mirror kind — a general
-    // change, not composite-specific. (Found in the compact-pane arc round-2 review.)
     merge: (a, b) => ({ topic: b.topic, window: Math.max(a.window, b.window), ms: Math.min(a.ms, b.ms) }),
+    // A wider-window (or tighter-ms) consumer joining this topic's shared mirror
+    // AT RUNTIME (pool_show / pane-select) changes the merged descriptor under a
+    // STABLE `topic` key — the key can't include window/ms because all consumers
+    // must share the one mirror. Opting into `changed` makes reconcile RESTART the
+    // live mirror (start-before-stop, see reconcileSubscriptions) so hub retention
+    // actually grows to the new window instead of keeping the old (smaller) one
+    // until full teardown. This closes the pre-existing runtime-window-grow gap
+    // found in the compact-pane arc round-2 review.
+    changed: (a, b) => a.window !== b.window || a.ms !== b.ms,
     start: (d, ctx) => {
       const token = { hubToken: null, timer: null, stopped: false };
       const sample = () => {
@@ -607,10 +609,31 @@ function reconcileSubscriptions(model) {
   for (const [key, live] of _liveSubs) {
     if (!desired.has(key)) { _subKinds[live.kind].stop(live.token); _liveSubs.delete(key); }
   }
-  // start — desired sources not yet live.
+  // start (or in-place RESTART) — desired sources not yet live, or a live source
+  // whose descriptor changed under a STABLE key. The restart only fires for a
+  // kind that opts in via `changed(liveDesc, desiredDesc)`: metrics-mirror is the
+  // sole such kind (its merged window/ms live outside its `topic` key, so a wider
+  // consumer joining an already-live topic at runtime grows the desired window
+  // without minting a new key). Every other kind either carries its mutable field
+  // IN the key (hub `topic:window`, interval `id:ms` → a change is a new key) or
+  // has a boot-immutable descriptor, so none defines `changed` and all keep the
+  // plain skip-if-live behavior.
   for (const [key, { kind, desc }] of desired) {
-    if (_liveSubs.has(key)) continue;
-    _liveSubs.set(key, { kind, token: _subKinds[kind].start(desc, ctx) });
+    const h = _subKinds[kind];
+    const live = _liveSubs.get(key);
+    if (live) {
+      // RESTART start-BEFORE-stop: an overlapping subscription keeps the hub's
+      // per-topic retention at max(window) across the swap, so the ring buffer is
+      // preserved (and grown) rather than trimmed to 0 by a stop-first unsubscribe
+      // (hub.js recomputes + trims retention on unsubscribe).
+      if (h.changed && h.changed(live.desc, desc)) {
+        const token = h.start(desc, ctx);
+        h.stop(live.token);
+        _liveSubs.set(key, { kind, token, desc });
+      }
+      continue;
+    }
+    _liveSubs.set(key, { kind, token: h.start(desc, ctx), desc });
   }
 }
 
@@ -1002,6 +1025,10 @@ module.exports = {
   // `clock` sub actually arms/tears down as a stream job starts/ends (the
   // reconcile-gate coverage for the live action-status line).
   _liveSubKeys: () => [..._liveSubs.keys()],
+  // Test-only: one live sub entry `{ kind, token, desc }` (or undefined) — lets a
+  // test assert the metrics-mirror restart-on-window-grow (desc grew + token
+  // identity changed = a real restart) and the no-spurious-restart non-regression.
+  _liveSub: (key) => _liveSubs.get(key),
   // Production quit-teardown: stop every live Sub (kill process-stream
   // children, cancel intervals, remove the resize listener). Same impl as the
   // test reset; wired to process exit from tui.js (FIX-3 Phase 5).

@@ -147,5 +147,4 @@ module.exports = {
   // Test-only internals.
   _split,
   _heightPct,
-  _bodyLines,
 };
