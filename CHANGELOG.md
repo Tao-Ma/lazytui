@@ -6,6 +6,8 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.20] — 2026-08-18
+
 ### Changed
 
 - **`node-pty` is now an optional dependency.** Its native addon has no prebuild on
@@ -3121,7 +3123,8 @@ release tarballs. Full pre-squash development history is preserved
 on the internal gitea mirror under the `backup/main-history` branch
 and the `v0.1.0-pre-squash` tag.
 
-[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.19...HEAD
+[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.20...HEAD
+[0.6.20]: https://github.com/Tao-Ma/lazytui/compare/v0.6.19...v0.6.20
 [0.6.19]: https://github.com/Tao-Ma/lazytui/compare/v0.6.18...v0.6.19
 [0.6.18]: https://github.com/Tao-Ma/lazytui/compare/v0.6.17...v0.6.18
 [0.6.17]: https://github.com/Tao-Ma/lazytui/compare/v0.6.16...v0.6.17
