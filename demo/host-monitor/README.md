@@ -6,28 +6,30 @@ per-process detail card, and disk-I/O throughput. It looks like `btop`/`top`, bu
 every graph, bar, and column is declared in YAML — no plugin code.
 
 ```
-╭─ (1) CPU ─────────╮╭─ (3) Network ────────╮╭─ (4) Processes ‹cpu↓› ──╮
-│ CPU        47.2%  ││ ⣀⣠⣴⣶⣾ up/down        ││   cpu↓  mem comm        │
-│ █████████▏        ││ Iface rx/s           ││ 240 90.0% 0.3% node     │
-│ ⣠⣴⣾⣿⣿⣷⣄⡀ (graph)  ││ eth0 ███░ 20K        ││ 404 62.0% 4.0% claude   │
-│ Cores             │╰──────────────────────╯│ 771  3.0% 1.2% sshd     │
-│ c0 ███████░ 72%   │╭─ Selected ───────────╮╰─────────────────────────╯
-│ c1 ████░░░░ 41%   ││ ▁▂▃▄▅▆▇ cpu/mem      │╭─ (6) Host ──────────────╮
-╰───────────────────╯╰──────────────────────╯│ > top (live)            │
-╭─ (2) Memory ──────╮╭─ (5) Disk I/O ‹w↓› ──╮│   processes   uptime    │
-│ MEM        24.1%  ││ vda   1M    2M       │╰─────────────────────────╯
-│ ██████▊           ││ sda 512K  128K       │╭─ Output · Info ─────────╮
-│ ⣀⣠⣤ (graph)       │╰──────────────────────╯│ pid 240                 │
-│ Disk usage        │                        │ command node …          │
-│ / ████░ 77%       │                        │ cpu    90.0%            │
-╰───────────────────╯                        ╰─────────────────────────╯
+╭─ (1) CPU ──────────╮╭─ (3) Network ────────╮╭─ (4) Processes ‹cpu↓› ──╮
+│ CPU        47.2%   ││ ⣀⣠⣴⣶⣾ up/down        ││   cpu↓  mem comm        │
+│ █████████▏         ││ Iface rx/s           ││ 240 90.0% 0.3% node     │
+│ ⣠⣴⣾⣿⣿⣷⣄⡀ (graph)   ││ eth0 ███░ 20K        ││ 404 62.0% 4.0% claude   │
+│ LOAD  0.70         │╰──────────────────────╯│ 771  3.0% 1.2% sshd     │
+│ ⣠⣴⣾⣿⣷⣄ (graph)     │╭─ Selected ───────────╮╰─────────────────────────╯
+│ Cores              ││ ▁▂▃▄▅▆▇ cpu/mem      │╭─ (6) Host ──────────────╮
+│ c0 ███████░ 72%    │╰──────────────────────╯│ > top (live)            │
+╰────────────────────╯╭─ (5) Disk I/O ‹w↓› ──╮│   processes   uptime    │
+╭─ (2) Memory ───────╮│ vda   1M    2M       │╰─────────────────────────╯
+│ MEM        24.1%   ││ sda 512K  128K       │╭─ Output · Info ─────────╮
+│ ██████▊            │╰──────────────────────╯│ pid 240                 │
+│ ⣀⣠⣤ (graph)        │                        │ command node …          │
+│ SWAP        0.0%   │                        │ cpu    90.0%            │
+│ Disk usage         │                        ╰─────────────────────────╯
+│ / ████░ 77%        │                                                   
+╰────────────────────╯                                                   
 ```
 
 *(Simplified sketch.) The CPU / Memory / Network dashboards are **composite** boxes
-— the density move (docs/compact-panes.md): each stacks a line **graph** and a
-**bar** strip in one bordered pane. **CPU** = busy% graph + per-core bars;
-**Memory** = used% graph + disk-usage bars; **Network** = up/down graph +
-per-interface bars. Column 1 is a fixed-narrow stack of the CPU + Memory boxes;
+— the density move (docs/compact-panes.md): each stacks line **graphs** and a
+**bar** strip in one bordered pane. **CPU** = busy% graph + 1-min **load** graph +
+per-core bars; **Memory** = RAM used% + **swap**% graphs + disk-usage bars;
+**Network** = up/down graph + per-interface bars. Column 1 is a fixed-narrow stack of the CPU + Memory boxes;
 columns 2 & 3 are `width: flex`, so they share the terminal's leftover width evenly
 (no single ballooning column). Column 2 holds the Network box, the **Selected**
 drill-down, and the **Disk I/O** table; the elastic column 3 leads with the
@@ -46,13 +48,14 @@ This is the first demo with **no container at all**. It exercises two features:
   in one pane, so the CPU / Memory / Network dashboards read like btop's boxes
   instead of one pane per metric.
 
-Eight producers, each a one-line host command:
+Nine producers, each a one-line host command:
 
 | Topic | Command (summarised) | Rendered as |
 |---|---|---|
 | `host.cpu` | two `/proc/stat` samples → busy% | CPU graph (in the **CPU** box) |
 | `host.core` | `mpstat -P ALL` → busy% per core | **per-core bars** (CPU box) |
-| `host.mem` | `free` → used% | Memory graph (in the **Memory** box) |
+| `host.load` | `/proc/loadavg` → 1/5/15-min | **load graph** (CPU box) |
+| `host.mem` | `free` → RAM + **swap** used% | Memory graphs (RAM + swap sections) |
 | `host.disk` | `df` → used% per mount | **disk-usage bars** (Memory box) |
 | `host.nettotal` | `/proc/net/dev` summed → one stream | **Network graph** (up/down) |
 | `host.net` | `/proc/net/dev` per-iface **counters** → rates | **per-interface bars** (Network box) |
@@ -61,8 +64,9 @@ Eight producers, each a one-line host command:
 
 Three concern-grouped columns, sized with **flex widths** so slack on a wide
 terminal spreads instead of ballooning one column. **Column 1** is fixed-narrow
-(`width: 34`) and stacks the **CPU** and **Memory** composite boxes (each a `graph`
-+ `bars`). **Columns 2 and 3** are `width: flex` — they split the remaining width
+(`width: 34`) and stacks the **CPU** box (busy% + 1-min load graphs + per-core bars)
+and the **Memory** box (RAM% + swap% graphs + disk-usage bars). **Columns 2 and 3**
+are `width: flex` — they split the remaining width
 evenly (e.g. a 200-col terminal gives `34 / 83 / 83`, not `34 / 46 / 120`).
 **Column 2** holds the **Network** composite box (anchored so its up/down graph +
 per-interface bars fit), the selected-process **Selected** drill-down, and the

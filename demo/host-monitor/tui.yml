@@ -16,7 +16,7 @@
 #   cd demo/host-monitor && ./run
 #   node js/app/tui.js demo/host-monitor/tui.yml     # equivalent, from repo root
 #
-# Requires: Linux (reads /proc/stat, /proc/net/dev, /proc/diskstats), `free`,
+# Requires: Linux (reads /proc/stat, /proc/loadavg, /proc/net/dev, /proc/diskstats), `free`,
 # `df`, `ps`, `awk`. `mpstat` (sysstat) for the per-core bars — OPTIONAL (that one
 # producer just reads "(no data yet)" without it). `top` for the live process tab.
 
@@ -55,15 +55,35 @@ metrics:
       row_key: core
       columns: { busy: { type: percent, unit: '%' } }
 
-  # Memory used% — from `free` (used / total * 100).
-  host.mem:
-    cmd: "free | awk '/^Mem/{printf \"%.1f\", $3/$2*100}'"
+  # Load average (1/5/15 min) from /proc/loadavg — btop's CPU-box load line. A
+  # single stream (no row_key); the CPU box graphs the 1-min `load`, and 5m/15m
+  # ride along in the schema for context. `type: number` (load isn't a percent —
+  # it can exceed 1.0; the graph auto-scales to the local max).
+  host.load:
+    cmd: "cat /proc/loadavg"
     interval: 2000
     extract:
-      mode: regex
-      fields: { mem: '([0-9.]+)' }
+      mode: columns
+      fields: { load: 0, load5: 1, load15: 2 }
     schema:
-      columns: { mem: { type: percent, unit: '%' } }
+      columns:
+        load:   { type: number }
+        load5:  { type: number }
+        load15: { type: number }
+
+  # Memory + swap used% — from `free`: RAM used/total, and swap used/total (0 when
+  # the host has no swap). btop's mem box stacks RAM over SWAP; the graph plots both
+  # as two sections. `columns` mode reads the two awk-printed numbers positionally.
+  host.mem:
+    cmd: "free | awk '/^Mem:/{m=$3/$2*100} /^Swap:/{s=($2>0)?$3/$2*100:0} END{printf \"%.1f %.1f\", m, s}'"
+    interval: 2000
+    extract:
+      mode: columns
+      fields: { mem: 0, swap: 1 }
+    schema:
+      columns:
+        mem:  { type: percent, unit: '%' }
+        swap: { type: percent, unit: '%' }
 
   # Top processes by CPU — a multi-row topic (one row per pid). The TABLE and the
   # CPU-bars GAUGE show a few columns (cpu/mem/comm); the extra columns (state,
@@ -182,21 +202,24 @@ panels:
   actions:
     type: actions
     title: Host
-  # CPU box — the aggregate busy% trend graph (with its own % meter) above a
-  # per-core BAR strip (host.core, one bar per core). btop's CPU box in one pane.
+  # CPU box — the aggregate busy% trend graph (its own % meter) + a 1-min LOAD graph
+  # (btop's load line) above a per-core BAR strip (host.core, one bar per core).
+  # btop's CPU box in one pane.
   cpu_box:
     type: composite
     title: CPU
     widgets:
-      - { type: graph, topic: host.cpu,  row: _, metrics: [cpu], height: 55% }
+      - { type: graph, topic: host.cpu,  row: _, metrics: [cpu],  height: 40% }
+      - { type: graph, topic: host.load, row: _, metrics: [load], height: 30% }
       - { type: bars,  topic: host.core, column: busy, heading: Cores }
-  # Memory box — the used% trend graph (the graph draws its own MEM% meter) above
-  # a disk-USAGE bar per mount (host.disk, filled by used %). btop puts disks here.
+  # Memory box — RAM used% + SWAP used% as two stacked graph sections (each with its
+  # own % meter), above a disk-USAGE bar per mount (host.disk). btop puts RAM/swap +
+  # disks together here.
   mem_box:
     type: composite
     title: Memory
     widgets:
-      - { type: graph, topic: host.mem,  row: _, metrics: [mem], height: 60% }
+      - { type: graph, topic: host.mem,  row: _, metrics: [mem, swap], height: 62% }
       - { type: bars,  topic: host.disk, column: pct, heading: Disk usage }
   # Network box — total up/down throughput graph (host.nettotal, rx+tx overlaid as
   # two stacked series) above per-interface rx rates as bars (host.net).

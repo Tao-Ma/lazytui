@@ -40,7 +40,8 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   omitted-width columns are unchanged (backward-compatible). The host-monitor demo
   uses it to balance its two content columns and moves the always-populated process
   table into the elastic column, so the widest pane is the fullest. See
-  docs/LAYOUT.md.
+  docs/LAYOUT.md. The demo also gains btop's **load average** (a 1-min `/proc/loadavg`
+  graph in the CPU box) and **swap** (a used% section in the Memory box).
 
 ### Fixed
 
@@ -65,6 +66,11 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   kind used to collapse onto the primary; it now cursor-follows the pane it
   names, independent of layout order (B-F3). Removes the demo's table-ordering
   workaround.
+
+- **`number`-type graph headers round floats.** A `stats` graph of a `number`
+  metric formatted its latest/peak/avg with a raw `String(v)`, spilling e.g. a load
+  average as `0.6995630036…`; it now shows integers verbatim and floats to 2
+  decimals. (percent/bytes/rate were already compact.)
 
 - **Composite / stats panes degrade gracefully at sub-2-cell sizes.** Full-viewing
   a composite (or stats) pane on a ≤2-row / ≤1-col terminal drove the inner

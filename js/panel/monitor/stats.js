@@ -212,7 +212,10 @@ function _renderSection(metric, samples, schema, width, graphHeight, style, colo
 
   let min = 0;
   let max = 1;
-  let fmt = (v) => Number.isFinite(v) ? String(v) : '—';
+  // Default (`number` type): integers verbatim, floats to 2 decimals — a raw
+  // String(v) would spill a load average as `0.6995630036…`. percent/bytes/rate
+  // override below with their own compact formatters.
+  let fmt = (v) => (!Number.isFinite(v) ? '—' : (Number.isInteger(v) ? String(v) : v.toFixed(2)));
   if (col.type === 'percent') {
     max = 100;
     fmt = _fmtPercent;
