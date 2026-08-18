@@ -6,6 +6,16 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **`node-pty` is now an optional dependency.** Its native addon has no prebuild on
+  some platforms (e.g. linux-arm64) and its source build needs a toolchain, so
+  `npm install lazytui` failed there — even though only terminal/spawn panes use it.
+  It moved to `optionalDependencies` and is loaded defensively (the dispatch runtime
+  top-level-requires `io/terminal` at boot, so a bare require would have crashed the
+  whole TUI on a node-pty-less install). When absent, the TUI and CLI work unchanged
+  and a terminal pane shows a "node-pty not installed" notice instead of spawning.
+
 ## [0.6.19] — 2026-08-18
 
 ### Added

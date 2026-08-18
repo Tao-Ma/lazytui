@@ -36,8 +36,20 @@
  */
 'use strict';
 
-const pty = require('node-pty');
+// node-pty is an OPTIONAL dependency: its native addon has no prebuild on some
+// platforms (e.g. linux-arm64) and its source build needs toolchain (make/gcc),
+// so `npm install` may legitimately skip it. Load it DEFENSIVELY — the dispatch
+// runtime top-level-requires this module at boot (cleanup / finalize / actions),
+// so a bare `require` would crash the whole TUI on a node-pty-less install. When
+// it's absent, terminal panes degrade to a notice (ensureSession returns null;
+// the terminal panel render shows why) and everything else works unchanged.
+let pty = null;
+try { pty = require('node-pty'); } catch (_) { /* optional dep absent — terminals disabled */ }
 const emu = require('./term-screen');   // the emulator screen port (only xterm importer)
+
+/** Whether node-pty loaded — false disables terminal/spawn panes (they show a
+ *  notice instead of spawning). Read by the terminal panel render. */
+function ptyAvailable() { return !!pty; }
 
 const sessions = {};  // id -> { pty, screen, cmd, cwd, exited, exitCode, jobId }
 
@@ -71,6 +83,8 @@ function setSessionRecorder(fn) { _sessionRecorder = (typeof fn === 'function') 
  */
 function ensureSession(id, cmd, cols, rows, cwd) {
   if (sessions[id]) return sessions[id];
+  if (!pty) return null;   // optional node-pty absent — no PTY sessions (the panel
+                           // render shows a notice; the finalizer's null-safe reads skip).
   const screen = emu.createScreen(cols, rows);
   const shell = process.env.SHELL || '/bin/bash';
   // cwd is injected by the caller (the spawn directory = model.projectDir).
@@ -301,6 +315,7 @@ function sessionScrollInfo(id) {
 }
 
 module.exports = {
+  ptyAvailable,
   ensureSession, getSession, writeToSession,
   sessionViewportRows, sessionCursor, sessionSize,
   resizeSession, destroySession, destroyAll,

@@ -48,10 +48,20 @@ function _slotTitle(panel) {
 }
 
 // Paint ONLY the chrome; the overlay fills the interior with the live PTY grid
-// (empty `lines` — the interior is painted by renderTerminalOverlay).
+// (empty `lines` — the interior is painted by renderTerminalOverlay). When the
+// OPTIONAL node-pty dependency isn't installed, no session ever spawns and the
+// overlay skips this pane (null session) — so draw a notice in the body instead
+// of leaving a blank box (the overlay won't overwrite it: there's no session).
 function render(panel, w, h, slice, opts) {
+  const lines = require('../../io/terminal').ptyAvailable() ? [] : [
+    '',
+    '  [dim]Terminal unavailable[/]',
+    '',
+    '  [dim]the optional node-pty dependency is not installed[/]',
+    '  [dim](reinstall on a platform with a prebuild, or with build tools)[/]',
+  ];
   return renderPanel({
-    width: w, height: h, lines: [],
+    width: w, height: h, lines,
     title: _slotTitle(panel), hotkey: panel.hotkey,
     panelType: 'terminal',
     focused: !!(opts && opts.focused),

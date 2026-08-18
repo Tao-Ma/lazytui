@@ -15,3 +15,6 @@ node_modules/
 # (A future legitimately-named `core` file/dir would need `git add -f`.)
 core
 core.[0-9]*
+
+# npm pack output (build artifact; never commit)
+*.tgz

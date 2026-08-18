@@ -33,8 +33,10 @@
     "@xterm/headless": "^5.5.0",
     "eastasianwidth": "^0.3.0",
     "js-yaml": "^4.1.1",
-    "node-pty": "^1.0.0",
     "wcwidth": "^1.0.1"
+  },
+  "optionalDependencies": {
+    "node-pty": "^1.0.0"
   },
   "engines": {
     "node": ">=18"
