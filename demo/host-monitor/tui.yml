@@ -241,34 +241,42 @@ panels:
     title: Output
 
 layout:
-  # Three concern-grouped columns (btop-style). Column 1 stacks the CPU + Memory
-  # composite boxes; column 2 the Network composite ABOVE the interactive data
-  # tables (procs + disk-I/O) — net_box is anchored taller so its 2-series graph +
-  # bars fit; column 3 the drill-down + actions + Output. Panels are placed DIRECTLY
-  # (not tabbed): a multi-tab slot only renders its strip for content panes, so a
-  # metrics pane in one would show invisible tabs. `actions` must sit in the LAST
-  # column (framework rule). `select_from` resolves the SPECIFIC named pane (B-F3),
-  # so procs stays the drill-down target regardless of table mint order.
+  # Three concern-grouped columns (btop-style). Column widths use FLEX so slack on
+  # a wide terminal spreads instead of ballooning one column: col 1 is a FIXED-narrow
+  # stack (the CPU + Memory composites read fine at 34 cols); cols 2 & 3 are
+  # `width: flex`, so they SHARE the leftover equally (e.g. 200 cols → 34 / 83 / 83,
+  # not 34 / 46 / 120). The last column ALWAYS flexes (its width is the remainder);
+  # marking col 2 flex too is what balances them.
+  #
+  # Content follows the width: the elastic last column holds the width-HUNGRY,
+  # always-populated PROCESS TABLE (long command lines use the room) above actions +
+  # Output — so the widest column is the busiest, not a mostly-empty drill-down.
+  # `select_from` resolves the SPECIFIC named pane (B-F3), so procsel follows procs
+  # cross-column. `actions` must sit in the LAST column (framework rule). A single-
+  # tab slot (`{tabs:[x]}`) renders no strip; a metrics pane in a MULTI-tab slot
+  # would show invisible tabs, so each stays in its own slot.
   columns:
-    # The CPU + Memory composite boxes (each graph + a bar strip). Two per column
-    # so each box gets the vertical room its graph needs.
+    # Col 1 — FIXED narrow: the CPU + Memory composite boxes (each graph + a bar
+    # strip). Two per column so each box gets the vertical room its graph needs.
     - width: 34
       panels:
         - cpu_box                       # composite: cpu graph + per-core bars
         - mem_box                       # composite: mem graph + disk-usage bars
-    # The Network composite (graph + per-iface bars) above the two interactive
-    # tables — the process list (select_from primary) and disk-I/O throughput.
-    - width: 46
+    # Col 2 — FLEX: the Network composite + the selected-process drill-down graph +
+    # the disk-I/O table. Shares the leftover with col 3.
+    - width: flex
       panels:
-        # net_box carries a 2-series graph — anchor it taller so both series + the
-        # per-iface bars fit; procs + diskio flex-share the rest.
-        - { tabs: [net_box], heightPct: 45 }   # composite: net up/down graph + per-iface bars
-        - procs                                # process table (host.proc) — procsel's select_from target
+        # net_box carries a 2-series graph — anchor it so both series + the per-iface
+        # bars fit; procsel + diskio flex-share the rest of the column height.
+        - { tabs: [net_box], heightPct: 42 }   # composite: net up/down graph + per-iface bars
+        - procsel                              # CPU/MEM history of the selected process
         - diskio                               # disk THROUGHPUT table (counter → B/s)
+    # Col 3 — FLEX (implicit-last): the elastic column's star is the PROCESS TABLE,
+    # which always has rows and whose command column expands to use the width.
     - panels:
-        - procsel                       # CPU/MEM history of the selected process
-        - actions
-        - { tabs: [detail], height: 40% }
+        - procs                                # process table (host.proc) — procsel's select_from target
+        - { tabs: [actions], heightPct: 16 }   # host actions (compact)
+        - { tabs: [detail], heightPct: 34 }    # Output (detail card / action transcript)
 
 # --- Host actions --------------------------------------------------------------
 groups:

@@ -129,15 +129,21 @@ describe('[host-monitor] detail card + per-pane topic resolution (two tables)', 
 });
 
 describe('[host-monitor] select_from drill-downs resolve their intended table', () => {
-  it('a NON-primary table (diskio) resolves to its OWN rows, independent of mint order (B-F3)', () => {
-    const bareDiskio = api.getItems('diskio');
-    assert(bareDiskio.includes('404185') && !bareDiskio.includes('vda'),
-      '(documents) a BARE pool-id collapses to the primary table — why the fix lives at the call site');
-    const diskio = api.getItems(route.resolveSourcePaneId('diskio'));
-    assert(diskio.includes('vda') && !diskio.includes('404185'),
-      `resolveSourcePaneId(diskio) reads the DISK rows (got ${JSON.stringify(diskio)}), not the primary`);
-    assert(api.getItems(route.resolveSourcePaneId('procs')).includes('404185'),
-      'procs still resolves to its own host.proc rows');
+  it('each named table resolves to ITS OWN rows; a bare pool-id collapses to the primary (B-F3)', () => {
+    // NAMED resolution (what select_from uses via resolveSourcePaneId) reads the
+    // SPECIFIC pane's rows — mint-order-independent, the B-F3 guarantee.
+    const procRows = api.getItems(route.resolveSourcePaneId('procs'));
+    const diskRows = api.getItems(route.resolveSourcePaneId('diskio'));
+    assert(procRows.includes('404185') && !procRows.includes('vda'),
+      `resolveSourcePaneId(procs) → host.proc rows (got ${JSON.stringify(procRows)})`);
+    assert(diskRows.includes('vda') && !diskRows.includes('404185'),
+      `resolveSourcePaneId(diskio) → host.diskio rows (got ${JSON.stringify(diskRows)})`);
+    // Whereas a BARE kind pool-id collapses onto the kind-PRIMARY (first-minted)
+    // table — the SAME rows for both bare lookups, whichever table mints first
+    // (diskio, now that procs moved to the elastic last column). That mint-order-
+    // dependent collapse is exactly why select_from must name + resolve the pane.
+    eq(api.getItems('procs'), api.getItems('diskio'),
+      'both bare pool-ids collapse to the same primary table');
   });
 
   it('procsel (select_from: procs) reads the PROCESS rows via the resolved pane', () => {

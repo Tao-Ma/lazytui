@@ -9,10 +9,18 @@ anywhere since v0.6.4 multi-viewer); the panel content and column
 count are YAML-configurable.
 
 ### Pattern (fixed)
-- Ordered list of columns, left-to-right. Each column carries an
-  explicit `width:` in cells except the last, which takes the
-  remainder of the terminal. Two columns is the default shape; three
-  or more is supported (run-time via drag-edge spawn / `:add-column`).
+- Ordered list of columns, left-to-right. A column is FIXED at its
+  explicit `width:` (cells), or FLEX — either `width: flex` or the
+  last column, which is always implicitly flex. FLEX columns SHARE the
+  terminal's leftover width equally, so slack on a wide terminal
+  spreads across them instead of ballooning the single last column.
+  (Marking one column flex + the implicit last = two columns that grow
+  together, e.g. `34 / flex / flex` on 200 cols → `34 / 83 / 83`.)
+  A numeric `width:` on the last column is ignored (it takes the
+  remainder). Narrow terminals squeeze the FIXED columns proportionally
+  (each ≥ 10 cells) so every flex column can still reach ~20. Two
+  columns is the default shape; three or more is supported (run-time
+  via drag-edge spawn / `:add-column`).
 - Bordered panels with scrollbar, focus color, position counter
 - Detail panel(s) with tabs, scroll — position-agnostic since v0.6.4
   multi-viewer (any column, any pane; one or more)
@@ -64,12 +72,15 @@ panels:                # the pool — every panel keyed by id
 
 layout:                # the grid — ordered columns, cells reference pool by id
   columns:
-    - width: 30        # explicit width in cells
+    - width: 30        # FIXED — explicit width in cells
       panels:
         - containers
         - groups
         - files
-    - panels:          # last column — width implicit (takes remainder)
+    - width: flex      # FLEX — shares the leftover with the implicit last column
+      panels:
+        - metrics
+    - panels:          # last column — always FLEX (width implicit; takes its share)
         - actions
         - { tabs: [detail], height: 60% }   # mapping form when an override applies
 ```

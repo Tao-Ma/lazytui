@@ -32,6 +32,16 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   missing path renders `—`; malformed JSON is a gap, never a crash. See
   docs/metrics-producer.md §6.
 
+- **Flex column widths (`width: flex`).** A column can declare `width: flex` to
+  SHARE the terminal's leftover width with the other flex columns (and the
+  always-flexible last column), instead of the last column absorbing all of it. On
+  a wide terminal the slack spreads evenly (`34 / flex / flex` on 200 cols →
+  `34 / 83 / 83`) rather than ballooning one column. Fixed `width: N` columns and
+  omitted-width columns are unchanged (backward-compatible). The host-monitor demo
+  uses it to balance its two content columns and moves the always-populated process
+  table into the elastic column, so the widest pane is the fullest. See
+  docs/LAYOUT.md.
+
 ### Fixed
 
 - **No phantom click on a narrow pane's dropped border chrome.** When a pane is
@@ -55,6 +65,14 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   kind used to collapse onto the primary; it now cursor-follows the pane it
   names, independent of layout order (B-F3). Removes the demo's table-ordering
   workaround.
+
+- **Composite / stats panes degrade gracefully at sub-2-cell sizes.** Full-viewing
+  a composite (or stats) pane on a ≤2-row / ≤1-col terminal drove the inner
+  dimensions negative and threw a `RangeError` (from `new Array(<0>)` /
+  `"…".repeat(<0>)`), painting a render-error block instead of clipping. The
+  composite now guards degenerate inner dims, and the shared `renderPanel` bottom
+  border plus the graph `columnNorms` clamp negative widths — matching `gauge`'s
+  existing graceful degradation.
 
 ## [0.6.18] — 2026-08-16
 

@@ -6,30 +6,33 @@ per-process detail card, and disk-I/O throughput. It looks like `btop`/`top`, bu
 every graph, bar, and column is declared in YAML — no plugin code.
 
 ```
-╭─(1)─CPU───────────╮╭─(3)─Network────────────╮╭─Selected──────╮
-│ CPU        47.2%  ││ ⣀⣠⣴⣶⣾ (up/down graph)  ││ ▁▂▃▄▅▆▇       │
-│ █████████▏        ││ Iface rx/s             │╰───────────────╯
-│ ⣠⣴⣾⣿⣿⣷⣄⡀ (graph)  ││ eth0 ███░ 20K          │╭─(6)─Host──────╮
-│ Cores             │├─(4)─Processes─‹ cpu↓ ›──┤│ > top (live)  │
-│ core0 ███████░ 72%││      cpu↓  mem comm     ││   processes   │
-│ core1 ████░░░░ 41%││ 240 90.0% 0.3% node     ││   uptime      │
-├─(2)─Memory────────┤│ 404 62.0% 4.0% claude   │╰───────────────╯
-│ MEM        24.1%  │├─(5)─Disk I/O─‹ write↓ ›─┤╭─Output─Info───╮
-│ ██████▊           ││ vda    1M     2M        ││ pid 240       │
-│ ⣀⣠⣤ (graph)       │╰────────────────────────╯│ command node… │
-│ Disk usage        │                          │ cpu    90.0%  │
-│ / ████░ 77%       │                          ╰───────────────╯
-╰───────────────────╯
+╭─ (1) CPU ─────────╮╭─ (3) Network ────────╮╭─ (4) Processes ‹cpu↓› ──╮
+│ CPU        47.2%  ││ ⣀⣠⣴⣶⣾ up/down        ││   cpu↓  mem comm        │
+│ █████████▏        ││ Iface rx/s           ││ 240 90.0% 0.3% node     │
+│ ⣠⣴⣾⣿⣿⣷⣄⡀ (graph)  ││ eth0 ███░ 20K        ││ 404 62.0% 4.0% claude   │
+│ Cores             │╰──────────────────────╯│ 771  3.0% 1.2% sshd     │
+│ c0 ███████░ 72%   │╭─ Selected ───────────╮╰─────────────────────────╯
+│ c1 ████░░░░ 41%   ││ ▁▂▃▄▅▆▇ cpu/mem      │╭─ (6) Host ──────────────╮
+╰───────────────────╯╰──────────────────────╯│ > top (live)            │
+╭─ (2) Memory ──────╮╭─ (5) Disk I/O ‹w↓› ──╮│   processes   uptime    │
+│ MEM        24.1%  ││ vda   1M    2M       │╰─────────────────────────╯
+│ ██████▊           ││ sda 512K  128K       │╭─ Output · Info ─────────╮
+│ ⣀⣠⣤ (graph)       │╰──────────────────────╯│ pid 240                 │
+│ Disk usage        │                        │ command node …          │
+│ / ████░ 77%       │                        │ cpu    90.0%            │
+╰───────────────────╯                        ╰─────────────────────────╯
 ```
 
 *(Simplified sketch.) The CPU / Memory / Network dashboards are **composite** boxes
 — the density move (docs/compact-panes.md): each stacks a line **graph** and a
 **bar** strip in one bordered pane. **CPU** = busy% graph + per-core bars;
 **Memory** = used% graph + disk-usage bars; **Network** = up/down graph +
-per-interface bars. Column 1 stacks the CPU + Memory boxes; column 2 the Network
-box above the interactive **Processes** and **Disk I/O** tables; column 3 the
-**Selected** drill-down, host actions, and the **Output** pane whose Info tab is
-the process detail card.*
+per-interface bars. Column 1 is a fixed-narrow stack of the CPU + Memory boxes;
+columns 2 & 3 are `width: flex`, so they share the terminal's leftover width evenly
+(no single ballooning column). Column 2 holds the Network box, the **Selected**
+drill-down, and the **Disk I/O** table; the elastic column 3 leads with the
+always-populated **Processes** table, then host actions and the **Output** pane
+whose Info tab is the process detail card.*
 
 ## What it shows
 
@@ -56,13 +59,18 @@ Eight producers, each a one-line host command:
 | `host.proc` | `ps` top-by-CPU (pid/cpu/mem/comm + state/rss/…/cmdline) | **Processes table** + **detail card** |
 | `host.diskio` | `/proc/diskstats` sectors **counters** → rates | **Disk I/O table** (`B/s`) |
 
-Three concern-grouped columns. **Column 1** stacks the **CPU** and **Memory**
-composite boxes (each a `graph` + `bars`). **Column 2** leads with the **Network**
-composite box (anchored taller so its up/down graph + per-interface bars fit),
-then the interactive data tables: the **Processes** `table` (sorted, columnar;
-click the `‹ cpu↓ ›` control to re-sort) and the **Disk I/O** throughput table.
-**Column 3** holds the selected-process drill-down, the host actions, and the
-**Output** pane.
+Three concern-grouped columns, sized with **flex widths** so slack on a wide
+terminal spreads instead of ballooning one column. **Column 1** is fixed-narrow
+(`width: 34`) and stacks the **CPU** and **Memory** composite boxes (each a `graph`
++ `bars`). **Columns 2 and 3** are `width: flex` — they split the remaining width
+evenly (e.g. a 200-col terminal gives `34 / 83 / 83`, not `34 / 46 / 120`).
+**Column 2** holds the **Network** composite box (anchored so its up/down graph +
+per-interface bars fit), the selected-process **Selected** drill-down, and the
+**Disk I/O** throughput table. The elastic **Column 3** leads with the
+width-hungry, always-populated **Processes** `table` (sorted, columnar; click the
+`‹ cpu↓ ›` control to re-sort — its command column expands into the room), then the
+host actions and the **Output** pane. Putting the busy table in the growing column
+means the widest pane is the fullest, not an empty drill-down.
 
 Select a process and two things happen: the **Selected** graph drills into that
 process's own CPU/memory history via `select_from:`, and the **Output** pane's

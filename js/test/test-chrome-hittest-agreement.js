@@ -126,9 +126,14 @@ describe('[chrome agreement] the painted [≡] glyph is exactly what hitTestTrig
 // there. A non-vacuity check proves the sweep exercised both a paint and a drop.
 const { leftBorderPrefix } = require('../leaves/render/draw');
 const chromeHit = require('../panel/chrome-hittest');
+const { poolIdOf } = require('../leaves/wm/pane');   // hitTestCollapseButton returns the pool-id (p.id)
 
-describe('[chrome agreement] PRESENCE — a dropped [≡]/[_] cluster is unclickable (no phantom)', () => {
-  let drew = 0, dropped = 0;
+describe('[chrome agreement] PRESENCE — hit-test fires on each glyph IFF it was painted', () => {
+  // The `[≡]` trigger is left-anchored and truncates INDEPENDENTLY of the right
+  // `[X]/[_]` cluster — a table pane carrying a `‹ sort ›` border-control can drop
+  // `[≡]` (left squeeze) while `[_]` still paints on the right. So the invariant is
+  // per-glyph agreement (hit-test fires exactly where paint drew), NOT whole-cluster.
+  let eqDrew = 0, eqDropped = 0, collDrew = 0, collDropped = 0;
   for (const W of [120, 60]) {
     sm.resize(W, 40);
     const rows = paintedRows();
@@ -140,27 +145,32 @@ describe('[chrome agreement] PRESENCE — a dropped [≡]/[_] cluster is unclick
       const b = visibleBoundsFor(layout, pn.paneId, route.resolveViewerPaneId());
       if (!b || b.h < 1) continue;
       const line = rows[b.y + 1] || [];
+      // [≡] trigger — find its painted glyph (left-anchored).
       let eqX = -1;
       for (let x = b.x + 1; x <= b.x + b.w; x++) { if (line[x] === '≡') { eqX = x - 1; break; } }   // 0-based screen x
-      if (eqX >= 0) {
-        drew++;
-        it(`W=${W} ${pn.paneId} (w=${b.w}): painted [≡] still opens it`, () => {
-          eq(paneMenu.hitTestTrigger(eqX, b.y), pn.paneId);
-        });
-      } else {
-        dropped++;
-        const trigX = b.x + leftBorderPrefix(pn.hotkey || '').triggerCol + 1;   // would-be ≡ center
-        const collX = b.x + b.w - 3;                                             // would-be [_] center
-        it(`W=${W} ${pn.paneId} (w=${b.w}): dropped cluster is dead (no phantom)`, () => {
-          eq(paneMenu.hitTestTrigger(trigX, b.y), null, 'would-be [≡] column is dead');
-          eq(chromeHit.hitTestCollapseButton(collX, b.y), null, 'would-be [_] column is dead');
-        });
-      }
+      const trigX = b.x + leftBorderPrefix(pn.hotkey || '').triggerCol + 1;   // would-be ≡ center
+      // [_] collapse — right-anchored; its `_` center sits at b.x + b.w - 3.
+      const collX = b.x + b.w - 3;
+      const collPainted = line[collX + 1] === '_';   // 1-based cx = collX + 1
+      if (eqX >= 0) eqDrew++; else eqDropped++;
+      if (collPainted) collDrew++; else collDropped++;
+      it(`W=${W} ${pn.paneId} (w=${b.w}, [≡]${eqX >= 0 ? '✓' : '·'} [_]${collPainted ? '✓' : '·'}): paint↔hit-test agree`, () => {
+        // Trigger: fires IFF painted; the would-be column is dead when dropped.
+        if (eqX >= 0) eq(paneMenu.hitTestTrigger(eqX, b.y), pn.paneId, 'painted [≡] opens it');
+        else eq(paneMenu.hitTestTrigger(trigX, b.y), null, 'dropped [≡] column is dead (no phantom)');
+        // Collapse: fires IFF painted — INDEPENDENT of the trigger's fate.
+        // (hitTestCollapseButton returns the pool-id, not the paneId.)
+        if (collPainted) eq(chromeHit.hitTestCollapseButton(collX, b.y), poolIdOf(pn.paneId), 'painted [_] collapses it');
+        else eq(chromeHit.hitTestCollapseButton(collX, b.y), null, 'dropped [_] column is dead (no phantom)');
+      });
     }
   }
   it('the sweep exercised BOTH a painted and a dropped [≡] (non-vacuous)', () => {
-    assert(drew >= 1, `expected ≥1 painted [≡] across the sweep, got ${drew}`);
-    assert(dropped >= 1, `expected ≥1 dropped [≡] across the sweep, got ${dropped}`);
+    assert(eqDrew >= 1, `expected ≥1 painted [≡] across the sweep, got ${eqDrew}`);
+    assert(eqDropped >= 1, `expected ≥1 dropped [≡] across the sweep, got ${eqDropped}`);
+  });
+  it('the sweep exercised a painted [_] independent of a dropped [≡] (the sort-control case)', () => {
+    assert(collDrew >= 1, `expected ≥1 painted [_] across the sweep, got ${collDrew}`);
   });
 });
 

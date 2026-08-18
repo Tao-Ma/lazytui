@@ -84,11 +84,16 @@ function updateColumn(arrange, columnIndex, panelsFn) {
 // terminals where the squeeze kicks in. Returns
 // `[{columnIndex, x, w}, ...]` in order.
 //
-// Explicit widths come from `columns[i].width` (default 30) for cols
-// 0..N-2. The last column is implicit — takes the remainder.
-// Narrow-terminal adaptive: if the remainder would be < MIN_LAST_COL_W,
-// the explicit columns are squeezed proportionally so the last column
-// still gets MIN_LAST_COL_W; each donor stays >= MIN_COL_W.
+// A column is FLEX when it declares `width: flex` OR it's the last column (which
+// is always implicitly flex — its width has always been the remainder). Every
+// other column is FIXED at its `width:` (or DEFAULT_COL_W). FIXED columns take
+// their exact width; the FLEX columns SHARE the leftover equally, so slack on a
+// wide terminal spreads across all of them instead of ballooning the single last
+// column (the old model's only flexible slot). With one flex column (the common
+// case: fixed cols + implicit last) this reduces to the historical behavior.
+// Narrow-terminal adaptive: if the leftover can't give each flex column
+// MIN_LAST_COL_W, the fixed columns are squeezed proportionally (each stays
+// >= MIN_COL_W) — the same squeeze the single-flex path always did, generalized.
 
 const MIN_LAST_COL_W = 20;
 const MIN_COL_W = 10;
@@ -98,25 +103,39 @@ function distributeColumnWidths(arrange, COLS) {
   const columns = (arrange && arrange.columns) || [];
   const N = columns.length;
   if (N === 0) return [];
-  const explicit = [];
-  for (let i = 0; i < N - 1; i++) {
-    const w = columns[i].width != null ? columns[i].width : DEFAULT_COL_W;
-    explicit.push(w);
-  }
-  const sumExplicit = explicit.reduce((s, w) => s + w, 0);
-  let lastW = COLS - sumExplicit;
-  if (lastW < MIN_LAST_COL_W) {
-    const target = Math.max(0, COLS - MIN_LAST_COL_W);
-    const scale = sumExplicit > 0 ? target / sumExplicit : 0;
-    for (let i = 0; i < explicit.length; i++) {
-      explicit[i] = Math.max(MIN_COL_W, Math.floor(explicit[i] * scale));
+
+  const isFlex = columns.map((c, i) => i === N - 1 || (c && c.width === 'flex'));
+  const fixedW = columns.map((c, i) => (isFlex[i] ? 0
+    : (typeof c.width === 'number' ? c.width : DEFAULT_COL_W)));
+  const numFlex = isFlex.reduce((n, f) => n + (f ? 1 : 0), 0);   // >= 1 (last is flex)
+  let sumFixed = fixedW.reduce((s, w) => s + w, 0);
+
+  // Squeeze the FIXED columns if the flex columns can't each reach MIN_LAST_COL_W.
+  const minFlexTotal = numFlex * MIN_LAST_COL_W;
+  if (COLS - sumFixed < minFlexTotal && sumFixed > 0) {
+    const target = Math.max(0, COLS - minFlexTotal);
+    const scale = target / sumFixed;
+    for (let i = 0; i < N; i++) {
+      if (!isFlex[i]) fixedW[i] = Math.max(MIN_COL_W, Math.floor(fixedW[i] * scale));
     }
-    lastW = Math.max(MIN_LAST_COL_W, COLS - explicit.reduce((s, w) => s + w, 0));
+    sumFixed = fixedW.reduce((s, w) => s + w, 0);
   }
+
+  // Split the leftover across the flex columns; the LAST flex column absorbs the
+  // rounding remainder so the row still sums to COLS. Every column stays >= 1.
+  const flexTotal = Math.max(0, COLS - sumFixed);
+  const base = numFlex ? Math.floor(flexTotal / numFlex) : 0;
+  let flexSeen = 0;
   const out = [];
   let x = 0;
   for (let i = 0; i < N; i++) {
-    const w = (i === N - 1) ? Math.max(1, lastW) : explicit[i];
+    let w;
+    if (isFlex[i]) {
+      flexSeen += 1;
+      w = Math.max(1, (flexSeen === numFlex) ? flexTotal - base * (numFlex - 1) : base);
+    } else {
+      w = fixedW[i];
+    }
     out.push({ columnIndex: i, x, w });
     x += w;
   }

@@ -427,15 +427,18 @@ function validateLayout(layout, warnings) {
     checkUnknownKeys(col, VALID_COLUMN_KEYS, ctx);
     if ('width' in col) {
       const w = col.width;
-      // Width must be a positive integer when present. `width: null` /
-      // any non-integer value is rejected — users wanting an implicit
-      // column should OMIT the key entirely, not write `width: null`
-      // (that form was accepted silently and behaved identically, which
-      // made the schema feel ambiguous).
-      if (typeof w !== 'number' || !Number.isInteger(w) || w <= 0) {
-        throw new SchemaError("'width' must be a positive integer (omit the key for an implicit-width column)", { context: ctx });
+      // Width is a positive integer (FIXED) or the literal `flex` (the column
+      // SHARES the leftover with the other flex columns + the implicit last one).
+      // `width: null` / any other value is rejected — an implicit-width column
+      // should OMIT the key entirely, not write `width: null` (that form was
+      // accepted silently and behaved identically, making the schema ambiguous).
+      const isFlex = w === 'flex';
+      if (!isFlex && (typeof w !== 'number' || !Number.isInteger(w) || w <= 0)) {
+        throw new SchemaError("'width' must be a positive integer or 'flex' (omit the key for an implicit-width column)", { context: ctx });
       }
-      if (ci === lastIdx && warnings) {
+      // A NUMERIC width on the last column is ignored (it always takes the
+      // remainder); `width: flex` there is a harmless, honest no-op (not warned).
+      if (ci === lastIdx && typeof w === 'number' && warnings) {
         warnings.push({
           code: 'layout.last_column_width_ignored',
           message: `layout.columns[${ci}]: 'width' on the last column is ignored — it takes the remainder`,

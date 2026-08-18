@@ -336,6 +336,36 @@ describe('[distributeColumnWidths] renderer + hit-test single source of truth', 
     eq(pool.distributeColumnWidths({ columns: [] }, 80), []);
     eq(pool.distributeColumnWidths({}, 80), []);
   });
+
+  it('width:flex — a mid column flexes and SHARES the leftover with the last', () => {
+    // col0 fixed 34; col1 flex; col2 implicit-last flex. leftover = 200-34 = 166,
+    // split across the 2 flex cols → 83 each (no single balloon).
+    const arrange = { columns: [{ width: 34 }, { width: 'flex' }, {}] };
+    const r = pool.distributeColumnWidths(arrange, 200);
+    eq(r.map(c => c.w), [34, 83, 83], 'fixed 34, then two equal flex shares');
+    eq(r.map(c => c.x), [0, 34, 117], 'x positions follow the widths');
+    eq(r[0].w + r[1].w + r[2].w, 200, 'sum to COLS');
+  });
+
+  it('width:flex — leftover rounding remainder lands on the last flex column', () => {
+    // leftover = 121-34 = 87; base = floor(87/2)=43; last flex absorbs 87-43=44.
+    const arrange = { columns: [{ width: 34 }, { width: 'flex' }, {}] };
+    const r = pool.distributeColumnWidths(arrange, 121);
+    eq(r.map(c => c.w), [34, 43, 44], 'last flex column carries the odd cell');
+    eq(r[0].w + r[1].w + r[2].w, 121, 'sum to COLS');
+  });
+
+  it('single implicit-flex column is unchanged (reduces to the historical model)', () => {
+    // No `width: flex` anywhere → only the last column flexes → old behavior.
+    const arrange = { columns: [{ width: 30 }, { width: 30 }, {}] };
+    eq(pool.distributeColumnWidths(arrange, 120).map(c => c.w), [30, 30, 60]);
+  });
+
+  it('width:flex on ALL columns → the whole row splits evenly', () => {
+    const arrange = { columns: [{ width: 'flex' }, { width: 'flex' }, {}] };
+    const r = pool.distributeColumnWidths(arrange, 120);
+    eq(r.map(c => c.w), [40, 40, 40], 'three equal flex shares');
+  });
 });
 
 report();
