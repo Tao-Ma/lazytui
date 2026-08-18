@@ -267,9 +267,10 @@ later nicety, not per-core's answer.
 ```
 
 **As shipped:** the dashboard panes (`cpu, mem, load, disk, netgraph, cpubars,
-net`) fold into **3 composite boxes** — CPU, Memory, Network. `cpubars` is dropped
-(redundant with the process table); the `load` trend is dropped (shown by the
-`uptime` action). The interactive **`procs`** table stays its own pane (btop's PROC
+net`) fold into **3 composite boxes** — CPU, Memory, Network. `cpubars` becomes the
+CPU box's per-core bar strip; the `load` trend rides in the CPU box as a 1-min
+graph (`host.load`), and `swap` joined the Memory box (`host.mem`) — both graph
+widgets, not panes. The interactive **`procs`** table stays its own pane (btop's PROC
 box) and **`diskio`** stays a second selectable table (a second topic that keeps
 the per-pane-resolution + drill-down showcase). Net: **12 → 8 panes** — the CPU /
 Memory / Network dashboards now read like btop's boxes. `Selected` / `Host` /
@@ -280,15 +281,16 @@ cpu_box:
   type: composite
   title: CPU
   widgets:
-    - { type: graph, topic: host.cpu,  row: _, metrics: [cpu], height: 55% }
-    - { type: bars,  topic: host.core, column: busy, heading: Cores }   # per-core
+    - { type: graph, topic: host.cpu,  row: _, metrics: [cpu],  height: 40% }
+    - { type: graph, topic: host.load, row: _, metrics: [load], height: 30% }   # 1-min load
+    - { type: bars,  topic: host.core, column: busy, heading: Cores }           # per-core
 
 mem_box:
   type: composite
   title: Memory
   widgets:
-    # a percent graph draws its own MEM% meter row — no separate meter widget
-    - { type: graph, topic: host.mem,  row: _, metrics: [mem], height: 60% }
+    # a percent graph draws its own meter row per section — here RAM% + SWAP%
+    - { type: graph, topic: host.mem,  row: _, metrics: [mem, swap], height: 62% }
     - { type: bars,  topic: host.disk, column: pct, heading: Disk usage }
 
 net_box:

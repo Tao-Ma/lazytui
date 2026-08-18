@@ -107,6 +107,26 @@ layout:
     assert(layoutYaml.includes('tabs: [d]'),   'detail cell uses mapping form (pool id is d)');
     assert(layoutYaml.includes('height: 70%'), 'height re-emitted on detail cell');
   });
+
+  it('a `width: flex` column round-trips (not flattened to a computed number)', () => {
+    const cfg = parse(tmpYaml(GROUPS + `
+panels:
+  g: { type: groups,  title: Groups }
+  n: { type: viewer,  title: N }
+  a: { type: actions, title: Actions }
+  d: { type: detail,  title: Detail }
+layout:
+  columns:
+    - { width: 30,   panels: [g] }
+    - { width: flex, panels: [n] }
+    - { panels: [a, d] }
+`, 'flex-col.yml'));
+    const arrange = rebuildLayoutFromConfig(cfg);
+    eq(arrange.columns[1].width, 'flex', 'parser keeps `width: flex` on the arrange (not a number)');
+    const layoutYaml = serializeLayout(arrange);
+    assert(layoutYaml.includes('width: flex'), 'serializer re-emits `width: flex` verbatim');
+    assert(layoutYaml.includes('width: 30'),   'the fixed width survives too');
+  });
 });
 
 describe('[idempotency] save → parse → save lands the same bytes', () => {
