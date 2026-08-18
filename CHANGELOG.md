@@ -6,6 +6,8 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.21] — 2026-08-18
+
 ### Fixed
 
 - **A metrics-mirror now grows its live retention when a wider consumer joins a
@@ -3138,7 +3140,8 @@ release tarballs. Full pre-squash development history is preserved
 on the internal gitea mirror under the `backup/main-history` branch
 and the `v0.1.0-pre-squash` tag.
 
-[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.20...HEAD
+[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.21...HEAD
+[0.6.21]: https://github.com/Tao-Ma/lazytui/compare/v0.6.20...v0.6.21
 [0.6.20]: https://github.com/Tao-Ma/lazytui/compare/v0.6.19...v0.6.20
 [0.6.19]: https://github.com/Tao-Ma/lazytui/compare/v0.6.18...v0.6.19
 [0.6.18]: https://github.com/Tao-Ma/lazytui/compare/v0.6.17...v0.6.18
