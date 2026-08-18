@@ -20,6 +20,15 @@
  *     sort: cpu                 # optional default sort column
  *     sort_dir: desc            # optional: desc (default for a metric) | asc
  *     window: 40                # optional, samples retained per row (default 40)
+ *     killable: true            # optional — rows are pids: offer a Kill affordance
+ *
+ * KILL (killable: true): the rowKey is a pid, so the pane exposes a `Kill` action
+ * (the `K` key, or the clickable bottom-bar chip). It opens a generic `menu`
+ * signal picker (SIGTERM default → SIGKILL/…); the pick runs `kill -<sig> <pid>`
+ * via the shared action runner. The pid is FROZEN at selection time (baked into
+ * the menu rows), so a re-sort of the positional cursor can't redirect the signal.
+ * Opt-in only — a `table` on a non-pid topic (net/disk) omits the flag; the leaf
+ * (leaves/proc/kill-signals) also refuses any rowKey that isn't an integer pid > 1.
  *
  * Sort is applied INTERNALLY in getItems (reading nav.sort — the per-pane twin
  * of nav.filter), NOT via api.getItems's central `sortKeys` path: that path bakes
@@ -49,6 +58,8 @@ const { fmt: _fmt } = require('../../leaves/metrics/format');   // shared compac
 const { rowInfo } = require('../../leaves/metrics/row-info');   // shared row → detail-card projection (see gauge.js)
 const mnav = require('../../leaves/wm/nav');
 const { sortControlText, sortControlHits, NONE_LABEL, ASC, DESC } = require('../../leaves/render/sort-control');
+const { itemOpsBarSpec } = require('../../leaves/render/action-legend');   // surface-aware bottom item-op bar
+const { buildKillMenu } = require('../../leaves/proc/kill-signals');
 
 function _metric(topic) {
   const all = getModel().metrics;
@@ -96,14 +107,85 @@ function init(paneId, seed) {
   return {
     topic: pd.topic,
     columns: Array.isArray(pd.columns) ? pd.columns.slice() : null,
+    // `killable: true` — the rows are processes (rowKey === pid), so offer a Kill
+    // affordance (K / bottom-bar chip → signal picker). Opt-in per pane: a `table`
+    // is generic (net/disk topics too), where killing a rowKey is meaningless.
+    killable: !!pd.killable,
     nav,
     paneId: paneId == null ? undefined : paneId,
   };
 }
 
 function update(msg, slice) {
+  if (msg.type === 'key') return _handleKey(msg, slice);
+  if (msg.type === 'item_action') return _handleItemAction(msg, slice);
   if (mnav.isNavMsg(msg)) return mnav.apply(slice, msg);
   return slice;
+}
+
+// itemOps — the pane's declared per-row operations (leaves/render/item-ops
+// contract). A killable process table offers **Kill** (`K`), shown in BOTH the
+// bottom bar and the right-click menu; a non-killable pane declares none (so the
+// operation self-suppresses on every surface). `label[0] === key` — `K` (Shift-k),
+// since lowercase `k` is nav-up. Pure over the slice, so the bottom-bar spec, the
+// key arm, and the right-click resolver all read ONE source.
+function itemOps(slice) {
+  if (!slice || !slice.killable) return [];
+  return [{ id: 'kill', label: 'Kill', key: 'K', surfaces: ['bottom', 'menu'] }];
+}
+
+// The Cmds an operation emits — the SINGLE definition the keyboard (_handleKey),
+// the bottom-bar click, and the right-click (both arrive as `item_action`) all
+// resolve through, so no surface can drift. Today: `kill` → the signal picker.
+function _itemOpCmds(opId, rowKey) {
+  if (opId === 'kill') return _killMenuCmds(rowKey);
+  return [];
+}
+
+// Pure key arm — inputs come from the Msg + our own slice (no getModel): the
+// focused pane's type is `msg.focusKind` (threaded by dispatchKeyToFocused), the
+// canonical sorted+filtered rowKeys are `msg.items` (threaded by augmentMsg), and
+// the cursor comes from slice.nav. A key matching no op, or an op that yields no
+// Cmds (e.g. an unsignalable rowKey), returns the slice UNCLAIMED (a future global
+// binding still runs).
+function _handleKey(msg, slice) {
+  if (msg.focusKind !== 'table') return slice;
+  const op = itemOps(slice).find(o => o.key && o.key === msg.key);
+  if (!op) return slice;
+  const rowKey = (msg.items || [])[mnav.cursorOf(slice, 'table')];
+  const cmds = _itemOpCmds(op.id, rowKey);
+  if (!cmds.length) return slice;
+  return [slice, [...cmds, { type: '_claimed' }]];
+}
+
+// The click twin of _handleKey — the bottom-bar chip AND the right-click menu both
+// arrive here as `item_action{action, item}` (the latter via the `pane_item_action`
+// verb). The SAME _itemOpCmds resolves it, so no surface drifts. `item` is the row
+// the surface targeted (selected row for the bar, pointed row for right-click).
+function _handleItemAction(msg, slice) {
+  if (!itemOps(slice).some(o => o.id === msg.action)) return slice;
+  return [slice, _itemOpCmds(msg.action, msg.item)];
+}
+
+// Cmds to open the signal picker for a selected process. buildKillMenu returns []
+// for a rowKey that isn't a signalable pid (integer > 1) — so a mis-declared
+// `killable` on a non-pid topic is a no-op, not a `kill -TERM <garbage>`. The pid
+// is FROZEN into every menu row's arg here, at selection time; the generic `msg`
+// effect opens the menu via applyMsg(menu_open) (a placed pane emits Cmds, not
+// applyMsg). A later re-sort of the positional cursor can't redirect the signal.
+function _killMenuCmds(rowKey) {
+  const items = buildKillMenu(rowKey);
+  if (!items.length) return [];
+  return [{ type: 'msg', msg: { type: 'menu_open', items, title: `Signal PID ${Number(rowKey)}` } }];
+}
+
+// Msg-enrichment hook (blessed-exception #3, dispatch/runtime/loop applyAugment):
+// thread the focused pane's canonical (sorted+filtered) rowKeys so _handleKey maps
+// its cursor to the SAME row the paint highlighted, without reading getModel().
+// Guarded to a killable pane's `key` Msg — every other table/Msg skips the work.
+function augmentMsg(msg, model, slice) {
+  if (msg.type !== 'key' || !slice || !slice.killable) return msg;
+  return { ...msg, items: apiGetItems(slice.paneId || 'table') };
 }
 
 // getItems — the ORDERED row keys (strings). Internal sort by nav.sort; missing
@@ -303,10 +385,24 @@ const _sortControl = {
   },
 };
 
+// --- Item-op bar (bottom slot) — surface-aware, self-suppressing ------------
+// The generic item-ops bar (leaves/render/item-ops): resolves this pane's
+// `itemOps(slice)` filtered to the `bottom` surface. A non-killable pane declares
+// none → NO bar and NO click regions (render + regions suppress together, so
+// paint ↔ hit-test stay in agreement). itemAt = the selected rowKey; dispatch
+// emits `item_action{action, item}`, folded by _handleItemAction.
+const _opBar = itemOpsBarSpec({
+  itemOps: (paneId) => itemOps(route.getInstanceSlice(paneId)),
+  itemAt: (paneId) => apiGetItems(paneId)[getSel(paneId)],
+});
+
 module.exports = {
   name: 'table',
   init,
   update,
+  // Component-level enrichment: thread the focused pane's rowKeys onto its `key`
+  // Msg (killable panes only) so _handleKey stays pure of getModel().
+  augmentMsg,
   subscriptions,
   panelTypes: {
     table: {
@@ -319,7 +415,11 @@ module.exports = {
       // framework's built-in filter only ever sees the row key.
       customFilter: true,
       idOf: (rowKey) => String(rowKey),
-      borderControls: [_sortControl],
+      // Per-pane item operations (leaves/render/item-ops): read by the bottom-bar
+      // spec AND the right-click context resolver (dispatch/control/input).
+      itemOps,
+      // sort selector (top) + the item-op bar (bottom, self-suppressing).
+      borderControls: [_sortControl, _opBar],
       keyHints: 'sort: click ‹col›',
     },
   },
@@ -327,4 +427,7 @@ module.exports = {
   _fmt,
   getItems,
   _columns,
+  itemOps,
+  _handleKey,
+  _handleItemAction,
 };

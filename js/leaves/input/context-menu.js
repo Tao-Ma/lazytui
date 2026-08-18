@@ -135,20 +135,27 @@ function _configRow(entry) {
  * the populated ones. The user's `context-menu:` entries form a final section
  * (filtered by their `pane:` gate). Result is a list of `[label, action,
  * arg?]` rows (with `null` separators) ready for `menu_open`.
+ *
+ * `ctx.paneOpRows` are the ready `[label,'pane_item_action',{…}]` rows for the
+ * pointed pane's declared item-operations (leaves/render/item-ops) — resolved by
+ * the impure `_resolveContextAt` (this pure leaf can't read a pane's slice). They
+ * sit in their OWN section right after the copy-target section: contextual to the
+ * pointed row, above the always-present general actions.
  */
 function buildContextItems(ctx = {}) {
-  const sections = [];
-  for (const sec of SECTIONS) {
+  const secRows = SECTIONS.map((sec) => {
     const rows = [];
     for (const e of sec.entries) {
       if (e.show && !e.show(ctx)) continue;
       const row = e.build(ctx);
       if (row) rows.push(row);
     }
-    sections.push(rows);
-  }
-  // User-declared entries, gated by `pane:`, as a trailing section.
-  sections.push(_configEntries.filter(e => _paneGate(e, ctx)).map(_configRow).filter(Boolean));
+    return rows;
+  });
+  const paneOpRows = Array.isArray(ctx.paneOpRows) ? ctx.paneOpRows : [];
+  const configRows = _configEntries.filter(e => _paneGate(e, ctx)).map(_configRow).filter(Boolean);
+  // Order: target (SECTIONS[0]) · pointed-pane ops · the rest of SECTIONS · config.
+  const sections = [secRows[0] || [], paneOpRows, ...secRows.slice(1), configRows];
 
   const out = [];
   for (const rows of sections) {

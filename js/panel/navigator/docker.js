@@ -50,7 +50,7 @@ const { getModel } = require('../../model/store');
 const mnav = require('../../leaves/wm/nav');
 const { clampRefreshMs, stepRefreshMs, normalizeLadder, refreshControlSpec } = require('../../leaves/render/refresh-control');
 const { sortControlSpec } = require('../../leaves/render/sort-control');
-const { actionLegendSpec } = require('../../leaves/render/action-legend');
+const { itemOpsBarSpec } = require('../../leaves/render/action-legend');
 
 // The `containers` pane's resolved plugin config (`refresh_ms` / `refresh_ladder`
 // live here). parse() folds `panels:` into `config.layout.pool[id]` with each
@@ -831,10 +831,15 @@ module.exports = {
       // and the click hit-test read, so paint + click can't drift. Painted
       // right-to-left: refresh (host-global) leftmost, the sort selector
       // (per-pane) nearest the glyphs.
+      // Per-row operations (leaves/render/item-ops): _itemActions carry no
+      // `surfaces`, so they default to BOTH — the bottom bar AND the right-click
+      // context menu (via _resolveContextAt reading this `itemOps`). One
+      // declaration, both surfaces, the same `item_action` execution.
+      itemOps: () => _itemActions,
       borderControls: [
         refreshControlSpec({ owner: 'docker', currentMs: _refreshMs }),
         sortControlSpec({ keys: _sortKeys, getSort }),
-        actionLegendSpec({ actions: _itemActions, itemAt: (paneId) => apiGetItems(paneId)[getSel(paneId)] }),
+        itemOpsBarSpec({ itemOps: () => _itemActions, itemAt: (paneId) => apiGetItems(paneId)[getSel(paneId)] }),
       ],
     },
   },

@@ -240,6 +240,7 @@ panels:
     topic: host.proc
     columns: [cpu, mem, comm]   # schema columns to show; pid is the row identity
     sort: cpu                    # default sort (desc for a metric)
+    killable: true               # rows are pids → K / bottom-bar chip opens a signal picker
   # Disk THROUGHPUT TABLE — per-device read/write rates (host.diskio counters →
   # B/s), kept as its own selectable table (a second topic alongside procs).
   diskio:

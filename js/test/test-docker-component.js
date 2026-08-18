@@ -618,6 +618,13 @@ describe('[19] item-action invariants', () => {
   it('label[0] === key for every real _itemActions entry (the render highlights label[0])', () => {
     for (const a of docker._itemActions) eq(a.label[0], a.key, a.id);
   });
+  it('itemOps (item-ops contract) exposes all actions on BOTH surfaces → right-click gets them too', () => {
+    const { menuOps, bottomOps } = require('../leaves/render/item-ops');
+    const ops = docker.panelTypes.containers.itemOps();
+    eq(ops, docker._itemActions, 'itemOps is the single _itemActions source');
+    eq(menuOps(ops).length, ops.length, 'every op is offered on right-click (default surface)');
+    eq(bottomOps(ops).length, ops.length, 'every op is offered on the bottom bar');
+  });
   it('the bar reports no bottom control on a too-narrow pane (footer becomes the fallback)', () => {
     // innerW 6 can\'t fit even the compact 6-key row (needs >= 13) → the bar is
     // absent, so _showFooterHints must NOT suppress the footer (FINDING 2).

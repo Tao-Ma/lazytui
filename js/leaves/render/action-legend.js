@@ -23,6 +23,7 @@ const { visibleLen } = require('../text/ansi');
 const { theme } = require('../infra/themes');
 const bctl = require('./border-controls');
 const { isChainActive } = require('../input/modes');
+const { bottomOps } = require('./item-ops');
 
 const SEP = ' ';   // one space between actions (also the inter-key gap when compact)
 
@@ -66,42 +67,53 @@ function actionLegendRegions(x0, y, actions, innerW) {
   return regions;
 }
 
+// Shared visibility gate for a bottom item-action bar (both spec forms).
+// A modal that owns the keyboard (filter `/`, detail search, prefix, the
+// pane-menu, a confirm, …) must gate the MOUSE too: so a click on this bar can't
+// fire a focus-changing or destructive action — and leak the in-grid mode — while
+// a modal is up. (isChainActive covers freeConfigMode.) The bar is FOCUSED-pane
+// only, and honours the global `quick_keys` placement: `border` (default) draws
+// it; `footer`/`off` suppress it (footer.js reads the same setting, so the keys
+// live in ONE place).
+function _barVisible(model, pane) {
+  if (model && model.modes && model.modes.freeConfigMode) return false;
+  if (model && model.modes && isChainActive(model.modes)) return false;
+  if (!pane || !pane.focused) return false;
+  const qk = (model && model.config && model.config.quick_keys) || 'border';
+  return qk === 'border';
+}
+
+// dispatch → `item_action` against the selected item (shared by both spec forms).
+function _barDispatch(actionId, pane, itemAt) {
+  const item = itemAt(pane.paneId);
+  if (item == null) return null;   // nothing selected → no-op
+  return { owner: pane.paneId, msg: { type: 'item_action', action: actionId, item } };
+}
+
 /**
- * A BORDER-CONTROL SPEC for the item-action bar (bottom slot). `actions` are
- * `{id, label, key}` where `label[0] === key`; `itemAt(paneId)` is the selected
- * item. render/regions receive the pane (with `innerW`) so they pick the same
- * width-adaptive form. dispatch → `item_action` against the selected item.
+ * The item-ops spec (leaves/render/item-ops contract) — the surface-aware bottom
+ * item-action bar, and the ONE bar-spec form. `itemOps(paneId) → ops[]` is
+ * resolved PER-PANE at render (so a pane's `killable`/state gates it), then
+ * filtered to the ops that opt into the `bottom` surface. Empty (or non-`bottom`)
+ * ops → NO bar and NO click regions (render and regions suppress together, so
+ * paint ↔ hit-test stay in agreement). Each op is `{id, label, key}` where
+ * `label[0] === key`; `itemAt(paneId)` is the selected item; dispatch → an
+ * `item_action` against it. A static list is just `itemOps: () => ops`.
  */
-function actionLegendSpec({ actions, itemAt }) {
+function itemOpsBarSpec({ itemOps, itemAt }) {
   return {
     id: 'actions',
     slot: 'bottom',
     render(model, pane) {
-      if (model && model.modes && model.modes.freeConfigMode) return null;
-      // A modal that owns the keyboard (filter `/`, detail search, prefix, the
-      // pane-menu, a confirm, …) must gate the MOUSE too: mirror the keyboard
-      // modal gating so a click on this bar can't fire a focus-changing or
-      // destructive action — and leak the in-grid mode — while a modal is up.
-      // (isChainActive already covers freeConfigMode; the check above matches the
-      // sort/refresh top controls, which only drop in free-config.)
-      if (model && model.modes && isChainActive(model.modes)) return null;
-      if (!pane || !pane.focused) return null;
-      // Global `quick_keys` placement: `border` (default) draws this bar;
-      // `footer`/`off` suppress it (the footer shows/hides the hints instead —
-      // footer.js reads the same setting, so the keys live in ONE place).
-      const qk = (model && model.config && model.config.quick_keys) || 'border';
-      if (qk !== 'border') return null;
-      return actionLegendRender(actions, pane.innerW);
+      if (!_barVisible(model, pane)) return null;
+      const ops = bottomOps(itemOps(pane.paneId));
+      return ops.length ? actionLegendRender(ops, pane.innerW) : null;
     },
     regions(x0, y, _visibleW, pane) {
-      return actionLegendRegions(x0, y, actions, pane.innerW);
+      return actionLegendRegions(x0, y, bottomOps(itemOps(pane.paneId)), pane.innerW);
     },
-    dispatch(actionId, pane) {
-      const item = itemAt(pane.paneId);
-      if (item == null) return null;   // nothing selected → no-op
-      return { owner: pane.paneId, msg: { type: 'item_action', action: actionId, item } };
-    },
+    dispatch(actionId, pane) { return _barDispatch(actionId, pane, itemAt); },
   };
 }
 
-module.exports = { actionLegendRender, actionLegendRegions, actionLegendSpec, _form, SEP };
+module.exports = { actionLegendRender, actionLegendRegions, itemOpsBarSpec, _form, SEP };

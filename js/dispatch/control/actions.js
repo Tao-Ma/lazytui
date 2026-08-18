@@ -33,6 +33,7 @@ const { isSessionDead, restartSession } = require('../../io/terminal');
 const { execSync } = require('child_process');
 const { getModel } = require('../../model/store');
 const route = require('../../panel/route');
+const { killAction: _killAction } = require('../../leaves/proc/kill-signals');
 const mpane = require('../../leaves/wm/pane');
 
 /** v0.6.4 Theme C — compute the focused viewer's tab info HERE (handler,
@@ -439,6 +440,27 @@ function handleAction(action, arg, from) {
       // primitive). Sticky inject → resolves at the consumer's next run.
       if (arg && arg.port) applyMsg({ type: 'port_inject', port: arg.port, value: arg.value });
       break;
+    case 'pane_item_action':
+      // The right-click twin of the bottom item-action bar (leaves/render/item-ops):
+      // a context-menu row picked an operation on a pointed row. Re-dispatch the
+      // SAME `item_action{action,item}` the bar/key emit to the owning pane's
+      // Component, so all three surfaces converge on one execution (its update fold).
+      if (arg && arg.paneId != null && arg.id != null) {
+        dispatchMsg(wrap(arg.paneId, { type: 'item_action', action: arg.id, item: arg.item }));
+      }
+      break;
+    case 'kill_signal': {
+      // The signal picked in a killable process table's kill menu
+      // (leaves/proc/kill-signals). `arg` carries the FROZEN pid (the process
+      // under the cursor when the menu opened) + the chosen signal name. The leaf
+      // builds the injection-proof `kill -<sig> <pid>` descriptor (whitelisted sig,
+      // guarded integer pid; null for an unsignalable pid); run it through the
+      // shared action runner, which streams to the Transcript (a perms /
+      // no-such-process error shows there).
+      const a = _killAction(arg);
+      if (a) runAction(a.actionKey, a.action);
+      break;
+    }
     case 'wire_create': {
       // The component-ports pane's "connect to…" pick — create a RUNTIME wire
       // from a producer output to the selected input. The picker is compatible-

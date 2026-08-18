@@ -70,7 +70,7 @@ describe('[action-legend] regions match the chosen form', () => {
 
 describe('[action-legend] spec', () => {
   let item = 'web';
-  const spec = al.actionLegendSpec({ actions: acts, itemAt: () => item });
+  const spec = al.itemOpsBarSpec({ itemOps: () => acts, itemAt: () => item });
   it('slot bottom; renders on a focused pane only, never in free-config', () => {
     eq(spec.slot, 'bottom');
     eq(spec.render({ modes: {} }, { paneId: 'p', focused: false, innerW: 40 }), null);
@@ -86,7 +86,7 @@ describe('[action-legend] spec', () => {
 });
 
 describe('[action-legend] quick_keys placement gate', () => {
-  const spec = al.actionLegendSpec({ actions: acts, itemAt: () => 'web' });
+  const spec = al.itemOpsBarSpec({ itemOps: () => acts, itemAt: () => 'web' });
   const pane = { paneId: 'p', focused: true, innerW: 40 };
   it('renders in border mode + by default; suppressed in footer / off', () => {
     assert(spec.render({ modes: {}, config: { quick_keys: 'border' } }, pane));

@@ -434,13 +434,23 @@ function _resolveContextAt(mx, my) {
       return { paneKind: 'detail', lineText, itemLabel: null, selectionText };
     }
     const def = getPanelDef(p.type);
-    let itemLabel = null;
+    let itemLabel = null, paneOpRows = [];
     if (def && typeof def.getItems === 'function') {
       const idx = _rowIndexAt(p.paneId, b, my);   // header-aware, painted-scroll
       const items = getItems(p.paneId);
-      if (idx >= 0 && idx < items.length) itemLabel = _itemText(def, items[idx]);
+      if (idx >= 0 && idx < items.length) {
+        const rawItem = items[idx];
+        itemLabel = _itemText(def, rawItem);
+        // Item-operations (leaves/render/item-ops): the pointed pane's declared
+        // per-row ops that opt into the right-click surface, as ready menu rows
+        // (the impure resolver reads the pane's slice; buildContextItems is pure).
+        if (typeof def.itemOps === 'function') {
+          const ops = def.itemOps(getInstanceSlice(p.paneId)) || [];
+          paneOpRows = require('../../leaves/render/item-ops').contextOpRows(p.paneId, rawItem, ops);
+        }
+      }
     }
-    return { paneKind: p.type, lineText: null, itemLabel, selectionText };
+    return { paneKind: p.type, lineText: null, itemLabel, selectionText, paneOpRows };
   }
   return null;
 }

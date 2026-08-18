@@ -6,7 +6,33 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.6.21] — 2026-08-18
+### Added
+
+- **Per-pane row operations — one declaration, three surfaces (`itemOps`).** A
+  list/table Component can declare its per-row operations once, in one place, and
+  have them rendered across every input surface from a single source (so keyboard,
+  bottom-bar click, and right-click can't drift):
+
+      panelType.itemOps(slice) → [ { id, label, key?, surfaces? } ]
+
+  `surfaces` (default **both**) lets each operation choose where it appears — the
+  bottom item-action bar, the right-click context menu, or both. All three surfaces
+  dispatch the same `item_action{action, item}` to the owning Component. The
+  right-click **context menu now surfaces a pane's operations** for the row under
+  the pointer (a new component-contribution section, via the `pane_item_action`
+  verb) — docker's inspect/logs/shell/stop/restart/kill are now available on
+  right-click too, not only the bottom bar.
+
+- **Kill-selected in the process table (`killable: true`).** A `type: table` pane
+  whose rows are processes can opt in with `killable: true`: the selected pid gains
+  a **Kill** operation — the `K` key, a bottom-bar chip, **and** the right-click
+  menu — that opens a signal picker (SIGTERM default → SIGKILL / INT / HUP / …).
+  The pick runs `kill -<sig> <pid>`. The pid is **frozen at selection time**, so a
+  re-sort of the (positional) cursor while the picker is open can't redirect the
+  signal, and the signal name is whitelisted + the pid is a guarded integer > 1, so
+  the command is injection-proof and never fires against init/garbage. Opt-in only
+  — a `table` on a non-pid topic (net/disk) omits the flag. The host-monitor demo's
+  Processes pane is now killable.
 
 ### Fixed
 

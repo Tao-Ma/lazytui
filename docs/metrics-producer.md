@@ -423,6 +423,17 @@ multi-row topic **shipped** — `type: table` (`js/panel/monitor/table.js`),
 the list sibling of this drill-down `stats` panel. Select a row in the
 table and a `stats` pane with `select_from: <table>` graphs it.
 
+A `table` whose rows are processes can opt into **kill-selected** with
+`killable: true`: the selected pid gains a `Kill` operation — the `K` key,
+a clickable bottom-bar chip, AND the right-click context menu — that opens a
+signal picker (SIGTERM default → SIGKILL/…); the pick runs `kill -<sig> <pid>`.
+Opt-in only — a `table` on a non-pid topic (net/disk) omits the flag, and the
+picker refuses any rowKey that isn't an integer pid > 1. The pid is frozen at
+selection time, so a re-sort of the positional cursor can't redirect the signal.
+This is one instance of the generic per-pane **item-operations** contract
+(`itemOps`, one declaration rendered across the bottom bar + right-click) — see
+§7.9a of `docs/msg-routes.md`.
+
 The snapshot **gauge** consumer also **shipped** — `type: gauge`
 (`js/panel/monitor/gauge.js`), the bar sibling of the graph (`stats`) and
 the list (`table`): it renders a topic's latest sample as horizontal meter

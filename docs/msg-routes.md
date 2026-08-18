@@ -639,6 +639,7 @@ reducer (they hold no domain state beyond nav).
 | **history** | `panel/navigator/history.js` | 1 +nav | see §7.8 (effect `historyReplay`) | ✅ §7.8 |
 | **actions** | `panel/navigator/actions.js` | 0 +nav | shared nav only | ✅ §7.2 |
 | **stats** | `panel/monitor/stats.js` | 0 (no-op update) | `subscriptions(paneDef,model)` (#D13) | ✅ §7.9 |
+| **table** | `panel/monitor/table.js` | nav + 2 (killable) | `key`/`item_action`→kill picker (`killable:` panes) | ✅ §7.9a |
 | **info** | `panel/info/info.js` | 1 + shared tvu | `info_show_content` | ✅ §7.10 |
 | **text-view** | `panel/text-view/text-view.js` | 5 + shared tvu | `tv_stream_start`/`tv_append`/`tv_append_lines`/`tv_set_lines`/`tv_status` | ✅ §7.10 |
 | **agent** | `panel/agent/agent.js` | 3 + shared tvu | `agent_event`/`agent_activate`/`agent_input` | ✅ §7.10 |
@@ -907,7 +908,7 @@ the `started` flag + self-re-arm are gone); `augmentMsg` threads the CANONICAL
 |---|---|---|---|
 | *(content gate)* | — | — | a placed pane (`slice.paneId != null`) `return slice` for content Msgs — but nav/key/`item_action` are handled ABOVE it (per-pane), so a placed pane still drives its own selection/actions¹ |
 | `key{focusKind,items}` | — | maps `msg.key` via the declared `_itemActions` list (`i`nspect·`L`ogs·`s`hell·`S`top·`R`estart·`K`ill; `label[0]` is the key) → `_itemActionCmds` (below) | shell² |
-| `item_action{action,item}` | — | inspect→`dockerExec{inspect}` · logs→`dockerExec{logs}` · shell→`dockerShell` · stop/restart/kill→`run_action{docker <verb> <item>, confirm}` (the shared confirm gate). The action bar click (the keyboard reaches the same `_itemActionCmds` via the `key` arm); `item` resolved at dispatch time | shell² |
+| `item_action{action,item}` | — | inspect→`dockerExec{inspect}` · logs→`dockerExec{logs}` · shell→`dockerShell` · stop/restart/kill→`run_action{docker <verb> <item>, confirm}` (the shared confirm gate). Reached identically by the bottom-bar click, the `key` arm, AND right-click — docker exposes `itemOps` (the item-ops contract, §7.9a), so all three converge on `_itemActionCmds`; `item` resolved at dispatch time | shell² |
 | `refresh` / `dockerPoll` | — | `dockerFetch` (inFlight-guarded) | ✓ |
 | `dockerResult{status,stats}` | `status`, `stats`, `inFlight→false` | `render` | ✓ |
 | `set_refresh_ms{dir\|ms}` | `refreshMs` (owner-only; ladder step or clamp) | `render` | ✓ — re-arms the `interval` Sub (keyed `${id}:${ms}`); the sub-gate keys on `dockerRefresh` (state.js). No-op at a ladder end returns the same slice ref |
@@ -977,6 +978,41 @@ no Msg, no slice, the data lives in the hub bus (docker publishes
 
 **Verdict (§7.9): pure TEA** (vacuously — no reducer arms; subscription is a
 pure declaration the runtime reconciles).
+
+### 7.9a Per-pane item operations (`itemOps`) + the killable table — verified
+
+**The contract** (`leaves/render/item-ops`): a list/table panelType declares
+`itemOps(slice) → [{id, label, key?, surfaces?}]`, resolved once and rendered
+across every input surface from a single source (so no surface drifts). `surfaces`
+(default **both**) picks where each op appears — the bottom bar (`bottom`) and/or
+the right-click menu (`menu`). All three surfaces converge on one execution:
+
+- **bottom bar** — `itemOpsBarSpec` (`leaves/render/action-legend`) renders the
+  `bottom`-surface ops (self-suppresses when there are none, keeping paint ↔
+  hit-test agreement) and its click dispatches `item_action{action, item}`.
+- **keyboard** — the component's `key` arm maps `msg.key` → an op → `item_action`.
+- **right-click** — `_resolveContextAt` (`dispatch/control/input`) resolves the
+  pointed pane's `menu`-surface ops into `[label,'pane_item_action',{paneId,id,
+  item}]` rows; `buildContextItems` inserts them as a section. The
+  **`pane_item_action`** verb re-dispatches the SAME `item_action{action,item}` to
+  the pane, so the right-click and the bar/key share one execution.
+
+Adopters: **docker** (`containers`, its 6 actions — now on right-click too) and
+**table** (`kill`, killable panes).
+
+**The killable table** (`panel/monitor/table.js`) — otherwise nav-only; a
+`killable: true` pane (rows are pids) declares one op, `kill` (surfaces both):
+
+| Msg | Writes | Emits | Purity |
+|---|---|---|---|
+| `key{focusKind,items}` | — | `focusKind==='table'` + a `key`-matching op + a rowKey that yields Cmds → `_itemOpCmds` (below) + `_claimed`; else the slice UNCLAIMED | ✓ |
+| `item_action{action,item}` | — | the bottom-bar chip AND the right-click both arrive here — same `_itemOpCmds(action, item)`, so no surface drifts | ✓ |
+
+- **`_itemOpCmds('kill', rowKey)` → `_killMenuCmds`** — `buildKillMenu` (`leaves/proc/kill-signals`) projects the pid into `[label, 'kill_signal', {pid, sig}]` rows (SIGTERM first, `[]` for a non-pid rowKey), emitted as a `msg{menu_open}` Cmd (a placed pane emits Cmds, not `applyMsg`). The pid is **frozen into every row's arg** at selection time, so a re-sort of the positional cursor can't redirect the signal.
+- **`augmentMsg`** threads the CANONICAL `apiGetItems` list onto a killable pane's `key` Msg (as docker does), so `K` targets the row the paint highlighted — pure of `getModel()`.
+- The picked signal runs via the **`kill_signal`** verb (§ menu_action / handleAction): `leaves/proc/kill-signals.killAction` builds the injection-proof `kill -<sig> <pid>` (whitelisted sig, guarded integer pid) → `run_action`.
+
+**Verdict (§7.9a): pure TEA.** The arms are pure (Cmds only, no getModel); the impure menu-open, the right-click re-dispatch, and the exec all live behind effects (`msg` / `pane_item_action` / `run_action`).
 
 ### 7.10 Content-slot text panes — info / text-view / agent / terminal (the post-viewer content slot) — verified
 
@@ -1151,7 +1187,7 @@ handlers are tier-`fx` (impure by design).**
 | `cmdline_run` | `cmdline.runAt(sel,args,display)` | via action |
 | `cmdline_clear` | `cmdline.clear()` | no |
 | `cmdline_preview` / `cmdline_revert_preview` | live-preview apply / teardown (e.g. theme) | no |
-| `menu_action` | `dispatch.handleAction(action, arg)` (or `focus_panel:<h>`) | yes |
+| `menu_action` | `dispatch.handleAction(action, arg)` (or `focus_panel:<h>`) — verbs incl. `send_to_port`/`port_inject`/`kill_signal` (§7.9a: `killAction` → `run_action`) / `pane_item_action` (§7.9a: re-dispatches `item_action` to a pane — the right-click twin of the bottom item-op bar) | yes |
 | `run_binding` | `Promise.resolve(eff.run()).catch(...)` (resolved leader leaf) | via action |
 | `diag_clear` / `diag_save` | `io/diag-log.clear()` / `.save()` | no |
 
