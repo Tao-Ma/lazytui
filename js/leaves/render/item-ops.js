@@ -30,9 +30,11 @@ const BOTTOM = 'bottom';
 const MENU = 'menu';
 const BOTH = [BOTTOM, MENU];
 
-/** The surfaces an op appears on (default: both). */
+/** The surfaces an op appears on. An UNSET `surfaces` defaults to both; an
+ *  explicit array is taken as-is (so `[]` means "nowhere" — the empty subset —
+ *  not "both", per the "subset of ['bottom','menu']" contract). */
 function surfacesOf(op) {
-  return (op && Array.isArray(op.surfaces) && op.surfaces.length) ? op.surfaces : BOTH;
+  return (op && Array.isArray(op.surfaces)) ? op.surfaces : BOTH;
 }
 function hasSurface(op, surface) { return surfacesOf(op).includes(surface); }
 

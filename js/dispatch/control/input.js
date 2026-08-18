@@ -444,9 +444,13 @@ function _resolveContextAt(mx, my) {
         // Item-operations (leaves/render/item-ops): the pointed pane's declared
         // per-row ops that opt into the right-click surface, as ready menu rows
         // (the impure resolver reads the pane's slice; buildContextItems is pure).
+        // Guarded like the sibling `filterText` call above — a component's itemOps
+        // must never crash the stdin handler; a throw just yields no ops.
         if (typeof def.itemOps === 'function') {
-          const ops = def.itemOps(getInstanceSlice(p.paneId)) || [];
-          paneOpRows = require('../../leaves/render/item-ops').contextOpRows(p.paneId, rawItem, ops);
+          try {
+            const ops = def.itemOps(getInstanceSlice(p.paneId)) || [];
+            paneOpRows = require('../../leaves/render/item-ops').contextOpRows(p.paneId, rawItem, ops);
+          } catch (_) { /* offer no pane ops rather than crash the right-click */ }
         }
       }
     }

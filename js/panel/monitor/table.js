@@ -152,7 +152,11 @@ function _handleKey(msg, slice) {
   if (msg.focusKind !== 'table') return slice;
   const op = itemOps(slice).find(o => o.key && o.key === msg.key);
   if (!op) return slice;
-  const rowKey = (msg.items || [])[mnav.cursorOf(slice, 'table')];
+  // Clamp the cursor to the row count, mirroring render (getSel isn't re-clamped
+  // when the list shrinks): so `K` targets the SAME row the paint highlighted, not
+  // a stale index past the end (which would silently no-op on the visible row).
+  const items = msg.items || [];
+  const rowKey = items[Math.min(mnav.cursorOf(slice, 'table'), items.length - 1)];
   const cmds = _itemOpCmds(op.id, rowKey);
   if (!cmds.length) return slice;
   return [slice, [...cmds, { type: '_claimed' }]];
@@ -393,7 +397,9 @@ const _sortControl = {
 // emits `item_action{action, item}`, folded by _handleItemAction.
 const _opBar = itemOpsBarSpec({
   itemOps: (paneId) => itemOps(route.getInstanceSlice(paneId)),
-  itemAt: (paneId) => apiGetItems(paneId)[getSel(paneId)],
+  // Clamp to the row count like render (getSel isn't re-clamped on shrink), so the
+  // chip acts on the highlighted row, not a stale index.
+  itemAt: (paneId) => { const its = apiGetItems(paneId); return its[Math.min(getSel(paneId), its.length - 1)]; },
 });
 
 module.exports = {

@@ -90,6 +90,13 @@ describe('[table-kill] _handleKey — the keyboard arm', () => {
     const res = table._handleKey(keyMsg({ items: ['111', '222', '333'] }), slice);
     eq(menuOpenCmdOf(res).msg.items[0][2].pid, 222, 'the cursor row (index 1) is the target');
   });
+
+  it('clamps a stale cursor to the last row (matches the paint highlight after a shrink)', () => {
+    const slice = killableSlice();
+    slice.nav.cursor = 5;   // stale — points past a now-shorter list (a process exited)
+    const res = table._handleKey(keyMsg({ items: ['111', '222'] }), slice);
+    eq(menuOpenCmdOf(res).msg.items[0][2].pid, 222, 'targets the clamped last row, not a stale undefined index');
+  });
 });
 
 describe('[table-kill] _handleItemAction — the click arm (bottom-bar chip)', () => {
