@@ -844,6 +844,15 @@ All arms pure (facts arrive via `msg.ctx` = `{groups, currentGroup, paneMenuMode
 viewerTarget, resetOwners}`, built by `nav-state._groupsCtx` in the impure shell).
 Verified.
 
+The **tree mechanics** (visibility/flatten + recursive expand/collapse) are the
+generic `leaves/tree` leaf now — `recomputeList` adapts `ctx.groups` (nodes carry
+`.parent`/`.children`) into a Forest and calls `tree.flatten(forest, configOrder,
+id => expanded.has(id))`; `expand`/`collapse` use `tree.descendants` for their
+recursive variants. groups keeps its own render, the cursor-resync (`resolveCursor`),
+the cascade, and the `quick`/`all` tab. Same leaf the process table (§7.9a) uses —
+the config-key order + lazy non-recursive collapse are preserved byte-for-byte
+(pinned by `test-tree.js`).
+
 | Msg | Writes | Emits | Purity |
 |---|---|---|---|
 | `groups_recompute{ctx}` | `list` (rebuild from `ctx.groups` + expanded) | — | shell¹ |

@@ -17,8 +17,16 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   drill-down work on tree nodes. The host-monitor demo's Processes pane is now a
   tree. Built on a new reusable tree leaf (`js/leaves/tree`) — forest derivation
   (parent-pointer or explicit-children), predicate-based visibility, DFS flatten,
-  and glyph rendering — designed to also back the groups navigator (migration
-  follows). The demo now opens the process list as a hierarchy.
+  and glyph rendering. The demo now opens the process list as a hierarchy.
+
+### Changed
+
+- **The groups navigator now shares the generic tree model.** Its bespoke
+  visibility/flatten and recursive expand/collapse were replaced with calls into
+  the same `js/leaves/tree` leaf the process table uses (groups keeps its own
+  render, cursor-resync, cascade, and quick/all tab). Behaviour is unchanged —
+  config-key order and lazy non-recursive collapse are preserved byte-for-byte
+  (pinned by the existing group-tree tests). Removes the duplicated tree logic.
 
 - **Per-pane row operations — one declaration, three surfaces (`itemOps`).** A
   list/table Component can declare its per-row operations once, in one place, and

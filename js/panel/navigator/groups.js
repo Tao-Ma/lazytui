@@ -27,6 +27,7 @@
 
 const { getModel } = require('../../model/store');
 const mnav = require('../../leaves/wm/nav');
+const tree = require('../../leaves/tree/tree');   // generic tree model (shared with the process table)
 const {
   esc, wrapColor, theme, renderPanel,
   getSel, getScroll, isMultiSel,
@@ -41,13 +42,18 @@ const {
 // model.currentGroup, root chrome reset) are emitted by update() based on
 // the descriptor — single-writer per layer.
 
-/** Visible iff every ancestor is expanded. Takes ctx = {groups, ...}. */
-function isVisible(slice, ctx, path) {
-  const all = ctx.groups || {};
-  const g = all[path];
-  if (!g) return false;
-  if (!g.parent) return true;
-  return slice.expanded.has(g.parent) && isVisible(slice, ctx, g.parent);
+// Adapt config.groups (each node already carries `.parent` + `.children`) into
+// the generic Forest shape (leaves/tree) — no re-derivation, the pointers are
+// already there. Visibility/flatten/descendants then come from the shared leaf.
+function _forest(all) {
+  const roots = [], children = new Map(), parent = new Map();
+  for (const path of Object.keys(all)) {
+    const g = all[path];
+    parent.set(path, g.parent || null);
+    children.set(path, (g.children || []).slice());
+    if (!g.parent) roots.push(path);
+  }
+  return { roots, children, parent };
 }
 
 // v0.6.3 Phase D1 — helpers take `ctx = { groups, currentGroup }`
@@ -73,9 +79,10 @@ function recomputeList(slice, ctx) {
       if (all[path].quick) out.push(all[path]);
     }
   } else {
-    for (const path of Object.keys(all)) {
-      if (isVisible(slice, ctx, path)) out.push(all[path]);
-    }
+    // Tree tab: config-key order, filtered by the generic leaf's ancestor-
+    // visibility (a node shows iff every ancestor is expanded).
+    const visible = tree.flatten(_forest(all), Object.keys(all), (id) => slice.expanded.has(id));
+    for (const r of visible) out.push(all[r.id]);
   }
   return { ...slice, list: out };
 }
@@ -124,41 +131,27 @@ function expand(slice, ctx, path, recursive = false) {
   if (!g || !g.children || g.children.length === 0) return [slice, _noopDescriptor(ctx)];
   const expanded = new Set(slice.expanded);
   expanded.add(path);
-  if (recursive) _expandRecursive(expanded, all, g);
-  const withSet = { ...slice, expanded };
-  const next = recomputeList(withSet, ctx);
+  if (recursive) {
+    // Expand every BRANCH descendant (a childless leaf has nothing to reveal).
+    for (const d of tree.descendants(_forest(all), path)) {
+      if ((all[d].children || []).length) expanded.add(d);
+    }
+  }
+  const next = recomputeList({ ...slice, expanded }, ctx);
   return [next, resolveCursor(next, ctx)];
 }
 
-function _expandRecursive(expanded, all, g) {
-  for (const childPath of (g.children || [])) {
-    const child = all[childPath];
-    if (!child || !child.children || child.children.length === 0) continue;
-    expanded.add(childPath);
-    _expandRecursive(expanded, all, child);
-  }
-}
-
-/** Collapse `path` and (if recursive) every descendant. */
+/** Collapse `path` and (if recursive) every descendant. Non-recursive leaves the
+ *  descendants' expanded state (lazy — it pops back when `path` re-expands). */
 function collapse(slice, ctx, path, recursive = false) {
   const all = ctx.groups || {};
   const g = all[path];
   if (!g) return [slice, _noopDescriptor(ctx)];
   const expanded = new Set(slice.expanded);
-  if (recursive) _collapseRecursive(expanded, all, g);
+  if (recursive) for (const d of tree.descendants(_forest(all), path)) expanded.delete(d);
   expanded.delete(path);
-  const withSet = { ...slice, expanded };
-  const next = recomputeList(withSet, ctx);
+  const next = recomputeList({ ...slice, expanded }, ctx);
   return [next, resolveCursor(next, ctx)];
-}
-
-function _collapseRecursive(expanded, all, g) {
-  for (const childPath of (g.children || [])) {
-    const child = all[childPath];
-    if (!child) continue;
-    _collapseRecursive(expanded, all, child);
-    expanded.delete(childPath);
-  }
 }
 
 /** Select the row at `idx`. Returns `{ newIdx, newCurrentGroup,
