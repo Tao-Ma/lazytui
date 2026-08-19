@@ -239,8 +239,9 @@ panels:
     title: Processes
     topic: host.proc
     columns: [cpu, mem, comm]   # schema columns to show; pid is the row identity
-    sort: cpu                    # default sort (desc for a metric)
+    sort: cpu                    # default sort (desc for a metric); siblings honour it in tree mode
     killable: true               # rows are pids → K / bottom-bar chip opens a signal picker
+    tree: { parent: ppid }       # hierarchical (ppid) — opens as a tree; `t` flat, `z` fold
   # Disk THROUGHPUT TABLE — per-device read/write rates (host.diskio counters →
   # B/s), kept as its own selectable table (a second topic alongside procs).
   diskio:

@@ -1005,14 +1005,16 @@ Adopters: **docker** (`containers`, its 6 actions — now on right-click too) an
 
 | Msg | Writes | Emits | Purity |
 |---|---|---|---|
-| `key{focusKind,items}` | — | `focusKind==='table'` + a `key`-matching op + a rowKey that yields Cmds → `_itemOpCmds` (below) + `_claimed`; else the slice UNCLAIMED | ✓ |
+| `key{focusKind,items}` | `treeMode`/`collapsed` (tree keys) | tree keys claim FIRST (`_handleTreeKey`): `t`→toggle `treeMode`; `z`→fold/unfold the selected node in `collapsed`; else the item-op arm: a `key`-matching op + a rowKey that yields Cmds → `_itemOpCmds` + `_claimed`; else UNCLAIMED | ✓ |
 | `item_action{action,item}` | — | the bottom-bar chip AND the right-click both arrive here — same `_itemOpCmds(action, item)`, so no surface drifts | ✓ |
 
 - **`_itemOpCmds('kill', rowKey)` → `_killMenuCmds`** — `buildKillMenu` (`leaves/proc/kill-signals`) projects the pid into `[label, 'kill_signal', {pid, sig}]` rows (SIGTERM first, `[]` for a non-pid rowKey), emitted as a `msg{menu_open}` Cmd (a placed pane emits Cmds, not `applyMsg`). The pid is **frozen into every row's arg** at selection time, so a re-sort of the positional cursor can't redirect the signal.
-- **`augmentMsg`** threads the CANONICAL `apiGetItems` list onto a killable pane's `key` Msg (as docker does), so `K` targets the row the paint highlighted — pure of `getModel()`.
+- **`augmentMsg`** threads the CANONICAL `apiGetItems` list onto a killable-OR-tree pane's `key` Msg (as docker does), so `K`/`z` target the row the paint highlighted — pure of `getModel()`.
 - The picked signal runs via the **`kill_signal`** verb (§ menu_action / handleAction): `leaves/proc/kill-signals.killAction` builds the injection-proof `kill -<sig> <pid>` (whitelisted sig, guarded integer pid) → `run_action`.
 
-**Verdict (§7.9a): pure TEA.** The arms are pure (Cmds only, no getModel); the impure menu-open, the right-click re-dispatch, and the exec all live behind effects (`msg` / `pane_item_action` / `run_action`).
+**Tree mode** (`tree: { parent: <col> }`) — the generic tree model (`leaves/tree`): `getItems`/`render` route through `_treeRows` (build a forest from the current series by the parent column, DFS-flatten by `collapsed`), so the row order becomes the visible hierarchy with `├─ └─ │ ▾ ▸` glyphs; siblings honour the active sort. `_treeActive` (configured + `treeMode` + no filter) gates both — a filter suspends the tree (flat filtered, v1). Kill/`itemOps`/`select_from` are unchanged (the cursor still selects a rowKey/pid). The forest builder + flatten + glyphs live in the generic `leaves/tree` leaf, designed to also cover the groups navigator's explicit-children shape (§7.6 groups migration is the follow-on).
+
+**Verdict (§7.9a): pure TEA.** The arms are pure (Cmds only, no getModel); the tree ordering is a pure re-derivation in getItems/render; the impure menu-open, the right-click re-dispatch, and the exec all live behind effects (`msg` / `pane_item_action` / `run_action`).
 
 ### 7.10 Content-slot text panes — info / text-view / agent / terminal (the post-viewer content slot) — verified
 

@@ -21,6 +21,15 @@
  *     sort_dir: desc            # optional: desc (default for a metric) | asc
  *     window: 40                # optional, samples retained per row (default 40)
  *     killable: true            # optional — rows are pids: offer a Kill affordance
+ *     tree: { parent: ppid }    # optional — rows form a hierarchy via a parent col
+ *
+ * TREE (tree: { parent: <col> }): the rows form a hierarchy — `<col>` is each row's
+ * parent-pointer (procs `ppid`). The pane opens as a tree (generic tree leaf,
+ * leaves/tree): `getItems` returns the depth-first visible order (siblings honour
+ * the active sort), `render` prefixes the identity cell with `├─ └─ │ ▾ ▸` glyphs.
+ * `t` toggles flat↔tree; `z` folds/unfolds the selected node's subtree (a
+ * `collapsed` Set). Filtering suspends the tree (flat filtered list — v1). Composes
+ * with `killable` + `select_from` (the cursor selects a node = a pid).
  *
  * KILL (killable: true): the rowKey is a pid, so the pane exposes a `Kill` action
  * (the `K` key, or the clickable bottom-bar chip). It opens a generic `menu`
@@ -60,6 +69,7 @@ const mnav = require('../../leaves/wm/nav');
 const { sortControlText, sortControlHits, NONE_LABEL, ASC, DESC } = require('../../leaves/render/sort-control');
 const { itemOpsBarSpec } = require('../../leaves/render/action-legend');   // surface-aware bottom item-op bar
 const { buildKillMenu } = require('../../leaves/proc/kill-signals');
+const tree = require('../../leaves/tree/tree');   // generic tree model (process-tree mode)
 
 function _metric(topic) {
   const all = getModel().metrics;
@@ -111,16 +121,49 @@ function init(paneId, seed) {
     // affordance (K / bottom-bar chip → signal picker). Opt-in per pane: a `table`
     // is generic (net/disk topics too), where killing a rowKey is meaningless.
     killable: !!pd.killable,
+    // `tree: { parent: <col> }` — the rows form a hierarchy via a parent-pointer
+    // column (procs `ppid`). Present → the pane opens as a tree; `t` toggles flat.
+    // `collapsed` holds the nodes whose children are hidden (default: none = fully
+    // expanded). null/absent → a plain flat table, unaffected.
+    tree: (pd.tree && pd.tree.parent) ? { parentKey: String(pd.tree.parent) } : null,
+    treeMode: !!(pd.tree && pd.tree.parent),
+    collapsed: new Set(),
     nav,
     paneId: paneId == null ? undefined : paneId,
   };
 }
 
 function update(msg, slice) {
-  if (msg.type === 'key') return _handleKey(msg, slice);
+  if (msg.type === 'key') {
+    // Tree keys (t/z) claim first on a tree-capable pane; otherwise fall to the
+    // item-op (kill) key arm. `undefined` = "not a tree key, keep handling".
+    const tk = _handleTreeKey(msg, slice);
+    if (tk !== undefined) return tk;
+    return _handleKey(msg, slice);
+  }
   if (msg.type === 'item_action') return _handleItemAction(msg, slice);
   if (mnav.isNavMsg(msg)) return mnav.apply(slice, msg);
   return slice;
+}
+
+// Tree-view key arm (tree-capable panes only): `t` toggles flat↔tree; `z` folds
+// the selected node's subtree (tree mode). Pure — the cursor comes from slice.nav,
+// the row list from msg.items (augmentMsg). Returns `undefined` when the key isn't
+// ours, so the item-op arm still runs. Both claim the key (no global t/z leak).
+function _handleTreeKey(msg, slice) {
+  if (!slice.tree || msg.focusKind !== 'table') return undefined;
+  if (msg.key === 't') {
+    return [{ ...slice, treeMode: !slice.treeMode }, [{ type: '_claimed' }, { type: 'render' }]];
+  }
+  if (slice.treeMode && msg.key === 'z') {
+    const items = msg.items || [];
+    const rk = items[Math.min(mnav.cursorOf(slice, 'table'), items.length - 1)];
+    if (rk == null) return [slice, [{ type: '_claimed' }]];
+    const collapsed = new Set(slice.collapsed);
+    if (collapsed.has(rk)) collapsed.delete(rk); else collapsed.add(rk);
+    return [{ ...slice, collapsed }, [{ type: '_claimed' }, { type: 'render' }]];
+  }
+  return undefined;
 }
 
 // itemOps — the pane's declared per-row operations (leaves/render/item-ops
@@ -188,18 +231,14 @@ function _killMenuCmds(rowKey) {
 // its cursor to the SAME row the paint highlighted, without reading getModel().
 // Guarded to a killable pane's `key` Msg — every other table/Msg skips the work.
 function augmentMsg(msg, model, slice) {
-  if (msg.type !== 'key' || !slice || !slice.killable) return msg;
+  if (msg.type !== 'key' || !slice || !(slice.killable || slice.tree)) return msg;
   return { ...msg, items: apiGetItems(slice.paneId || 'table') };
 }
 
-// getItems — the ORDERED row keys (strings). Internal sort by nav.sort; missing
-// values sink to the far end for either direction. This is the canonical list
-// render + the cursor + a stats `select_from` all read.
-function getItems(slice) {
-  const topic = slice && slice.topic;
-  if (!topic) return [];
-  const metric = _metric(topic);
-  if (!metric || !metric.series) return [];
+// Sorted row keys — internal sort by nav.sort; missing values sink to the far end
+// for either direction. The flat list, AND (in tree mode) the per-parent SIBLING
+// order the forest is built from.
+function _sortedKeys(slice, metric) {
   let rows = Object.keys(metric.series);
   const sort = slice.nav && slice.nav.sort;
   if (sort && sort.key) {
@@ -218,6 +257,43 @@ function getItems(slice) {
       return c !== 0 ? c * dir : A[1] - B[1];   // stable
     }).map(p => p[0]);
   }
+  return rows;
+}
+
+// Tree mode is active iff configured, toggled on, AND no filter (flat during
+// filter — v1). getItems + render both gate on this so their rows agree.
+function _treeActive(slice) {
+  return !!(slice && slice.treeMode && slice.tree && !(slice.nav && slice.nav.filter));
+}
+
+// The visible tree rows (annotated: {id, depth, expanded, ...}) for a tree-mode
+// pane. Forest is (re)built each call from the CURRENT series, using the sorted
+// keys as sibling order (so siblings honour the active sort — btop parity), then
+// flattened by the `collapsed` set. Pure — the shared source of both the row ids
+// (getItems) and the render glyphs.
+function _treeRows(slice) {
+  const metric = _metric(slice.topic);
+  if (!metric || !metric.series) return [];
+  const parentKey = slice.tree.parentKey;
+  const ordered = _sortedKeys(slice, metric);
+  const forest = tree.buildForestByParent(ordered, (id) => {
+    const s = _latest(metric, id);
+    const v = s ? s[parentKey] : undefined;
+    return (v == null || v === '') ? null : String(v);
+  });
+  return tree.flatten(forest, tree.orderDfs(forest), (id) => !slice.collapsed.has(id));
+}
+
+// getItems — the ORDERED row keys (strings). The canonical list the render, the
+// cursor, kill-selected, and a stats `select_from` all read. Tree mode returns the
+// flattened-visible node order; else the sorted (+ optionally filtered) flat list.
+function getItems(slice) {
+  const topic = slice && slice.topic;
+  if (!topic) return [];
+  const metric = _metric(topic);
+  if (!metric || !metric.series) return [];
+  if (_treeActive(slice)) return _treeRows(slice).map(r => r.id);
+  let rows = _sortedKeys(slice, metric);
   // Custom filter (the def sets `customFilter`, so the framework's rowKey-only
   // substring filter is skipped): match the `/` needle against the row KEY OR
   // any string column (so a process list filters by command name, not just pid).
@@ -265,7 +341,12 @@ function render(panel, w, h, slice, opts) {
   if (!topic) return _renderEmpty(panel, w, h, '(table needs a topic)', chrome, focused);
   const metric = _metric(topic);
   const cols = _columns(panel, metric);
-  const rows = apiGetItems(panel.paneId);        // sorted + filtered row keys
+  // Tree mode: compute the visible annotated rows ONCE — their ids are the row
+  // list (== apiGetItems, which also routes through _treeRows in tree mode, so the
+  // cursor aligns) and their annotations drive the indent glyphs.
+  const treeRows = _treeActive(slice) ? _treeRows(slice) : null;
+  const rows = treeRows ? treeRows.map(r => r.id) : apiGetItems(panel.paneId);
+  const prefixOf = treeRows ? new Map(treeRows.map(r => [r.id, tree.treePrefix(r)])) : null;
   if (!metric || !rows.length) {
     return _renderEmpty(panel, w, h, metric ? '(no rows)' : '(no data yet)', chrome, focused);
   }
@@ -306,7 +387,10 @@ function render(panel, w, h, slice, opts) {
 
   const buildRow = (rk) => {
     const s = _latest(metric, rk);
-    const cells = [cell(esc(String(rk)), idW, false)];
+    // Tree mode: the identity cell carries the indent + branch-glyph prefix (our
+    // own glyphs, no markup) ahead of the esc'd row key; `truncate` bounds it.
+    const idText = (prefixOf ? (prefixOf.get(rk) || '') : '') + esc(String(rk));
+    const cells = [cell(idText, idW, false)];
     cols.forEach((c, ci) => {
       const type = _typeOf(metric, c);
       cells.push(cell(esc(_fmt(s ? s[c] : NaN, type)), colW[ci], type !== 'string'));
@@ -436,4 +520,6 @@ module.exports = {
   itemOps,
   _handleKey,
   _handleItemAction,
+  _treeActive,
+  _handleTreeKey,
 };

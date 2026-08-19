@@ -8,6 +8,18 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Process-tree view for the `table` panel (`tree: { parent: ppid }`), on a generic
+  tree model.** A table whose rows form a hierarchy via a parent-pointer column
+  renders as a tree: depth-first order with `├─ └─ │ ▾ ▸` glyphs, siblings honouring
+  the active sort. `t` toggles flat↔tree; `z` folds/unfolds the selected node's
+  subtree; filtering suspends the tree (flat filtered list). It composes with
+  `killable` and `select_from` — the cursor still selects a pid, so kill and the
+  drill-down work on tree nodes. The host-monitor demo's Processes pane is now a
+  tree. Built on a new reusable tree leaf (`js/leaves/tree`) — forest derivation
+  (parent-pointer or explicit-children), predicate-based visibility, DFS flatten,
+  and glyph rendering — designed to also back the groups navigator (migration
+  follows). The demo now opens the process list as a hierarchy.
+
 - **Per-pane row operations — one declaration, three surfaces (`itemOps`).** A
   list/table Component can declare its per-row operations once, in one place, and
   have them rendered across every input surface from a single source (so keyboard,

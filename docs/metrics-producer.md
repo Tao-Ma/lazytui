@@ -434,6 +434,14 @@ This is one instance of the generic per-pane **item-operations** contract
 (`itemOps`, one declaration rendered across the bottom bar + right-click) — see
 §7.9a of `docs/msg-routes.md`.
 
+A process table can also render **hierarchically** with `tree: { parent: ppid }`
+— `<col>` (here `ppid`) is each row's parent pointer. The pane opens as a tree
+(depth-first, siblings honouring the active sort, `├─ └─ │ ▾ ▸` glyphs); `t`
+toggles flat↔tree and `z` folds/unfolds the selected node's subtree. Filtering
+suspends the tree (flat filtered list). Built on the generic tree model
+(`js/leaves/tree`), shared with the groups navigator. Composes with `killable` +
+`select_from` — the cursor still selects a pid.
+
 The snapshot **gauge** consumer also **shipped** — `type: gauge`
 (`js/panel/monitor/gauge.js`), the bar sibling of the graph (`stats`) and
 the list (`table`): it renders a topic's latest sample as horizontal meter
