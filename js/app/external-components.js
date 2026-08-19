@@ -31,7 +31,12 @@
  */
 function externalComponents(config) {
   const list = (config && config.components) || [];
-  if (!Array.isArray(list)) return [];
+  // Fail loud on a present-but-malformed value. The YAML parser already
+  // validates this (schema.js), but a `.json` config bypasses the parser, so
+  // guard here too rather than silently ignore.
+  if (!Array.isArray(list)) {
+    throw new Error(`components: must be a list of module paths (got ${typeof list})`);
+  }
   const out = [];
   for (const spec of list) {
     if (typeof spec !== 'string' || !spec) {
@@ -44,7 +49,17 @@ function externalComponents(config) {
       throw new Error(`components: cannot load '${spec}': ${e.message}`);
     }
     const comps = Array.isArray(mod) ? mod : [mod];
-    for (const c of comps) out.push(c);
+    for (const c of comps) {
+      // A module that LOADS but isn't a valid Component would otherwise be
+      // silently dropped by registerComponent's skip-on-invalid guard — which
+      // contradicts "a declared component fails loud". Validate the shape here
+      // (same contract registerComponent enforces) and throw, naming the entry.
+      if (!c || typeof c !== 'object' || typeof c.name !== 'string' || !c.name ||
+          typeof c.init !== 'function' || typeof c.update !== 'function') {
+        throw new Error(`components: '${spec}' did not export a valid Component (need { name, init, update })`);
+      }
+      out.push(c);
+    }
   }
   return out;
 }

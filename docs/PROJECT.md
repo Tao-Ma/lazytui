@@ -58,10 +58,13 @@ components:
 
 Each module exports a Component (or an array of them) — the *same* API the
 in-tree built-ins use ([PLUGINS.md](PLUGINS.md)). At boot, lazytui `require`s
-each and registers it **after** the built-ins (so a name/type collision can
-intentionally override a built-in). A declared module that won't load **fails
-the boot loud**, naming it. This is the "new panel type" half of user
-expansion — the sanctioned replacement for the retired runtime Plugin API;
+each and registers it **after** the built-ins. A panel type a built-in already
+owns is a **boot error** unless the external def sets `override: true` — so you
+can't accidentally shadow a built-in; replacing one is an explicit opt-in. A
+declared module that won't load, or that doesn't export a valid Component,
+**fails the boot loud**, naming it. Paths are resolved but not `~`-expanded
+(use an absolute or `.`-relative path). This is the "new panel type" half of
+user expansion — the sanctioned replacement for the retired runtime Plugin API;
 you no longer edit `tui.js` to register a Component.
 
 Because Components are registered from a **static list at boot** (built-ins +

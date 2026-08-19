@@ -11,11 +11,13 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 - **Consumer-authored Components via a `components:` config key.** A project can
   now register its *own* JS Components without editing the framework tree: list
   the module paths under a top-level `components:` block and lazytui `require`s +
-  registers each at boot, **after** the built-ins (so a name/type collision can
-  intentionally override a built-in). `.`-relative paths resolve against
-  `project_dir` at parse time; bare names go through node require resolution; a
-  module may export one Component or an array. A declared module that won't load
-  **fails the boot loud**, naming it. This is the sanctioned "new panel type"
+  registers each at boot, **after** the built-ins. A panel type a built-in already
+  owns is a **boot error** unless the external def sets `override: true` (no
+  accidental shadowing; replacing a built-in is an explicit opt-in). `.`-relative
+  paths resolve against `project_dir` at parse time; bare names go through node
+  require resolution; a module may export one Component or an array. A declared
+  module that won't load — or that doesn't export a valid Component — **fails the
+  boot loud**, naming it. This is the sanctioned "new panel type"
   expansion path — the replacement for the retired runtime Plugin API — and it
   keeps a lazytui-based app (with its Components) bundleable into a standalone
   binary, since the boot registration is a static require graph. Replay has full

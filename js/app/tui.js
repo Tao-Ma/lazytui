@@ -363,11 +363,11 @@ function main() {
 
   // External (consumer-authored) Components declared under the config's
   // `components:` key (docs/PLUGINS.md, docs/PROJECT.md). Registered AFTER the
-  // built-ins: the enforced `layout`-first invariant holds, and a name/type
-  // collision lets a consumer intentionally override a built-in (surfaced by
-  // the existing panel-type collision warning). Fail loud — a declared module
-  // that won't load aborts boot naming it (it was explicit intent, unlike the
-  // best-effort built-in-plugin swallow in cli.js).
+  // built-ins so the enforced `layout`-first invariant holds. A panelType a
+  // built-in already owns is a boot ERROR unless the external def sets
+  // `override: true` (registerComponent throws — no accidental shadowing).
+  // Fail loud — a declared module that won't load or isn't a valid Component
+  // aborts boot naming it (explicit intent, unlike cli.js's best-effort swallow).
   try {
     require('./external-components').registerExternal(getModel().config, registerComponent);
   } catch (e) {

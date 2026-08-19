@@ -12,6 +12,7 @@ const path = require('path');
 const { describe, it, assert, eq, report } = require('./test-runner');
 const { externalComponents, configFromLog, registerExternal } = require('../app/external-components');
 const { parse } = require('../parser');
+const api = require('../panel/api');
 
 const FIXTURES = path.join(__dirname, 'fixtures');
 const FX_HELLO = path.join(FIXTURES, 'ext-hello.js');
@@ -31,11 +32,25 @@ describe('[external-components] externalComponents() — resolve + require', () 
     const comps = externalComponents({ components: [FX_TWO, FX_HELLO] });
     eq(comps.map(c => c.name), ['ext-alpha', 'ext-beta', 'ext-hello']);
   });
-  it('absent / empty / non-array → no components (no throw)', () => {
+  it('absent / empty components → no components (no throw)', () => {
     eq(externalComponents(null), []);
     eq(externalComponents({}), []);
     eq(externalComponents({ components: [] }), []);
-    eq(externalComponents({ components: 'nope' }), []);
+  });
+  it('fails loud on a present-but-non-list components (the .json-bypass guard)', () => {
+    let threw = false;
+    try { externalComponents({ components: 'nope' }); } catch (_) { threw = true; }
+    assert(threw, 'a non-array components: must throw, not silently drop');
+  });
+  it('fails loud on a module that loads but is not a valid Component', () => {
+    const os = require('os'); const fs = require('fs');
+    const bad = path.join(os.tmpdir(), `ext-bad-shape-${process.pid}.js`);
+    fs.writeFileSync(bad, 'module.exports = { init: () => ({}) };'); // no name/update
+    let msg = null;
+    try { externalComponents({ components: [bad] }); } catch (e) { msg = e.message; }
+    fs.unlinkSync(bad);
+    assert(msg !== null, 'a malformed Component must fail loud, not be silently skipped');
+    assert(/did not export a valid Component/.test(msg), `clear message: ${msg}`);
   });
   it('fails loud on an unloadable path, naming the offending entry', () => {
     let msg = null;
@@ -65,12 +80,27 @@ describe('[external-components] registerExternal() — the shared boot/replay se
     eq(seen.length, 0);
   });
   it('lands a real Component in the registry (layout-first, like the live boot)', () => {
-    const api = require('../panel/api');
     api.registerComponent(require('../panel/layout'));   // enforced-first chrome
     registerExternal({ components: [FX_HELLO] }, api.registerComponent);
     const got = api.getComponent('ext-hello');
     assert(got && got.name === 'ext-hello', 'ext-hello resolvable from the registry');
     assert(got.panelTypes && got.panelTypes['ext-hello'], 'its panel type is registered');
+  });
+});
+
+describe('[external-components] collision/override — no accidental shadowing', () => {
+  const mk = (name, type, extra) => ({ name, init: () => ({}), update: (m, s) => s, panelTypes: { [type]: { render: () => name, ...(extra || {}) } } });
+  it('a panelType a built-in/other Component already owns THROWS (not silent override)', () => {
+    api.registerComponent(mk('own-a', 'collide-x'));
+    let threw = false;
+    try { api.registerComponent(mk('own-b', 'collide-x')); } catch (_) { threw = true; }
+    assert(threw, 'colliding panelType without override must throw — no silent shadowing');
+  });
+  it('override: true is the explicit opt-in to replace the owner', () => {
+    let ok = true;
+    try { api.registerComponent(mk('own-c', 'collide-x', { override: true })); } catch (_) { ok = false; }
+    assert(ok, 'override:true must succeed');
+    eq(require('../panel/route').componentForPanel('collide-x'), 'own-c');
   });
 });
 
@@ -114,6 +144,62 @@ describe('[external-components] parser — path resolution + validation', () => 
     let threw = false;
     try { parse(path.join(FIXTURES, 'invalid_components.yml')); } catch (_) { threw = true; }
     assert(threw, 'expected a schema error for a scalar components:');
+  });
+});
+
+// End-to-end: a PLACED external pane renders live, and reconstructs faithfully
+// under replay in a SEPARATE process (external registration only via the WAL
+// peek) — the two paths the unit tests above only cover in pieces.
+describe('[external-components] end-to-end — placed pane renders + replays', () => {
+  const R = path.join(__dirname, '..');
+  const { parse } = require('../parser');
+  const { getModel } = require('../app/runtime');
+  const { loadConfig, initState } = require('../app/state');
+  const replayCli = require('../app/replay-cli');
+  const { render } = require('../render/paint');
+  const CFG = path.join(FIXTURES, 'ext-placed.yml');
+
+  const strip = s => s.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/\x1b[=>]/g, '');
+  const capture = (fn) => {
+    const chunks = []; const orig = process.stdout.write;
+    process.stdout.write = s => { chunks.push(String(s)); return true; };
+    try { fn(); } finally { process.stdout.write = orig; }
+    return strip(chunks.join(''));
+  };
+
+  it('a placed `type: ext-hello` pane renders in the live frame', () => {
+    const cfg = parse(CFG);
+    getModel().config = cfg;
+    getModel().projectDir = cfg.project_dir;
+    replayCli._installRuntime();                          // wires runtime + built-ins
+    require('../app/external-components').registerExternal(cfg, api.registerComponent);
+    initState();
+    const frame = capture(() => render(getModel()));
+    assert(frame.includes('EXTPANEL'), 'the external panel type rendered its marker');
+  });
+
+  it('reconstructs the external pane under --record-print (replay parity, fresh process)', () => {
+    const os = require('os'); const fs = require('fs');
+    const { spawnSync } = require('child_process');
+    const wal = path.join(os.tmpdir(), `ext-parity-${process.pid}.jsonl`);
+    try { fs.unlinkSync(wal); } catch (_) { /* fresh */ }
+
+    // Record a session that places the external pane (set_config carries
+    // `components:`; set_arrange places the pane).
+    const sessionLog = require('../io/session-log');
+    sessionLog.enable(true);
+    sessionLog.setCheckpointCadence(sessionLog.DEFAULT_CHECKPOINT_CADENCE);
+    sessionLog.attachStream(wal);
+    loadConfig(CFG);
+    require('../app/external-components').registerExternal(getModel().config, api.registerComponent);
+    initState();
+    sessionLog.enable(false);
+
+    // Reconstruct in a SEPARATE process — the external component is registered
+    // ONLY by the replay harness peeking the WAL's config.
+    const out = spawnSync(process.execPath, [path.join(R, 'app', 'tui.js'), '--record-print', wal], { encoding: 'utf8' });
+    try { fs.unlinkSync(wal); } catch (_) { /* best-effort */ }
+    assert(/EXTPANEL/.test(out.stdout || ''), `replayed frame contains the external panel — stderr: ${out.stderr}`);
   });
 });
 
