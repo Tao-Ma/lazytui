@@ -68,6 +68,15 @@ function runReplay(file, opts = {}) {
   try { log = sessionLog.load(file); }
   catch (e) { console.error(`--record-print: cannot read ${file}: ${e.message}`); return 1; }
 
+  // Register the recorded session's external Components (peeked from the WAL's
+  // set_config) so the fold reaches their update()/render() — replay parity for
+  // consumer-authored panels. Best-effort: a module absent on THIS host (a
+  // cross-machine replay — the JS isn't in the WAL) diagnoses, not crashes.
+  try {
+    const ext = require('./external-components');
+    ext.registerExternal(ext.configFromLog(log), api.registerComponent);
+  } catch (e) { console.error(`--record-print: ${e.message}`); }
+
   const targetSeq = (opts.seq != null && Number.isFinite(opts.seq)) ? opts.seq : Infinity;
   // Seek to the nearest checkpoint and fold forward (mint-on-restore recreates
   // the instance set from a bare boot); a checkpoint-less WAL folds from start.

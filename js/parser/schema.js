@@ -20,7 +20,7 @@ const VALID_ACTION_TYPES = new Set(['run', 'spawn', 'background']);
 // the new run below (a status-over-time log). See docs/DATAFLOW.md.
 const VALID_ACTION_OUTPUT_MODES = new Set(['replace', 'append']);
 
-const VALID_TOP_KEYS    = new Set(['project_dir', 'groups', 'vars', 'helpers', 'files', 'layout', 'theme', 'plugins', 'register', 'keys', 'keymap', 'mouse', 'context-menu', 'panels', 'selection', 'editor', 'color_depth', 'theme_background', 'keyboard_protocol', 'metrics']);
+const VALID_TOP_KEYS    = new Set(['project_dir', 'groups', 'vars', 'helpers', 'files', 'layout', 'theme', 'plugins', 'register', 'keys', 'keymap', 'mouse', 'context-menu', 'panels', 'selection', 'editor', 'color_depth', 'theme_background', 'keyboard_protocol', 'metrics', 'components']);
 
 // Global user config (~/.config/lazytui/config.yml, docs/global-config) — only
 // the APP-BEHAVIOR sections are honored there; project content (groups,
@@ -100,6 +100,19 @@ function validate(data, _sourceFile, warnings) {
 
   if ('project_dir' in data && typeof data.project_dir !== 'string') {
     throw new SchemaError("'project_dir' must be a string");
+  }
+  // External (consumer-authored) Component modules (docs/PLUGINS.md, docs/PROJECT.md).
+  // A list of module paths — `.`-relative paths resolve against project_dir at
+  // parse time; bare names go through node require resolution.
+  if ('components' in data) {
+    if (!Array.isArray(data.components)) {
+      throw new SchemaError("'components' must be a list of module paths");
+    }
+    for (const s of data.components) {
+      if (typeof s !== 'string' || !s.trim()) {
+        throw new SchemaError("'components' entries must be non-empty strings (module paths)");
+      }
+    }
   }
   // Global text-selection default (docs/pane-selection.md); default ON. Per-pane
   // `select:` on a panel pool entry overrides it.

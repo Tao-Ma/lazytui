@@ -713,6 +713,14 @@ function parse(yamlPath, opts) {
   const yamlDir = path.dirname(absPath);
   const projectDir = path.resolve(yamlDir, rawProjectDir);
 
+  // External Component modules (docs/PLUGINS.md external path). Resolve `.`-
+  // relative paths against project_dir HERE so the resolved config — and the
+  // recorded WAL's set_config — carries absolute paths (replay parity, see
+  // app/external-components.js). Bare names (npm packages) pass through for node
+  // require resolution; absolute paths are kept as-is.
+  const components = (Array.isArray(data.components) ? data.components : [])
+    .map(s => (typeof s === 'string' && s.startsWith('.')) ? path.resolve(projectDir, s) : s);
+
   const groups = {};
   walkGroups(data.groups, varsBlock, helpersBlock, source, null, 0, groups);
 
@@ -725,6 +733,10 @@ function parse(yamlPath, opts) {
 
   return {
     project_dir: projectDir,
+    // Consumer-authored Component modules, resolved to absolute above. tui.js
+    // registers each after the built-ins; the replay harness re-registers the
+    // same set by peeking this from the WAL. Default empty — no external code.
+    components,
     groups,
     source_file: source,
     files,

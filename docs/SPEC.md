@@ -40,13 +40,17 @@ module.exports = {
 };
 ```
 
-Register it at boot in `tui.js`:
+Register it. An **in-tree** built-in is added to the static list in
+`app/components.js`. A **consumer project** keeps the module in its own tree and
+declares it in the config instead — no framework edit:
 
-```javascript
-registerComponent(require('../panel/navigator/hello'));
+```yaml
+components:
+  - ./hello.js        # `.`-relative → resolved against project_dir
 ```
 
-Reference the panel type in your YAML config:
+lazytui `require`s and registers each `components:` entry at boot, after the
+built-ins (docs/PROJECT.md). Then reference the panel type in your YAML config:
 
 ```yaml
 panels:

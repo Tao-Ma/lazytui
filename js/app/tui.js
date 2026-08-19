@@ -361,6 +361,20 @@ function main() {
   // identical set. See that file + docs/v0.5-layering.md.
   for (const comp of require('./components').BUILTIN_COMPONENTS) registerComponent(comp);
 
+  // External (consumer-authored) Components declared under the config's
+  // `components:` key (docs/PLUGINS.md, docs/PROJECT.md). Registered AFTER the
+  // built-ins: the enforced `layout`-first invariant holds, and a name/type
+  // collision lets a consumer intentionally override a built-in (surfaced by
+  // the existing panel-type collision warning). Fail loud — a declared module
+  // that won't load aborts boot naming it (it was explicit intent, unlike the
+  // best-effort built-in-plugin swallow in cli.js).
+  try {
+    require('./external-components').registerExternal(getModel().config, registerComponent);
+  } catch (e) {
+    console.error(`config: ${e.message}`);
+    process.exit(1);
+  }
+
   // PTY exit fan-out — wires `panel/content/pty-lifecycle` into
   // `io/terminal.js` so the io layer stays a leaf (it used to lazy-
   // require panel/viewer/tabs + panel/api + render/geometry on every

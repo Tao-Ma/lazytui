@@ -161,7 +161,13 @@ module.exports = {
 };
 ```
 
-Register with `api.registerComponent(component)`.
+Register with `api.registerComponent(component)`. In-tree built-ins are
+registered from the static list in `app/components.js`. A **consumer project**
+registers its *own* Components without editing the framework tree by listing
+the module paths under the config's top-level `components:` key — lazytui
+`require`s and registers each at boot, after the built-ins (see
+[PROJECT.md](PROJECT.md#consumer-authored-components-components)). The same
+Component shape works either way.
 
 ### Minimum viable Component
 

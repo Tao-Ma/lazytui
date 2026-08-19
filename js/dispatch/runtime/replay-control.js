@@ -198,6 +198,13 @@ function enter(file, opts = {}) {
   try { log = _sessionLog().load(file); }
   catch (e) { _diag(`record-load: ${e.message}`); return null; }
   if (!log.length) { _diag(`record-load: empty session ${file}`); return null; }
+  // Register the recorded session's external Components (peeked from the WAL) so
+  // the interactive scrubber reconstructs their panels too (replay parity).
+  // Best-effort — a module absent on this host diagnoses, not aborts the load.
+  try {
+    const ext = require('../../app/external-components');
+    ext.registerExternal(ext.configFromLog(log), require('../../panel/api').registerComponent);
+  } catch (e) { _diag(`record-load: ${e.message}`); }
   const checkpoints = [];
   for (let i = 0; i < log.length; i++) if (log[i].kind === 'checkpoint') checkpoints.push({ seq: log[i].seq, t: log[i].t, idx: i });
   const tl = _timeline();

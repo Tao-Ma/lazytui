@@ -77,6 +77,13 @@ function _summary(e) {
 function _computeDiffs(entries, pathFilter) {
   const replayCli = require('./replay-cli');
   replayCli._installRuntime();
+  // Register the session's external Components (peeked from the WAL) so per-Msg
+  // diffs cover their slices too (replay parity). Best-effort — a diagnostic
+  // tool must not crash on a module missing from this host.
+  try {
+    const ext = require('./external-components');
+    ext.registerExternal(ext.configFromLog(entries), require('../panel/api').registerComponent);
+  } catch (_) { /* best-effort: external panels just won't diff */ }
   const replay = require('../dispatch/runtime/replay');
   const { diffState } = require('../leaves/replay/model-diff');
   const out = {};

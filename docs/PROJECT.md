@@ -36,11 +36,38 @@ from there.
 | `project_dir:` (default `.`) | The YAML's parent directory |
 | `plugins.<name>.path:` (`.yml`/`.yaml`) — config split | The YAML's parent directory |
 | `files[].path:` | Used as-is — typically a project-relative string for display |
+| `components[]` — Component module paths | `project_dir` (`.`-relative → absolute at parse time; bare names → node require resolution) |
 | Action `script:` cwd | `project_dir` (resolved absolute at parse time) |
 
 The legacy `plugins.<name>.path: *.js` runtime-Plugin entries are no
 longer loaded (v0.5 Phase 6 retired the Plugin API); tui.js logs a
 one-time warning if the `plugins:` block contains non-split entries.
+
+### Consumer-authored Components (`components:`)
+
+Most projects extend lazytui with **declarative YAML alone** — built-in
+panel types, actions, metrics producers, themes. A project that needs a
+**new panel type in JS** declares its Component modules under a top-level
+`components:` list, so they live in the *project*, not the framework tree:
+
+```yaml
+components:
+  - ./components/my-panel.js   # `.`-relative → resolved against project_dir
+  - some-published-component   # bare name → node require resolution (npm package)
+```
+
+Each module exports a Component (or an array of them) — the *same* API the
+in-tree built-ins use ([PLUGINS.md](PLUGINS.md)). At boot, lazytui `require`s
+each and registers it **after** the built-ins (so a name/type collision can
+intentionally override a built-in). A declared module that won't load **fails
+the boot loud**, naming it. This is the "new panel type" half of user
+expansion — the sanctioned replacement for the retired runtime Plugin API;
+you no longer edit `tui.js` to register a Component.
+
+Because Components are registered from a **static list at boot** (built-ins +
+your `components:`), a lazytui-based project — with its Components — bundles
+cleanly into a standalone binary (`bun build --compile`): the compile embeds
+whatever the boot registration statically requires.
 
 Two consequences worth internalizing:
 
