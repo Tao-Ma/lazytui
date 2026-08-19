@@ -155,7 +155,9 @@ function _handleTreeKey(msg, slice) {
   if (msg.key === 't') {
     return [{ ...slice, treeMode: !slice.treeMode }, [{ type: '_claimed' }, { type: 'render' }]];
   }
-  if (slice.treeMode && msg.key === 'z') {
+  // `z` folds only while the tree is actually showing (_treeActive, not just
+  // treeMode) — during a filter the list is flat, so a fold would be invisible.
+  if (_treeActive(slice) && msg.key === 'z') {
     const items = msg.items || [];
     const rk = items[Math.min(mnav.cursorOf(slice, 'table'), items.length - 1)];
     if (rk == null) return [slice, [{ type: '_claimed' }]];

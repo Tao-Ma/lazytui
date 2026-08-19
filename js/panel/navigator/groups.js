@@ -49,9 +49,15 @@ function _forest(all) {
   const roots = [], children = new Map(), parent = new Map();
   for (const path of Object.keys(all)) {
     const g = all[path];
-    parent.set(path, g.parent || null);
-    children.set(path, (g.children || []).slice());
-    if (!g.parent) roots.push(path);
+    // Normalize a DANGLING parent pointer (parent not in config) to a root —
+    // matching buildForestByParent's orphan handling — and drop dangling children
+    // so `descendants` never yields a non-existent node. Parser output has neither
+    // (walkGroups adds every parent + child); this keeps the adapter robust for any
+    // future / hand-authored source, and shows a broken node rather than hiding it.
+    const p = (g.parent && all[g.parent]) ? g.parent : null;
+    parent.set(path, p);
+    children.set(path, (g.children || []).filter(c => all[c]));
+    if (!p) roots.push(path);
   }
   return { roots, children, parent };
 }
@@ -133,8 +139,10 @@ function expand(slice, ctx, path, recursive = false) {
   expanded.add(path);
   if (recursive) {
     // Expand every BRANCH descendant (a childless leaf has nothing to reveal).
+    // `all[d] &&` guards defensively — `_forest` already drops dangling children,
+    // so `descendants` yields only real nodes, but the guard mirrors the old code.
     for (const d of tree.descendants(_forest(all), path)) {
-      if ((all[d].children || []).length) expanded.add(d);
+      if (all[d] && (all[d].children || []).length) expanded.add(d);
     }
   }
   const next = recomputeList({ ...slice, expanded }, ctx);

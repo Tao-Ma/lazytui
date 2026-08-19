@@ -106,6 +106,10 @@ describe('[table-tree] _handleTreeKey — t toggles mode, z folds the selected n
     eq(table._handleTreeKey(keyMsg({ key: 'z' }), s), undefined);
     eq(table._handleTreeKey(keyMsg({ key: 't' }), s), undefined);
   });
+  it('z during an active filter is a no-op (tree suspended → falls through)', () => {
+    const s = treeSlice(); s.nav.cursor = 1; s.nav.filter = '2';
+    eq(table._handleTreeKey(keyMsg({ key: 'z' }), s), undefined, 'z not claimed while filtering');
+  });
 });
 
 // --- integration: the tree renders with indent glyphs -----------------------

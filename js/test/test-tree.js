@@ -163,4 +163,30 @@ describe('[8] Quick tab — flat list of pinned groups, any depth', () => {
   });
 });
 
+describe('[9] malformed-config robustness (unreachable via the parser; for future tree sources)', () => {
+  it('a dangling parent pointer → the node shows as a visible root, no crash', () => {
+    getModel().config = { groups: {
+      a: { name: 'a', label: 'A', containers: [], actions: {}, quick: false, children: [], parent: null, depth: 0 },
+      m: { name: 'm', label: 'M', containers: [], actions: {}, quick: false, children: [], parent: 'ghost', depth: 1 },
+    } };
+    getInstanceSlice('groups').expanded = new Set(['ghost']);   // even with the ghost forced "expanded"
+    getInstanceSlice('groups').tab = 'all';
+    setSel('groups', 0); getModel().currentGroup = '';
+    recomputeGroups();
+    eq(getInstanceSlice('groups').list.map(g => g.name), ['a', 'm'], 'broken-parent node shows as a root, not hidden');
+  });
+  it('recursive expand with a dangling child → no crash, child ignored', () => {
+    getModel().config = { groups: {
+      a: { name: 'a', label: 'A', containers: [], actions: {}, quick: false, children: ['ghostchild'], parent: null, depth: 0 },
+    } };
+    getInstanceSlice('groups').expanded = new Set();
+    getInstanceSlice('groups').tab = 'all';
+    setSel('groups', 0); getModel().currentGroup = '';
+    recomputeGroups();
+    getModel().currentGroup = getInstanceSlice('groups').list[0].name;
+    expandGroup('a', true);   // recursive — must not throw on the dangling child
+    eq(getInstanceSlice('groups').list.map(g => g.name), ['a'], 'a alone; ghostchild ignored');
+  });
+});
+
 report();
