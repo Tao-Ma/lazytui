@@ -749,6 +749,24 @@ function handleMouse(kind, x, y) {
   // "Other panels" arm re-sets it when the press lands on a selectable pane.
   _armedSelect = null;
 
+  // Tree fold marker (`▾`/`▸`) — a CONTENT-ROW affordance, so it resolves HERE at
+  // body precedence, NOT in the border-chrome cluster above: that cluster runs
+  // under the non-modal chain overlays (pane-menu / jobs / free-config, all
+  // suppressChrome:false) whose dropdowns sit OVER the data rows, and it runs
+  // BEFORE the mode-mouse handlers — so a marker there would hijack a click meant
+  // for an open dropdown (folding a hidden node + eating the selection). By this
+  // point every chain mode has already returned (the mode handlers + the
+  // isChainActive guard above), so only a plain normal-mode press reaches here. A
+  // hit folds THAT node by id (independent of the cursor); the focus+select loop
+  // below still selects on a row-body click.
+  const { hitTestTreeMarker } = require('../../panel/chrome-hittest');
+  const treeHit = hitTestTreeMarker(mx, my);
+  if (treeHit) {
+    dispatchMsg(wrap(treeHit.owner, { type: 'tree_toggle', id: treeHit.id }));
+    render();
+    return;
+  }
+
   let mutated = false;
 
   // Same reason as _handleWheel above: hit-test against ACTUALLY-

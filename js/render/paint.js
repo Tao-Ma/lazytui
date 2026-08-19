@@ -35,6 +35,7 @@ const mpane = require('../leaves/wm/pane');
 const { theme, setTheme } = require('../leaves/infra/themes');
 const { truncate, setWriter: _setDrawWriter, setChromeSink: _setDrawChromeSink } = require('../leaves/render/draw');
 const chromeRegions = require('../panel/chrome-regions');
+const treeRegions = require('../panel/tree-regions');
 const { detectColorDepth, downgradeAnsi } = require('../leaves/render/color-depth');
 
 // Truecolor arc 1b (docs/truecolor.md P3) — color depth is a DEVICE property,
@@ -887,6 +888,9 @@ function render(model) {
   // pane that stopped rendering (off-screen in half/full) leaves no stale hit
   // region. Repopulated synchronously below; hit-tests only read between frames.
   chromeRegions.clear();
+  // Same discipline for the per-row tree fold markers (panel/tree-regions): a
+  // table in tree mode republishes its `▾`/`▸` glyph ranges each paint.
+  treeRegions.clear();
   const viewMode = layoutSlice.viewMode;
   if (viewMode === 'half') mainDidFull = renderHalf(model, previewArrange);
   else if (viewMode === 'full') mainDidFull = renderFull(model, previewArrange);

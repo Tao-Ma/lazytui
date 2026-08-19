@@ -24,6 +24,7 @@ const mpane = require('../leaves/wm/pane');
 const { visibleBoundsFor } = require('../leaves/wm/geometry');
 const bc = require('../leaves/render/border-controls');
 const chromeRegions = require('./chrome-regions');
+const treeRegions = require('./tree-regions');
 
 // Which top-border controls a pane type carries is a Component-declared
 // capability (`panelTypes[type].borderControls`) resolved via api.borderControlsFor
@@ -174,4 +175,26 @@ function hitTestActionCancel(mx, my) {
   return null;
 }
 
-module.exports = { hitTestCollapseButton, hitTestCloseButton, hitTestBorderControls, hitTestActionCancel };
+/** Hit-test the per-row TREE FOLD MARKERS (`▾`/`▸`) a `table` in tree mode drew.
+ *  Returns `{ owner, id }` — the pane and the node whose marker sits under the
+ *  cursor — or null. Presence + geometry come from panel/tree-regions, the marker
+ *  cells paint ACTUALLY published this frame (a clipped/off-screen marker leaves no
+ *  region → no hit), so paint ↔ hit-test can't drift. Pane-local cells (y from the
+ *  top border, x from the left border) → screen by adding the pane origin, exactly
+ *  as the chrome-region hit-tests above. The caller dispatches
+ *  `wrap(owner, { type:'tree_toggle', id })`; a collapsed pane draws no rows. */
+function hitTestTreeMarker(mx, my) {
+  const targets = _placedWidgetTargets();
+  if (!targets) return null;
+  for (const { p, b } of targets) {
+    if (p.collapsed) continue;
+    const markers = treeRegions.get(p.paneId);
+    if (!markers) continue;
+    for (const g of markers) {
+      if (my === b.y + g.y && mx >= b.x + g.x0 && mx <= b.x + g.x1) return { owner: p.paneId, id: g.id };
+    }
+  }
+  return null;
+}
+
+module.exports = { hitTestCollapseButton, hitTestCloseButton, hitTestBorderControls, hitTestActionCancel, hitTestTreeMarker };

@@ -19,6 +19,15 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   (parent-pointer or explicit-children), predicate-based visibility, DFS flatten,
   and glyph rendering. The demo now opens the process list as a hierarchy.
 
+- **Mouse affordances for the process tree (the click twins of `t`/`z`).** The tree
+  is now fully mouse-drivable: a `‹ tree ›` / `‹ flat ›` chip in the top border (left
+  of the sort selector) toggles flat↔tree, and clicking a `▾`/`▸` fold marker folds
+  or unfolds that node directly — no need to move the selection first (the row body
+  still selects). Both follow the paint↔hit-test agreement discipline: the chip
+  self-suppresses on a non-tree pane, and `render` publishes each drawn marker's cell
+  to a per-frame registry (`panel/tree-regions`) that the hit-test reads, so a marker
+  clipped by a narrow column is never clickable where nothing drew.
+
 ### Changed
 
 - **The groups navigator now shares the generic tree model.** Its bespoke

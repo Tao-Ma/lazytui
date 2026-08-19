@@ -70,6 +70,7 @@ const { sortControlText, sortControlHits, NONE_LABEL, ASC, DESC } = require('../
 const { itemOpsBarSpec } = require('../../leaves/render/action-legend');   // surface-aware bottom item-op bar
 const { buildKillMenu } = require('../../leaves/proc/kill-signals');
 const tree = require('../../leaves/tree/tree');   // generic tree model (process-tree mode)
+const treeRegions = require('../tree-regions');   // per-frame drawn fold-marker regions (click-to-fold)
 
 function _metric(topic) {
   const all = getModel().metrics;
@@ -141,9 +142,31 @@ function update(msg, slice) {
     if (tk !== undefined) return tk;
     return _handleKey(msg, slice);
   }
+  // Click-driven twins of the t/z keys — the border-control chip (tree_mode_toggle)
+  // and a click on a `▾`/`▸` fold marker (tree_toggle{id}) route here as owner-Msgs.
+  // They share the SAME pure state transitions the keys use (_toggleMode/_toggleFold)
+  // so keyboard and mouse can't drift. Not focus-gated: an owner-Msg targets THIS
+  // pane's slice directly. Guarded to a tree-capable pane (a stray Msg is inert).
+  if (msg.type === 'tree_mode_toggle') {
+    return slice.tree ? [_toggleMode(slice), [{ type: 'render' }]] : slice;
+  }
+  if (msg.type === 'tree_toggle') {
+    if (!slice.tree || msg.id == null) return slice;
+    return [_toggleFold(slice, msg.id), [{ type: 'render' }]];
+  }
   if (msg.type === 'item_action') return _handleItemAction(msg, slice);
   if (mnav.isNavMsg(msg)) return mnav.apply(slice, msg);
   return slice;
+}
+
+// Pure state transitions shared by the keyboard (t/z) and the mouse (chip /
+// marker click), so the two surfaces stay byte-identical. treeMode flips flat↔tree;
+// `_toggleFold` flips one node's membership in the `collapsed` set (copy-on-write).
+function _toggleMode(slice) { return { ...slice, treeMode: !slice.treeMode }; }
+function _toggleFold(slice, id) {
+  const collapsed = new Set(slice.collapsed);
+  if (collapsed.has(id)) collapsed.delete(id); else collapsed.add(id);
+  return { ...slice, collapsed };
 }
 
 // Tree-view key arm (tree-capable panes only): `t` toggles flat↔tree; `z` folds
@@ -153,7 +176,7 @@ function update(msg, slice) {
 function _handleTreeKey(msg, slice) {
   if (!slice.tree || msg.focusKind !== 'table') return undefined;
   if (msg.key === 't') {
-    return [{ ...slice, treeMode: !slice.treeMode }, [{ type: '_claimed' }, { type: 'render' }]];
+    return [_toggleMode(slice), [{ type: '_claimed' }, { type: 'render' }]];
   }
   // `z` folds only while the tree is actually showing (_treeActive, not just
   // treeMode) — during a filter the list is flat, so a fold would be invisible.
@@ -161,9 +184,7 @@ function _handleTreeKey(msg, slice) {
     const items = msg.items || [];
     const rk = items[Math.min(mnav.cursorOf(slice, 'table'), items.length - 1)];
     if (rk == null) return [slice, [{ type: '_claimed' }]];
-    const collapsed = new Set(slice.collapsed);
-    if (collapsed.has(rk)) collapsed.delete(rk); else collapsed.add(rk);
-    return [{ ...slice, collapsed }, [{ type: '_claimed' }, { type: 'render' }]];
+    return [_toggleFold(slice, rk), [{ type: '_claimed' }, { type: 'render' }]];
   }
   return undefined;
 }
@@ -412,13 +433,41 @@ function render(panel, w, h, slice, opts) {
   // windowed: we slice the data rows to [scroll, scroll+dataH) ourselves and pin
   // the header at line 0, so renderPanel must NOT re-slice.
   const lines = [header];
+  // Tree mode: collect the DRAWN fold-marker (`▾`/`▸`) cells so a click can toggle
+  // the node under it (panel/tree-regions, read by chrome-hittest.hitTestTreeMarker).
+  // Pane-local cells (reader adds the pane origin): y = 2 + vi (0 border, 1 sticky
+  // header, 2+ data); x = 1 (left border) + the marker's offset within the id cell.
+  // Two clip guards keep the region to a cell that ACTUALLY painted:
+  //   · horizontal — publish only a marker that survived id-column truncation. The
+  //     ellipsis can only land on the last retained cell (idW-1, see draw.truncate),
+  //     so a glyph at offset <= idW-2 is drawn intact; past that it's clipped.
+  //   · vertical — a data row is drawn only when its inner index (1 + vi) is inside
+  //     innerH. At the pane-height floor (h==3 → innerH==1) the sticky header eats
+  //     the only inner row, so `dataH`'s Math.max(1,…) still iterates row 0 but it
+  //     never paints; without this its marker would land on the bottom border.
+  const treeNodeOf = treeRows ? new Map(treeRows.map(r => [r.id, r])) : null;
+  const markers = [];
   rows.slice(scroll, scroll + dataH).forEach((rk, vi) => {
     const abs = scroll + vi;
     const rowStr = buildRow(rk);
     // Selected row: one `[selected]` span over the whole line, no inner markup
     // (PRINCIPLES §8) — cells are plain (esc'd, no color).
     lines.push(abs === sel && focused ? `[${t.selected}]${rowStr}` : rowStr);
+    if (treeNodeOf && (1 + vi) < innerH) {
+      const node = treeNodeOf.get(rk);
+      if (node && node.hasChildren) {
+        // The prefix ends with the 2-cell marker (`▾ ` / `▸ `): the glyph is its
+        // penultimate visible cell.
+        const markerCell = visibleLen(prefixOf.get(rk) || '') - 2;
+        if (markerCell >= 0 && markerCell <= idW - 2) {
+          const x0 = 1 + markerCell;                                   // pane-local
+          const x1 = (markerCell + 1 <= idW - 2) ? x0 + 1 : x0;        // +trailing space when it too survives
+          markers.push({ y: 2 + vi, x0, x1, id: rk });
+        }
+      }
+    }
   });
+  treeRegions.publish(panel.paneId, markers);
 
   const m = getModel();
   const ctl = borderControlsFor({ paneId: panel.paneId, type: 'table', focused, innerW }, m);
@@ -488,6 +537,35 @@ const _opBar = itemOpsBarSpec({
   itemAt: (paneId) => { const its = apiGetItems(paneId); return its[Math.min(getSel(paneId), its.length - 1)]; },
 });
 
+// --- Tree-mode toggle (top slot) — flat↔tree chip ---------------------------
+// A `‹ tree ›` / `‹ flat ›` chip in the top strip (left of the sort selector),
+// the click twin of the `t` key. Self-suppresses on a non-tree pane (no `tree:`
+// config) and in free-config, so paint + hit-test agree (borderControlsFor drops
+// a null render). One click region over the whole chip → `tree_mode_toggle`
+// (update()'s shared _toggleMode, same transition `t` uses). The label shows the
+// CURRENT mode (btop-style state readout), not the action.
+const _treeControl = {
+  id: 'tree',
+  slot: 'top',
+  render(model, pane) {
+    if (model && model.modes && model.modes.freeConfigMode) return null;
+    const slice = route.getInstanceSlice(pane.paneId);
+    if (!slice || !slice.tree) return null;   // only a tree-capable pane carries it
+    return sortControlText(slice.treeMode ? 'tree' : 'flat');
+  },
+  regions(x0, y, visibleW) { return [{ x0, x1: x0 + visibleW - 1, y, action: 'toggle' }]; },
+  dispatch(_action, pane) {
+    return { owner: pane.paneId, msg: { type: 'tree_mode_toggle', panel: pane.type } };
+  },
+};
+
+// tree-mode chip + sort selector (top) + the item-op bar (bottom, self-
+// suppressing). Order = left-to-right in the top strip (tree, then sort). Hoisted
+// out of the exports literal so the module.exports block stays a flat name list
+// (the dead-export scanner comma-splits that block; an inline multi-element array
+// would look like stray export names).
+const _borderControls = [_treeControl, _sortControl, _opBar];
+
 module.exports = {
   name: 'table',
   init,
@@ -510,8 +588,7 @@ module.exports = {
       // Per-pane item operations (leaves/render/item-ops): read by the bottom-bar
       // spec AND the right-click context resolver (dispatch/control/input).
       itemOps,
-      // sort selector (top) + the item-op bar (bottom, self-suppressing).
-      borderControls: [_sortControl, _opBar],
+      borderControls: _borderControls,
       keyHints: 'sort: click ‹col›',
     },
   },
@@ -524,4 +601,5 @@ module.exports = {
   _handleItemAction,
   _treeActive,
   _handleTreeKey,
+  _treeControl,
 };

@@ -11,7 +11,13 @@ const { describe, it, assert, eq, report } = require('./test-runner');
 const { getModel } = require('../app/runtime');
 const table = require('../panel/monitor/table');
 const api = require('../panel/api');
+const route = require('../panel/route');
 const sm = require('./smoke/_helpers/smoke');
+const treeRegions = require('../panel/tree-regions');
+const { hitTestTreeMarker } = require('../panel/chrome-hittest');
+const { visibleBoundsFor } = require('../leaves/wm/geometry');
+const { dispatchMsg } = require('../dispatch/runtime/loop');
+const mpool = require('../leaves/wm/pool');
 
 const SCHEMA = { cpu: { type: 'percent' }, comm: { type: 'string' }, ppid: { type: 'number' } };
 function setMetric(topic, seriesByRow) {
@@ -112,6 +118,50 @@ describe('[table-tree] _handleTreeKey — t toggles mode, z folds the selected n
   });
 });
 
+describe('[table-tree] update — click twins of t/z (tree_mode_toggle, tree_toggle)', () => {
+  it('tree_mode_toggle flips treeMode + emits render (shares _toggleMode with `t`)', () => {
+    const [next, cmds] = table.update({ type: 'tree_mode_toggle' }, treeSlice());
+    eq(next.treeMode, false);
+    assert(cmds.some(c => c.type === 'render'));
+  });
+  it('tree_toggle{id} folds that node — by id, independent of the cursor', () => {
+    setMetric('host.proc', SERIES);
+    const [next] = table.update({ type: 'tree_toggle', id: '100' }, treeSlice());
+    assert(next.collapsed.has('100'), '100 folded');
+    eq(table.getItems(next), ['1', '100', '200'], '300 (child of 100) hidden');
+  });
+  it('tree_toggle again unfolds', () => {
+    const s = treeSlice(); s.collapsed = new Set(['100']);
+    const [next] = table.update({ type: 'tree_toggle', id: '100' }, s);
+    assert(!next.collapsed.has('100'));
+  });
+  it('a stray tree Msg on a NON-tree pane is inert (returns the slice unchanged)', () => {
+    const flat = table.init('p', { paneDef: { topic: 't' } });
+    eq(table.update({ type: 'tree_mode_toggle' }, flat), flat);
+    eq(table.update({ type: 'tree_toggle', id: '100' }, flat), flat);
+  });
+  it('tree_toggle with a null id is inert', () => {
+    const s = treeSlice();
+    eq(table.update({ type: 'tree_toggle', id: null }, s), s);
+  });
+});
+
+describe('[table-tree] _treeControl chip — self-suppressing flat↔tree toggle', () => {
+  it('suppressed in free-config (null render)', () => {
+    eq(table._treeControl.render({ modes: { freeConfigMode: true } }, { paneId: 'procs' }), null);
+  });
+  it('suppressed on a pane with no live slice (null render)', () => {
+    eq(table._treeControl.render({ modes: {} }, { paneId: 'no-such-pane' }), null);
+  });
+  it('one click region over the whole chip → tree_mode_toggle owner-Msg', () => {
+    const regions = table._treeControl.regions(10, 0, 6);
+    eq(regions.length, 1);
+    eq(regions[0], { x0: 10, x1: 15, y: 0, action: 'toggle' });
+    eq(table._treeControl.dispatch('toggle', { paneId: 'procs', type: 'table' }),
+       { owner: 'procs', msg: { type: 'tree_mode_toggle', panel: 'table' } });
+  });
+});
+
 // --- integration: the tree renders with indent glyphs -----------------------
 if (!api.getComponent('table')) api.registerComponent(require('../panel/monitor/table'));
 
@@ -129,6 +179,142 @@ describe('[table-tree] render — indent + branch glyphs', () => {
     assert(/▾|▸/.test(frame), 'an expand marker painted on a parent');
     // 300 renders under 100 (its deepest indent) — the pids all appear.
     for (const pid of ['1', '100', '200', '300']) assert(frame.includes(pid), `pid ${pid} present`);
+  });
+});
+
+// --- integration: click-to-fold — marker regions + hit-test agreement -------
+describe('[table-tree] click a ▾/▸ marker folds that node (paint↔hit-test)', () => {
+  const paneCfg = { id: 'procs', type: 'table', title: 'Procs',
+    config: { topic: 'host.proc', columns: ['cpu', 'comm'], sort: 'cpu', tree: { parent: 'ppid' } } };
+  // The placed pane's id follows the harness convention `pane-<poolkey>`; derive
+  // it from the layout so the test doesn't hardcode it (production keys the
+  // registry + the hit-test off this same p.paneId, so they never disagree).
+  function paneId() {
+    const arrange = route.getInstanceSlice('layout').arrange;
+    return mpool.allPanesInColumns(arrange).find(p => p.type === 'table').paneId;
+  }
+  function boot() {
+    sm.bootFresh({
+      groups: { g: { label: 'G', containers: [], actions: { a: { cmd: 'echo', label: 'A' } } } },
+      layout: { pool: { procs: paneCfg }, columns: [{ panels: [paneCfg] }] },
+    });
+    setMetric('host.proc', SERIES);
+    sm.capture(() => sm.render());
+  }
+  const boundsOf = (id) => visibleBoundsFor(route.getInstanceSlice('layout'), id);
+
+  it('render publishes a fold marker for every PARENT row (leaves get none)', () => {
+    boot();
+    const markers = treeRegions.get(paneId()) || [];
+    eq(markers.map(m => m.id).sort(), ['1', '100'], 'parents 1 + 100; leaves 200/300 have no marker');
+  });
+
+  it('a click at each published marker cell resolves to THAT node (coord transform)', () => {
+    boot();
+    const id = paneId();
+    const b = boundsOf(id);
+    for (const m of treeRegions.get(id)) {
+      eq(hitTestTreeMarker(b.x + m.x0, b.y + m.y), { owner: id, id: m.id }, `marker ${m.id}`);
+    }
+    // The left border column on a marker row is NOT a marker → no phantom hit.
+    const m0 = treeRegions.get(id)[0];
+    eq(hitTestTreeMarker(b.x, b.y + m0.y), null, 'border cell is inert');
+  });
+
+  it('end-to-end: a real press on 100’s marker folds it, a second press unfolds', () => {
+    boot();
+    const id = paneId();
+    const b = boundsOf(id);
+    // handleMouse takes 1-based SGR coords (it decrements to 0-based); the raw
+    // hit-test above is 0-based. So drive the marker cell as (screen + 1).
+    const press = (m) => sm.capture(() => sm.handleMouse('press', b.x + m.x0 + 1, b.y + m.y + 1));
+    const sliceNow = () => route.getInstanceSlice(id);
+    assert(table.getItems(sliceNow()).includes('300'), '300 (psql) visible before the fold');
+
+    press(treeRegions.get(id).find(m => m.id === '100'));   // real input path → hitTestTreeMarker → tree_toggle
+    assert(sliceNow().collapsed.has('100'), '100 folded by the marker click');
+    assert(!table.getItems(sliceNow()).includes('300'), '300 (child of 100) now hidden');
+    assert(sliceNow().treeMode === true, 'still in tree mode — the marker click didn’t disturb flat/tree');
+
+    press(treeRegions.get(id).find(m => m.id === '100'));   // marker republished (collapsed ▸) → toggles back
+    assert(!sliceNow().collapsed.has('100'), '100 unfolded by the second click');
+    assert(table.getItems(sliceNow()).includes('300'), '300 restored');
+  });
+
+  it('the tree chip is hit-testable on the top border and a click toggles flat↔tree', () => {
+    boot();
+    const id = paneId();
+    const b = boundsOf(id);
+    const { hitTestBorderControls } = require('../panel/chrome-hittest');
+    // Presence mirrors paint (borderControlsFor + bc.fits gate both): scan the top
+    // border row for the cell whose control Msg is our tree toggle.
+    let hitX = -1;
+    for (let x = b.x; x < b.x + b.w; x++) {
+      const h = hitTestBorderControls(x, b.y);
+      if (h && h.owner === id && h.msg.type === 'tree_mode_toggle') { hitX = x; break; }
+    }
+    assert(hitX >= 0, 'the ‹ tree › chip is hit-testable on the top border');
+    assert(route.getInstanceSlice(id).treeMode === true, 'starts in tree mode');
+    sm.capture(() => sm.handleMouse('press', hitX + 1, b.y + 1));   // 1-based SGR
+    assert(route.getInstanceSlice(id).treeMode === false, 'chip click → flat');
+    sm.capture(() => sm.handleMouse('press', hitX + 1, b.y + 1));
+    assert(route.getInstanceSlice(id).treeMode === true, 'chip click → tree');
+  });
+
+  it('a marker click is inert while a non-modal overlay owns the mouse (pane menu open)', () => {
+    // Regression: the marker is a BODY-row affordance, resolved at body precedence
+    // (after the chain-mode gates) — NOT in the border-chrome cluster. A pane-menu
+    // dropdown anchors at b.y+1, so its row 0 sits at b.y+2 == the first data row's
+    // marker; if the marker fired there it would fold a hidden node + eat the menu pick.
+    boot();
+    const id = paneId();
+    const b = boundsOf(id);
+    const m1 = treeRegions.get(id).find(x => x.id === '1');   // root, on the first data row
+    eq(m1.y, 2, 'root marker is on the first data row (where a dropdown row 0 lands)');
+    dispatchMsg(route.wrap('layout', { type: 'pane_menu_open', paneId: id, cursor: 0, scroll: 0 }));
+    assert(getModel().modes.paneMenuMode === true, 'pane menu is open');
+    sm.capture(() => sm.handleMouse('press', b.x + m1.x0 + 1, b.y + m1.y + 1));
+    assert(!route.getInstanceSlice(id).collapsed.has('1'), 'the overlay wins — the marker did NOT fold');
+    dispatchMsg(route.wrap('layout', { type: 'pane_menu_close' }));
+  });
+
+  it('no-phantom: a pane too narrow for a deep marker publishes none for it', () => {
+    boot();
+    const id = paneId();
+    sm.resize(24, 20);            // idW collapses to its floor → deep (indented) markers clip
+    sm.capture(() => sm.render());
+    const ids = (treeRegions.get(id) || []).map(m => m.id);
+    assert(ids.length && !ids.includes('100'), 'root marker survives; the depth-1 marker (100) is clipped → no phantom');
+    sm.resize(120, 40);          // restore for any later scenario
+  });
+});
+
+describe('[table-tree] no bottom-border phantom marker at the pane-height floor (h==3)', () => {
+  it('every published marker across a stack of min-height panes sits on a DRAWN row', () => {
+    // Stack many tree panes in one column on a short terminal → the layout floor
+    // (minH=3) forces several panes to h==3, where the sticky header eats the only
+    // inner row. The publish loop's `dataH = max(1, innerH-1)` still iterates row 0,
+    // so without the vertical clip guard its marker would land on the bottom border.
+    const N = 10, pool = {}, panels = [];
+    for (let i = 0; i < N; i++) {
+      const c = { id: 'p' + i, type: 'table', title: 'P' + i, config: { topic: 'host.p' + i, columns: ['cpu'], tree: { parent: 'ppid' } } };
+      pool['p' + i] = c; panels.push(c);
+    }
+    sm.bootFresh({ groups: { g: { label: 'G', containers: [], actions: { a: { cmd: 'echo', label: 'A' } } } }, layout: { pool, columns: [{ panels }] } });
+    for (let i = 0; i < N; i++) setMetric('host.p' + i, { '1': [{ cpu: 5, ppid: 0 }], '2': [{ cpu: 9, ppid: 1 }] });
+    sm.resize(80, 40);
+    sm.capture(() => sm.render());
+    const panes = mpool.allPanesInColumns(route.getInstanceSlice('layout').arrange).filter(p => p.type === 'table');
+    const hs = panes.map(p => visibleBoundsFor(route.getInstanceSlice('layout'), p.paneId).h);
+    assert(hs.some(h => h === 3), 'scenario actually produced an h==3 pane (heights ' + hs.join(',') + ')');
+    let checked = 0, bad = 0;
+    for (const p of panes) {
+      const b = visibleBoundsFor(route.getInstanceSlice('layout'), p.paneId);
+      for (const m of (treeRegions.get(p.paneId) || [])) { checked++; if (m.y < 1 || m.y > b.h - 2) bad++; }
+    }
+    assert(checked > 0, 'markers were published across the stack');
+    eq(bad, 0, 'no marker lands on a border / off-pane row (paint↔hit-test vertical agreement)');
+    sm.resize(120, 40);
   });
 });
 
