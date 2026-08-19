@@ -231,10 +231,11 @@ function loadMeta(filepath) {
 
 // --- Set-aware JSON codec -------------------------------------------------
 //
-// `checkpoint` entries embed Component slices, and nav slices hold Sets
-// (`multiSel` on every navigator; `expanded` on groups) — the ONLY non-plain
-// type in the replayable state (Map/Date elsewhere are module-local caches, not
-// state). encodeJson maps Set → { __set__: [...] } recursively so a checkpoint
+// `checkpoint` entries embed Component slices, and several slices hold Sets
+// (`multiSel` on every navigator; `expanded` on groups; `collapsed` on a `table`
+// in tree mode) — the ONLY non-plain type in the replayable state (Map/Date
+// elsewhere are module-local caches, not state). encodeJson maps Set → { __set__:
+// [...] } recursively so a checkpoint
 // serializes to plain JSON; decodeJson reverses it. The Msg/term entries carry
 // no Sets, so they pass through both unchanged.
 function encodeJson(v) {

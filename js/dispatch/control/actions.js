@@ -97,9 +97,16 @@ function moveSel(delta) {
   const def = getPanelDef(getFocus());
   if (!def || typeof def.getItems !== 'function') return;
   const items = getItems(getFocus());
-  const sel = getSel(getFocus());
-  const newSel = sel + delta;
-  if (newSel < 0 || newSel >= items.length) return;
+  if (!items.length) return;
+  // Clamp the BASE cursor to the current list before stepping — the stored
+  // nav.cursor can outrun a list that shrank since it was set (a process dies, or
+  // a table fold hides the selected row's subtree; click-to-fold makes that a
+  // one-click gesture). Its siblings (_pageInListPanel/_jumpInListPanel) already
+  // clamp; without it a delta from a stale base range-checks out of bounds in both
+  // directions and the arrow keys go dead (recoverable only via G/gg/PageUp).
+  const sel = Math.min(getSel(getFocus()), items.length - 1);
+  const newSel = Math.max(0, Math.min(items.length - 1, sel + delta));
+  if (newSel === sel) return;
   require('./dispatch').navSelect(getFocus(), newSel);
 }
 

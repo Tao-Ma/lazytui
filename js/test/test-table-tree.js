@@ -18,6 +18,7 @@ const { hitTestTreeMarker } = require('../panel/chrome-hittest');
 const { visibleBoundsFor } = require('../leaves/wm/geometry');
 const { dispatchMsg } = require('../dispatch/runtime/loop');
 const mpool = require('../leaves/wm/pool');
+const sessionLog = require('../io/session-log');   // WAL Set-aware codec (replay round-trip)
 
 const SCHEMA = { cpu: { type: 'percent' }, comm: { type: 'string' }, ppid: { type: 'number' } };
 function setMetric(topic, seriesByRow) {
@@ -286,6 +287,51 @@ describe('[table-tree] click a ▾/▸ marker folds that node (paint↔hit-test)
     const ids = (treeRegions.get(id) || []).map(m => m.id);
     assert(ids.length && !ids.includes('100'), 'root marker survives; the depth-1 marker (100) is clipped → no phantom');
     sm.resize(120, 40);          // restore for any later scenario
+  });
+});
+
+describe('[table-tree] folding an ancestor below the cursor does not strand the arrows', () => {
+  it('after a marker-fold shrinks the list past the cursor, nav still moves (base-clamp)', () => {
+    // tree: root 1 → (100 → 300), 200 ; plus a second root 2 → expanded = 5 rows.
+    const cfg = { id: 'nav', type: 'table', title: 'N', config: { topic: 'host.nav', columns: ['cpu'], sort: 'cpu', tree: { parent: 'ppid' } } };
+    sm.bootFresh({ groups: { g: { label: 'G', containers: [], actions: { a: { cmd: 'echo', label: 'A' } } } }, layout: { pool: { nav: cfg }, columns: [{ panels: [cfg] }] } });
+    setMetric('host.nav', { '1': [{ cpu: 50, ppid: 0 }], '100': [{ cpu: 90, ppid: 1 }], '300': [{ cpu: 40, ppid: 100 }], '200': [{ cpu: 10, ppid: 1 }], '2': [{ cpu: 5, ppid: 0 }] });
+    sm.capture(() => sm.render());
+    const id = mpool.allPanesInColumns(route.getInstanceSlice('layout').arrange).find(p => p.type === 'table').paneId;
+    const b = visibleBoundsFor(route.getInstanceSlice('layout'), id);
+    const nav = require('../panel/nav-state');
+    const items0 = table.getItems(route.getInstanceSlice(id));
+    const last = items0.length - 1;
+    // focus + select the last (deep) row by clicking its BODY (far right, not the marker)
+    sm.capture(() => sm.handleMouse('press', b.x + b.w - 3, b.y + 2 + last + 1));
+    eq(nav.getSel(id), last, 'cursor on the last (deep) row');
+    // fold root '1' via its marker → hides its subtree → list shrinks to [1, 2]
+    const m1 = treeRegions.get(id).find(m => m.id === '1');
+    sm.capture(() => sm.handleMouse('press', b.x + m1.x0 + 1, b.y + m1.y + 1));
+    const shrunk = table.getItems(route.getInstanceSlice(id));
+    eq(shrunk.length, 2, 'list shrank below the stored cursor');
+    assert(nav.getSel(id) >= shrunk.length, 'stored cursor now outruns the list (the class hazard)');
+    // arrows must still work (pre-fix: both directions dead-no-op'd off the stale base)
+    sm.capture(() => sm.handleKey('k'));   // nav_up
+    const up = nav.getSel(id);
+    assert(up >= 0 && up < shrunk.length, `nav_up landed on a valid row (${up})`);
+    sm.capture(() => sm.handleKey('j'));   // nav_down
+    assert(nav.getSel(id) >= 0 && nav.getSel(id) < shrunk.length, 'nav_down valid too');
+  });
+});
+
+describe('[table-tree] the collapsed Set survives the WAL checkpoint codec (replay)', () => {
+  it('a folded node round-trips encodeJson → JSON → decodeJson and stays folded', () => {
+    setMetric('host.proc', SERIES);
+    // Fold '100' via the SAME transition the mouse tree_toggle{id} uses.
+    const [folded] = table.update({ type: 'tree_toggle', id: '100' }, treeSlice());
+    assert(folded.collapsed instanceof Set && folded.collapsed.has('100'), 'folded before serialize');
+    // Full WAL wire round-trip (checkpoints embed slices; the codec is Set-aware).
+    const wire = JSON.stringify(sessionLog.encodeJson({ slices: { procs: folded } }));
+    eq(JSON.parse(wire).slices.procs.collapsed, { __set__: ['100'] }, 'Set encoded as {__set__:[...]} on the wire');
+    const restored = sessionLog.decodeJson(JSON.parse(wire)).slices.procs;
+    assert(restored.collapsed instanceof Set && restored.collapsed.has('100'), 'restored back to a functional Set');
+    eq(table.getItems(restored), ['1', '100', '200'], 'the restored fold still hides the subtree (300)');
   });
 });
 

@@ -35,8 +35,8 @@ function setReplaying(on) { _replaying = !!on; }
 // --- Checkpoint primitive (a resumable point) ----------------------------
 //
 // The whole replayable state is `{ model, slices }`. It is ALMOST plain JSON,
-// but not quite — nav slices hold a `multiSel` Set (and possibly other
-// structured-clonable types), so an in-process checkpoint clones with
+// but not quite — several slices hold Sets (`multiSel` on navigators, `expanded`
+// on groups, `collapsed` on a tree `table`), so an in-process checkpoint clones with
 // `structuredClone` (preserves Set/Map/Date) rather than a JSON round-trip
 // (which would degrade a Set to `{}` and lose `.has`). FILE persistence
 // (Phase D/E) handles those via a Set-aware codec — the on-disk Msg stream
