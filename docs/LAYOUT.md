@@ -205,6 +205,7 @@ on rows that get repainted while a glyph sits over them.
 | `[≡]` | theme accent | top-left of **every** panel (immediately after the hotkey), v0.6.4 unified | shown per-pane when there's something to pick (a viewer with ≥2 tabs, any other pane with ≥2 pane rows); suppressed during drag, and siblings disable while the menu is open on one cell | opens the centered **pane-menu** — one projection-aware overlay (subsumes the former tab-list + pane-select dropdown) with a **Tabs** section (Info, Transcript, content tabs — content panes only) and a **Panes** section for swapping which pool entry occupies this slot (SWAP if picked is placed elsewhere, REPLACE if picked is hidden; half/full views place side-by-side viewers via `pane_menu_place`) |
 | `- Ns +` | dim `−`/`+`, theme border | **monitor panes only** (the `containers` pane), on the top border left of the sort selector `‹ col ›` (which sits nearest `[_]`) | normal mode (suppressed in free-config); when the pane is wide enough (else the title truncates to keep it) | `set_refresh_ms` — `−`/`+` step the container **poll cadence** through a ladder (default 1s…60s, tuned for docker's poll cost; override with `refresh_ladder:`). Host-global (one docker daemon) so every docker pane shows the same value. Starting cadence is the `containers` pane's `refresh_ms:` config (default 10s). See docs/STATS.md. |
 | `‹ col ›` | dim `‹`/`›`, theme border | **sortable panes** (the `containers` pane), on the top border immediately left of `[_]` (right-anchored, nearest the glyphs — so just right of `- Ns +`) | normal mode (suppressed in free-config); when the pane is wide enough | `‹`/`›` cycle the **sort column** (`· → name → status → cpu → mem →` back to `·`, where `·` = native config order); the label toggles direction (`↑`/`↓`). A new column starts ascending. **Per-pane** (unlike the host-global cadence): each `containers` pane sorts independently. Sort is applied centrally in `api.getItems`, so it composes with the `/` filter. |
+| `‹ tree ›` / `‹ flat ›` | dim `‹`/`›`, theme border | **tree-capable `table` panes** (a `table` with `tree:`), on the top border left of the sort selector `‹ col ›` | normal mode (suppressed in free-config); when the pane is wide enough | `tree_mode_toggle` — clicking toggles the pane between flat and tree layout (the click twin of the `t` key, sharing the same reducer). Self-suppresses on a non-tree pane. |
 | item-action bar | key letter in the theme `key_hint` color (red), label in the border color | **panes with item-actions** (the `containers` pane), left-anchored on the **bottom** border after `╰─`, on the **focused** pane only, when the global `quick_keys: border` (default; `footer` moves them to the status line, `off` hides them — docs/global-config) | normal mode (suppressed in free-config). **Width-adaptive**: full labels when they fit, else just the key letters (fits any sidebar), else hidden (count keeps the row) | a btop-style row of per-item actions with the **trigger key highlighted in the word** — `i`nspect · `L`ogs · `s`hell · `S`top · `R`estart · `K`ill (an uppercase letter = a Shift chord: `l` is focus-right nav, so logs is `L`). Clicking a word (or its key cell when compact) runs it against the **selected** container (`item_action` Msg); the same keys work on the keyboard. Destructive `S`/`R`/`K` run `docker <verb>` behind a y/N **confirm**. The `N of M` count coexists on the right when there's room. |
 
 Detail's top row reads `╭─(o)[≡]─Detail─…─╮` — both the hotkey label
@@ -323,6 +324,19 @@ column; desc for a metric). Cells format by schema type; the on-border
 history. Selecting a row also fills the viewer's **Info tab** with a detail
 card of that row's full column set (see *Row detail card* below).
 
+Two optional keys turn the list into btop's process pane:
+`tree: { parent: <col> }` renders the rows **hierarchically** — the parent-pointer
+column derives a forest shown depth-first with `├─ └─ │ ▾ ▸` glyphs (siblings
+honour the active sort). `t` (or the on-border `‹ tree ›`/`‹ flat ›` chip) toggles
+flat↔tree; `z` (or a click on a row's `▾`/`▸` fold marker) folds/unfolds the
+selected node's subtree; filtering suspends the tree for a flat filtered list. It
+rides on a reusable tree leaf (`js/leaves/tree`) shared with the groups navigator.
+`killable: true` gives the selected row a **Kill** operation — the `K` key, a
+bottom-bar item-action chip, and the right-click menu — that opens a signal picker
+(SIGTERM default → SIGKILL / INT / HUP / …) and runs `kill -<sig> <pid>` on the pid
+**frozen at selection time** (a re-sort while the picker is open can't redirect it).
+Both compose with `select_from` and with each other (a killable process tree).
+
 **gauge** — the SNAPSHOT. Renders a topic's latest sample as horizontal meter
 bars (btop's mem/disk/process bars) — one bar per row, ordered by the metered
 value. Each bar is a bounded two-tone meter: the filled portion (`value / max`)
@@ -362,6 +376,9 @@ it is the panels' `getInfo`, the same hook a navigator uses to fill the Info tab
 | `x` | Toggle keybinding menu popup |
 | `r` | Refresh container status |
 | `/` | Filter panel items |
+| `t` | Toggle a tree-capable `table` between flat and tree layout |
+| `z` | Fold / unfold the selected node's subtree (tree layout) |
+| `K` | Kill the selected process (`killable` tables) — opens a signal picker |
 | `Enter` | Activate terminal (when focused on a terminal pane) |
 | `Ctrl+\` | Exit terminal mode |
 | `?` | Show help in detail panel |
@@ -375,6 +392,13 @@ SGR mouse reporting enabled (`\x1b[?1000h` + `\x1b[?1006h`).
 Left click on a panel focuses it. Click on an item selects it.
 Panel bounds tracked during render for hit testing. Mouse disabled
 on cleanup.
+
+On a process tree, clicking a `▾`/`▸` fold marker folds/unfolds that node
+directly (no need to move the selection first — the rest of the row still
+selects), and the `‹ tree ›`/`‹ flat ›` border chip toggles the layout. Each
+drawn marker publishes its cell to a per-frame registry that the hit-test
+reads, so a marker clipped by a narrow column is never clickable where nothing
+drew (the paint↔hit-test agreement discipline).
 
 Note: enabling mouse reporting takes over the mouse from the
 terminal — native text selection may not work while the TUI runs.
