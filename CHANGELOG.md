@@ -8,6 +8,23 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Compile a lazytui app to a self-contained native binary (`lazytui build`).**
+  A project's whole app — the framework, its config, and its Components — can be
+  compiled into one native executable with Bun's `--compile`; the result needs no
+  Node, Bun, or `npm install` to run. `lazytui build tui.yml` parses the config,
+  generates a static-require entry (so the config + Components embed), and runs
+  `bun build --compile` (`--out`, `--target` for cross-compiling; a clear message
+  if `bun` isn't on `PATH`). Under the hood is a public library entry,
+  `require('lazytui').run({ config, components })`, that boots the interactive TUI
+  from an **in-memory config object** (no file read) — `tui.js`'s boot was
+  extracted into a reusable `bootInteractive` and its CLI auto-run guarded with
+  `require.main === module`, so `require('lazytui')` exposes the API without
+  running the CLI. A compiled binary anchors `project_dir` (action `script:` cwd,
+  files-panel base) to the user's **runtime cwd**. Caveats (docs/packaging.md):
+  `type: terminal` panes are off (native node-pty can't embed; degrades
+  gracefully), `--spec` is source-only, and the ReDoS-guard worker isn't embedded
+  (self-inflicted local exposure).
+
 - **Consumer-authored Components via a `components:` config key.** A project can
   now register its *own* JS Components without editing the framework tree: list
   the module paths under a top-level `components:` block and lazytui `require`s +

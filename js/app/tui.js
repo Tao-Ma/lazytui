@@ -78,6 +78,15 @@ function printSpec() {
   // the v0.5 reorg, so resolve up two levels (js/app → js → repo root)
   // before joining `docs`.
   const docsDir = path.resolve(__dirname, '..', '..', 'docs');
+  // In a compiled binary (`bun build --compile`) `__dirname` is the BUILD-time
+  // source path and the docs/ tree is NOT bundled, so this resolves to a path
+  // that doesn't exist on the user's machine. --spec is an authoring tool (its
+  // audience has the source), so fail with a clear message instead of a
+  // confusing per-doc "missing <build-machine-path>". See docs/packaging.md.
+  if (!fs.existsSync(docsDir)) {
+    process.stderr.write('--spec: the Component authoring spec is only available from a lazytui source checkout (docs are not bundled into a compiled binary).\n');
+    process.exit(1);
+  }
   for (let i = 0; i < SPEC_DOCS.length; i++) {
     const name = SPEC_DOCS[i];
     const filepath = path.join(docsDir, name);
@@ -96,6 +105,14 @@ function printSpec() {
 
 function main() {
   const args = process.argv.slice(2);
+
+  // `lazytui build <config.yml>` — compile the app to a self-contained binary
+  // (bun build --compile). A subcommand, handled before flag parsing.
+  // See docs/packaging.md.
+  if (args[0] === 'build') {
+    process.exit(require('./build-binary').runCli(args.slice(1)));
+  }
+
   let execPath = null;
   let execArgs = [];
   let listMode = false;
