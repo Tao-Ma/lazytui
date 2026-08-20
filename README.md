@@ -232,7 +232,7 @@ for "the same thing but headless."
   `@xterm/headless` for embedded PTY tabs, `js-yaml` for config parsing,
   `eastasianwidth` (UAX #11 wide) + `wcwidth` (POSIX zero-width) for the
   Unicode character-width truth function.
-- **Tests**: JS unit suites under `js/test/` (203 files), an opt-in
+- **Tests**: JS unit suites under `js/test/` (202 files), an opt-in
   pre-release smoke harness under `js/test/smoke/` (22 scenarios), and
   a live integration harness under `test/`. See [docs/TESTING.md](docs/TESTING.md).
 - **Two worked demos** at the time of initial public release; both ship
