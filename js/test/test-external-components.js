@@ -203,4 +203,22 @@ describe('[external-components] end-to-end — placed pane renders + replays', (
   });
 });
 
+// The run() library seam — how a compiled/embedded app boots (docs/packaging.md).
+describe('[external-components] run() seam — library boot from an embedded config', () => {
+  it('tui exports run() and does NOT auto-boot main() when required as a library', () => {
+    // require.main !== module here → the CLI auto-run is guarded off. If the
+    // guard regressed, requiring would run main() (no config → error/exit).
+    const tui = require('../app/tui');
+    assert(typeof tui.run === 'function', 'run() is the public library entry');
+  });
+  it('loadConfigObject seeds the model from a config OBJECT (no file read)', () => {
+    const { loadConfigObject } = require('../app/state');
+    const { getModel } = require('../app/runtime');
+    const cfg = parse(path.join(FIXTURES, 'ext-components.yml'));  // resolved shape
+    loadConfigObject(cfg, null);
+    const m = getModel().config;
+    assert(m && m.project_dir === cfg.project_dir, 'the config object landed in the model');
+  });
+});
+
 report();

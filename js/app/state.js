@@ -746,10 +746,21 @@ function loadConfig(configPath) {
   // the reducer is the sole writer to model.config / projectDir /
   // configPath. Pre-D3 was direct `m.config = ...` (the BLESSED
   // outside-writer per docs/v0.5-layering.md §5).
+  loadConfigObject(config, path.resolve(configPath));
+}
+
+/**
+ * Boot from an already-resolved config OBJECT (parse()'s output shape), rather
+ * than a file path. This is the seam a compiled/embedded app boots through: the
+ * config is baked into the binary (no file to read), and `configPath` is a
+ * synthetic anchor (or null). The CLI's `loadConfig(path)` funnels here after
+ * reading + parsing the file.
+ */
+function loadConfigObject(config, configPath) {
   require('../dispatch/control/dispatch').applyMsg({
     type: 'set_config',
     config,
-    configPath: path.resolve(configPath),
+    configPath: configPath || null,
     // #D9 — resolve the config-status owner here (impure shell) so the
     // reducer's set_config arm stays pure of the ownership registry.
     csOwner: require('../panel/route').componentForPanel('config-status'),
@@ -1017,7 +1028,7 @@ function selectGroup(idx) {
 
 module.exports = {
   // Boot layer + dispatch-layer group helpers, defined here.
-  loadConfig, initState, selectGroup, resetGroupContext,
+  loadConfig, loadConfigObject, initState, selectGroup, resetGroupContext,
   // #D13 — exposed for tests: the Model→Sub reconciler, its pure desired-set
   // projection, the per-descriptor add/merge, and the live-set teardown/reset.
   reconcileSubscriptions, _desiredSubs, _addDesired, _resetSubscriptions,

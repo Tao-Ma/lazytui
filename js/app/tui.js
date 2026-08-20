@@ -12,7 +12,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { loadConfig, initState } = require('./state');
+const { loadConfig, loadConfigObject, initState } = require('./state');
 
 // Heavy modules (terminal.js → node-pty, layout/render, Component runtime)
 // are loaded lazily inside the TUI branch in main() so CLI mode (--exec)
@@ -208,6 +208,20 @@ function main() {
     return;
   }
 
+  bootInteractive({ configPath: configArgs[0], recordSaveFile, recordLoadFile });
+}
+
+/**
+ * Interactive TUI boot — shared by the CLI (`main`) and the library `run()`.
+ * Starts from a config FILE path (`opts.configPath`) or an already-resolved
+ * in-memory config OBJECT (`opts.config`, for a compiled/embedded app whose
+ * config is baked in). `opts.extraComponents` are consumer Components
+ * registered after the built-ins. `opts.recordSaveFile` / `opts.recordLoadFile`
+ * carry the record/replay boot flags (both null for `run()`).
+ */
+function bootInteractive(opts) {
+  const { config: injectedConfig, configPath, extraComponents, recordSaveFile, recordLoadFile } = opts;
+
   // TUI branch — needs a TTY on stdin and stdout. Without this guard,
   // setupKeyListener's setRawMode(true) below throws TypeError mid-boot
   // AFTER hideCursor + chrome paint have already run, leaving the
@@ -329,8 +343,13 @@ function main() {
   // is missing, empty, or malformed — every other config-shaped error
   // in main (--exec missing, unknown flag, key-binding conflict) already
   // matches this pattern; loadConfig was the odd one out.
-  try { loadConfig(configArgs[0]); }
-  catch (e) { console.error(`config: ${e.message}`); process.exit(1); }
+  if (injectedConfig) {
+    // Compiled/embedded app: the resolved config is baked in — no file to read.
+    loadConfigObject(injectedConfig, configPath);
+  } else {
+    try { loadConfig(configPath); }
+    catch (e) { console.error(`config: ${e.message}`); process.exit(1); }
+  }
 
   // Truecolor arc 1b (docs/truecolor.md P3) — apply the config's
   // `color_depth:` to the render shell's write-boundary adaptation. 'auto' /
@@ -360,6 +379,14 @@ function main() {
   // single-sourced in app/components.js so the replay harness registers the
   // identical set. See that file + docs/v0.5-layering.md.
   for (const comp of require('./components').BUILTIN_COMPONENTS) registerComponent(comp);
+
+  // Consumer Components passed directly to `run({ components })` — a compiled
+  // app statically requires them and hands them in (the binary can't do the
+  // config's dynamic `require`). Registered like the config-declared ones,
+  // after the built-ins (same layout-first + collision rules).
+  if (extraComponents && extraComponents.length) {
+    for (const comp of extraComponents) registerComponent(comp);
+  }
 
   // External (consumer-authored) Components declared under the config's
   // `components:` key (docs/PLUGINS.md, docs/PROJECT.md). Registered AFTER the
@@ -500,4 +527,30 @@ function main() {
   // in their enabled state if anything mid-boot threw).
 }
 
-main();
+/**
+ * Library entry — boot lazytui from an in-memory config object + a set of
+ * Components, without reading a config file. This is what a compiled/embedded
+ * app (`bun build --compile`) calls: the config is baked in and the Components
+ * are statically required (so both embed into the binary). Needs a TTY — it is
+ * the interactive TUI. See docs/packaging.md.
+ *
+ *   require('lazytui').run({ config: require('./tui.config.json'),
+ *                            components: [ require('./my-panel') ] })
+ */
+function run(opts) {
+  opts = opts || {};
+  bootInteractive({
+    config: opts.config,
+    configPath: opts.configPath || null,
+    extraComponents: opts.components || [],
+    recordSaveFile: null,
+    recordLoadFile: null,
+  });
+}
+
+// Auto-run as a CLI only when executed directly (`node tui.js`, bin/lazytui).
+// When `require`d as a library — a compiled app's entry does `require('lazytui')`
+// then `.run(...)` — do NOT auto-run main(); the entry drives the boot.
+if (require.main === module) main();
+
+module.exports = { run };
