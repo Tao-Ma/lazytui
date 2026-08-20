@@ -150,9 +150,10 @@ Or headlessly, with the same definition, exiting with the action's rc:
 ```
 
 When the project outgrows one file, the agent splits it into YAML or
-JS Components against [`js/panel/api.js`](js/panel/api.js). The
-framework dogfoods that same API for its own built-in panels — there
-is no privileged path the agent cannot reach.
+JS Components against [`js/panel/api.js`](js/panel/api.js), declared in
+the config's `components:` list so they load without editing the
+framework tree. The framework dogfoods that same API for its own
+built-in panels — there is no privileged path the agent cannot reach.
 
 ## Worked demos
 
@@ -223,6 +224,7 @@ for "the same thing but headless."
 | Edit in your editor | `e` on a files row, `:edit <path>`, or `:config` / `:config global` opens your editor (`editor:` config / `$VISUAL` / `$EDITOR` / `vi`) in an embedded terminal tab — auto-zoomed, back where you were on quit. An open doc tab showing the file refreshes on a clean exit; config edits remind you they apply on the next start. |
 | 7 themes + free-config mode | `:free-config` opens an interactive layout editor — drag/swap/resize/spawn columns and panels, hide/show from a pool of declared panel definitions, save back to YAML. |
 | `--spec` flag | Prints the Component-authoring bundle for AI agents (every rule in one file). |
+| Compile to a native binary (v0.6.23+) | `lazytui build config.yml` bundles the framework + config + Components into one self-contained executable (Bun `--compile`) — no Node/Bun to run it. Releases also ship prebuilt per-platform `lazytui` CLI binaries. See [docs/packaging.md](docs/packaging.md). |
 
 ## Status
 
@@ -246,7 +248,10 @@ for "the same thing but headless."
 - [DEMO.md](DEMO.md) — convention for adding your own demo, including
   the two demo shapes and the "fix the prompt, not the artifact" rule.
 - [docs/PROJECT.md](docs/PROJECT.md) — what a user project looks like
-  on disk and how path discovery works.
+  on disk and how path discovery works, including the `components:`
+  config key for consumer-authored panel types.
+- [docs/packaging.md](docs/packaging.md) — compile an app (framework +
+  config + Components) into one self-contained native binary.
 
 **Contributing to lazytui itself:**
 
