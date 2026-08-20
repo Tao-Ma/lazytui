@@ -77,11 +77,11 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           compile() { bun build js/app/tui.js --compile --target "$1" --outfile "$2" || echo "WARN: compile $1 failed"; }
+          # The supported set: 64-bit Linux (x64 + arm64) and Apple Silicon.
+          # (darwin-x64 / windows-x64 dropped — low demand for a terminal app.)
           compile bun-linux-x64    "lazytui-${VERSION}-linux-x64"
           compile bun-linux-arm64  "lazytui-${VERSION}-linux-arm64"
-          compile bun-darwin-x64   "lazytui-${VERSION}-darwin-x64"
           compile bun-darwin-arm64 "lazytui-${VERSION}-darwin-arm64"
-          compile bun-windows-x64  "lazytui-${VERSION}-windows-x64.exe"
           # Smoke the native (linux-x64) binary on this x64 runner.
           if [ -f "lazytui-${VERSION}-linux-x64" ]; then
             ./"lazytui-${VERSION}-linux-x64" --help >/dev/null && echo "linux-x64 binary runs OK"
@@ -96,9 +96,7 @@ jobs:
             lazytui-*-source.tar.gz
             lazytui-*-linux-x64
             lazytui-*-linux-arm64
-            lazytui-*-darwin-x64
             lazytui-*-darwin-arm64
-            lazytui-*-windows-x64.exe
           generate_release_notes: true
           draft: false
           prerelease: ${{ contains(github.ref, '-') }}  # vX.Y.Z-rc1 etc are pre-release

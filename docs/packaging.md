@@ -89,9 +89,11 @@ their platform and run it.
 
 ### Prebuilt `lazytui` CLI binaries
 
-lazytui's own GitHub Release also ships a **generic `lazytui` CLI binary** per
-platform (`lazytui-<version>-<platform>`), cross-compiled in CI. Download one and
-run any config with no Node/Bun:
+lazytui's own GitHub Release also ships a **generic `lazytui` CLI binary** for
+the supported platforms — 64-bit Linux (`linux-x64`, `linux-arm64`) and Apple
+Silicon macOS (`darwin-arm64`) — as `lazytui-<version>-<platform>`, cross-compiled
+in CI. (`lazytui build --target` can still produce any Bun target for your own
+app.) Download one and run any config with no Node/Bun:
 
 ```sh
 ./lazytui-<version>-linux-x64 tui.yml
