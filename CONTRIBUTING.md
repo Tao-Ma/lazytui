@@ -48,9 +48,9 @@ keeps the lazytui repo itself unaffected; an invalid path fails loud
   TUI renders."* Then [docs/PLUGINS.md](docs/PLUGINS.md) for the
   plugin contract, or [docs/LAYOUT.md](docs/LAYOUT.md) for panel
   types.
-- **Plugin author:** start with `bin/lazytui --spec` — it dumps
+- **Component author:** start with `bin/lazytui --spec` — it dumps
   the consolidated authoring bundle (SPEC + PRINCIPLES + PLUGINS +
-  PROJECT + HUB + DECORATORS + LAYOUT) in one file. That is the
+  PROJECT + HUB + LAYOUT) in one file. That is the
   contract; feed it to an AI agent or read it yourself.
 
 ## Code conventions

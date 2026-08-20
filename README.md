@@ -73,7 +73,7 @@ generic glue between you and your systems — but with three properties
 those tools do not have together:
 
 - **You describe intent in plain language. The AI produces the YAML,
-  the script bodies, the plugins, the tests.** You review and run; you
+  the script bodies, the Components, the tests.** You review and run; you
   do not hand-author the glue. The YAML is an artifact you read and
   edit when you need to, not a file you start from a blank page.
 - **Every action runs in two modes from one definition: TUI and CLI.**
@@ -81,7 +81,7 @@ those tools do not have together:
   `--exec group:action [args]` from CI or from another agent.
 - **The framework is generic.** It has no built-in knowledge of Docker,
   Kubernetes, your database, your CI provider, or your OS. All of that
-  lives in your YAML and plugins. The renderer cannot leak domain
+  lives in your YAML and Components. The renderer cannot leak domain
   knowledge because there is nowhere for it to leak.
 
 The result: glue stops being a swamp of personal shell scripts only
@@ -97,10 +97,10 @@ You never start by writing YAML. The loop is:
    scripts. I want logs in a side panel and a list of live pods. CI
    should be able to call deploy and rollback non-interactively."*
 2. **You hand the agent the contract** with `bin/lazytui --spec`. That
-   single command dumps every rule the agent needs — schema, plugin
+   single command dumps every rule the agent needs — schema, Component
    API, markup rules, hub protocol — into one file.
 3. **The agent produces a project**: a YAML config, any script bodies,
-   optional JS plugins, and tests. You review the diff like any other
+   optional JS Components, and tests. You review the diff like any other
    PR.
 4. **You run it.** TUI for interactive ops, CLI (`--exec`) for CI and
    for other agents.
@@ -150,7 +150,7 @@ Or headlessly, with the same definition, exiting with the action's rc:
 ```
 
 When the project outgrows one file, the agent splits it into YAML or
-JS plugins against [`js/panel/api.js`](js/panel/api.js). The
+JS Components against [`js/panel/api.js`](js/panel/api.js). The
 framework dogfoods that same API for its own built-in panels — there
 is no privileged path the agent cannot reach.
 
@@ -174,7 +174,7 @@ docker infrastructure. Picking rule and conventions in
 | Surface | CLI only | CLI only | TUI + CLI from one definition |
 | Discoverability | Read the script | `task --list` | Panel of named actions; `:` cmdline; `--list`; `--spec` for agents |
 | Maintenance | You debug when it rots | You debug when it rots | Re-run the loop; agent reads `--spec` and produces a fresh version |
-| Domain knowledge | In the scripts | In the Taskfile | In your YAML / plugins; the framework knows nothing |
+| Domain knowledge | In the scripts | In the Taskfile | In your YAML / Components; the framework knows nothing |
 
 It is fine to keep using Make for tasks you actually enjoy maintaining.
 lazytui is for the *other* tasks — the glue layer that already costs
@@ -209,9 +209,8 @@ for "the same thing but headless."
 | Embedded terminals | First-class `terminal` panes (from `type: spawn` actions, `docker exec`, group `terminals:`, or `:terminal`), persistent across group switches. Scrollback via mouse-wheel and `Shift+PageUp`/`PageDown`/`Home`/`End`, with smart mouse-forwarding — bytes reach the child only when it enabled mouse reporting (vim, htop, `less --mouse`); otherwise the wheel scrolls scrollback, and a `[↑N]` indicator shows how far back the view sits (v0.6.5). |
 | Component dataflow fabric (v0.6.8+) | Components publish typed **output ports** and consume typed **input ports**. **Wires** are standing producer→consumer connections; **injects** are one-shot by-value pushes (right-click "Send selection to port…", or an in-grid field edit). A consumer's `run:` is a **no-shell argv template** (`{{holes}}` = bound parameters, executed via `execve`) so command injection is structurally impossible. Inspect it live via the `component-ports` pane and the `fabric-wires` wire list. See [docs/ports-and-wires.md](docs/ports-and-wires.md). |
 | Live agent pane (v0.6.9+) | `:agent [backend]` mints a chat pane driving a long-lived AI agent: Enter starts/activates, keystrokes compose a draft, `↑`/`↓` recall previously-sent messages, Esc interrupts a running turn or leaves the mode. Replies stream into the transcript as they arrive (throttled ~10 Hz). The transcript is modeled pure-TEA, so a recorded session replays without re-calling any LLM. Backends plug in behind a normalized protocol: `mock` (built-in) and `pi` ([Pi](https://github.com/earendil-works/pi) via `pi --mode rpc`). See [docs/live-agent.md](docs/live-agent.md). |
-| Event hub | In-process pub/sub for plugins. Time-series, snapshot, matrix shapes. Cost scales with subscribers. |
-| Decorator slots | Plugins add glyphs to rows / titles / tabs / footer without touching the renderer. |
-| Cmdline (`:`) | `:quit`, `:refresh`, `:help`, plus plugin-registered verbs, with positional-arg plumbing. |
+| Event hub | In-process pub/sub for Components. Time-series, snapshot, matrix shapes. Cost scales with subscribers. |
+| Cmdline (`:`) | `:quit`, `:refresh`, `:help`, plus Component-registered verbs, with positional-arg plumbing. |
 | Running overlay (`<leader> j`, v0.6.2+) | Modal listing every live child lazytui spawned (streamed actions, PTYs, background + tmux spawns). Enter jumps to the relevant tab; Esc closes. A tab running a live stream shows a `●` indicator in its pane's tab strip. |
 | Pane menu (`[≡]`, v0.6.3+, unified v0.6.4) | Every pane has a `[≡]` glyph at top-left; click (or `T`) opens one dropdown listing panes + this pane's tabs. The pick is projection-aware: in normal view it swaps which pool entry occupies the cell, in half view it places the pick into the clicked slot, in full view it switches focus. Mouse + keyboard nav. |
 | Mouse actions (v0.6.4+) | Left-click focuses + selects, double-click activates (Enter-equivalent), right-click opens a context menu at the cursor (copy line / copy selection + general entries; click-outside dismisses), wheel scrolls the pane under the cursor; drag-select persists like a `v` visual selection. Remappable via a YAML `mouse:` block; the context menu is extensible via a `context-menu:` block with keys-style verbs and per-pane gates. |
@@ -223,7 +222,7 @@ for "the same thing but headless."
 | Kitty keyboard protocol (v0.6.14+) | On supporting terminals, negotiates CSI-u "disambiguate escape codes" at boot (query + Primary-DA fence handshake) so Escape and ctrl/alt combos arrive unambiguously; events normalize back to the legacy keymap, so nothing else changes. `keyboard_protocol:` (`auto`/`legacy`/`kitty`) or `LAZYTUI_KBD` override; popped on suspend/exit so a spawned shell is never left in it. Terminals without it are untouched. The negotiated protocol shows in the `<leader> e` diagnostics window. See [docs/kitty-keyboard.md](docs/kitty-keyboard.md). |
 | Edit in your editor | `e` on a files row, `:edit <path>`, or `:config` / `:config global` opens your editor (`editor:` config / `$VISUAL` / `$EDITOR` / `vi`) in an embedded terminal tab — auto-zoomed, back where you were on quit. An open doc tab showing the file refreshes on a clean exit; config edits remind you they apply on the next start. |
 | 7 themes + free-config mode | `:free-config` opens an interactive layout editor — drag/swap/resize/spawn columns and panels, hide/show from a pool of declared panel definitions, save back to YAML. |
-| `--spec` flag | Prints the plugin-authoring bundle for AI agents (every rule in one file). |
+| `--spec` flag | Prints the Component-authoring bundle for AI agents (every rule in one file). |
 
 ## Status
 
@@ -231,8 +230,8 @@ for "the same thing but headless."
   `@xterm/headless` for embedded PTY tabs, `js-yaml` for config parsing,
   `eastasianwidth` (UAX #11 wide) + `wcwidth` (POSIX zero-width) for the
   Unicode character-width truth function.
-- **Tests**: JS unit suites under `js/test/` (173 files), an opt-in
-  pre-release smoke harness under `js/test/smoke/` (15 scenarios), and
+- **Tests**: JS unit suites under `js/test/` (203 files), an opt-in
+  pre-release smoke harness under `js/test/smoke/` (22 scenarios), and
   a live integration harness under `test/`. See [docs/TESTING.md](docs/TESTING.md).
 - **Two worked demos** at the time of initial public release; both ship
   with the human-authored intent (`.agent-prompt.md`) checked in so the
@@ -242,7 +241,7 @@ for "the same thing but headless."
 
 **Using lazytui:**
 
-- [docs/SPEC.md](docs/SPEC.md) — plugin authoring quickstart; brief
+- [docs/SPEC.md](docs/SPEC.md) — Component authoring quickstart; brief
   any agent with this.
 - [DEMO.md](DEMO.md) — convention for adding your own demo, including
   the two demo shapes and the "fix the prompt, not the artifact" rule.
@@ -253,9 +252,8 @@ for "the same thing but headless."
 
 - [docs/PRINCIPLES.md](docs/PRINCIPLES.md) — the invariants.
   "YAML defines, TUI renders." Read before changing either layer.
-- [docs/PLUGINS.md](docs/PLUGINS.md) — full plugin contract.
+- [docs/PLUGINS.md](docs/PLUGINS.md) — full Component contract.
 - [docs/LAYOUT.md](docs/LAYOUT.md), [docs/HUB.md](docs/HUB.md),
-  [docs/DECORATORS.md](docs/DECORATORS.md),
   [docs/CMDMODE.md](docs/CMDMODE.md),
   [docs/TERMINAL.md](docs/TERMINAL.md),
   [docs/STATS.md](docs/STATS.md),
@@ -277,7 +275,7 @@ bin/lazytui path/to/config.yml --exec group:action [args...]
 # Enumerate every action
 bin/lazytui path/to/config.yml --list [filter]
 
-# Print the plugin-authoring bundle (feed to an AI agent)
+# Print the Component-authoring bundle (feed to an AI agent)
 bin/lazytui --spec > spec.md
 ```
 
