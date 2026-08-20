@@ -61,12 +61,44 @@ jobs:
               --output="lazytui-${VERSION}-source.tar.gz" \
               HEAD
 
+      # Native binaries (Bun --compile) — a standalone `lazytui` CLI per platform
+      # so users can download one file and run `./lazytui config.yml` with no
+      # Node/Bun. Bun cross-compiles every target from this one linux runner.
+      # Best-effort: continue-on-error keeps a compile hiccup from blocking the
+      # tarball release (the files glob below just picks up whatever succeeded).
+      # These prebuilt binaries handle YAML-only configs; component-bearing apps
+      # compile via `lazytui build` (docs/packaging.md).
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        continue-on-error: true
+
+      - name: Compile native binaries
+        continue-on-error: true
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          compile() { bun build js/app/tui.js --compile --target "$1" --outfile "$2" || echo "WARN: compile $1 failed"; }
+          compile bun-linux-x64    "lazytui-${VERSION}-linux-x64"
+          compile bun-linux-arm64  "lazytui-${VERSION}-linux-arm64"
+          compile bun-darwin-x64   "lazytui-${VERSION}-darwin-x64"
+          compile bun-darwin-arm64 "lazytui-${VERSION}-darwin-arm64"
+          compile bun-windows-x64  "lazytui-${VERSION}-windows-x64.exe"
+          # Smoke the native (linux-x64) binary on this x64 runner.
+          if [ -f "lazytui-${VERSION}-linux-x64" ]; then
+            ./"lazytui-${VERSION}-linux-x64" --help >/dev/null && echo "linux-x64 binary runs OK"
+          fi
+          ls -lh lazytui-${VERSION}-* || true
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             lazytui-*.tgz
             lazytui-*-source.tar.gz
+            lazytui-*-linux-x64
+            lazytui-*-linux-arm64
+            lazytui-*-darwin-x64
+            lazytui-*-darwin-arm64
+            lazytui-*-windows-x64.exe
           generate_release_notes: true
           draft: false
           prerelease: ${{ contains(github.ref, '-') }}  # vX.Y.Z-rc1 etc are pre-release

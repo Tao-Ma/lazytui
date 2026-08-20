@@ -23,7 +23,9 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   files-panel base) to the user's **runtime cwd**. Caveats (docs/packaging.md):
   `type: terminal` panes are off (native node-pty can't embed; degrades
   gracefully), `--spec` is source-only, and the ReDoS-guard worker isn't embedded
-  (self-inflicted local exposure).
+  (self-inflicted local exposure). The release now also ships **prebuilt `lazytui`
+  CLI binaries** per platform (cross-compiled in CI) — download one and run
+  `./lazytui config.yml` with no Node/Bun (for YAML-only configs).
 
 - **Consumer-authored Components via a `components:` config key.** A project can
   now register its *own* JS Components without editing the framework tree: list

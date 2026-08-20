@@ -80,3 +80,18 @@ this for you.
 `lazytui build --target ...` for each platform, then attach the binaries to your
 release. This mirrors how a native CLI ships: users download the one file for
 their platform and run it.
+
+### Prebuilt `lazytui` CLI binaries
+
+lazytui's own GitHub Release also ships a **generic `lazytui` CLI binary** per
+platform (`lazytui-<version>-<platform>`), cross-compiled in CI. Download one and
+run any config with no Node/Bun:
+
+```sh
+./lazytui-<version>-linux-x64 tui.yml
+```
+
+These read the config from disk at runtime, so they serve **YAML-only** projects
+(built-in panel types, actions, metrics, themes). A project with its own **JS
+Components** must embed them — use `lazytui build` above, which bakes the config
+and the Components into a self-contained binary.
