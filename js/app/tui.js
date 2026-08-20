@@ -539,8 +539,16 @@ function bootInteractive(opts) {
  */
 function run(opts) {
   opts = opts || {};
+  // Re-anchor path resolution to the user's RUNTIME cwd. The embedded config's
+  // `project_dir` was resolved to a BUILD-machine absolute path at parse time
+  // (that's what drives action `script:` cwd + the files-panel base), and that
+  // path doesn't exist where the binary runs. Default to process.cwd();
+  // `opts.projectDir` overrides. Non-CLI only — the CLI keeps its parsed path.
+  const config = opts.config
+    ? { ...opts.config, project_dir: opts.projectDir || process.cwd() }
+    : opts.config;
   bootInteractive({
-    config: opts.config,
+    config,
     configPath: opts.configPath || null,
     extraComponents: opts.components || [],
     recordSaveFile: null,

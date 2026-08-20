@@ -219,6 +219,14 @@ describe('[external-components] run() seam — library boot from an embedded con
     const m = getModel().config;
     assert(m && m.project_dir === cfg.project_dir, 'the config object landed in the model');
   });
+  it('project_dir on the config object drives model.projectDir (run() re-anchor mechanism)', () => {
+    const { loadConfigObject } = require('../app/state');
+    const { getModel } = require('../app/runtime');
+    const cfg = parse(path.join(FIXTURES, 'ext-components.yml'));
+    // run() spreads { ...config, project_dir: process.cwd() } — same shape:
+    loadConfigObject({ ...cfg, project_dir: '/tmp/anchor-probe' }, null);
+    eq(getModel().projectDir, '/tmp/anchor-probe');
+  });
 });
 
 report();
