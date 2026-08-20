@@ -554,18 +554,30 @@ function bootInteractive(opts) {
  *   require('lazytui').run({ config: require('./tui.config.json'),
  *                            components: [ require('./my-panel') ] })
  */
+/**
+ * Normalize the config for the library/embedded boot path (pure; exported for
+ * tests). Two adjustments that make an embedded config safe to run anywhere:
+ *   - `project_dir` → the runtime cwd (or `projectDir` override). The embedded
+ *     value is a BUILD-machine absolute path that drives action `script:` cwd +
+ *     the files-panel base and doesn't exist where the binary runs.
+ *   - drop `components:`. In this path the `components` ARG is authoritative —
+ *     the Components are handed in statically (so they embed in a compiled
+ *     binary). The config's list holds build-machine paths that don't exist at
+ *     runtime; leaving it in would make boot's registerExternal `require` them
+ *     and crash the binary. (`lazytui build` also strips them — belt-and-braces
+ *     for a hand-written entry.)
+ */
+function normalizeRunConfig(config, projectDir) {
+  if (!config) return config;
+  const out = { ...config, project_dir: projectDir || process.cwd() };
+  delete out.components;
+  return out;
+}
+
 function run(opts) {
   opts = opts || {};
-  // Re-anchor path resolution to the user's RUNTIME cwd. The embedded config's
-  // `project_dir` was resolved to a BUILD-machine absolute path at parse time
-  // (that's what drives action `script:` cwd + the files-panel base), and that
-  // path doesn't exist where the binary runs. Default to process.cwd();
-  // `opts.projectDir` overrides. Non-CLI only — the CLI keeps its parsed path.
-  const config = opts.config
-    ? { ...opts.config, project_dir: opts.projectDir || process.cwd() }
-    : opts.config;
   bootInteractive({
-    config,
+    config: normalizeRunConfig(opts.config, opts.projectDir),
     configPath: opts.configPath || null,
     extraComponents: opts.components || [],
     recordSaveFile: null,
@@ -578,4 +590,4 @@ function run(opts) {
 // then `.run(...)` — do NOT auto-run main(); the entry drives the boot.
 if (require.main === module) main();
 
-module.exports = { run };
+module.exports = { run, normalizeRunConfig };

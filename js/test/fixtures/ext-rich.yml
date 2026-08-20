@@ -1,0 +1,25 @@
+project_dir: .
+
+components:
+  - ./ext-rich.js
+
+panels:
+  extrich: { type: ext-rich, title: Rich }
+  groups:  { type: groups,   title: Groups }
+  actions: { type: actions,  title: Actions }
+  detail:  { type: detail,   title: Detail }
+
+groups:
+  g1:
+    label: G1
+    containers: []
+    actions:
+      hello:
+        cmd: echo hello
+        label: Hello
+
+layout:
+  columns:
+    - width: 30
+      panels: [extrich, groups]
+    - panels: [actions, detail]

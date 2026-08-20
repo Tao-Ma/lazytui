@@ -50,6 +50,12 @@ config object** (no file read) and registers the given Components after the
 built-ins. Get the resolved config object with lazytui's parser at build time
 (`require('lazytui/js/parser').parse('tui.yml')`) and embed it as JSON.
 
+The **`components` arg is authoritative** in this path: `run()` ignores the
+config's own `components:` list (those are build-machine paths that don't exist
+at runtime — leaving them in would crash a compiled binary on a dynamic
+`require`). Pass every Component through the arg, statically required so it
+embeds. `run({ projectDir })` overrides the runtime-cwd anchor if you need it.
+
 **Rule that bites you if you skip it:** require lazytui and your Components with
 **relative** (or package) specifiers, never absolute paths — Bun treats an
 absolute-path require as *external* and won't bundle it. `lazytui build` handles

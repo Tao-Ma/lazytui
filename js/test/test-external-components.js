@@ -211,6 +211,22 @@ describe('[external-components] run() seam — library boot from an embedded con
     const tui = require('../app/tui');
     assert(typeof tui.run === 'function', 'run() is the public library entry');
   });
+  it('normalizeRunConfig re-anchors project_dir + DROPS config.components (compiled-binary safety)', () => {
+    const { normalizeRunConfig } = require('../app/tui');
+    // A config as it'd be embedded: build-machine project_dir + a components list
+    // of build-machine absolute paths. run() must not carry either into runtime.
+    const embedded = { project_dir: '/build/machine/app', theme: 'monokai',
+                       components: ['/build/machine/app/my-panel.js'], groups: {} };
+    const norm = normalizeRunConfig(embedded, '/run/here');
+    eq(norm.project_dir, '/run/here');
+    assert(!('components' in norm), 'config.components dropped — the components ARG is authoritative; leaving it would crash the binary on a dynamic require');
+    assert(!('components' in embedded) === false, 'the input is not mutated (components still there)');
+    eq(embedded.project_dir, '/build/machine/app');   // input untouched
+  });
+  it('normalizeRunConfig defaults project_dir to process.cwd() when no override', () => {
+    const { normalizeRunConfig } = require('../app/tui');
+    eq(normalizeRunConfig({ groups: {} }, null).project_dir, process.cwd());
+  });
   it('loadConfigObject seeds the model from a config OBJECT (no file read)', () => {
     const { loadConfigObject } = require('../app/state');
     const { getModel } = require('../app/runtime');
@@ -226,6 +242,42 @@ describe('[external-components] run() seam — library boot from an embedded con
     // run() spreads { ...config, project_dir: process.cwd() } — same shape:
     loadConfigObject({ ...cfg, project_dir: '/tmp/anchor-probe' }, null);
     eq(getModel().projectDir, '/tmp/anchor-probe');
+  });
+});
+
+// Richer Component seams from an EXTERNAL component — subscriptions()/
+// installEffects/viewContributions are wired at registerComponent, so the
+// config-declared path gets them for free. Prove each actually FIRES (not just
+// that registration didn't throw), placed + booted like the live app.
+describe('[external-components] richer seams fire for an external component', () => {
+  const { getModel } = require('../app/runtime');
+  const { initState, reconcileSubscriptions, _liveSubKeys } = require('../app/state');
+  const replayCli = require('../app/replay-cli');
+  const effects = require('../dispatch/runtime/effects');
+
+  // Boot the app with ext-rich placed (real parse → runtime → register → init).
+  const cfg = parse(path.join(FIXTURES, 'ext-rich.yml'));
+  getModel().config = cfg;
+  getModel().projectDir = '.';
+  replayCli._installRuntime();                 // built-ins + runtime scaffolding
+  require('../app/external-components').registerExternal(cfg, api.registerComponent);
+  initState();
+
+  it('installEffects — the external Cmd handler is registered + runs (no "unknown effect")', () => {
+    let ran = false;
+    // runEffects throws / warns on an unregistered type; a clean run proves the
+    // external component's installEffects landed the handler.
+    try { effects.runEffects([{ type: 'ext_rich_effect' }], getModel()); ran = true; } catch (_) { ran = false; }
+    assert(ran, 'ext_rich_effect handler was registered by the external installEffects');
+  });
+  it('subscriptions() — the external interval sub arms in the live set', () => {
+    reconcileSubscriptions(getModel());
+    assert(_liveSubKeys().includes('interval:ext-rich-tick:5000'),
+      `external subscription armed — live: ${JSON.stringify(_liveSubKeys())}`);
+  });
+  it('viewContributions — the external footerLeft contribution is collected', () => {
+    const fl = api.collectViewContributions('footerLeft', { width: 80 });
+    assert(fl.includes('EXTFOOTER'), `external footer contribution present — got ${JSON.stringify(fl)}`);
   });
 });
 
