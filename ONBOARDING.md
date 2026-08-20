@@ -116,8 +116,18 @@ The release also ships prebuilt per-platform `lazytui` CLI binaries. Full recipe
   `gitea` = internal (all branches/backups). Push to **both**.
 - **Cutting a release** (user-declared, not self-initiated): move CHANGELOG
   `[Unreleased]` → the version, bump `package.json`, tag `vX.Y.Z`, push the tag
-  → `release.yml` builds the tarballs + native binaries and creates the Release.
-  `RELEASING.md` has the checklist. npm publish is gated on an `NPM_TOKEN` secret.
+  → `release.yml` builds the assets and creates the Release. `RELEASING.md` has
+  the checklist. Versioning stays on the **0.6.x** line (patch bumps) unless
+  declared otherwise.
+- **Latest: v0.6.23** (2026-08-20) — the `components:` external-registration hook
+  + `lazytui build` compile-to-binary. See `CHANGELOG.md`.
+- **What a release ships** (GitHub Release assets): a source tarball, the npm-pack
+  `.tgz`, and **native `lazytui` CLI binaries** for `linux-x64`, `linux-arm64`,
+  and `darwin-arm64` (cross-compiled in CI with Bun; the matrix lives in
+  `release.yml`). node-pty terminals are off in those binaries by design.
+- **npm:** **not published** — `npm install lazytui` 404s. The publish step
+  auto-skips (no `NPM_TOKEN` secret; deliberate). Install the library via the
+  GitHub Release `.tgz` URL, or download a native binary.
 
 ## Where the authoritative docs are
 
