@@ -120,6 +120,72 @@ function rasterizeBraille(samples, { width, height, min, max }) {
 }
 
 /**
+ * Overlay N series in ONE braille grid: each cell ORs every series' dots (so
+ * overlapping traces merge into one glyph), and records which series OWNS each
+ * cell's color — the LAST series with a dot there, so later series read as drawn
+ * "on top". Returns `{ rows, owners }`: `rows` are `height` braille strings,
+ * `owners[r][c]` is a series index (0..n-1) or -1 for an empty cell. `colorizeOverlay`
+ * turns `owners` into per-series color runs. The single-series `rasterizeBraille`
+ * is the n=1 case (minus the owners bookkeeping).
+ */
+function rasterizeBrailleMulti(seriesArr, { width, height, min, max }) {
+  if (height < 1 || width < 1 || !seriesArr.length) return { rows: [], owners: [] };
+  const slotsBySeries = seriesArr.map((samples) => {
+    const cut = _cut(samples, width * 2);
+    const slots = new Array(width * 2);
+    for (let i = 0; i < cut.length; i++) {
+      const n = _norm01(cut[i], min, max);
+      slots[i] = Number.isFinite(n) ? Math.round(n * height * 4) : 0;
+    }
+    return slots;
+  });
+  const rows = new Array(height);
+  const owners = new Array(height);
+  for (let r = 0; r < height; r++) {
+    const bottomOfRow = (height - 1 - r) * 4;
+    let row = '';
+    const ownRow = new Array(width).fill(-1);
+    for (let c = 0; c < width; c++) {
+      let bits = 0;
+      for (let s = 0; s < slotsBySeries.length; s++) {
+        const slots = slotsBySeries[s];
+        const kl = Math.max(0, Math.min(4, slots[c * 2] - bottomOfRow));
+        const kr = Math.max(0, Math.min(4, slots[c * 2 + 1] - bottomOfRow));
+        if (kl || kr) { bits |= _BRL_LEFT[kl] | _BRL_RIGHT[kr]; ownRow[c] = s; }   // last series wins the cell colour
+      }
+      row += bits ? String.fromCharCode(0x2800 | bits) : ' ';
+    }
+    rows[r] = row;
+    owners[r] = ownRow;
+  }
+  return { rows, owners };
+}
+
+/**
+ * Colour each cell of an overlay grid by its owning series' colour atom.
+ * `colors[i]` is a markup atom for series `i` (or falsy → uncoloured). Adjacent
+ * same-atom cells batch into one `[atom]…[/]` run; space cells stay uncoloured.
+ * Sibling of `colorizeRows` (same run-batching), keyed by owner instead of norm.
+ */
+function colorizeOverlay(rows, owners, colors) {
+  return rows.map((row, r) => {
+    let out = '';
+    let run = null;
+    let buf = '';
+    const flush = () => { if (buf) { out += run ? `[${run}]${buf}[/]` : buf; buf = ''; } };
+    for (let c = 0; c < row.length; c++) {
+      const ch = row[c];
+      const owner = (owners[r] && owners[r][c] != null) ? owners[r][c] : -1;
+      const atom = ch === ' ' ? null : (owner >= 0 ? (colors[owner] || null) : null);
+      if (atom !== run) { flush(); run = atom; }
+      buf += ch;
+    }
+    flush();
+    return out;
+  });
+}
+
+/**
  * Per-column value norms for colorizing, aligned with the rasterizers'
  * windowing: `group` samples per output column (1 for blocks, 2 for
  * braille), each column = the MAX of its group's finite norms (peaks win),
@@ -220,4 +286,4 @@ function meterRow(frac, width) {
   return s.length < width ? s + ' '.repeat(width - s.length) : s;
 }
 
-module.exports = { rasterize, rasterizeBraille, columnNorms, colorizeRows, colorizeByHeight, quantizeNorm, meterRow, BLOCKS };
+module.exports = { rasterize, rasterizeBraille, rasterizeBrailleMulti, columnNorms, colorizeRows, colorizeOverlay, colorizeByHeight, quantizeNorm, meterRow, BLOCKS };

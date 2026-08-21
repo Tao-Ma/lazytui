@@ -25,7 +25,11 @@ const {
   esc, theme, gradient, renderPanel,
   getItems: apiGetItems,
 } = require('../api');
-const { rasterize, rasterizeBraille, columnNorms, colorizeRows, colorizeByHeight, quantizeNorm, meterRow } = require('./stats-graph');
+const { rasterize, rasterizeBraille, rasterizeBrailleMulti, columnNorms, colorizeRows, colorizeOverlay, colorizeByHeight, quantizeNorm, meterRow } = require('./stats-graph');
+
+// Distinct-hue palette for overlaid series (net up/down, etc.) — semantic theme
+// atoms that resolve to the current theme at paint (docs semantic-theme-tokens).
+const OVERLAY_COLORS = ['accent', 'warning', 'success', 'error'];
 
 // stats DECLARES its hub subscription; the framework owns the hub.subscribe
 // side effect. This is the canonical TEA `subscriptions : Model → Sub` seam
@@ -159,6 +163,30 @@ function renderBody(spec, innerW, innerH) {
   // docs/truecolor.md + STATS.md.
   const colorMode = (spec.graph_color === 'value' || spec.graph_color === 'banded')
     ? spec.graph_color : 'height';
+
+  // `overlay: true` — draw ALL metrics in ONE braille grid (each a distinct
+  // colour) under a coloured legend, instead of a section per metric. The payoff
+  // is a 2-series read (e.g. network rx/tx up/down in one trace). Overlay implies
+  // braille (blocks can't OR two dots in a cell) + one shared value scale so the
+  // series are comparable. See docs/compact-panes.md §5 + STATS.md.
+  if (spec.overlay) {
+    const legend = metrics.map((m, i) => `[${OVERLAY_COLORS[i % OVERLAY_COLORS.length]}]${esc(m.toUpperCase())}[/]`).join('  ');
+    const graphH = innerH - 1;                                   // 1 legend row
+    if (graphH < 2) return dim('(panel too short for graph)');
+    // Shared scale: all-percent → 0..100; else 0..max-finite-across-all-series.
+    let oMin = 0, oMax = 1;
+    const cols = schema.columns || {};
+    if (metrics.every((m) => (cols[m] || {}).type === 'percent')) oMax = 100;
+    else {
+      let mx = 1;
+      for (const m of metrics) for (const s of samples) { const v = s && s[m]; if (Number.isFinite(v) && v > mx) mx = v; }
+      oMax = mx;
+    }
+    const seriesArr = metrics.map((m) => samples.map((s) => s && s[m]));
+    const { rows, owners } = rasterizeBrailleMulti(seriesArr, { width: innerW, height: graphH, min: oMin, max: oMax });
+    const colored = colorizeOverlay(rows, owners, metrics.map((_m, i) => OVERLAY_COLORS[i % OVERLAY_COLORS.length]));
+    return { lines: [legend, ...colored], rowKey };
+  }
 
   const sepRows = Math.max(0, metrics.length - 1);
   const headerRows = metrics.length;

@@ -59,6 +59,33 @@ describe('[renderBody] stats — border-less body', () => {
   });
 });
 
+describe('[renderBody] stats — overlay mode (multi-series in one grid)', () => {
+  setMetric('t.net',
+    { _: [{ rx: 10, tx: 90 }, { rx: 40, tx: 60 }, { rx: 80, tx: 20 }] },
+    { rx: { type: 'rate' }, tx: { type: 'rate' } });
+
+  it('overlay:true → a coloured legend line + ONE shared grid (not a section per metric)', () => {
+    const { lines } = stats.renderBody({ topic: 't.net', row: '_', metrics: ['rx', 'tx'], overlay: true }, 30, 8);
+    assert(lines[0].includes('RX') && lines[0].includes('TX'), `legend names both series, got ${JSON.stringify(lines[0])}`);
+    assert(lines[0].includes('[accent]') && lines[0].includes('[warning]'), 'legend colours each series distinctly');
+    // Non-overlay would emit 2 headers ("RX"/"TX" on their OWN lines) + 2 grids;
+    // overlay emits exactly ONE legend then grid rows — so RX/TX appear only in line 0.
+    assert(!lines.slice(1).some((l) => l.includes('RX') || l.includes('TX')), 'no per-metric section headers in overlay mode');
+  });
+
+  it('the overlaid grid carries BOTH series colour runs (merged traces)', () => {
+    const { lines } = stats.renderBody({ topic: 't.net', row: '_', metrics: ['rx', 'tx'], overlay: true }, 30, 8);
+    const grid = lines.slice(1).join('');
+    assert(grid.includes('[accent]') && grid.includes('[warning]'), 'both series drawn in the one grid');
+  });
+
+  it('too short for a legend+grid → graceful degradation', () => {
+    const { lines } = stats.renderBody({ topic: 't.net', row: '_', metrics: ['rx', 'tx'], overlay: true }, 30, 2);
+    eq(lines.length, 1);
+    assert(lines[0].includes('too short'), `degrades, got ${JSON.stringify(lines[0])}`);
+  });
+});
+
 describe('[renderBody] gauge — display mode vs interactive cursor', () => {
   setMetric('t.proc',
     { a: [{ cpu: 10, comm: 'a' }], b: [{ cpu: 90, comm: 'b' }], c: [{ cpu: 50, comm: 'c' }] },

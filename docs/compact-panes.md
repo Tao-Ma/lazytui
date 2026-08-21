@@ -102,7 +102,7 @@ panel accepts, plus:
 | `topic` | hub topic (a `metrics:` producer, or a Component like docker) |
 | `height` | `N%` of the box's inner height (anchored); omit → flex share (§6) |
 | `heading` | optional 1-row dim sub-header above the widget (default: none). Distinct from a `bars` widget's `label` (which names the *metered column* for bar labels). |
-| *(kind-specific)* | `graph`: `row`/`select_from`/`aggregate`, `metrics`, `window`, `graph`, `graph_color` — as `stats`. `bars`: `column`, `label`, `max`, `bar_width`, `sort_dir` — as `gauge`. `meter`: the `bars` fields plus `row: <key>` to pick one row (else the top-sorted). |
+| *(kind-specific)* | `graph`: `row`/`select_from`/`aggregate`, `metrics`, `window`, `graph`, `graph_color`, `overlay` — as `stats`. `bars`: `column`, `label`, `max`, `bar_width`, `sort_dir` — as `gauge`. `meter`: the `bars` fields plus `row: <key>` to pick one row (else the top-sorted). |
 
 `type` here is the **widget** kind, not a pane type — it never reaches the pane
 dispatch. The composite Component owns the `composite` panelType; it interprets
@@ -112,7 +112,7 @@ dispatch. The composite Component owns the `composite` panelType; it interprets
 
 | kind | body reused | renders |
 |---|---|---|
-| `graph` | `stats.renderBody` (per-metric sections) | braille/blocks line graph(s) for the topic — single stream (`row: _`), `select_from`, or `aggregate`. A percent metric's section already draws a **current-value meter row** under its header. A `height: 1` graph *is* a sparkline. |
+| `graph` | `stats.renderBody` (per-metric sections) | braille/blocks line graph(s) for the topic — single stream (`row: _`), `select_from`, or `aggregate`. A percent metric's section already draws a **current-value meter row** under its header. A `height: 1` graph *is* a sparkline. `overlay: true` draws **all** `metrics:` in ONE braille grid, each a distinct colour under a coloured legend (one shared value scale) — the 2-series read (network rx/tx up-and-down in one trace). |
 | `bars` | `gauge.renderBody` (display mode) | one horizontal meter bar per row (per-core, per-mount, per-process), ordered by value — btop's bar chart. |
 | `meter` | `gauge.renderBody`, single-row | exactly **one** horizontal meter bar for a single scalar — `single` takes the top-sorted row, `row: <key>` picks one by key. Use it to pack a labelled scalar (e.g. `MEM 62%`) onto one line without `bars`' per-row expansion. |
 

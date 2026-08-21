@@ -11,7 +11,7 @@
 const { describe, it, assert, eq, report } = require('./test-runner');
 const hub = require('../leaves/infra/hub');
 const { update } = require('../app/runtime');
-const { rasterize, rasterizeBraille, columnNorms, colorizeRows, colorizeByHeight, quantizeNorm, meterRow, BLOCKS } = require('../panel/monitor/stats-graph');
+const { rasterize, rasterizeBraille, rasterizeBrailleMulti, columnNorms, colorizeRows, colorizeOverlay, colorizeByHeight, quantizeNorm, meterRow, BLOCKS } = require('../panel/monitor/stats-graph');
 const stats = require('../panel/monitor/stats');
 const docker = require('../panel/navigator/docker');
 
@@ -118,6 +118,33 @@ describe('[4b] rasterizeBraille: contract mirrors rasterize', () => {
   it('zero range renders empty (mirrors rasterize)', () => {
     const rows = rasterizeBraille([5, 5], { width: 1, height: 1, min: 0, max: 0 });
     eq(rows[0], ' ');
+  });
+});
+
+describe('[4b-overlay] rasterizeBrailleMulti + colorizeOverlay', () => {
+  it('degenerate / empty → { rows:[], owners:[] }', () => {
+    eq(rasterizeBrailleMulti([[1]], { width: 3, height: 0, min: 0, max: 1 }).rows.length, 0);
+    eq(rasterizeBrailleMulti([], { width: 3, height: 2, min: 0, max: 1 }).rows.length, 0);
+  });
+  it('single series matches rasterizeBraille glyphs (n=1 is the base case)', () => {
+    const s = [0, 0, 100, 100];
+    const one = rasterizeBraille(s, { width: 2, height: 1, min: 0, max: 100 });
+    const multi = rasterizeBrailleMulti([s], { width: 2, height: 1, min: 0, max: 100 });
+    eq(multi.rows[0], one[0], 'glyphs identical to the single-series rasterizer');
+  });
+  it('ORs two series into one cell + records the owner (last series wins the colour)', () => {
+    // series A fills the LEFT dot-col, series B the RIGHT dot-col of a 1-cell grid.
+    const A = [100, NaN];   // → ⡇ (left)
+    const B = [NaN, 100];   // → ⢸ (right)
+    const { rows, owners } = rasterizeBrailleMulti([A, B], { width: 1, height: 1, min: 0, max: 100 });
+    eq(rows[0], '⣿', 'both dot-columns lit = merged glyph');
+    eq(owners[0][0], 1, 'series B (index 1, drawn last) owns the cell colour');
+  });
+  it('colorizeOverlay wraps each cell in its owner series colour; spaces stay bare', () => {
+    const rows = ['⡇⢸ '];
+    const owners = [[0, 1, -1]];
+    const out = colorizeOverlay(rows, owners, ['accent', 'warning']);
+    eq(out[0], '[accent]⡇[/][warning]⢸[/] ');
   });
 });
 
