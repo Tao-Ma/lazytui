@@ -38,6 +38,9 @@ function _bodyLines(widget, innerW, innerH) {
   const type = widget && widget.type;
   if (type === 'graph') return stats.renderBody(widget, innerW, innerH).lines;
   if (type === 'bars')  return gauge.renderBody(gauge.specFrom(widget), innerW, innerH, {}).lines;
+  // `meter` — a SINGLE gauge bar (one scalar), vs `bars`' one-per-row. `single`
+  // takes the top-sorted row; `row:` picks one by key. Reuses the gauge body.
+  if (type === 'meter') return gauge.renderBody(gauge.specFrom({ ...widget, single: true }), innerW, innerH, {}).lines;
   return [`[${theme().dim}](unknown widget type: ${esc(String(type))})[/]`];
 }
 

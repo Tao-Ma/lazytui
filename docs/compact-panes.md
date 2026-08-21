@@ -98,11 +98,11 @@ panel accepts, plus:
 
 | field | meaning |
 |---|---|
-| `type` | `graph` \| `bars` (§5) — which body renders |
+| `type` | `graph` \| `bars` \| `meter` (§5) — which body renders |
 | `topic` | hub topic (a `metrics:` producer, or a Component like docker) |
 | `height` | `N%` of the box's inner height (anchored); omit → flex share (§6) |
 | `heading` | optional 1-row dim sub-header above the widget (default: none). Distinct from a `bars` widget's `label` (which names the *metered column* for bar labels). |
-| *(kind-specific)* | `graph`: `row`/`select_from`/`aggregate`, `metrics`, `window`, `graph`, `graph_color` — as `stats`. `bars`: `column`, `label`, `max`, `bar_width`, `sort_dir` — as `gauge`. |
+| *(kind-specific)* | `graph`: `row`/`select_from`/`aggregate`, `metrics`, `window`, `graph`, `graph_color` — as `stats`. `bars`: `column`, `label`, `max`, `bar_width`, `sort_dir` — as `gauge`. `meter`: the `bars` fields plus `row: <key>` to pick one row (else the top-sorted). |
 
 `type` here is the **widget** kind, not a pane type — it never reaches the pane
 dispatch. The composite Component owns the `composite` panelType; it interprets
@@ -114,13 +114,15 @@ dispatch. The composite Component owns the `composite` panelType; it interprets
 |---|---|---|
 | `graph` | `stats.renderBody` (per-metric sections) | braille/blocks line graph(s) for the topic — single stream (`row: _`), `select_from`, or `aggregate`. A percent metric's section already draws a **current-value meter row** under its header. A `height: 1` graph *is* a sparkline. |
 | `bars` | `gauge.renderBody` (display mode) | one horizontal meter bar per row (per-core, per-mount, per-process), ordered by value — btop's bar chart. |
+| `meter` | `gauge.renderBody`, single-row | exactly **one** horizontal meter bar for a single scalar — `single` takes the top-sorted row, `row: <key>` picks one by key. Use it to pack a labelled scalar (e.g. `MEM 62%`) onto one line without `bars`' per-row expansion. |
 
-**Shipped kinds are `graph` + `bars`.** A standalone `meter` kind (a single-value
-bar) was dropped as redundant: a `graph` on a percent topic already renders a meter
-row under its header, so `graph(host.mem)` *is* the memory graph **and** its MEM%
-meter. No `sparkline` kind: it is `graph` at `height: 1`. No `table` widget in Tier 1 —
-a `table` carries a border-embedded sort control + cursor/scroll (interactive),
-which is the Tier-2 case (§8); the read-only process list stays its own pane.
+**Shipped kinds are `graph`, `bars`, and `meter`.** A `graph` on a percent topic
+*also* draws a current-value meter row under its header (so `graph(host.mem)` is the
+memory graph **and** its MEM% meter) — reach for `meter` when you want the bar
+**without** the graph, guaranteed to one row on a multi-row topic. No `sparkline`
+kind: it is `graph` at `height: 1`. No `table` widget in Tier 1 — a `table` carries a
+border-embedded sort control + cursor/scroll (interactive), which is the Tier-2 case
+(§8); the read-only process list stays its own pane.
 
 ## 6. Rendering architecture
 

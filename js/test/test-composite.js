@@ -99,6 +99,23 @@ describe('[composite] render — stacks bodies in one border', () => {
     assert(stripMarkup(out).includes('unknown widget type'), 'marker shown');
   });
 
+  it('a `meter` widget draws exactly ONE bar (the top-sorted row), unlike `bars`', () => {
+    // c.core has 2 rows (c0=30, c1=70). `bars` → 2 bars; `meter` → 1 (top = c1).
+    const out = composite.panelTypes.composite.render(
+      { title: 'M', widgets: [{ type: 'meter', topic: 'c.core', column: 'busy' }] }, 40, 8, {}, {});
+    const body = stripMarkup(out);
+    assert(body.includes('c1'), 'the top-sorted row (c1=70) is the single meter');
+    assert(!body.includes('c0'), 'the lower row (c0) is NOT drawn — meter is single-row');
+  });
+
+  it('a `meter` with `row:` selects that row by key', () => {
+    const out = composite.panelTypes.composite.render(
+      { title: 'M', widgets: [{ type: 'meter', topic: 'c.core', column: 'busy', row: 'c0' }] }, 40, 8, {}, {});
+    const body = stripMarkup(out);
+    assert(body.includes('c0'), 'row:c0 selected');
+    assert(!body.includes('c1'), 'the top row (c1) is NOT drawn when row:c0 is pinned');
+  });
+
   it('a sub-2 degenerate size degrades gracefully, never throws (round-3 review)', () => {
     // A full-viewed box on a ≤2-row / ≤1-col terminal hands render() h<2 or w<2, so
     // innerH/innerW go negative. The phantom-scrollbar cap (`lines.length = innerH`)

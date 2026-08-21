@@ -121,6 +121,11 @@ function specFrom(cfg) {
     // width desyncs the two render paths (`repeat` floors, the fill loop doesn't).
     barMax: (typeof pd.bar_width === 'number' && pd.bar_width >= 1) ? Math.floor(pd.bar_width) : 20,
     sortDir: pd.sort_dir === 'asc' ? 1 : -1,   // bars sort by metered value; desc default
+    // `meter` widget (composite, docs/compact-panes.md §5): a SINGLE bar. `single`
+    // takes the top-sorted row; `row` selects one row by key. Absent for a normal
+    // gauge/`bars` (all rows). getItems applies the filter after the sort.
+    row: pd.row != null ? String(pd.row) : null,
+    single: pd.single === true,
   };
 }
 
@@ -170,6 +175,10 @@ function getItems(slice) {
       return c !== 0 ? c * dir : A[1] - B[1];   // stable
     }).map(p => p[0]);
   }
+  // Single-bar `meter` mode: `row` selects one row by key; `single` takes the
+  // top-sorted row. A `row:` that matches nothing yields no bar (empty state).
+  if (slice.row != null) rows = rows.filter((rk) => String(rk) === String(slice.row));
+  if (slice.single || slice.row != null) rows = rows.slice(0, 1);
   return rows;
 }
 
