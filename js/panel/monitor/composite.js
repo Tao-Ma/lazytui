@@ -25,19 +25,35 @@
  */
 'use strict';
 
-const { esc, theme, renderPanel } = require('../api');
+const { getModel } = require('../../model/store');
+const { esc, theme, renderPanel, getSel, getScroll, sliceForPane: _sliceForPane } = require('../api');
 const { distributeColumnHeights } = require('../../leaves/wm/geometry');
+const { rowInfo } = require('../../leaves/metrics/row-info');   // shared row → detail-card projection
+const mnav = require('../../leaves/wm/nav');
 const stats = require('./stats');
 const gauge = require('./gauge');
+
+// The ONE interactive widget of a composite (Tier-2 interactive sub-widget): the
+// first `bars` widget marked `interactive: true`. It gains a row cursor when the
+// box is focused (j/k, click, select_from source) — reusing gauge's interactive
+// renderBody path. `meter` is single-value (no cursor); `graph` has no rows; so
+// only `bars` qualifies. At most one per box keeps the pane's single cursor
+// unambiguous. Returns the widget object (by reference) or null.
+function _interactiveWidget(widgets) {
+  return (Array.isArray(widgets) ? widgets : [])
+    .find((w) => w && w.interactive === true && w.type === 'bars') || null;
+}
 
 // A widget's border-less body lines. `graph` → the stats line-graph sections;
 // `bars` → the gauge meter bars in DISPLAY mode (no cursor — a composite widget
 // owns no paneId). An unknown/mis-typed widget degrades to a dim marker (the
 // lenient-parser philosophy: no throw, a visible hint).
-function _bodyLines(widget, innerW, innerH) {
+// `ctx` (interactive widget only) = { sel, scroll, focused } from the box's live
+// nav — threads the row cursor into the gauge body. Omitted → display mode.
+function _bodyLines(widget, innerW, innerH, ctx) {
   const type = widget && widget.type;
   if (type === 'graph') return stats.renderBody(widget, innerW, innerH).lines;
-  if (type === 'bars')  return gauge.renderBody(gauge.specFrom(widget), innerW, innerH, {}).lines;
+  if (type === 'bars')  return gauge.renderBody(gauge.specFrom(widget), innerW, innerH, ctx || {}).lines;
   // `meter` — a SINGLE gauge bar (one scalar), vs `bars`' one-per-row. `single`
   // takes the top-sorted row; `row:` picks one by key. Reuses the gauge body.
   if (type === 'meter') return gauge.renderBody(gauge.specFrom({ ...widget, single: true }), innerW, innerH, {}).lines;
@@ -110,6 +126,14 @@ function render(panel, w, h, _slice, opts) {
     lines = [];
   } else {
     const heights = _split(widgets, innerH);
+    // The interactive widget (if any) gets the box's live cursor threaded in — but
+    // only when the pane is really placed (paneId present): the headless render
+    // tests call render() with a bare panel, and getSel(undefined) has no entry.
+    const iw = _interactiveWidget(widgets);
+    const paneId = panel.paneId;
+    const iCtx = (iw && paneId != null)
+      ? { sel: getSel(paneId), scroll: getScroll(paneId), focused }
+      : null;
     lines = [];
     widgets.forEach((widget, i) => {
       if (i > 0) lines.push('');                                   // 1-row gap between widgets
@@ -117,7 +141,7 @@ function render(panel, w, h, _slice, opts) {
       // Pin each widget to EXACTLY its allocated body height so a short body
       // (rounding / few rows) doesn't shift the widgets below it out of their slots.
       const bh = heights[i];
-      const body = _bodyLines(widget, innerW, bh);
+      const body = _bodyLines(widget, innerW, bh, widget === iw ? iCtx : null);
       for (let r = 0; r < bh; r++) lines.push(body[r] != null ? body[r] : '');
     });
     // At a tiny innerH the heading/gap rows push the stack past innerH (`_split`'s
@@ -136,18 +160,60 @@ function render(panel, w, h, _slice, opts) {
   });
 }
 
-// Stateless Component — a composite is a pure render over model.metrics (each
-// widget body reads its own topic; the metrics-mirror Subs keep them current). No
-// slice of its own (display-only; no cursor). Same shape as `stats`.
+// The interactive widget's gauge spec from a pane def (or null) — the rows source
+// for getItems / getInfo / the cursor. Single-sourced so init + getItems agree.
+function _interactiveSpec(paneDef) {
+  const iw = _interactiveWidget(paneDef && paneDef.widgets);
+  return iw ? gauge.specFrom(iw) : null;
+}
+
+// Per-pane state: the nav cursor for an interactive widget (if any). A display-
+// only composite carries an unused nav entry (getItems → [] makes nav a no-op),
+// so its render stays byte-identical. Mirrors gauge's slice shape.
+function init(paneId, seed) {
+  return {
+    nav: mnav.init(),
+    paneId: paneId == null ? undefined : paneId,
+    interactiveSpec: _interactiveSpec(seed && seed.paneDef),
+  };
+}
+
+// Fold the framework's cursor/scroll Msgs (j/k, click nav_select, wheel) into the
+// nav entry — exactly gauge's update. Nothing else is stateful.
+function update(msg, slice) {
+  if (mnav.isNavMsg(msg)) return mnav.apply(slice, msg);
+  return slice;
+}
+
+// getItems — the interactive widget's ordered row keys (drives the cursor bounds,
+// select_from, and getInfo). Empty for a display-only composite → nav no-ops.
+function getItems(slice) {
+  return slice && slice.interactiveSpec ? gauge.getItems(slice.interactiveSpec) : [];
+}
+
+// getInfo — the selected row's detail card (viewer Info tab), same projection as
+// gauge/table so all three agree.
+function getInfo(rowKey, paneId) {
+  const slice = paneId != null ? _sliceForPane(paneId) : null;
+  const topic = slice && slice.interactiveSpec && slice.interactiveSpec.topic;
+  const metric = topic ? (getModel().metrics || {})[topic] : null;
+  return metric ? rowInfo(metric, rowKey) : [`row: ${rowKey}`];
+}
+
 module.exports = {
   name: 'composite',
-  init: () => ({}),
-  update: (_msg, slice) => slice,
+  init,
+  update,
   subscriptions,
   panelTypes: {
-    composite: { render },
+    composite: {
+      render,
+      getItems,
+      getInfo,
+      idOf: (rowKey) => String(rowKey),
+    },
   },
-  // Test-only internals.
+  // Border-less body helpers reused/tested.
   _split,
   _heightPct,
 };

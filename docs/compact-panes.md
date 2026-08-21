@@ -124,6 +124,18 @@ kind: it is `graph` at `height: 1`. No `table` widget in Tier 1 — a `table` ca
 border-embedded sort control + cursor/scroll (interactive), which is the Tier-2 case
 (§8); the read-only process list stays its own pane.
 
+### 5.1 Interactive widget (Tier-2)
+
+One `bars` widget in a box may be marked **`interactive: true`** — it gains a **row
+cursor** when the box is focused (`j`/`k`, click, and it is a `select_from` source).
+The composite grows a nav slice and exposes the interactive widget's rows through
+`getItems`/`getInfo`, threading the box's cursor into that widget's `renderBody`
+(`ctx.sel`/`scroll`/`focused`) — reusing gauge's interactive path; the other widgets
+stay display-only. At most one interactive widget per box keeps the pane's single
+cursor unambiguous. `meter` (single value) and `graph` (no rows) can't be interactive.
+This is the Tier-2 value that a plain display composite (§ above) lacks: a cursor
+*inside* the box.
+
 ## 6. Rendering architecture
 
 The render **dispatch is unchanged.** A composite is just another Component with
@@ -316,12 +328,18 @@ net_box:
 - `host.core` producer (per-core bars) added to the demo.
 - Demo reshaped to CPU/MEM/NET composites (+ PROC table + chrome).
 
-**Deferred:**
-- A standalone `meter` widget kind — redundant while a percent `graph` draws its
-  own meter row; revisit if a meter-without-a-graph is ever wanted.
-- Interactive sub-widgets (cursor / `select_from` / click) inside a composite (§8).
-- Group box — one border around N independently-focusable panes (§8).
-- Multi-series overlay rasterizer (§9) — a later net up/down nicety, not per-core.
+**Shipped since v1 (Tier-2):**
+- `meter` widget kind — a single-row gauge (§5); `single`/`row:` pick the value.
+- Multi-series **overlay** rasterizer (§5, `overlay: true`) — the net up/down read.
+- **Interactive sub-widget** (§5.1) — one `bars` widget can be `interactive: true`,
+  gaining a focused row cursor + `select_from`. This subsumes the "group box" idea
+  for monitor panes: a display-only box of metric panes is exactly a composite, so
+  the value that needed per-member focus lives here, in the interactive widget.
+
+**Still deferred:**
+- A general WM **group box** — one border around N independently-focusable panes of
+  *any* type (§8). High WM cost (geometry nesting, focus/nav routing) for UX btop
+  itself lacks; for monitor panes the composite + interactive widget already cover it.
 
 ## 12. Testing
 

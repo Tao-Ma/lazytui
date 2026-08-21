@@ -13,6 +13,9 @@ const { describe, it, assert, eq, report } = require('./test-runner');
 const { getModel } = require('../app/runtime');
 const { stripMarkup } = require('../leaves/text/ansi');
 const composite = require('../panel/monitor/composite');
+const api = require('../panel/api');
+const sm = require('./smoke/_helpers/smoke');
+const nav = require('../panel/nav-state');
 
 function setMetric(topic, series, cols) {
   getModel().metrics = { ...(getModel().metrics || {}), [topic]: { series, schema: { columns: cols } } };
@@ -127,6 +130,63 @@ describe('[composite] render — stacks bodies in one border', () => {
       catch (e) { assert(false, `render ${w}x${h} threw: ${e && e.message}`); }
       assert(typeof out === 'string' && !out.includes('▐'), `${w}x${h}: string, no phantom thumb`);
     }
+  });
+});
+
+// --- Interactive sub-widget: a focusable/scrollable `bars` inside the box ---
+describe('[composite] interactive widget — cursor inside the box', () => {
+  for (const p of ['monitor/stats', 'monitor/gauge', 'monitor/composite']) {
+    const c = require(`../panel/${p}`);
+    if (!api.getComponent(c.name)) { try { api.registerComponent(c); } catch (_) { /* order-guarded */ } }
+  }
+
+  const paneCfg = { id: 'cbox', type: 'composite', title: 'CPU', config: { widgets: [
+    { type: 'graph', topic: 'ci.cpu', row: '_', metrics: ['cpu'], height: '40%' },
+    { type: 'bars',  topic: 'ci.core', column: 'busy', label: 'core', interactive: true },
+  ] } };
+
+  function boot() {
+    sm.bootFresh({
+      groups: { g: { label: 'G', containers: [], actions: { a: { cmd: 'echo', label: 'A' } } } },
+      layout: { pool: { cbox: paneCfg }, columns: [{ panels: [paneCfg] }] },
+    });
+    setMetric('ci.cpu', { _: [{ cpu: 20 }, { cpu: 40 }, { cpu: 60 }] }, { cpu: { type: 'percent' } });
+    setMetric('ci.core', { c0: [{ busy: 30, core: 'cpu0' }], c1: [{ busy: 70, core: 'cpu1' }], c2: [{ busy: 50, core: 'cpu2' }] },
+      { busy: { type: 'percent' }, core: { type: 'string' } });
+  }
+
+  it('getItems on the placed pane = the interactive bars rows (sorted desc)', () => {
+    boot();
+    eq(api.getItems('cbox').join(','), 'c1,c2,c0', 'the interactive widget drives the cursor list');
+  });
+
+  it('a focused composite threads the cursor → the selected bar row renders differently', () => {
+    boot();
+    const mpool = require('../leaves/wm/pool');
+    const ls = api.getInstanceSlice('layout');
+    const paneId = mpool.allPanesInColumns(ls.arrange).find((p) => p.type === 'composite').paneId;
+    nav.setSel(paneId, 0);   // top of the sorted list (c1 = cpu1)
+
+    // Unfocused → display mode (no cursor highlight). Focused → the selected row
+    // gets the `[selected]` treatment. Assert the cpu1 line CHANGES between the two
+    // (colour-independent: any difference proves the cursor is threaded + applied,
+    // dodging the CI truecolor-vs-16-colour SGR fragility).
+    ls.focus = 'nobody';
+    const cpu1Unfocused = sm.capture(() => sm.render()).frame.split('\n').find((l) => l.includes('cpu1'));
+    ls.focus = paneId;
+    const cpu1Focused = sm.capture(() => sm.render()).frame.split('\n').find((l) => l.includes('cpu1'));
+    assert(cpu1Unfocused && cpu1Focused, 'the cpu1 bar rendered in both');
+    assert(cpu1Unfocused !== cpu1Focused, 'the SELECTED (sel 0 = cpu1) row renders differently when the box is focused — cursor threaded in');
+  });
+
+  it('a display-only composite (no interactive widget) exposes NO cursor rows', () => {
+    const display = { id: 'd', type: 'composite', title: 'D', config: { widgets: [{ type: 'graph', topic: 'ci.cpu', row: '_', metrics: ['cpu'] }] } };
+    sm.bootFresh({
+      groups: { g: { label: 'G', containers: [], actions: { a: { cmd: 'echo', label: 'A' } } } },
+      layout: { pool: { d: display }, columns: [{ panels: [display] }] },
+    });
+    setMetric('ci.cpu', { _: [{ cpu: 20 }] }, { cpu: { type: 'percent' } });
+    eq(api.getItems('d').length, 0, 'display composite has no interactive rows → nav no-ops');
   });
 });
 
