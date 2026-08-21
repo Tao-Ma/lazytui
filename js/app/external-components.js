@@ -65,16 +65,35 @@ function externalComponents(config) {
 }
 
 /**
- * Peek a WAL log for the config carried by its first `set_config` Msg. A msg
+ * Peek a WAL log for the config that declares its external Components. A msg
  * entry is `{ kind:'msg', lane, msg:{ type, ... } }` (io/session-log +
- * dispatch/runtime/middleware); `set_config` is the first recorded entry of a
- * self-contained WAL. Returns null when absent.
+ * dispatch/runtime/middleware); a from-boot `--record-save` WAL leads with a
+ * `set_config` Msg carrying the resolved config. Returns null when neither a
+ * set_config Msg nor a config-bearing checkpoint is present.
+ *
+ * FALLBACK — a checkpoint-first WAL (the in-session `:record-save` verb
+ * checkpoints THEN streams, so there is NO set_config Msg) still carries the
+ * full model inside a `checkpoint` entry's encoded `.state`
+ * (`replay.snapshotState()` snapshots `getModel()`, so `state.model.config`
+ * holds the same resolved `components:` list). Without this fallback, an
+ * in-session-recorded session silently loses its external panels on replay
+ * (blank panes, no crash) — the parity hole this closes.
  */
 function configFromLog(log) {
   if (!Array.isArray(log)) return null;
   for (const e of log) {
     if (e && e.kind === 'msg' && e.msg && e.msg.type === 'set_config') {
       return e.msg.config || null;
+    }
+  }
+  // No set_config Msg — read the config from the first config-bearing checkpoint.
+  for (const e of log) {
+    if (e && e.kind === 'checkpoint' && e.state) {
+      let snap;
+      try { snap = require('../io/session-log').decodeJson(e.state); }
+      catch (_) { continue; }   // unreadable checkpoint — try the next
+      const cfg = snap && snap.model && snap.model.config;
+      if (cfg) return cfg;
     }
   }
   return null;

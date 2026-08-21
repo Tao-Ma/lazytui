@@ -10,7 +10,7 @@
 
 const path = require('path');
 const { describe, it, assert, eq, report } = require('./test-runner');
-const { relSpec, _defaultOut, runCli, build } = require('../app/build-binary');
+const { relSpec, componentSpec, _defaultOut, runCli, build } = require('../app/build-binary');
 
 describe('[build] relSpec — bun-bundleable RELATIVE specifiers', () => {
   it('same-dir file → ./name (Bun would treat an absolute path as external)', () => {
@@ -23,6 +23,20 @@ describe('[build] relSpec — bun-bundleable RELATIVE specifiers', () => {
   });
   it('never returns an absolute path', () => {
     assert(!path.isAbsolute(relSpec('/a/b', '/c/d/e.js')), 'must be relative');
+  });
+});
+
+describe('[build] componentSpec — absolute → relative, BARE name verbatim', () => {
+  it('an absolute component path → a relative spec (bundled)', () => {
+    const s = componentSpec('/tmp/work', '/root/proj/components/my-panel.js');
+    assert(s.startsWith('.') && !path.isAbsolute(s), `relative: ${s}`);
+    assert(s.endsWith('components/my-panel.js'), s);
+  });
+  it('a BARE package name stays VERBATIM (Bun resolves via node_modules)', () => {
+    // The Finding-1 bug: relSpec turned a bare name into a bogus cwd-relative
+    // path (`../../.../my-npm-panel`) that won't bundle. componentSpec keeps it.
+    eq(componentSpec('/tmp/work', 'my-npm-panel'), 'my-npm-panel');
+    eq(componentSpec('/tmp/work', '@scope/panel'), '@scope/panel');
   });
 });
 
@@ -39,6 +53,7 @@ describe('[build] runCli — arg parsing + guards', () => {
   it('--out with no value → exit 2', () => { eq(runCli(['--out']), 2); });
   it('--target with no value → exit 2', () => { eq(runCli(['--target']), 2); });
   it('unknown flag → exit 2', () => { eq(runCli(['--bogus', 'x.yml']), 2); });
+  it('a second positional (extra config) → exit 2, not silently dropped', () => { eq(runCli(['a.yml', 'b.yml']), 2); });
   it('a missing config file → exit 1 (config not found)', () => {
     eq(build('/no/such/config-xyz.yml'), 1);
     eq(runCli(['/no/such/config-xyz.yml']), 1);

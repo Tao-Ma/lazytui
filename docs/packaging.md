@@ -78,6 +78,15 @@ this for you.
   runtime path, which a binary can't resolve). A pathological pattern can hang
   the app — the same exposure as a TUI without the guard. It is self-inflicted
   and local (the user types it into their own app).
+- **Session replay of the embedded Components is in-process only.** A binary can
+  record a session (`LAZYTUI_REPLAY_LOG`, `:record-save`), and reconstruct it
+  live in the same process (`:record-load`). But a **separate** replay process
+  (`lazytui --record-print` from a source checkout) cannot rebuild the binary's
+  own Component panels — their modules live inside the binary, not on disk, and
+  are not written to the WAL. Those panes render blank on a cross-process replay;
+  the built-in panels and all Msgs replay normally. (A file-config app has full
+  replay parity — its Component modules are on disk for the replay process to
+  load.)
 - **Size.** Each binary is ~90 MB — it embeds the Bun runtime. That is the trade
   for a zero-dependency executable.
 

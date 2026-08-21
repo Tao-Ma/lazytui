@@ -126,6 +126,30 @@ describe('[external-components] configFromLog() — replay-parity WAL peek', () 
     registerExternal(configFromLog(log), c => seen.push(c.name));
     eq(seen, ['ext-hello']);
   });
+  it('FALLS BACK to a checkpoint config when there is no set_config Msg', () => {
+    // The in-session `:record-save` path checkpoints THEN streams, so the WAL is
+    // checkpoint-first with no set_config Msg. Without the fallback, external
+    // panels silently vanish on replay (review round-3 Finding 5). The checkpoint's
+    // `.state` is the Set-encoded snapshot; config lives at state.model.config.
+    const sessionLog = require('../io/session-log');
+    const state = sessionLog.encodeJson({ model: { config: { components: [FX_HELLO], project_dir: '/p' } }, slices: {} });
+    const log = [
+      { seq: 1, kind: 'checkpoint', state },
+      { seq: 2, kind: 'msg', lane: 'key', key: 'j' },
+    ];
+    const cfg = configFromLog(log);
+    assert(cfg && cfg.components, 'config recovered from the checkpoint');
+    eq(cfg.components, [FX_HELLO]);
+  });
+  it('a set_config Msg still WINS over a later checkpoint', () => {
+    const sessionLog = require('../io/session-log');
+    const state = sessionLog.encodeJson({ model: { config: { components: ['/other.js'] } }, slices: {} });
+    const log = [
+      { seq: 1, kind: 'msg', msg: { type: 'set_config', config: { components: [FX_HELLO] } } },
+      { seq: 2, kind: 'checkpoint', state },
+    ];
+    eq(configFromLog(log).components, [FX_HELLO]);
+  });
 });
 
 describe('[external-components] parser — path resolution + validation', () => {
