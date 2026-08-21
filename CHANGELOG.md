@@ -6,6 +6,19 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Tier-2 composite widgets — richer btop-density boxes.** Three additions to the
+  `type: composite` panel (docs/compact-panes.md): a **`meter`** widget kind (a single
+  gauge bar for one scalar — `single` takes the top row, `row:` picks one — vs `bars`'
+  one-per-row); a **multi-series overlay** for `graph` widgets/panes (`overlay: true`
+  draws all `metrics:` in ONE braille grid, each a distinct colour under a legend on
+  one shared scale — the network rx/tx up-and-down read); and an **interactive
+  sub-widget** — one `bars` widget can be `interactive: true`, gaining a row cursor
+  when the box is focused (`j`/`k`, click, `select_from` source), by threading the
+  box's cursor into that widget's gauge body while the others stay display-only.
+  Display-only composites are unchanged.
+
 ## [0.6.23] — 2026-08-20
 
 ### Added
