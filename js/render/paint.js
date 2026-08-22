@@ -102,12 +102,14 @@ let _decorRef; const _decor = () => (_decorRef ||= require('../leaves/render/dra
 // Graph hover tooltip (Phase 2) — the rows the hover box last painted, for the
 // vanish/move reclaim. The box is a fixed 3 rows tall (one value line + borders), so
 // its rows depend ONLY on the anchor y — pre-pane (raw hover position) and post-pane
-// (resolved value) row math agree.
+// (resolved value) row math agree. `bottom` is EXCLUSIVE (one past the last box row)
+// to match invalidateRows' half-open [start, end) loop — else the box's bottom border
+// row never clears and leaves a `╰──╯` residue.
 let _prevHoverRows = null;
 function _hoverBoxRows(h) {
   if (!h || !Number.isFinite(h.y)) return null;
   const box = _decor().overlayBox({ linesLen: 1, anchor: { x: h.x, y: h.y + 1 }, maxWidth: 60 });
-  return { top: box.offY, bottom: box.offY + box.menuH - 1 };
+  return { top: box.offY, bottom: box.offY + box.menuH };
 }
 let _paneMenuRef; const _paneMenu = () => (_paneMenuRef ||= require('../overlay/pane-menu'));
 let _selViewRef; const _selView = () => (_selViewRef ||= require('../panel/select-view'));
@@ -899,16 +901,14 @@ function render(model) {
   // pane that stopped rendering (off-screen in half/full) leaves no stale hit
   // region. Repopulated synchronously below; hit-tests only read between frames.
   // Hover tooltip vanish/move reclaim (mirrors the terminal-overlay reclaim above):
-  // the box writes directly to the screen, so when it moves or clears its previous
-  // cells must be invalidated for THIS frame's diff pass to rewrite them from the
-  // panes underneath. Computed from the raw hover position; _prevHoverRows tracks the
-  // rows a box was actually drawn on last frame (null if none).
-  {
-    const willRows = (layoutSlice.hover && !modes.isModal(md)) ? _hoverBoxRows(layoutSlice.hover) : null;
-    if (_prevHoverRows && (!willRows || willRows.top !== _prevHoverRows.top || willRows.bottom !== _prevHoverRows.bottom)) {
-      invalidateRows(_prevHoverRows.top, _prevHoverRows.bottom);
-    }
-  }
+  // the box writes directly to the screen, so its previous cells must be invalidated
+  // for THIS frame's diff pass to rewrite them from the panes underneath — else a move
+  // or clear leaves border residue. Reclaim UNCONDITIONALLY when a box was drawn last
+  // frame: a HORIZONTAL move keeps the same rows (so a row-change check would miss it),
+  // and invalidateRows repaints the FULL rows (all columns), covering any column shift.
+  // The box (if hover is still live) redraws after the pane pass. Cheap: only fires on
+  // frames that actually repaint, and the hover handler coalesces to cell changes.
+  if (_prevHoverRows) invalidateRows(_prevHoverRows.top, _prevHoverRows.bottom);
   chromeRegions.clear();
   // Same discipline for the per-row tree fold markers (panel/tree-regions): a
   // table in tree mode republishes its `▾`/`▸` glyph ranges each paint.
