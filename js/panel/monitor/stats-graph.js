@@ -2,10 +2,11 @@
  * Graph rasterizers + colorize/meter leaves (truecolor arc Phase 2,
  * docs/truecolor.md). Pure functions — given a numeric series, dimensions,
  * and a value range, produce arrays of `height` strings each `width` VISIBLE
- * columns wide. No I/O, no theme deps; color enters ONLY through the
- * injected `colorFor` callback (leaves purity wall — the panel passes
- * themes.gradient), and every emitted color run is `[/]`-terminated (P8:
- * the reset-free per-column shape is the H1 quadratic).
+ * columns wide. No I/O, no theme deps — color is injected by the CALLER, never
+ * read here (leaves purity wall): either a `colorFor` callback (`colorizeRows`,
+ * the panel passes themes.gradient) or a pre-resolved atom array (`colorizeOverlay`,
+ * semantic theme tokens the panel resolves at paint). Every emitted color run is
+ * `[/]`-terminated (P8: the reset-free per-column shape is the H1 quadratic).
  *
  * Two rasterizers, one contract:
  *   - `rasterize` — block chars, 8 fill levels per cell (`▁..█`), 1 sample

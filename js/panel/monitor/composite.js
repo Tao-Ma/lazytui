@@ -4,24 +4,29 @@
  * Stacks several border-less widget BODIES — reused verbatim from the stats
  * (line-graph) and gauge (meter-bar) renderers via their `renderBody` seam — in
  * ONE bordered pane. A composite is still a single draggable, focusable pane; the
- * WM sees a flat pane (no nesting). This is Tier 1: DISPLAY-only widgets — the box
- * has no cursor of its own, so a widget's OWN rows aren't selectable and a click
- * inside just focuses the box. (A `graph` widget may still `select_from` an
- * EXTERNAL pane — that's a cross-pane cursor read, exactly like a standalone stats
- * pane, so it works and yields a follower graph inside the box.) See
- * docs/compact-panes.md.
+ * WM sees a flat pane (no nesting). See docs/compact-panes.md.
+ *
+ * Widget kinds (§5): `graph` → stats body, `bars` → gauge bars, `meter` → a single
+ * gauge bar (one scalar). Most widgets are DISPLAY-only — no cursor of their own,
+ * so a click inside just focuses the box. Tier-2 adds ONE optional exception: a
+ * single `bars` widget marked `interactive: true` gains a live row cursor when the
+ * box is focused (this pane then owns a nav slice; j/k, click, and `select_from`
+ * drive it). A `graph` widget may also `select_from` an EXTERNAL pane — a cross-pane
+ * cursor read, exactly like a standalone stats pane — yielding a follower graph.
  *
  * YAML shape:
  *   cpu_box:
  *     type: composite
  *     title: CPU
  *     widgets:
- *       - { type: graph, topic: host.cpu,  row: _, height: 50% }   # stats body
- *       - { type: bars,  topic: host.core, column: busy, label: core, heading: Cores }
+ *       - { type: graph, topic: host.cpu,  row: _, height: 50% }              # stats body
+ *       - { type: meter, topic: host.mem,  column: used_pct }                 # one gauge bar
+ *       - { type: bars,  topic: host.core, column: busy, heading: Cores, interactive: true }
  *
  * Each widget is a today-pane's config minus the border, plus `height:` (N% of the
  * box's inner height; omit → flex) and an optional dim `heading:` sub-header. The
- * widget `type` selects the body: `graph` → stats, `bars` → gauge (display mode).
+ * widget `type` selects the body; a `graph` may add `overlay: true` (all metrics in
+ * ONE braille grid). See docs/compact-panes.md §5.
  */
 'use strict';
 
@@ -45,11 +50,11 @@ function _interactiveWidget(widgets) {
 }
 
 // A widget's border-less body lines. `graph` → the stats line-graph sections;
-// `bars` → the gauge meter bars in DISPLAY mode (no cursor — a composite widget
-// owns no paneId). An unknown/mis-typed widget degrades to a dim marker (the
-// lenient-parser philosophy: no throw, a visible hint).
-// `ctx` (interactive widget only) = { sel, scroll, focused } from the box's live
-// nav — threads the row cursor into the gauge body. Omitted → display mode.
+// `bars`/`meter` → the gauge meter bars. Normally DISPLAY mode (empty `ctx`, no
+// cursor); the ONE `interactive: true` bars widget instead receives the box's live
+// cursor via `ctx` = { sel, scroll, focused }, threaded into the gauge body. An
+// unknown/mis-typed widget degrades to a dim marker (the lenient-parser
+// philosophy: no throw, a visible hint).
 function _bodyLines(widget, innerW, innerH, ctx) {
   const type = widget && widget.type;
   if (type === 'graph') return stats.renderBody(widget, innerW, innerH).lines;
@@ -194,7 +199,7 @@ function getItems(slice) {
 // getInfo — the selected row's detail card (viewer Info tab), same projection as
 // gauge/table so all three agree.
 function getInfo(rowKey, paneId) {
-  const slice = paneId != null ? _sliceForPane(paneId) : null;
+  const slice = paneId != null ? _sliceForPane(paneId, 'composite') : null;
   const topic = slice && slice.interactiveSpec && slice.interactiveSpec.topic;
   const metric = topic ? (getModel().metrics || {})[topic] : null;
   return metric ? rowInfo(metric, rowKey) : [`row: ${rowKey}`];

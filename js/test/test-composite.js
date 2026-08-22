@@ -160,6 +160,16 @@ describe('[composite] interactive widget — cursor inside the box', () => {
     eq(api.getItems('cbox').join(','), 'c1,c2,c0', 'the interactive widget drives the cursor list');
   });
 
+  it('getInfo on the placed pane → the selected row detail card (topic resolved via the interactive widget)', () => {
+    boot();
+    const mpool = require('../leaves/wm/pool');
+    const ls = api.getInstanceSlice('layout');
+    const paneId = mpool.allPanesInColumns(ls.arrange).find((p) => p.type === 'composite').paneId;
+    const info = composite.panelTypes.composite.getInfo('c1', paneId);
+    assert(info.length > 1, `not the bare [row: …] fallback → topic resolved: ${JSON.stringify(info)}`);
+    assert(info.some((l) => stripMarkup(l).includes('cpu1')), `detail card projects the ci.core row fields: ${JSON.stringify(info)}`);
+  });
+
   it('a focused composite threads the cursor → the selected bar row renders differently', () => {
     boot();
     const mpool = require('../leaves/wm/pool');

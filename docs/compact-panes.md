@@ -114,7 +114,7 @@ dispatch. The composite Component owns the `composite` panelType; it interprets
 |---|---|---|
 | `graph` | `stats.renderBody` (per-metric sections) | braille/blocks line graph(s) for the topic — single stream (`row: _`), `select_from`, or `aggregate`. A percent metric's section already draws a **current-value meter row** under its header. A `height: 1` graph *is* a sparkline. `overlay: true` draws **all** `metrics:` in ONE braille grid, each a distinct colour under a coloured legend (one shared value scale) — the 2-series read (network rx/tx up-and-down in one trace). |
 | `bars` | `gauge.renderBody` (display mode) | one horizontal meter bar per row (per-core, per-mount, per-process), ordered by value — btop's bar chart. |
-| `meter` | `gauge.renderBody`, single-row | exactly **one** horizontal meter bar for a single scalar — `single` takes the top-sorted row, `row: <key>` picks one by key. Use it to pack a labelled scalar (e.g. `MEM 62%`) onto one line without `bars`' per-row expansion. |
+| `meter` | `gauge.renderBody`, single-row | exactly **one** horizontal meter bar for a single scalar — the top-sorted row by default, or `row: <key>` to pick one by key. Use it to pack a labelled scalar (e.g. `MEM 62%`) onto one line without `bars`' per-row expansion. |
 
 **Shipped kinds are `graph`, `bars`, and `meter`.** A `graph` on a percent topic
 *also* draws a current-value meter row under its header (so `graph(host.mem)` is the
@@ -329,7 +329,7 @@ net_box:
 - Demo reshaped to CPU/MEM/NET composites (+ PROC table + chrome).
 
 **Shipped since v1 (Tier-2):**
-- `meter` widget kind — a single-row gauge (§5); `single`/`row:` pick the value.
+- `meter` widget kind — a single-row gauge (§5); the top-sorted row, or `row:` to pick one.
 - Multi-series **overlay** rasterizer (§5, `overlay: true`) — the net up/down read.
 - **Interactive sub-widget** (§5.1) — one `bars` widget can be `interactive: true`,
   gaining a focused row cursor + `select_from`. This subsumes the "group box" idea

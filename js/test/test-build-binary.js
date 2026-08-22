@@ -26,16 +26,25 @@ describe('[build] relSpec — bun-bundleable RELATIVE specifiers', () => {
   });
 });
 
-describe('[build] componentSpec — absolute → relative, BARE name verbatim', () => {
+describe('[build] componentSpec — absolute → relative, BARE name resolved via project node_modules', () => {
+  const repoRoot = path.resolve(__dirname, '../..');
   it('an absolute component path → a relative spec (bundled)', () => {
     const s = componentSpec('/tmp/work', '/root/proj/components/my-panel.js');
     assert(s.startsWith('.') && !path.isAbsolute(s), `relative: ${s}`);
     assert(s.endsWith('components/my-panel.js'), s);
   });
-  it('a BARE package name stays VERBATIM (Bun resolves via node_modules)', () => {
-    // The Finding-1 bug: relSpec turned a bare name into a bogus cwd-relative
-    // path (`../../.../my-npm-panel`) that won't bundle. componentSpec keeps it.
-    eq(componentSpec('/tmp/work', 'my-npm-panel'), 'my-npm-panel');
+  it('a BARE package name INSTALLED in projectDir → a relative spec into node_modules (bundled)', () => {
+    // A bare name can't be left verbatim: Bun resolves it from the temp entry's
+    // dir (no node_modules there). componentSpec resolves it against the PROJECT
+    // and returns a bundle-able relative path. `js-yaml` is a real dependency.
+    const s = componentSpec('/tmp/work', 'js-yaml', repoRoot);
+    assert(s.startsWith('..') && !path.isAbsolute(s), `relative: ${s}`);
+    assert(s.includes('node_modules/js-yaml'), s);
+  });
+  it('a BARE name that is NOT installed → verbatim (Bun surfaces the error)', () => {
+    eq(componentSpec('/tmp/work', 'not-a-real-pkg-xyz', repoRoot), 'not-a-real-pkg-xyz');
+  });
+  it('a BARE name with no projectDir → verbatim (nothing to resolve against)', () => {
     eq(componentSpec('/tmp/work', '@scope/panel'), '@scope/panel');
   });
 });

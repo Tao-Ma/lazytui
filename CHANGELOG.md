@@ -10,14 +10,34 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 - **Tier-2 composite widgets — richer btop-density boxes.** Three additions to the
   `type: composite` panel (docs/compact-panes.md): a **`meter`** widget kind (a single
-  gauge bar for one scalar — `single` takes the top row, `row:` picks one — vs `bars`'
-  one-per-row); a **multi-series overlay** for `graph` widgets/panes (`overlay: true`
-  draws all `metrics:` in ONE braille grid, each a distinct colour under a legend on
-  one shared scale — the network rx/tx up-and-down read); and an **interactive
-  sub-widget** — one `bars` widget can be `interactive: true`, gaining a row cursor
-  when the box is focused (`j`/`k`, click, `select_from` source), by threading the
-  box's cursor into that widget's gauge body while the others stay display-only.
-  Display-only composites are unchanged.
+  gauge bar for one scalar — the top-sorted row, or `row:` to pick one by key — vs
+  `bars`' one-per-row); a **multi-series overlay** for `graph` widgets/panes
+  (`overlay: true` draws all `metrics:` in ONE braille grid, each a distinct colour
+  under a legend on one shared scale — the network rx/tx up-and-down read); and an
+  **interactive sub-widget** — one `bars` widget can be `interactive: true`, gaining a
+  row cursor when the box is focused (`j`/`k`, click, `select_from` source), by
+  threading the box's cursor into that widget's gauge body while the others stay
+  display-only. Display-only composites are unchanged.
+
+### Changed
+
+- **Native-binary release matrix trimmed** to `linux-x64`, `linux-arm64`, and
+  `darwin-arm64` — the `darwin-x64` and `windows-x64` binaries are no longer built
+  (low demand for a compiled terminal app). The source and npm-pack tarballs are
+  unaffected, and any platform can still run the app under Node.
+
+### Fixed
+
+- **External Components declared via `components:` now survive session replay.** An
+  in-session recording that begins from a checkpoint (rather than a config event) used
+  to replay those panes blank, because the `components:` list wasn't recovered; it is
+  now read back from the checkpoint. Full config-file apps already had parity.
+- **`lazytui build` now compiles a config whose `components:` uses a bare package
+  specifier** (e.g. `@scope/panel`): the specifier is resolved against the project's
+  `node_modules` and bundled, instead of being left as a bare name that couldn't be
+  resolved from the temporary build directory. Local `.`-relative components were
+  unaffected. Also hardened: a spawn failure of `bun` exits 126 (not a false success),
+  and an unexpected extra CLI argument exits 2.
 
 ## [0.6.23] — 2026-08-20
 
