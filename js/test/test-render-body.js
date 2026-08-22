@@ -86,6 +86,60 @@ describe('[renderBody] stats — overlay mode (multi-series in one grid)', () =>
   });
 });
 
+describe('[renderBody] stats — multi mode (one sparkline per row)', () => {
+  setMetric('t.multi',
+    { p1: [{ cpu: 10, comm: 'alpha' }, { cpu: 30, comm: 'alpha' }],
+      p2: [{ cpu: 40, comm: 'beta' }, { cpu: 90, comm: 'beta' }],
+      p3: [{ cpu: 55, comm: 'gamma' }, { cpu: 50, comm: 'gamma' }] },
+    { cpu: { type: 'percent' }, comm: { type: 'string' } });
+
+  const hasBraille = (s) => [...s].some((ch) => ch.codePointAt(0) >= 0x2800 && ch.codePointAt(0) <= 0x28ff);
+
+  it('mode:multi → one line per row, sorted by latest value desc (default label = row key)', () => {
+    const { lines, rowKey } = stats.renderBody({ topic: 't.multi', mode: 'multi', column: 'cpu' }, 40, 10);
+    eq(rowKey, '_');
+    eq(lines.length, 3, 'one line per row');
+    // latest: p2=90, p3=50, p1=30 → desc p2, p3, p1
+    assert(lines[0].includes('p2'), `highest-latest row first, got ${JSON.stringify(lines[0])}`);
+    assert(lines[1].includes('p3'), 'mid second');
+    assert(lines[2].includes('p1'), 'lowest last');
+  });
+
+  it('every row draws a braille sparkline glyph (U+2800 block)', () => {
+    const { lines } = stats.renderBody({ topic: 't.multi', mode: 'multi', column: 'cpu' }, 40, 10);
+    assert(lines.every(hasBraille), `every row has a sparkline, got ${JSON.stringify(lines)}`);
+  });
+
+  it('label: names a string column for the row label (replaces the row key)', () => {
+    const { lines } = stats.renderBody({ topic: 't.multi', mode: 'multi', column: 'cpu', label: 'comm' }, 40, 10);
+    assert(lines[0].includes('beta'), `label column used, got ${JSON.stringify(lines[0])}`);
+    assert(!lines[0].includes('p2'), 'row key replaced by the label');
+  });
+
+  it('sort_dir: asc flips the order (lowest latest first)', () => {
+    const { lines } = stats.renderBody({ topic: 't.multi', mode: 'multi', column: 'cpu', sort_dir: 'asc' }, 40, 10);
+    assert(lines[0].includes('p1'), `lowest first when asc, got ${JSON.stringify(lines[0])}`);
+  });
+
+  it('viewport clips to innerH — the top rows by value', () => {
+    const { lines } = stats.renderBody({ topic: 't.multi', mode: 'multi', column: 'cpu' }, 40, 2);
+    eq(lines.length, 2, 'clipped to innerH=2');
+    assert(lines[0].includes('p2') && lines[1].includes('p3'), 'the top-2 by latest value');
+  });
+
+  it('column omitted → first graphable column auto-picked', () => {
+    const { lines } = stats.renderBody({ topic: 't.multi', mode: 'multi' }, 40, 10);
+    eq(lines.length, 3, 'renders without an explicit column (cpu auto-picked)');
+  });
+
+  it('empty topic → one dim (no data yet) line', () => {
+    const { lines, rowKey } = stats.renderBody({ topic: 't.none', mode: 'multi', column: 'cpu' }, 40, 10);
+    eq(rowKey, '_');
+    eq(lines.length, 1);
+    assert(lines[0].includes('no data'), `dim message, got ${JSON.stringify(lines[0])}`);
+  });
+});
+
 describe('[renderBody] gauge — display mode vs interactive cursor', () => {
   setMetric('t.proc',
     { a: [{ cpu: 10, comm: 'a' }], b: [{ cpu: 90, comm: 'b' }], c: [{ cpu: 50, comm: 'c' }] },

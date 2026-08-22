@@ -8,6 +8,13 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`stats` multi-row sparklines (`mode: multi`).** A `stats` pane (or a `composite`
+  `graph` widget) with `mode: multi` draws ONE height-1 braille sparkline **per row**
+  of its topic — btop's process-list shape: one metric across all rows, sorted by
+  latest value (`sort_dir: asc` flips), each row `label ⟨sparkline⟩ value`. `column:`
+  picks the metric (default: first graphable), `label:` a string column for the row
+  label; the sparkline is value-mapped on one shared scale. Display-only for now.
+
 - **Tier-2 composite widgets — richer btop-density boxes.** Three additions to the
   `type: composite` panel (docs/compact-panes.md): a **`meter`** widget kind (a single
   gauge bar for one scalar — the top-sorted row, or `row:` to pick one by key — vs

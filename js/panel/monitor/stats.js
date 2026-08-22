@@ -22,9 +22,11 @@
 
 const { getModel } = require('../../model/store');
 const {
-  esc, theme, gradient, renderPanel,
+  esc, theme, gradient, renderPanel, visibleLen,
   getItems: apiGetItems,
 } = require('../api');
+const { truncate } = require('../../leaves/render/draw');
+const { fmt: _fmtCell } = require('../../leaves/metrics/format');   // shared compact cell formatter (see gauge/table)
 const { rasterize, rasterizeBraille, rasterizeBrailleMulti, columnNorms, colorizeRows, colorizeOverlay, colorizeByHeight, quantizeNorm, meterRow } = require('./stats-graph');
 
 // Distinct-hue palette for overlaid series (net up/down, etc.) — semantic theme
@@ -130,12 +132,23 @@ function _resolveSelection(panel) {
 function renderBody(spec, innerW, innerH) {
   const t = theme();
   const dim = (msg) => ({ lines: [`[${t.dim}]${esc(msg)}[/]`], rowKey: '_' });
-  if (!spec.topic || (!spec.select_from && spec.row == null && !spec.aggregate)) {
+  if (!spec.topic) {
     return dim('(stats panel needs topic + select_from / row / aggregate)');
   }
   const window = spec.window || 40;
   const metric = getModel().metrics[spec.topic];
   const schema = (metric && metric.schema) || { columns: {} };
+
+  // `mode: multi` — ONE height-1 sparkline per ROW of the topic (btop process-list
+  // style: one metric across all rows), instead of one series across N metrics. It
+  // needs only a topic — no select_from / row / aggregate — so it branches ahead of
+  // that guard. See docs/STATS.md + docs/compact-panes.md (works as a composite
+  // `graph` widget too).
+  if (spec.mode === 'multi') return _renderMulti(spec, metric, schema, innerW, innerH, window, dim);
+
+  if (!spec.select_from && spec.row == null && !spec.aggregate) {
+    return dim('(stats panel needs topic + select_from / row / aggregate)');
+  }
 
   // `aggregate:` folds ALL rows into one synthetic series (no cursor); otherwise
   // follow the select_from cursor / static row, sliced to this pane's window.
@@ -203,6 +216,84 @@ function renderBody(spec, innerW, innerH) {
     lines.push(..._renderSection(m, samples, schema, innerW, perMetric, style, colorMode));
   });
   return { lines, rowKey };
+}
+
+const _MULTI_VALUE_W = 8;   // right-hand current-value column (matches gauge's)
+
+/**
+ * `mode: multi` body — one height-1 braille sparkline per ROW of the topic, sorted
+ * by latest value (desc default, `sort_dir: asc` flips), viewport = the top innerH
+ * rows. Like the `bars` gauge but a HISTORY sparkline in place of the current-value
+ * bar. One shared value scale (percent → 0–100, else the max across all rows) keeps
+ * the rows comparable; the sparkline is value-mapped through the percent ramp so a
+ * spike reads hot. Display-only in v1 (no per-row cursor). Reuses rasterizeBraille /
+ * columnNorms / colorizeRows and the shared truncate + format leaves.
+ *
+ *   node12   ⣀⣠⣴⣶⣾⣿   62.0%
+ *   redis3   ⢀⡠⠔⠊⠉      9.1%
+ *
+ * `column:` picks the metric to sparkline (default: the first graphable column);
+ * `label:` names a string column for the row label (default: the row key).
+ */
+function _renderMulti(spec, metric, schema, innerW, innerH, window, dim) {
+  if (innerW < 1 || innerH < 1) return dim('(panel too small)');
+  const series = (metric && metric.series) || {};
+  const keys = Object.keys(series);
+  if (!keys.length) return dim('(no data yet)');
+  const cols = schema.columns || {};
+  const col = spec.column || _defaultMetrics(schema)[0];
+  if (!col) return dim('(no graphable metrics)');
+  const type = (cols[col] || {}).type;
+  const labelCol = spec.label && (cols[spec.label] || {}).type === 'string' ? spec.label : null;
+
+  // Per-row windowed value series + latest + label. A shorter (just-appeared) row
+  // right-aligns inside its own sparkline (the rasterizer NaN-pads the front).
+  const rows = keys.map((k) => {
+    const s = (series[k] || []).slice(-window);
+    const vals = s.map((x) => (x ? x[col] : NaN));
+    const finite = vals.filter(Number.isFinite);
+    const last = s.length ? s[s.length - 1] : null;
+    const label = (labelCol && last && last[labelCol] != null) ? String(last[labelCol]) : String(k);
+    return { key: k, vals, latest: finite.length ? finite[finite.length - 1] : NaN, label };
+  });
+
+  // Sort by latest value; NaN sinks to the bottom regardless of direction. Tie-break
+  // on key so the order is stable frame-to-frame.
+  const dir = spec.sort_dir === 'asc' ? 1 : -1;
+  const rank = (v) => (Number.isFinite(v) ? v : -Infinity);
+  rows.sort((a, b) => {
+    const c = rank(a.latest) - rank(b.latest);
+    return c !== 0 ? c * dir : (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
+  });
+
+  // Shared scale: percent → fixed 0–100; else 0–max-finite across ALL rows (reduce,
+  // not Math.max(...spread) — a huge topic would blow the arg limit).
+  let min = 0, max = 1;
+  if (type === 'percent') max = 100;
+  else max = rows.reduce((m, r) => r.vals.reduce((mm, v) => (Number.isFinite(v) && v > mm ? v : mm), m), 1);
+
+  // Widths: label left (capped + truncated), value right (fixed), sparkline fills the
+  // middle — the same budget the `bars` gauge uses, so composites line up.
+  const maxLabel = rows.reduce((m, r) => Math.max(m, visibleLen(esc(r.label))), 3);
+  const labelW = Math.max(3, Math.min(16, maxLabel, innerW - _MULTI_VALUE_W - 3));
+  const sparkW = Math.max(1, innerW - labelW - _MULTI_VALUE_W - 2);   // two single-space gaps
+  const cell = (text, width, right) => {
+    let s = String(text);
+    if (visibleLen(s) > width) s = truncate(s, width);
+    const pad = ' '.repeat(Math.max(0, width - visibleLen(s)));
+    return right ? pad + s : s + pad;
+  };
+
+  const lines = rows.slice(0, innerH).map((r) => {
+    const opts = { width: sparkW, height: 1, min, max };
+    const norms = columnNorms(r.vals, { width: sparkW, min, max, group: 2 });
+    const spark = colorizeRows(rasterizeBraille(r.vals, opts), norms,
+      (n) => (Number.isFinite(n) ? gradient('percent', n) : null))[0] || ' '.repeat(sparkW);
+    const label = cell(esc(r.label), labelW, false);
+    const value = cell(esc(_fmtCell(r.latest, type || 'number')), _MULTI_VALUE_W, true);
+    return `${label} ${spark} ${value}`;
+  });
+  return { lines, rowKey: '_' };
 }
 
 /**
@@ -381,4 +472,5 @@ module.exports = {
   _fmtPercent,
   _fmtRate,
   _renderSection,
+  _renderMulti,
 };

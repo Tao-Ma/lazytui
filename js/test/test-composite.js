@@ -119,6 +119,15 @@ describe('[composite] render — stacks bodies in one border', () => {
     assert(!body.includes('c1'), 'the top row (c1) is NOT drawn when row:c0 is pinned');
   });
 
+  it('a `graph` widget with `mode: multi` draws one sparkline per row of the topic', () => {
+    // c.core has 2 rows (c0=30, c1=70). A normal graph resolves ONE series; multi
+    // mode draws BOTH rows, one height-1 sparkline each (composite → stats.renderBody).
+    const out = composite.panelTypes.composite.render(
+      { title: 'MM', widgets: [{ type: 'graph', topic: 'c.core', mode: 'multi', column: 'busy' }] }, 40, 8, {}, {});
+    const body = stripMarkup(out);
+    assert(body.includes('c0') && body.includes('c1'), `both rows drawn, got ${JSON.stringify(body)}`);
+  });
+
   it('a sub-2 degenerate size degrades gracefully, never throws (round-3 review)', () => {
     // A full-viewed box on a ≤2-row / ≤1-col terminal hands render() h<2 or w<2, so
     // innerH/innerW go negative. The phantom-scrollbar cap (`lines.length = innerH`)

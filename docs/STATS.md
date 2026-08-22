@@ -102,6 +102,7 @@ panels:
 | `graph`       | no       | `braille`                              | Glyph style. Braille packs 2 samples/column at 4 dot-rows/cell (2× the horizontal resolution of blocks); set `blocks` if your font's braille coverage is poor. A plain config choice — never inferred from color depth (docs/truecolor.md P4). |
 | `graph_color` | no       | `height`                               | Color mapping. `height` (default, btop-style) colors by vertical position — static per row, so a sample shift moves the glyphs but recolors nothing (the cell-diff sends only the changed cells: ~−81% wire bytes/tick vs `value`, the fix for the graph's over-the-wire cost). `value` colors each column by its value through the full `percent` ramp (highest signal, but the 101-step ramp recolors nearly every column each tick). `banded` keeps value-mapping quantized to 8 steps (~−38%, a middle ground). |
 | `overlay`     | no       | `false`                                | Draw **all** `metrics:` in ONE braille grid instead of a section per metric — each series a distinct colour (`accent`/`warning`/`success`/`error`, resolved at paint) under a coloured legend, on one shared value scale. The 2-series read: network rx/tx as up-and-down traces in one graph. Braille only (blocks can't merge two dots in a cell); on a cell where series overlap the last-listed wins the colour. |
+| `mode`        | no       | —                                      | `multi`: draw ONE height-1 sparkline **per row** of the topic (btop process-list style — one metric across all rows), sorted by latest value (desc; `sort_dir: asc` flips), instead of one series across `metrics:`. `column:` picks the metric (default: first graphable); `label:` a string column for the row label (default: the row key); the sparkline is value-mapped through the `percent` ramp on one shared scale. Needs only `topic:` (no `select_from`/`row`/`aggregate`), and works as a `composite` `graph` widget too. |
 
 **Color + meter (truecolor arc Phase 2, docs/truecolor.md).** Graph
 color maps through the active theme's `percent` gradient (cool→hot); the
@@ -367,7 +368,8 @@ Run via `node js/scripts/run-tests.js -q`.
   thrift; opt into value-mapped color per pane.
 - **Mouse interaction.** Hover-for-value, drag-to-zoom. Rasterizer
   doesn't track per-column source samples.
-- **Multi-line overlay.** "All containers, one line each." Likely a
-  separate panel mode (`mode: stats-multi`).
+- ~~**Multi-line overlay.** "All containers, one line each."~~ Shipped as
+  `mode: multi` (§3 YAML contract) — one height-1 sparkline per row of the
+  topic, sorted by latest value. Display-only in v1 (no per-row cursor yet).
 - **Faster docker stats poll.** Currently 10s. A stats-only fast poll
   is a separate concern from the panel itself.
