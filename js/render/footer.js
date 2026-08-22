@@ -213,6 +213,14 @@ function renderFooter(model = getModel()) {
     keys += ` | [${t.warning}]! ${bw.length} config warning(s) (:dismiss-warnings)[/]`;
   }
 
+  // Graph hover value (Phase 2, hover-for-value) — the value under the cursor on a
+  // graph pane, published by stats.render to the per-frame hover-region (empty when
+  // nothing is hovered). Non-modal only; `[accent]` so it recolors on :theme.
+  if (!inModal) {
+    const hv = require('../panel/hover-region').get();
+    if (hv && hv.text) keys += ` | [${t.accent}]⌖ ${esc(hv.text)}[/]`;
+  }
+
   // Right tail: footer:right + visual-select tag + view-mode tag.
   // The visual-select tag (`[v-char]` / `[v-line]`) is a precursor to
   // the configurable status-bar segments planned for v0.5/v0.6 — when

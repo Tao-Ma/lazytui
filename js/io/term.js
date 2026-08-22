@@ -20,12 +20,17 @@ function showCursor() { stdout.write('\x1b[?25h'); }
 // SGR mouse reporting:
 //   1000 — button events (press/release)
 //   1002 — button events + motion while a button is held (= drag)
+//   1003 — ALL motion, including button-less (= hover)
 //   1006 — SGR coordinate encoding (vs the legacy <0xff cap)
-// 1002 is the drag protocol Design Mode v2 uses; it only reports
-// motion while a button is held so the cost is bounded (no idle
-// motion spam). Terminals that don't support 1002 ignore it.
-function enableMouse() { stdout.write('\x1b[?1000h\x1b[?1002h\x1b[?1006h'); }
-function disableMouse() { stdout.write('\x1b[?1000l\x1b[?1002l\x1b[?1006l'); }
+// 1002 drives drag (text-select / free-config); 1003 adds bare hover, which the
+// graph hover-for-value feature needs (docs/STATS.md Phase 2). 1003 reports an
+// event PER cursor cell moved — the "idle motion spam" 1002-only originally
+// avoided — so the input layer must keep the cost bounded: the hover handler
+// coalesces (dispatches a Msg + repaints ONLY when the resolved graph column
+// changes), and a no-button move that isn't over a graph is dropped without a
+// Msg. Terminals that don't support 1003 ignore it (falling back to 1002 drag).
+function enableMouse() { stdout.write('\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h'); }
+function disableMouse() { stdout.write('\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l'); }
 
 // XTerm focus-tracking (DEC 1004). Terminal emits `\e[I` on gain,
 // `\e[O` on loss. Used by the refresh loop to pause polling when

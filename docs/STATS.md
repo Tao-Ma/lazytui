@@ -366,8 +366,15 @@ Run via `node js/scripts/run-tests.js -q`.
   column through the theme's `percent` gradient (continuous cool→hot, not a
   threshold). The default `graph_color: height` colors by row for wire-byte
   thrift; opt into value-mapped color per pane.
-- **Mouse interaction.** Hover-for-value, drag-to-zoom. Rasterizer
-  doesn't track per-column source samples.
+- ~~**Mouse interaction** — hover-for-value.~~ Shipped: hovering the mouse over a
+  graph column shows that column's value in the footer (`⌖ CPU 62.0%`) **and** a small
+  tooltip box at the cursor, with the hovered column highlighted (a vertical cursor
+  line). The value is a PURE recompute from the model via the same window the
+  rasterizer uses (`stats.valueAt`), so the rasterizer needn't retain per-column
+  samples. Needs terminal mouse mode **1003** (all-motion, enabled in `js/io/term.js`);
+  the input layer coalesces (a Msg + repaint only when the resolved column changes) so
+  idle motion stays bounded. Standalone `stats` graphs in v1 (composite graph widgets
+  + overlay/multi hover are follow-ons). **Drag-to-zoom** stays deferred.
 - ~~**Multi-line overlay.** "All containers, one line each."~~ Shipped as
   `mode: multi` (§3 YAML contract) — one height-1 sparkline per row of the
   topic, sorted by latest value. Display-only in v1 (no per-row cursor yet).

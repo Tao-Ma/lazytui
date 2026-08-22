@@ -36,6 +36,7 @@ const { theme, setTheme } = require('../leaves/infra/themes');
 const { truncate, setWriter: _setDrawWriter, setChromeSink: _setDrawChromeSink } = require('../leaves/render/draw');
 const chromeRegions = require('../panel/chrome-regions');
 const treeRegions = require('../panel/tree-regions');
+const hoverRegion = require('../panel/hover-region');
 const { detectColorDepth, downgradeAnsi } = require('../leaves/render/color-depth');
 
 // Truecolor arc 1b (docs/truecolor.md P3) — color depth is a DEVICE property,
@@ -98,6 +99,16 @@ function setReplaySource(fn) { _replaySource = fn; }
 // no cycle; the slice-reading hit-tests went to panel/chrome-hittest.)
 let _routeRef; const _route = () => (_routeRef ||= require('../panel/route'));
 let _decorRef; const _decor = () => (_decorRef ||= require('../leaves/render/draw'));
+// Graph hover tooltip (Phase 2) — the rows the hover box last painted, for the
+// vanish/move reclaim. The box is a fixed 3 rows tall (one value line + borders), so
+// its rows depend ONLY on the anchor y — pre-pane (raw hover position) and post-pane
+// (resolved value) row math agree.
+let _prevHoverRows = null;
+function _hoverBoxRows(h) {
+  if (!h || !Number.isFinite(h.y)) return null;
+  const box = _decor().overlayBox({ linesLen: 1, anchor: { x: h.x, y: h.y + 1 }, maxWidth: 60 });
+  return { top: box.offY, bottom: box.offY + box.menuH - 1 };
+}
 let _paneMenuRef; const _paneMenu = () => (_paneMenuRef ||= require('../overlay/pane-menu'));
 let _selViewRef; const _selView = () => (_selViewRef ||= require('../panel/select-view'));
 
@@ -887,10 +898,25 @@ function render(model) {
   // Drop last frame's drawn-chrome map before the pane pass repopulates it, so a
   // pane that stopped rendering (off-screen in half/full) leaves no stale hit
   // region. Repopulated synchronously below; hit-tests only read between frames.
+  // Hover tooltip vanish/move reclaim (mirrors the terminal-overlay reclaim above):
+  // the box writes directly to the screen, so when it moves or clears its previous
+  // cells must be invalidated for THIS frame's diff pass to rewrite them from the
+  // panes underneath. Computed from the raw hover position; _prevHoverRows tracks the
+  // rows a box was actually drawn on last frame (null if none).
+  {
+    const willRows = (layoutSlice.hover && !modes.isModal(md)) ? _hoverBoxRows(layoutSlice.hover) : null;
+    if (_prevHoverRows && (!willRows || willRows.top !== _prevHoverRows.top || willRows.bottom !== _prevHoverRows.bottom)) {
+      invalidateRows(_prevHoverRows.top, _prevHoverRows.bottom);
+    }
+  }
   chromeRegions.clear();
   // Same discipline for the per-row tree fold markers (panel/tree-regions): a
   // table in tree mode republishes its `▾`/`▸` glyph ranges each paint.
   treeRegions.clear();
+  // And for the graph hover-value (panel/hover-region): stats.render republishes the
+  // resolved value for the hovered pane during the pane pass; footer + hover overlay
+  // (painted after) read it. Empty when nothing is hovered.
+  hoverRegion.clear();
   const viewMode = layoutSlice.viewMode;
   if (viewMode === 'half') mainDidFull = renderHalf(model, previewArrange);
   else if (viewMode === 'full') mainDidFull = renderFull(model, previewArrange);
@@ -934,6 +960,19 @@ function render(model) {
   if (md.diagLogMode) require('../overlay/diag-log').renderDiagLog(now);
   // v0.6.6 replay arc — interactive replay-control pane (floats over all).
   if (replayData && replayView !== 'hidden') require('../overlay/replay-scrubber').render(replayData);
+
+  // Graph hover value tooltip (Phase 2) — a small box at the cursor showing the value
+  // stats.render resolved + published this frame. Non-modal, painted last so it floats
+  // over the panes; anchored one row below the cursor so it doesn't cover the point.
+  // _prevHoverRows records the drawn rows for next frame's vanish/move reclaim.
+  _prevHoverRows = null;
+  if (!modes.isModal(md)) {
+    const hv = hoverRegion.get();
+    if (hv && hv.text) {
+      _decor().renderOverlay({ lines: [`[accent]${hv.text}[/]`], anchor: { x: hv.x, y: hv.y + 1 }, maxWidth: Math.min(60, hv.text.length + 4) });
+      _prevHoverRows = _hoverBoxRows(hv);
+    }
+  }
 
   // Cursor visibility — derived from mode state, single emission site.
   // Cursor *position* is set inline by renderTerminalOverlay (when in

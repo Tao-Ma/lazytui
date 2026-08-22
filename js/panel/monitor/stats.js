@@ -23,8 +23,9 @@
 const { getModel } = require('../../model/store');
 const {
   esc, theme, gradient, renderPanel, visibleLen,
-  getItems: apiGetItems,
+  getItems: apiGetItems, getInstanceSlice,
 } = require('../api');
+const hoverRegion = require('../hover-region');
 const { truncate } = require('../../leaves/render/draw');
 const { fmt: _fmtCell } = require('../../leaves/metrics/format');   // shared compact cell formatter (see gauge/table)
 const { rasterize, rasterizeBraille, rasterizeBrailleMulti, columnNorms, colorizeRows, colorizeOverlay, colorizeByHeight, quantizeNorm, meterRow } = require('./stats-graph');
@@ -129,7 +130,7 @@ function _resolveSelection(panel) {
 // message (so the wrapper draws a bordered box either way). Pure of chrome/focus:
 // the height-mapped graph colour doesn't depend on focus. `spec` is the pane/widget
 // config (topic, row/select_from/aggregate, metrics, window, graph, graph_color).
-function renderBody(spec, innerW, innerH) {
+function renderBody(spec, innerW, innerH, hoverCol = -1) {
   const t = theme();
   const dim = (msg) => ({ lines: [`[${t.dim}]${esc(msg)}[/]`], rowKey: '_' });
   if (!spec.topic) {
@@ -213,7 +214,7 @@ function renderBody(spec, innerW, innerH) {
   const lines = [];
   metrics.forEach((m, i) => {
     if (i > 0) lines.push('');
-    lines.push(..._renderSection(m, samples, schema, innerW, perMetric, style, colorMode));
+    lines.push(..._renderSection(m, samples, schema, innerW, perMetric, style, colorMode, hoverCol));
   });
   return { lines, rowKey };
 }
@@ -296,6 +297,34 @@ function _renderMulti(spec, metric, schema, innerW, innerH, window, dim) {
   return { lines, rowKey: '_' };
 }
 
+// Wrap the glyph at VISIBLE column `visCol` of a colorized graph row in a highlight
+// atom (Phase 2 hover — the vertical cursor line under the mouse). Walks the markup
+// string tracking the current color run: at the target column it closes the run,
+// emits `[hl]glyph[/]`, and reopens the run for the rest. Graph glyphs are single-
+// width braille/blocks/space with no literal `[`, so `[` unambiguously starts a
+// markup token here. Pure; a no-op when visCol is out of range.
+function _highlightColumn(row, visCol, hlAtom) {
+  if (!(visCol >= 0)) return row;
+  let out = '', vis = 0, cur = null, i = 0;
+  while (i < row.length) {
+    const ch = row[i];
+    if (ch === '[') {
+      const end = row.indexOf(']', i);
+      if (end === -1) { out += row.slice(i); break; }
+      const inner = row.slice(i + 1, end);
+      cur = inner === '/' ? null : inner;
+      out += row.slice(i, end + 1);
+      i = end + 1;
+      continue;
+    }
+    if (vis === visCol) out += `${cur ? '[/]' : ''}[${hlAtom}]${ch}[/]${cur ? `[${cur}]` : ''}`;
+    else out += ch;
+    vis++;
+    i++;
+  }
+  return out;
+}
+
 /**
  * Render one metric's section: header line, meter row (percent metrics),
  * graph rows.
@@ -321,7 +350,7 @@ function _renderMulti(spec, metric, schema, innerW, innerH, window, dim) {
  * a consumer could use, but the panel stays scale-of-its-own — empty
  * containers and busy ones both get a graph that fills the rows.
  */
-function _renderSection(metric, samples, schema, width, graphHeight, style, colorMode) {
+function _renderSection(metric, samples, schema, width, graphHeight, style, colorMode, hoverCol) {
   const col = (schema.columns || {})[metric] || {};
   const values = samples.map(s => s && s[metric]);
   const finite = values.filter(Number.isFinite);
@@ -374,6 +403,12 @@ function _renderSection(metric, samples, schema, width, graphHeight, style, colo
     colored = colorizeByHeight(rows, (frac) => gradient('percent', frac));
   }
 
+  // Hover cursor (Phase 2): highlight the hovered column across this section's graph
+  // rows — a vertical line under the mouse. Only the graph rows (not header/meter).
+  if (hoverCol >= 0 && hoverCol < width) {
+    colored = colored.map((r) => _highlightColumn(r, hoverCol, t.selected));
+  }
+
   const out = [header];
   if (col.type === 'percent') {
     // Current-value meter (one value = one color run).
@@ -424,6 +459,100 @@ function _aggregateSamples(series, schema, window, mode) {
   return out;
 }
 
+// Resolve a NON-multi graph's series (the same steps renderBody uses): the samples
+// array (aggregate / select_from cursor / static row, sliced to window) + the metric
+// list + schema. null when there's nothing to graph. valueAt uses this so the hover
+// value maps the SAME samples the graph drew; renderBody keeps its own inline version
+// (which carries the distinct per-case dim messages). Both call the same building
+// blocks (_aggregateSamples / _resolveSelection / _defaultMetrics).
+function _resolveSeries(spec) {
+  const window = spec.window || 40;
+  const metric = getModel().metrics[spec.topic];
+  const schema = (metric && metric.schema) || { columns: {} };
+  let samples;
+  if (spec.aggregate) {
+    samples = _aggregateSamples((metric && metric.series) || {}, schema, window, spec.aggregate);
+  } else {
+    const rowKey = _resolveSelection(spec);
+    if (!rowKey) return null;
+    samples = ((metric && metric.series[rowKey]) || []).slice(-window);
+  }
+  if (!samples || !samples.length) return null;
+  const metrics = spec.metrics || _defaultMetrics(schema);
+  if (!metrics.length) return null;
+  return { samples, metrics, schema };
+}
+
+// The value under a hovered body cell (Phase 2, hover-for-value). Given the pane
+// spec + its inner size + a body-relative (col, row), map back to the underlying
+// sample the graph drew and return `{ metric, value, type, ago, col }` or null. PURE
+// (recomputes from model.metrics via the same window/geometry renderBody uses — the
+// rasterizer needn't retain per-column samples). v1 scope: the standard sectioned
+// graph only (overlay / multi have their own column semantics → null for now); a row
+// on a header / meter / separator (not the graph area) → null.
+function valueAt(spec, innerW, innerH, col, row) {
+  if (!spec || !spec.topic || spec.overlay || spec.mode === 'multi') return null;
+  if (!(col >= 0 && col < innerW) || !(row >= 0)) return null;
+  const resolved = _resolveSeries(spec);
+  if (!resolved) return null;
+  const { samples, metrics, schema } = resolved;
+
+  // Section geometry — MUST match renderBody's stacking exactly.
+  const cols = schema.columns || {};
+  const isPct = (m) => (cols[m] || {}).type === 'percent';
+  const sepRows = Math.max(0, metrics.length - 1);
+  const headerRows = metrics.length;
+  const meterRows = metrics.filter(isPct).length;
+  const perMetric = Math.floor((innerH - sepRows - headerRows - meterRows) / metrics.length);
+  if (perMetric < 2) return null;
+
+  // Walk the stack to find which metric's GRAPH rows `row` falls in (headers,
+  // percent meter rows, and the 1-row separators between sections don't carry a
+  // per-column value).
+  let off = 0;
+  let metric = null;
+  for (let i = 0; i < metrics.length; i++) {
+    if (i > 0) off += 1;                                  // separator
+    const graphStart = off + 1 + (isPct(metrics[i]) ? 1 : 0);
+    const graphEnd = graphStart + perMetric;
+    if (row >= graphStart && row < graphEnd) { metric = metrics[i]; break; }
+    off = graphEnd;
+  }
+  if (!metric) return null;
+
+  // Column → sample. Braille packs 2 samples/cell (group 2); blocks 1. The window
+  // is the newest `innerW * group` values, front NaN-padded when short (mirrors
+  // stats-graph._cut). For braille prefer the RIGHT (newer) dot of the cell, else
+  // the left. `ago` = samples back from newest.
+  const values = samples.map((s) => (s ? s[metric] : NaN));
+  const group = spec.graph === 'blocks' ? 1 : 2;
+  const cutLen = innerW * group;
+  const at = (cutIdx) => {
+    const origIdx = values.length - cutLen + cutIdx;
+    return (origIdx >= 0 && origIdx < values.length) ? { v: values[origIdx], origIdx } : null;
+  };
+  let hit = group === 2 ? at(col * 2 + 1) : at(col);
+  if ((!hit || !Number.isFinite(hit.v)) && group === 2) hit = at(col * 2) || hit;   // fall back to older dot
+  if (!hit || !Number.isFinite(hit.v)) return null;
+  return { metric, value: hit.v, type: (cols[metric] || {}).type, ago: Math.max(0, values.length - 1 - hit.origIdx), col };
+}
+
+// If this pane is the hovered one, resolve the value ONCE for render(): the column to
+// highlight + the record to publish to the per-frame hover-region (footer + tooltip).
+// null when not hovered / not over a resolvable graph cell. Keeps all graph-value
+// knowledge in stats (the single owner).
+function _resolveHover(panel, innerW, innerH) {
+  const paneId = panel && panel.paneId;
+  if (!paneId) return null;
+  const layout = getInstanceSlice('layout');
+  const hv = layout && layout.hover;
+  if (!hv || hv.paneId !== paneId) return null;
+  const res = valueAt(panel, innerW, innerH, hv.col, hv.row);
+  if (!res) return null;
+  const text = `${res.metric.toUpperCase()} ${_fmtCell(res.value, res.type || 'number')}`;
+  return { col: hv.col, record: { paneId, x: hv.x, y: hv.y, text, metric: res.metric, value: res.value, col: hv.col } };
+}
+
 function render(panel, w, h, _slice, opts) {
   const chrome = opts && opts.chrome;
   // v0.6.4 Theme A Phase 5 — per-pane focus (opts.focused). stats reads
@@ -432,7 +561,12 @@ function render(panel, w, h, _slice, opts) {
   const focused = !!(opts && opts.focused);
   // Finding B — renderBody reads the store-mirror'd model.metrics[topic] (kept
   // current by the metrics-mirror Sub), so this is a pure render over the model.
-  const { lines, rowKey } = renderBody(panel, w - 2, h - 2);
+  // Phase 2 (hover-for-value): resolve this pane's hover ONCE → the column to
+  // highlight in the graph + the value record to publish to the per-frame hover-region
+  // (read by the footer + the cursor tooltip, both painted after the pane pass).
+  const hover = _resolveHover(panel, w - 2, h - 2);
+  const { lines, rowKey } = renderBody(panel, w - 2, h - 2, hover ? hover.col : -1);
+  if (hover) hoverRegion.publish(hover.record);
   return renderPanel({
     width: w, height: h, lines,
     // Single-stream topics use the sentinel rowKey '_' (no entity to name) — show
@@ -473,4 +607,6 @@ module.exports = {
   _fmtRate,
   _renderSection,
   _renderMulti,
+  _highlightColumn,
+  valueAt,
 };

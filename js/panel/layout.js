@@ -266,6 +266,11 @@ function init() {
     // (`:dismiss-warnings`) or the next config reload. Each entry is
     // a plain string (the user-facing message).
     bootWarnings: [],
+    // v0.6.x hover-for-value (Phase 2, docs/STATS.md). The raw graph-hover position
+    // `{ paneId, col, row, x, y }` or null — set/cleared by the `graph_hover` arm
+    // from the input layer's all-motion (mode 1003) hover path. The value is derived
+    // at paint (stats.render → hover-region), never stored here.
+    hover: null,
   };
 }
 
@@ -315,6 +320,20 @@ function update(msg, slice) {
   }
 
   switch (msg.type) {
+    // Graph hover (Phase 2, hover-for-value). Stores ONLY the raw hover position —
+    // `{ paneId, col, row, x, y }` (body-relative col/row + the 1-based cursor cell
+    // for the overlay) — or null to clear. The VALUE is derived at paint by
+    // stats.render (frame = f(model)), never stored here. The input layer coalesces
+    // (dispatches only when the resolved cell changes), so this folds one small fact
+    // per real move; identity is preserved when nothing changed so an unrelated
+    // repaint doesn't thrash the slice.
+    case 'graph_hover': {
+      const h = msg.hover || null;
+      const cur = slice.hover || null;
+      if (!h && !cur) return slice;
+      if (h && cur && h.paneId === cur.paneId && h.col === cur.col && h.row === cur.row && h.x === cur.x && h.y === cur.y) return slice;
+      return { ...slice, hover: h };
+    }
     // viewMode. Each transition that actually changes the value asks
     // the effects layer for a full repaint — a view change re-exposes
     // panels the diff cache can't tell changed.

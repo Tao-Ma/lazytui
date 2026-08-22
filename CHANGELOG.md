@@ -8,6 +8,14 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Graph hover-for-value.** Moving the mouse over a `stats` graph column now shows
+  that column's value in the footer (`⌖ CPU 62.0%`) and a small tooltip box at the
+  cursor, with the hovered column highlighted (a vertical cursor line). The value is a
+  pure recompute from the model, so no extra per-column state is retained. This enables
+  terminal mouse mode 1003 (all-motion); the input layer coalesces so a Msg + repaint
+  fire only when the resolved column changes (idle motion stays bounded). Standalone
+  `stats` graphs for now (composite-widget / overlay / multi hover are follow-ons).
+
 - **`stats` multi-row sparklines (`mode: multi`).** A `stats` pane (or a `composite`
   `graph` widget) with `mode: multi` draws ONE height-1 braille sparkline **per row**
   of its topic — btop's process-list shape: one metric across all rows, sorted by

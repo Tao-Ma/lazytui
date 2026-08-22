@@ -174,4 +174,64 @@ describe('[renderBody] gauge — display mode vs interactive cursor', () => {
   });
 });
 
+describe('[renderBody] stats.valueAt — hovered column → sample value (Phase 2)', () => {
+  // 20 samples so at innerW=10 (braille, 2 samples/col) the window fits exactly:
+  // column c → cut index c*2+1 → values[c*2+1] (no NaN pad).
+  setMetric('h.cpu', { _: Array.from({ length: 20 }, (_x, i) => ({ cpu: i })) }, { cpu: { type: 'percent' } });
+  const spec = { topic: 'h.cpu', row: '_', metrics: ['cpu'] };
+
+  it('maps a graph column back to the sample the graph drew', () => {
+    // innerH 8: header row 0, percent-meter row 1, graph rows 2..7.
+    const r0 = stats.valueAt(spec, 10, 8, 0, 2);      // leftmost graph col
+    eq(r0.metric, 'cpu');
+    eq(r0.value, 1, 'col 0 → newer dot = values[1]');
+    eq(stats.valueAt(spec, 10, 8, 9, 2).value, 19, 'rightmost col → newest sample');
+  });
+
+  it('returns null off the graph area (header / percent-meter rows)', () => {
+    eq(stats.valueAt(spec, 10, 8, 5, 0), null, 'header row');
+    eq(stats.valueAt(spec, 10, 8, 5, 1), null, 'percent meter row');
+  });
+
+  it('returns null for overlay / multi / out-of-range col', () => {
+    eq(stats.valueAt({ ...spec, overlay: true }, 10, 8, 0, 2), null);
+    eq(stats.valueAt({ ...spec, mode: 'multi' }, 10, 8, 0, 2), null);
+    eq(stats.valueAt(spec, 10, 8, 99, 2), null, 'col past innerW');
+  });
+});
+
+describe('[stats] _highlightColumn — wrap the hovered column, reopening the run', () => {
+  const HL = 'inv';
+  it('highlights a glyph inside a color run and reopens the run after', () => {
+    eq(stats._highlightColumn('[g]abc[/]', 1, HL), '[g]a[/][inv]b[/][g]c[/]');
+  });
+  it('highlights a bare glyph when no run is active', () => {
+    eq(stats._highlightColumn('abc', 0, HL), '[inv]a[/]bc');
+  });
+  it('counts VISIBLE columns, skipping markup tokens', () => {
+    eq(stats._highlightColumn('[x]ab[/][y]cd[/]', 2, HL), '[x]ab[/][y][/][inv]c[/][y]d[/]');
+  });
+  it('out-of-range / negative col → row unchanged', () => {
+    eq(stats._highlightColumn('[g]abc[/]', 9, HL), '[g]abc[/]');
+    eq(stats._highlightColumn('abc', -1, HL), 'abc');
+  });
+});
+
+describe('[renderBody] stats — hovered column highlight (Phase 2)', () => {
+  setMetric('hl.cpu', { _: Array.from({ length: 40 }, (_x, i) => ({ cpu: (i * 7) % 100 })) }, { cpu: { type: 'percent' } });
+  const spec = { topic: 'hl.cpu', row: '_', metrics: ['cpu'] };
+  it('passing a hoverCol changes the graph rows (a vertical cursor line)', () => {
+    const plain = stats.renderBody(spec, 20, 8, -1).lines;
+    const hovered = stats.renderBody(spec, 20, 8, 18).lines;   // highlight a column with data (right side)
+    // Rows 0 (header) + 1 (percent meter) are identical; the graph rows (2+) differ.
+    eq(plain[0], hovered[0], 'header unchanged');
+    assert(JSON.stringify(plain.slice(2)) !== JSON.stringify(hovered.slice(2)), 'graph rows change when a column is highlighted');
+  });
+  it('no hoverCol (-1) leaves the graph unchanged', () => {
+    const a = stats.renderBody(spec, 20, 8, -1).lines;
+    const b = stats.renderBody(spec, 20, 8).lines;   // default -1
+    eq(JSON.stringify(a), JSON.stringify(b), 'default = no highlight');
+  });
+});
+
 report();

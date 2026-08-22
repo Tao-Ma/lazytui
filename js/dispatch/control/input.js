@@ -552,6 +552,37 @@ function _contentCoordsAt(paneId, mx, my, clamp) {
   return { line: scroll + row, col: Math.max(0, mx - b.x - 1) };
 }
 
+// Coalesce key for the last dispatched graph-hover — {paneId,col,row} of the body
+// cell (or null). A no-button move that resolves to the SAME cell dispatches nothing
+// (mode 1003 fires per cursor cell; this bounds it to one Msg + repaint per cell
+// change). See js/io/term.js's enableMouse comment.
+let _lastHover = null;
+
+// Resolve the body cell under a hover and fold it into the layout slice (or clear).
+// Only STANDALONE `stats` graph panes are hoverable in v1; the value is derived at
+// paint by stats.render (valueAt filters overlay/multi/off-graph). Chain-mode active
+// → no hover (clears any live one so a box doesn't linger under an overlay).
+function _handleHover(mx, my, model) {
+  let target = null;
+  if (!isChainActive(model.modes)) {
+    const layoutSlice = getInstanceSlice('layout');
+    for (const p of allPanels()) {
+      if (p.type !== 'stats') continue;
+      const b = visibleBoundsFor(layoutSlice, p.paneId, route.resolveViewerPaneId());
+      if (!b || mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
+      const cc = _contentCoordsAt(p.paneId, mx, my);   // {line,col} body coords; null on border/outside
+      if (cc) target = { paneId: p.paneId, col: cc.col, row: cc.line, x: mx + 1, y: my + 1 };
+      break;
+    }
+  }
+  const key = target ? `${target.paneId}:${target.col}:${target.row}` : null;
+  const lastKey = _lastHover ? `${_lastHover.paneId}:${_lastHover.col}:${_lastHover.row}` : null;
+  if (key === lastKey) return;                          // same cell (or still none) → no churn
+  _lastHover = target;
+  dispatchMsg(wrap('layout', { type: 'graph_hover', hover: target }));
+  render();
+}
+
 function handleMouse(kind, x, y) {
   // Phase 4 — runtime.update returns NEW model objects; read getModel()
   // at entry so post-Msg state is what subsequent reads see.
@@ -572,6 +603,12 @@ function handleMouse(kind, x, y) {
     }
     return;
   }
+
+  // Graph hover (Phase 2, mode 1003 all-motion) — resolve the body cell under a
+  // button-less move and fold it into the layout slice, COALESCED so only a real
+  // cell change dispatches + repaints. Runs early + returns: hover never enters the
+  // chrome / drag / focus machinery below.
+  if (kind === 'hover') { _handleHover(mx, my, model); return; }
 
   // Panel-chrome glyph clicks — single early hit-test site for both
   // [_]/[+] (collapse, always-on) and [X] (close, free-config-only).
@@ -1429,8 +1466,9 @@ function _dispatchMouseEvent(mm) {
     return handleMouse('release', x, y);
   }
   if (motion) {
-    if (button !== 0) return;
-    return handleMouse('motion', x, y);
+    if (button === 0) return handleMouse('motion', x, y);   // left-drag: text-select / pool drag
+    if (button === 3) return handleMouse('hover', x, y);     // button-less move (mode 1003): graph hover
+    return;                                                  // right/middle drag: dropped as before
   }
   // Fresh press — classify into press/double (left) or right/middle.
   // v0.6.4 Theme F Phase 3 — was `if (button !== 0) return`, which
