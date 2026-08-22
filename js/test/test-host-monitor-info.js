@@ -76,19 +76,29 @@ describe('[host-monitor] composite dashboard + density', () => {
     }
   });
 
-  it('the composites fold the dashboard topics into widgets (graph + bars)', () => {
+  it('the composites fold the dashboard topics into widgets (graph / bars / meter)', () => {
     const topics = new Set();
     for (const c of panes.filter(p => p.type === 'composite')) for (const w of (c.widgets || [])) {
       topics.add(w.topic);
-      assert(w.type === 'graph' || w.type === 'bars', `widget type is graph|bars, got ${JSON.stringify(w.type)}`);
+      assert(['graph', 'bars', 'meter'].includes(w.type), `widget type is graph|bars|meter, got ${JSON.stringify(w.type)}`);
     }
     for (const t of ['host.cpu', 'host.core', 'host.mem', 'host.disk', 'host.nettotal', 'host.net']) {
       assert(topics.has(t), `a composite widget covers ${t}`);
     }
   });
 
-  it('density: the reshape holds the placed-pane count btop-low (was 12)', () => {
-    assert(panes.length <= 8, `expected ≤8 placed panes, got ${panes.length}: ${panes.map(p => p.paneId).join(',')}`);
+  it('the dashboard showcases the Tier-2 + stats-interactivity widgets', () => {
+    const widgets = panes.filter(p => p.type === 'composite').flatMap(c => c.widgets || []);
+    assert(widgets.some(w => w.type === 'graph' && w.overlay === true), 'an overlay graph (net rx/tx in one grid)');
+    assert(widgets.some(w => w.type === 'meter'), 'a meter widget (fullest disk)');
+    assert(widgets.some(w => w.type === 'bars' && w.interactive === true), 'an interactive bars widget (cores cursor)');
+    const multi = panes.find(p => p.type === 'stats' && api.getInstanceSlice(p.paneId).mode === 'multi'
+      || (p.type === 'stats' && p.mode === 'multi'));
+    assert(multi, 'a mode:multi stats pane (per-process CPU sparklines)');
+  });
+
+  it('density: the reshape holds the placed-pane count btop-low (was 12; +1 for the mode:multi trend pane)', () => {
+    assert(panes.length <= 9, `expected ≤9 placed panes, got ${panes.length}: ${panes.map(p => p.paneId).join(',')}`);
   });
 
   it('no metrics pane sits in a multi-tab slot (no phantom tab strip / misrouted click)', () => {
