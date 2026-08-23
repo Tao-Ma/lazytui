@@ -141,7 +141,11 @@ function highlightLine(line, startCol, endCol, baseTag = 'reverse') {
   // contain a literal `\[/]` whose substring is `[/]`, which would
   // false-negative a genuine highlighted row. If a future caller emits a row
   // that OPENS then CLOSES the base before EOL, this proxy would XOR the
-  // wrong region — keep such rows out, or revisit here.
+  // wrong region — keep such rows out, or revisit here. The `gauge`/`bars`
+  // cursor row is exactly such a row since the gradient fix (a `wrapColor`
+  // wrap that closes at EOL) — it is kept out because windowed panes bypass
+  // `decorateFor` (panel/api.js), so it never reaches this leaf (PRINCIPLES
+  // §8 carve-out).
   //
   // Note: XOR is RELATIVE to each row's own base, so a multi-row drag shows
   // the selected span highlighted on normal rows but normal-video on the

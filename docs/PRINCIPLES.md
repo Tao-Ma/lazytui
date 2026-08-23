@@ -168,6 +168,26 @@ layer threads `theme().selected` in as `baseTag`; the leaf stays
 theme-free), and hardcoding `[reverse]` instead of the slot leaves a
 row un-themed on the hex themes.
 
+**Carve-out — windowed monitor meters keep their colour.** The rule
+above governs *text-selectable* rows (navigator / fabric): they run
+through `select-core.highlightLine` and rely on the panel's end-of-line
+padding to extend the highlight. A **windowed** monitor meter row
+(`gauge` / composite `bars`) is neither — `renderPanel` skips
+`decorateFor` for `windowed` opts (`panel/api.js`), so the row never
+reaches `highlightLine`, and the row already self-pads to `innerW`
+(no padding-extension dependency). Such a row MAY therefore carry inner
+colour on its selected line, via
+`wrapColor(theme().selected, line)`: wrapColor re-opens the slot after
+every inner `[/]`, so a `[/]` no longer kills the highlight, and the
+leading slot tag is preserved. This is how the `gauge` cursor row keeps
+its green→red fill gradient instead of painting a flat near-white slab
+(the fill's fg-only tags override just the fg; the slot's bg rides the
+rest of the row). Still forbidden for text-selectable rows — a row that
+opens-then-closes the base before EOL would make `highlightLine` XOR the
+wrong region (see its contract), so those stay plain-text. `table` rows
+are windowed too but have no gradient to keep, so they stay plain by
+choice.
+
 ## 9. Components read state, they don't hold it
 
 A Component's YAML config carries Component-specific *parameters* —

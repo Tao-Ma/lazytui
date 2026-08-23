@@ -60,6 +60,14 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Selected gauge/`bars` row keeps its colour.** A focused meter's cursor row used to
+  paint over the bar with the flat `selected` highlight, so the fill blocks rendered in
+  the selection foreground — a near-white slab that swallowed the green→red gradient.
+  The highlight is now applied as a row tint that the per-cell gradient overrides, so
+  the selected bar stays colourful while the row (label/value/track/padding) carries the
+  selection background. Affects the standalone `gauge` pane and the interactive
+  `composite` sub-widget alike.
+
 - **External Components declared via `components:` now survive session replay.** An
   in-session recording that begins from a checkpoint (rather than a config event) used
   to replay those panes blank, because the `components:` list wasn't recovered; it is

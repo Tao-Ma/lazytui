@@ -31,7 +31,7 @@
 
 const { getModel } = require('../../model/store');
 const {
-  esc, theme, gradient, renderPanel, visibleLen,
+  esc, theme, gradient, renderPanel, visibleLen, wrapColor,
   getSel, getScroll, sliceForPane,
 } = require('../api');
 const { truncate } = require('../../leaves/render/draw');
@@ -287,13 +287,17 @@ function renderBody(spec, innerW, innerH, ctx) {
                                         // a DIFFERENT glyph from the fill █ so the
                                         // fill level stays readable (a dim solid █
                                         // track would make a low bar look full).
-    // Selected row: ONE `[selected]` span over a PLAIN line (flat markup can't
-    // nest colour under it — PRINCIPLES §8). Fill █ vs track ░ stay distinct by
-    // glyph on the selection bg.
-    if (selected && focused) return `[${t.selected}]${label} ${'█'.repeat(fillN)}${track} ${value}${trail}`;
     // Position-gradient fill (colourful, green→red along the bar) + dim ░ track.
     const bar = _colouredFill(fillN, barW, frac) + (trackN > 0 ? `[${t.dim}]${track}[/]` : '');
-    return `${label} ${bar} ${value}${trail}`;
+    const line = `${label} ${bar} ${value}${trail}`;
+    // Selected row: tint the WHOLE row with the `selected` slot but KEEP the bar's
+    // gradient. wrapColor re-opens `[selected]` after every inner `[/]`, and a
+    // `#fg on #bg` slot's bg is override-only per cell — the fill's fg gradient tags
+    // set just the fg, so each █ keeps its green→red colour while label/value/track/
+    // padding ride the selection bg. (A flat `[selected]` over PLAIN █ blocks painted
+    // them in the selection FOREGROUND — near-white in every theme — the "white block".)
+    if (selected && focused) return wrapColor(t.selected, line);
+    return line;
   };
 
   const lines = [];
