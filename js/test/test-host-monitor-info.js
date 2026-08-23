@@ -94,13 +94,19 @@ describe('[host-monitor] composite dashboard + density', () => {
     // the overlay feature itself is covered by test-render-body / test-stats.)
     assert(widgets.some(w => w.type === 'meter'), 'a meter widget (fullest disk)');
     assert(widgets.some(w => w.type === 'bars' && w.interactive === true), 'an interactive bars widget (disk cursor)');
-    const multi = panes.find(p => p.type === 'stats' && api.getInstanceSlice(p.paneId).mode === 'multi'
-      || (p.type === 'stats' && p.mode === 'multi'));
-    assert(multi, 'a mode:multi stats pane (per-process CPU sparklines)');
+    // The selected-process drill-down is a MULTI-METRIC select_from stats pane
+    // (cpu/mem/rss history for whichever row the procs table has selected) — the
+    // stats-interactivity read that replaced the display-only mode:multi trend wall
+    // (removed because it looked selectable but wasn't and only spanned a stub of
+    // history; the drill-down turns the table's own selection into real multi-stat
+    // history). mode:multi itself stays covered by test-render-body / test-stats.
+    const drill = panes.find(p => p.type === 'stats' && p.select_from
+      && Array.isArray(p.metrics) && p.metrics.length >= 2);
+    assert(drill, 'a multi-metric select_from drill-down (procsel: cpu/mem/rss)');
   });
 
-  it('density: the reshape holds the placed-pane count btop-low (was 12; +1 for the mode:multi trend pane)', () => {
-    assert(panes.length <= 9, `expected ≤9 placed panes, got ${panes.length}: ${panes.map(p => p.paneId).join(',')}`);
+  it('density: the reshape holds the placed-pane count btop-low (12 → 8; a mode:multi trend pane was briefly +1, then removed)', () => {
+    assert(panes.length <= 8, `expected ≤8 placed panes, got ${panes.length}: ${panes.map(p => p.paneId).join(',')}`);
   });
 
   it('no metrics pane sits in a multi-tab slot (no phantom tab strip / misrouted click)', () => {

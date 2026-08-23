@@ -246,26 +246,18 @@ panels:
     topic: host.diskio
     columns: [read, write]
     sort: write
-  # Drill-down: the CPU history of the process SELECTED in the procs table. One
-  # metric keeps it compact so it renders in the dense middle column; hover the graph
-  # to read the value under the cursor (full cpu+mem+detail live in the Info card).
+  # Drill-down: the SELECTED process's recent HISTORY — CPU%, MEM%, and RSS
+  # (absolute memory footprint) as three stacked graphs, each with peak/avg. Follows
+  # the procs table's cursor (`select_from`), so picking a row there inspects it here;
+  # the full current-value column set still lives in the Info card. `window: 120`
+  # (~6 min at the 3s poll) fills the graph width instead of leaving a right-edge stub.
   procsel:
     type: stats
     title: Selected
     topic: host.proc
     select_from: procs
-    metrics: [cpu]
-  # Per-process CPU TREND — `mode: multi` draws one height-1 sparkline per process
-  # (top-by-CPU in the viewport), labelled by command. Complements the procs table
-  # (current values) + the Selected drill-down (one process): a glance at which
-  # processes are trending up.
-  proctrend:
-    type: stats
-    title: CPU trend/proc
-    topic: host.proc
-    mode: multi
-    column: cpu
-    label: comm
+    window: 120
+    metrics: [cpu, mem, rss]
   # The Output pane. Its Info tab is the process DETAIL CARD: focus the process
   # table and it shows the selected process's full column set — state, threads,
   # RSS, parent pid, user, command line. Host-action output (ps/uptime) lands in
@@ -301,10 +293,10 @@ layout:
     - width: flex
       panels:
         # net_box carries the overlaid up/down graph — anchor it so the trace + the
-        # per-iface bars fit; proctrend / procsel / diskio flex-share the rest.
+        # per-iface bars fit; procsel (the drill-down) takes the room the old
+        # per-process trend wall used, so its three graphs fit; diskio flexes the rest.
         - { tabs: [net_box], heightPct: 36 }   # composite: net up/down OVERLAY graph + per-iface bars
-        - proctrend                            # per-process CPU trend sparklines (mode: multi)
-        - procsel                              # CPU/MEM history of the selected process (hover to read values)
+        - { tabs: [procsel], heightPct: 44 }   # selected-proc drill-down: cpu/mem/rss history (3 graphs need room)
         - diskio                               # disk THROUGHPUT table (counter → B/s)
     # Col 3 — FLEX (implicit-last): the elastic column's star is the PROCESS TABLE,
     # which always has rows and whose command column expands to use the width.
