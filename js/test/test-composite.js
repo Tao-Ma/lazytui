@@ -215,7 +215,20 @@ describe('[composite] interactive widget — cursor inside the box', () => {
     assert(cpu1Unfocused !== cpu1Focused, 'the SELECTED (sel 0 = cpu1) row renders differently when the box is focused — cursor threaded in');
   });
 
-  it('a display-only composite (no interactive widget) exposes NO cursor rows', () => {
+  it('the selection cycler chip renders ‹ selected › and steps/wraps the cursor', () => {
+    boot();
+    const mpool = require('../leaves/wm/pool');
+    const paneId = mpool.allPanesInColumns(api.getInstanceSlice('layout').arrange).find((p) => p.type === 'composite').paneId;
+    const ctl = composite.panelTypes.composite.borderControls.find((c) => c.id === 'cycle');
+    const pane = { paneId, type: 'composite' };
+    // Cursor 0 = the top-sorted interactive row (c1). The chip shows it; ‹/› step it.
+    assert(stripMarkup(ctl.render(getModel(), pane).text).includes('c1'), 'chip labels the selected row (c1)');
+    eq(ctl.dispatch('next', pane).msg.type, 'set_cursor', 'dispatches a set_cursor nav Msg');
+    eq(ctl.dispatch('next', pane).msg.index, 1, 'next → cursor 1');
+    eq(ctl.dispatch('prev', pane).msg.index, 2, 'prev from 0 wraps to the last (2 of c1,c2,c0)');
+  });
+
+  it('a display-only composite (no interactive widget) exposes NO cursor rows + suppresses the cycler', () => {
     const display = { id: 'd', type: 'composite', title: 'D', config: { widgets: [{ type: 'graph', topic: 'ci.cpu', row: '_', metrics: ['cpu'] }] } };
     sm.bootFresh({
       groups: { g: { label: 'G', containers: [], actions: { a: { cmd: 'echo', label: 'A' } } } },
@@ -223,6 +236,10 @@ describe('[composite] interactive widget — cursor inside the box', () => {
     });
     setMetric('ci.cpu', { _: [{ cpu: 20 }] }, { cpu: { type: 'percent' } });
     eq(api.getItems('d').length, 0, 'display composite has no interactive rows → nav no-ops');
+    const mpool = require('../leaves/wm/pool');
+    const paneId = mpool.allPanesInColumns(api.getInstanceSlice('layout').arrange).find((p) => p.type === 'composite').paneId;
+    const ctl = composite.panelTypes.composite.borderControls.find((c) => c.id === 'cycle');
+    eq(ctl.render(getModel(), { paneId, type: 'composite' }), null, 'cycler self-suppresses (no selection to cycle)');
   });
 });
 

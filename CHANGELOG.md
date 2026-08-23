@@ -8,6 +8,15 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Composite selection cycler (btop-style interface switcher).** A `composite` box
+  with an interactive widget now shows a `‹ selected ›` cycler in its top border — `‹`
+  prev / `›` next step the box's cursor (the click twin of `j`/`k`), over whatever the
+  interactive list holds (network interfaces, disk mounts, cores…). Sibling graphs can
+  follow that cursor with a self-referential `select_from: <box>`, so they plot the
+  selected row. The host-monitor network box uses this for btop's Net box: a `‹ eth0 ›`
+  cycler switching which interface the up/down mirror graphs show. (←/→ stay reserved
+  for pane focus; switching is the chip + `j`/`k`.)
+
 - **Inverted graphs (`invert: true`) + mirror seam.** A `stats` graph (or a `composite`
   `graph` widget) can hang from the top edge downward instead of rising from the bottom,
   with the height-gradient flipped to match (braille only — blocks have no upper-eighths

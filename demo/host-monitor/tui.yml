@@ -137,22 +137,6 @@ metrics:
       row_key: iface
       columns: { rx: { type: counter }, tx: { type: counter } }
 
-  # Total network throughput — the SAME /proc/net/dev counters summed across all
-  # real interfaces (skip `lo`) into a SINGLE stream, so a `stats` graph can plot
-  # it with `row: _` (btop's up/down trend). This is a single-stream sibling of
-  # host.net, deliberately NOT a `select_from` of the net table: select_from
-  # resolves its target to the kind-PRIMARY table (a known limitation), and the
-  # net table is not the primary here — so an aggregate stream is both correct
-  # and more btop-faithful (total up/down, not one selected iface).
-  host.nettotal:
-    cmd: "cat /proc/net/dev | tail -n +3 | tr -d ':' | awk '$1!=\"lo\"{r+=$2;t+=$10} END{printf \"%d %d\\n\",r,t}'"
-    interval: 2000
-    extract:
-      mode: columns
-      fields: { rx: 0, tx: 1 }
-    schema:
-      columns: { rx: { type: counter }, tx: { type: counter } }
-
   # Disk USAGE — `df` per mount (real filesystems only; pseudo FS excluded). The
   # awk drops the `%` from the capacity column and converts df's KiB blocks to
   # bytes. One row per mount point: `pct` (used %) drives the gauge, `used`/`size`
@@ -227,19 +211,21 @@ panels:
       - { type: graph, topic: host.mem,  row: _, metrics: [mem, swap], height: 55% }
       - { type: meter, topic: host.disk, column: pct, heading: Fullest disk }
       - { type: bars,  topic: host.disk, column: pct, heading: Disk usage, interactive: true }
-  # Network box — btop's mirrored up/down shape, opening OUTWARD from a tight centre
-  # seam. TX (upload, top) rises upward with its label on top; RX (download, bottom)
-  # HANGS downward via `invert: true`, with its label moved BELOW via `header: bottom`
-  # and `flush: true` removing the inter-widget gap — so the two graphs' baselines abut
-  # in the middle (the seam) and the traces + labels sit on the outer edges. Each is
-  # its own single-metric graph → independent auto-scale. Above the per-iface rx bars.
+  # Network box — btop's mirrored up/down shape for ONE selected interface, with a
+  # `‹ eth0 ›` cycler in the top border to switch interfaces (click ‹/›, or j/k when
+  # the box is focused). The per-iface rx bars below are `interactive: true` — they
+  # carry the box's cursor (the selected iface highlights), and the two mirror graphs
+  # `select_from: net_box` (this composite's own cursor) so they plot whichever
+  # interface is selected. TX (upload) rises from the top; RX (download) HANGS via
+  # `invert: true` with its label moved below (`header: bottom`) and the gap removed
+  # (`flush: true`), so the baselines meet at a tight centre seam.
   net_box:
     type: composite
     title: Network
     widgets:
-      - { type: graph, topic: host.nettotal, row: _, metrics: [tx], height: 31% }                               # ↑ rises, label on top
-      - { type: graph, topic: host.nettotal, row: _, metrics: [rx], invert: true, header: bottom, flush: true, height: 31% }  # ↓ hangs, label below, seam flush
-      - { type: bars,  topic: host.net,      column: rx, heading: Iface rx/s }
+      - { type: graph, topic: host.net, select_from: net_box, metrics: [tx], height: 31% }                               # ↑ rises, label on top
+      - { type: graph, topic: host.net, select_from: net_box, metrics: [rx], invert: true, header: bottom, flush: true, height: 31% }  # ↓ hangs, label below, seam flush
+      - { type: bars,  topic: host.net, column: rx, heading: Iface rx/s, interactive: true }                             # the iface cursor (‹ eth0 › + j/k)
   # The process TABLE — host.proc rows, sorted by CPU, SELECTABLE. This is the
   # interactive surface: select a row → the Selected drill-down graphs its history
   # and the Output pane's Info tab shows its detail card. FIRST table = the

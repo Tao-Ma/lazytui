@@ -31,7 +31,8 @@
 'use strict';
 
 const { getModel } = require('../../model/store');
-const { esc, theme, renderPanel, getSel, getScroll, sliceForPane: _sliceForPane } = require('../api');
+const { esc, theme, renderPanel, getSel, getScroll, getItems: apiGetItems, borderControlsFor, sliceForPane: _sliceForPane } = require('../api');
+const { sortControlText, sortControlHits } = require('../../leaves/render/sort-control');
 const { distributeColumnHeights } = require('../../leaves/wm/geometry');
 const { rowInfo } = require('../../leaves/metrics/row-info');   // shared row → detail-card projection
 const mnav = require('../../leaves/wm/nav');
@@ -111,6 +112,34 @@ function subscriptions(paneDef) {
   return subs;
 }
 
+// Selection-cycler border control (`‹ eth0 ›` in the top border) — the click twin of
+// j/k for a composite's interactive list. `‹`/`›` step the box's cursor (a wrapped
+// `set_cursor`), and the label shows the current selection (getItems[getSel]); a
+// follower graph (`select_from` this pane) then plots that row — btop's net-interface
+// switcher. Self-suppresses when the box has no interactive selection (getItems empty,
+// e.g. a display-only composite) or in free-config, so paint ↔ hit-test agree. Generic
+// over what the list holds (interfaces / mounts / cores).
+const _cycleControl = {
+  id: 'cycle',
+  slot: 'top',
+  render(model, pane) {
+    if (model && model.modes && model.modes.freeConfigMode) return null;
+    const items = apiGetItems(pane.paneId);
+    if (!items.length) return null;
+    const sel = Math.max(0, Math.min(getSel(pane.paneId), items.length - 1));
+    return sortControlText(String(items[sel]));
+  },
+  regions(x0, y, visibleW) { return sortControlHits(x0, y, visibleW); },
+  dispatch(action, pane) {
+    const items = apiGetItems(pane.paneId);
+    if (!items.length) return null;
+    const cur = Math.max(0, Math.min(getSel(pane.paneId), items.length - 1));
+    const d = action === 'prev' ? -1 : 1;                 // ‹ = prev; › / label = next
+    const index = (cur + d + items.length) % items.length;
+    return { owner: pane.paneId, msg: { type: 'set_cursor', index } };
+  },
+};
+
 function render(panel, w, h, _slice, opts) {
   const chrome = opts && opts.chrome;
   const focused = !!(opts && opts.focused);
@@ -159,9 +188,14 @@ function render(panel, w, h, _slice, opts) {
     if (lines.length > innerH) lines.length = Math.max(0, innerH);
   }
 
+  // Border controls (the selection cycler) — resolved from the Component-declared
+  // `borderControls`, same as table/gauge. Self-suppress (null render) → no strip.
+  const ctl = borderControlsFor({ paneId: panel.paneId, type: 'composite', focused, innerW }, getModel());
   return renderPanel({
     width: w, height: h, lines,
     title: panel.title, hotkey: panel.hotkey, panelType: 'composite', focused, chrome,
+    topControls: ctl.filter((c) => (c.spec.slot || 'top') !== 'bottom').map((c) => c.text),
+    bottomControls: ctl.filter((c) => (c.spec.slot || 'top') === 'bottom').map((c) => c.text),
   });
 }
 
@@ -216,6 +250,7 @@ module.exports = {
       getItems,
       getInfo,
       idOf: (rowKey) => String(rowKey),
+      borderControls: [_cycleControl],
     },
   },
   // Border-less body helpers reused/tested.

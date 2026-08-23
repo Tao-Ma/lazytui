@@ -137,6 +137,17 @@ cursor unambiguous. `meter` (single value) and `graph` (no rows) can't be intera
 This is the Tier-2 value that a plain display composite (§ above) lacks: a cursor
 *inside* the box.
 
+**Selection cycler + follower graphs (btop's net-interface switcher).** When a box has
+an interactive widget it automatically shows a **`‹ selected ›` border-control cycler**
+in the top border (the click twin of `j`/`k`): `‹` prev / `›` next step the box's
+cursor over the interactive list (interfaces, mounts, cores…). Other widgets in the
+same box can **follow** that cursor with a self-referential `select_from: <this box's
+pool id>` — the graph then plots whichever row is selected. That's how the demo's
+network box works: a `‹ eth0 ›` cycler over the per-interface `bars`, with the up/down
+mirror graphs `select_from` the box so they plot the selected interface (btop's Net
+box, switched by clicking `‹`/`›` or `j`/`k`). ←/→ are reserved for pane focus, so the
+cycler uses the chip + `j`/`k` rather than arrows.
+
 ## 6. Rendering architecture
 
 The render **dispatch is unchanged.** A composite is just another Component with

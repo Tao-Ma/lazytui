@@ -82,7 +82,7 @@ describe('[host-monitor] composite dashboard + density', () => {
       topics.add(w.topic);
       assert(['graph', 'bars', 'meter'].includes(w.type), `widget type is graph|bars|meter, got ${JSON.stringify(w.type)}`);
     }
-    for (const t of ['host.cpu', 'host.core', 'host.mem', 'host.disk', 'host.nettotal', 'host.net']) {
+    for (const t of ['host.cpu', 'host.core', 'host.mem', 'host.disk', 'host.net']) {
       assert(topics.has(t), `a composite widget covers ${t}`);
     }
   });
