@@ -6,6 +6,8 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.24] — 2026-08-23
+
 ### Added
 
 - **Composite selection cycler (btop-style interface switcher).** A `composite` box
@@ -3310,7 +3312,8 @@ release tarballs. Full pre-squash development history is preserved
 on the internal gitea mirror under the `backup/main-history` branch
 and the `v0.1.0-pre-squash` tag.
 
-[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.23...HEAD
+[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.24...HEAD
+[0.6.24]: https://github.com/Tao-Ma/lazytui/compare/v0.6.23...v0.6.24
 [0.6.23]: https://github.com/Tao-Ma/lazytui/compare/v0.6.22...v0.6.23
 [0.6.22]: https://github.com/Tao-Ma/lazytui/compare/v0.6.21...v0.6.22
 [0.6.21]: https://github.com/Tao-Ma/lazytui/compare/v0.6.20...v0.6.21
