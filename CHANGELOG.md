@@ -8,6 +8,12 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Inverted graphs (`invert: true`).** A `stats` graph (or a `composite` `graph`
+  widget) can hang from the top edge downward instead of rising from the bottom, with
+  the height-gradient flipped to match. Pair a normal graph under an inverted one for
+  btop's mirrored network shape — download hanging from the top, upload rising from the
+  bottom. Braille only (blocks have no upper-eighths ramp).
+
 - **Graph hover-for-value.** Moving the mouse over a `stats` graph column now shows
   that column's value in the footer (`⌖ CPU 62.0%`) and a small tooltip box at the
   cursor, with the hovered column highlighted (a vertical cursor line). The value is a

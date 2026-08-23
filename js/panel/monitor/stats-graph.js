@@ -87,6 +87,10 @@ function rasterize(samples, { width, height, min, max }) {
 // k filled dot-rows in a half-cell = the bottom k bits of that column.
 const _BRL_LEFT  = [0, 0x40, 0x44, 0x46, 0x47];
 const _BRL_RIGHT = [0, 0x80, 0xA0, 0xB0, 0xB8];
+// Inverted fill (`invert`): the trace hangs from the TOP edge downward — the TOP k
+// dots of each half-cell (btop's mirrored net-download shape). Accumulated top→bottom.
+const _BRL_LEFT_TOP  = [0, 0x01, 0x03, 0x07, 0x47];
+const _BRL_RIGHT_TOP = [0, 0x08, 0x18, 0x38, 0xB8];
 
 /**
  * Braille rasterizer — same contract as `rasterize` (see header), but each
@@ -98,7 +102,7 @@ const _BRL_RIGHT = [0, 0x80, 0xA0, 0xB0, 0xB8];
  * @param {{width:number, height:number, min:number, max:number}} opts
  * @returns {string[]} `height` rows, each exactly `width` chars
  */
-function rasterizeBraille(samples, { width, height, min, max }) {
+function rasterizeBraille(samples, { width, height, min, max, invert }) {
   if (height < 1 || width < 1) return [];
   const cut = _cut(samples, width * 2);
   const slots = new Array(width * 2);
@@ -106,14 +110,19 @@ function rasterizeBraille(samples, { width, height, min, max }) {
     const n = _norm01(cut[i], min, max);
     slots[i] = Number.isFinite(n) ? Math.round(n * height * 4) : 0;
   }
+  // `invert`: anchor the fill to the TOP edge (row 0) with top-filling dot masks, so
+  // the trace hangs downward instead of rising from the bottom. The per-row edge and
+  // the mask table are the only differences from the normal path.
+  const L = invert ? _BRL_LEFT_TOP : _BRL_LEFT;
+  const R = invert ? _BRL_RIGHT_TOP : _BRL_RIGHT;
   const rows = new Array(height);
   for (let r = 0; r < height; r++) {
-    const bottomOfRow = (height - 1 - r) * 4;
+    const edge = invert ? r * 4 : (height - 1 - r) * 4;
     let row = '';
     for (let c = 0; c < width; c++) {
-      const kl = Math.max(0, Math.min(4, slots[c * 2] - bottomOfRow));
-      const kr = Math.max(0, Math.min(4, slots[c * 2 + 1] - bottomOfRow));
-      row += (kl || kr) ? String.fromCharCode(0x2800 | _BRL_LEFT[kl] | _BRL_RIGHT[kr]) : ' ';
+      const kl = Math.max(0, Math.min(4, slots[c * 2] - edge));
+      const kr = Math.max(0, Math.min(4, slots[c * 2 + 1] - edge));
+      row += (kl || kr) ? String.fromCharCode(0x2800 | L[kl] | R[kr]) : ' ';
     }
     rows[r] = row;
   }
@@ -245,11 +254,15 @@ function colorizeRows(rows, norms, colorFor) {
  * `colorizeRows` (which recolors nearly every column each tick). `colorFor(frac)`
  * gets the row's height fraction ∈ [0,1] (1 = top). All-space rows stay bare.
  */
-function colorizeByHeight(rows, colorFor) {
+function colorizeByHeight(rows, colorFor, invert) {
   const H = rows.length;
   return rows.map((row, i) => {
     if (!/\S/.test(row)) return row;                 // all gaps → uncolored
-    const frac = H > 1 ? (H - 1 - i) / (H - 1) : 1;   // top row = 1, bottom = 0
+    // Normal: top row = 1 (hot), bottom = 0 (cool). `invert` flips it so the fill's
+    // BASELINE (now the top edge, where the inverted trace hangs from) stays cool and
+    // its peak (extending downward) stays hot — the gradient tracks value, not screen
+    // position, in both directions.
+    const frac = H > 1 ? (invert ? i / (H - 1) : (H - 1 - i) / (H - 1)) : 1;
     const atom = colorFor(frac) || null;
     return atom ? `[${atom}]${row}[/]` : row;
   });

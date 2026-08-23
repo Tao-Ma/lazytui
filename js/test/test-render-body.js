@@ -234,4 +234,15 @@ describe('[renderBody] stats — hovered column highlight (Phase 2)', () => {
   });
 });
 
+describe('[renderBody] stats — invert (top-hanging graph)', () => {
+  setMetric('inv.cpu', { _: Array.from({ length: 40 }, (_x, i) => ({ cpu: (i * 7) % 100 })) }, { cpu: { type: 'percent' } });
+  const spec = (extra) => ({ topic: 'inv.cpu', row: '_', metrics: ['cpu'], ...extra });
+  it('invert:true flips the graph body vs normal (header/meter unchanged)', () => {
+    const normal = stats.renderBody(spec(), 20, 8, -1).lines;
+    const inverted = stats.renderBody(spec({ invert: true }), 20, 8, -1).lines;
+    eq(normal[0], inverted[0], 'header unchanged');
+    assert(JSON.stringify(normal.slice(2)) !== JSON.stringify(inverted.slice(2)), 'graph rows differ when inverted');
+  });
+});
+
 report();

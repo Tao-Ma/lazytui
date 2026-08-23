@@ -214,7 +214,7 @@ function renderBody(spec, innerW, innerH, hoverCol = -1) {
   const lines = [];
   metrics.forEach((m, i) => {
     if (i > 0) lines.push('');
-    lines.push(..._renderSection(m, samples, schema, innerW, perMetric, style, colorMode, hoverCol));
+    lines.push(..._renderSection(m, samples, schema, innerW, perMetric, style, colorMode, hoverCol, spec.invert));
   });
   return { lines, rowKey };
 }
@@ -350,7 +350,7 @@ function _highlightColumn(row, visCol, hlAtom) {
  * a consumer could use, but the panel stays scale-of-its-own — empty
  * containers and busy ones both get a graph that fills the rows.
  */
-function _renderSection(metric, samples, schema, width, graphHeight, style, colorMode, hoverCol) {
+function _renderSection(metric, samples, schema, width, graphHeight, style, colorMode, hoverCol, invert) {
   const col = (schema.columns || {})[metric] || {};
   const values = samples.map(s => s && s[metric]);
   const finite = values.filter(Number.isFinite);
@@ -386,7 +386,11 @@ function _renderSection(metric, samples, schema, width, graphHeight, style, colo
   const padLen = Math.max(1, width - labelLen - statsLen);
   const header = `[bold]${label}[/]${' '.repeat(padLen)}[${t.dim}]${stats}[/]`;
 
-  const opts = { width, height: graphHeight, min, max };
+  // `invert` (braille only — blocks have no upper-eighths ramp): hang the trace from
+  // the top edge downward instead of rising from the bottom (btop's mirrored net
+  // shape). The height-gradient flips with it so value→colour stays consistent.
+  const inv = !!invert && style !== 'blocks';
+  const opts = { width, height: graphHeight, min, max, invert: inv };
   const rows = style === 'blocks' ? rasterize(values, opts) : rasterizeBraille(values, opts);
   const norms = columnNorms(values, { width, min, max, group: style === 'blocks' ? 1 : 2 });
   let colored;
@@ -400,7 +404,7 @@ function _renderSection(metric, samples, schema, width, graphHeight, style, colo
       (n) => (Number.isFinite(n) ? gradient('percent', quantizeNorm(n, 8)) : null));
   } else {
     // height (default): color by vertical position, static per row (byte-thrift).
-    colored = colorizeByHeight(rows, (frac) => gradient('percent', frac));
+    colored = colorizeByHeight(rows, (frac) => gradient('percent', frac), inv);
   }
 
   // Hover cursor (Phase 2): highlight the hovered column across this section's graph

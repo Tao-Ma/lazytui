@@ -121,6 +121,29 @@ describe('[4b] rasterizeBraille: contract mirrors rasterize', () => {
   });
 });
 
+describe('[4b-invert] rasterizeBraille: `invert` hangs the trace from the TOP', () => {
+  it('a low value fills the TOP cell (down-hanging), bottom empty — mirror of normal', () => {
+    // Same input as the normal case above (25% → 2 dot-rows), inverted.
+    const rows = rasterizeBraille([25, 25], { width: 1, height: 2, min: 0, max: 100, invert: true });
+    eq(rows[0], '⠛', 'top row: 2 dot-rows filled from the TOP of the cell');
+    eq(rows[1], ' ', 'bottom row empty');
+  });
+  it('a full value is identical inverted vs normal (both fill every dot)', () => {
+    const opts = { width: 2, height: 2, min: 0, max: 100 };
+    const norm = rasterizeBraille([100, 100, 100, 100], opts);
+    const inv = rasterizeBraille([100, 100, 100, 100], { ...opts, invert: true });
+    eq(inv.join(''), norm.join(''), 'norm=1 fills the whole grid either way');
+  });
+  it('colorizeByHeight invert flips the gradient (top→bottom instead of bottom→top)', () => {
+    const rows = ['█', '█', '█'];
+    const label = (frac) => `f${frac.toFixed(1)}`;
+    const norm = colorizeByHeight(rows, label);            // top row = frac 1.0
+    const inv = colorizeByHeight(rows, label, true);       // top row = frac 0.0
+    assert(norm[0].includes('f1.0') && norm[2].includes('f0.0'), 'normal: top hot, bottom cool');
+    assert(inv[0].includes('f0.0') && inv[2].includes('f1.0'), 'invert: top cool, bottom hot');
+  });
+});
+
 describe('[4b-overlay] rasterizeBrailleMulti + colorizeOverlay', () => {
   it('degenerate / empty → { rows:[], owners:[] }', () => {
     eq(rasterizeBrailleMulti([[1]], { width: 3, height: 0, min: 0, max: 1 }).rows.length, 0);

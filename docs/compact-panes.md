@@ -102,7 +102,7 @@ panel accepts, plus:
 | `topic` | hub topic (a `metrics:` producer, or a Component like docker) |
 | `height` | `N%` of the box's inner height (anchored); omit → flex share (§6) |
 | `heading` | optional 1-row dim sub-header above the widget (default: none). Distinct from a `bars` widget's `label` (which names the *metered column* for bar labels). |
-| *(kind-specific)* | `graph`: `row`/`select_from`/`aggregate`, `metrics`, `window`, `graph`, `graph_color`, `overlay`, `mode` — as `stats` (`mode: multi` → one sparkline per row of the topic). `bars`: `column`, `label`, `max`, `bar_width`, `sort_dir` — as `gauge`. `meter`: the `bars` fields plus `row: <key>` to pick one row (else the top-sorted). |
+| *(kind-specific)* | `graph`: `row`/`select_from`/`aggregate`, `metrics`, `window`, `graph`, `graph_color`, `overlay`, `mode`, `invert` — as `stats` (`mode: multi` → one sparkline per row; `invert: true` → hangs from the top, for a btop-style net mirror). `bars`: `column`, `label`, `max`, `bar_width`, `sort_dir` — as `gauge`. `meter`: the `bars` fields plus `row: <key>` to pick one row (else the top-sorted). |
 
 `type` here is the **widget** kind, not a pane type — it never reaches the pane
 dispatch. The composite Component owns the `composite` panelType; it interprets
