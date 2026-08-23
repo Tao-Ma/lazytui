@@ -227,18 +227,18 @@ panels:
       - { type: graph, topic: host.mem,  row: _, metrics: [mem, swap], height: 55% }
       - { type: meter, topic: host.disk, column: pct, heading: Fullest disk }
       - { type: bars,  topic: host.disk, column: pct, heading: Disk usage, interactive: true }
-  # Network box — btop's mirrored up/down shape: RX (download) HANGS from the top via
-  # `invert: true` (the trace grows downward), TX (upload) rises from the bottom, so the
-  # two directions mirror around the middle. Each is its OWN single-metric graph, so it
-  # auto-scales independently (a near-zero direction still reads full-height in its band
-  # — unlike a shared-scale `overlay`, which flattens the smaller series). Above the
-  # per-interface rx rates as bars.
+  # Network box — btop's mirrored up/down shape, opening OUTWARD from the middle: TX
+  # (upload, top) rises upward from its baseline, RX (download, bottom) HANGS downward
+  # via `invert: true`. The two baselines meet near the centre and the traces expand
+  # toward the top/bottom edges. Each is its own single-metric graph → independent
+  # auto-scale (a near-zero direction still reads in its band, unlike a shared-scale
+  # overlay). Above the per-interface rx rates as bars.
   net_box:
     type: composite
     title: Network
     widgets:
-      - { type: graph, topic: host.nettotal, row: _, metrics: [rx], invert: true, height: 31% }  # ↓ hangs from top
-      - { type: graph, topic: host.nettotal, row: _, metrics: [tx],               height: 31% }  # ↑ rises from bottom
+      - { type: graph, topic: host.nettotal, row: _, metrics: [tx],               height: 31% }  # ↑ rises up-and-out
+      - { type: graph, topic: host.nettotal, row: _, metrics: [rx], invert: true, height: 31% }  # ↓ hangs down-and-out
       - { type: bars,  topic: host.net,      column: rx, heading: Iface rx/s }
   # The process TABLE — host.proc rows, sorted by CPU, SELECTABLE. This is the
   # interactive surface: select a row → the Selected drill-down graphs its history
