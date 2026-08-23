@@ -141,7 +141,7 @@ function render(panel, w, h, _slice, opts) {
       : null;
     lines = [];
     widgets.forEach((widget, i) => {
-      if (i > 0) lines.push('');                                   // 1-row gap between widgets
+      if (i > 0 && !(widget && widget.flush)) lines.push('');     // 1-row gap between widgets (`flush: true` abuts the previous)
       if (widget && widget.heading) lines.push(`[${t.dim}]${esc(String(widget.heading))}[/]`);
       // Pin each widget to EXACTLY its allocated body height so a short body
       // (rounding / few rows) doesn't shift the widgets below it out of their slots.

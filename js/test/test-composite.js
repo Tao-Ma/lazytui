@@ -119,6 +119,23 @@ describe('[composite] render — stacks bodies in one border', () => {
     assert(!body.includes('c1'), 'the top row (c1) is NOT drawn when row:c0 is pinned');
   });
 
+  it('a widget with `flush: true` abuts the previous one (no 1-row gap)', () => {
+    // Two meters on the same topic → each draws a bar row. Default: a blank row sits
+    // between them; `flush` on the 2nd removes it, so the bar rows are adjacent.
+    const cfg = (flush) => ({ title: 'F', widgets: [
+      { type: 'meter', topic: 'c.core', column: 'busy' },
+      { type: 'meter', topic: 'c.core', column: 'busy', flush },
+    ] });
+    const barRows = (out) => out.split('\n').map((l, i) => ({ i, s: stripMarkup(l) }))
+      .filter((x) => x.s.includes('█')).map((x) => x.i);
+    const gap = barRows(composite.panelTypes.composite.render(cfg(false), 30, 8, {}, {}));
+    const fl = barRows(composite.panelTypes.composite.render(cfg(true), 30, 8, {}, {}));
+    eq(gap.length, 2); eq(fl.length, 2);
+    // flush removes exactly the 1-row inter-widget gap (the meter pads within its own
+    // slot, so the absolute spacing varies — the DELTA is the load-bearing assertion).
+    eq((gap[1] - gap[0]) - (fl[1] - fl[0]), 1, 'flush pulls the 2nd widget up by exactly the 1-row gap');
+  });
+
   it('a `graph` widget with `mode: multi` draws one sparkline per row of the topic', () => {
     // c.core has 2 rows (c0=30, c1=70). A normal graph resolves ONE series; multi
     // mode draws BOTH rows, one height-1 sparkline each (composite → stats.renderBody).

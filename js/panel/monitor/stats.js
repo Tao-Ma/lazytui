@@ -214,7 +214,7 @@ function renderBody(spec, innerW, innerH, hoverCol = -1) {
   const lines = [];
   metrics.forEach((m, i) => {
     if (i > 0) lines.push('');
-    lines.push(..._renderSection(m, samples, schema, innerW, perMetric, style, colorMode, hoverCol, spec.invert));
+    lines.push(..._renderSection(m, samples, schema, innerW, perMetric, style, colorMode, hoverCol, spec.invert, spec.header === 'bottom'));
   });
   return { lines, rowKey };
 }
@@ -350,7 +350,7 @@ function _highlightColumn(row, visCol, hlAtom) {
  * a consumer could use, but the panel stays scale-of-its-own — empty
  * containers and busy ones both get a graph that fills the rows.
  */
-function _renderSection(metric, samples, schema, width, graphHeight, style, colorMode, hoverCol, invert) {
+function _renderSection(metric, samples, schema, width, graphHeight, style, colorMode, hoverCol, invert, headerBottom) {
   const col = (schema.columns || {})[metric] || {};
   const values = samples.map(s => s && s[metric]);
   const finite = values.filter(Number.isFinite);
@@ -413,15 +413,19 @@ function _renderSection(metric, samples, schema, width, graphHeight, style, colo
     colored = colored.map((r) => _highlightColumn(r, hoverCol, t.selected));
   }
 
-  const out = [header];
+  // Percent metrics carry a one-row current-value meter next to the header.
+  const extras = [];
   if (col.type === 'percent') {
-    // Current-value meter (one value = one color run).
     const frac = Number.isFinite(latest) ? latest / 100 : NaN;
     const meter = meterRow(frac, width);
-    out.push(Number.isFinite(frac) ? `[${gradient('percent', frac)}]${meter}[/]` : meter);
+    extras.push(Number.isFinite(frac) ? `[${gradient('percent', frac)}]${meter}[/]` : meter);
   }
-  out.push(...colored);
-  return out;
+  // `header: bottom` — put the header (+ its meter) BELOW the graph instead of above.
+  // Pairs with `invert` for a btop net mirror: the inverted (bottom) graph's label
+  // reads on the outer edge, and its graph rows sit flush against the graph above.
+  return headerBottom
+    ? [...colored, ...extras, header]
+    : [header, ...extras, ...colored];
 }
 
 // Reduce a set of aligned values for one column. `mode` 'avg'|'sum'|'max' forces

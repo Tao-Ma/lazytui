@@ -243,6 +243,14 @@ describe('[renderBody] stats — invert (top-hanging graph)', () => {
     eq(normal[0], inverted[0], 'header unchanged');
     assert(JSON.stringify(normal.slice(2)) !== JSON.stringify(inverted.slice(2)), 'graph rows differ when inverted');
   });
+
+  it('header: bottom renders the section header LAST (net-mirror label placement)', () => {
+    const top = stats.renderBody(spec(), 20, 8).lines;
+    const bot = stats.renderBody(spec({ header: 'bottom' }), 20, 8).lines;
+    assert(top[0].includes('CPU'), 'default: header on the first line');
+    assert(!bot[0].includes('CPU'), 'header:bottom: not on the first line');
+    assert(bot[bot.length - 1].includes('CPU'), 'header:bottom: on the last line');
+  });
 });
 
 report();
