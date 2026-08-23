@@ -89,9 +89,11 @@ describe('[host-monitor] composite dashboard + density', () => {
 
   it('the dashboard showcases the Tier-2 + stats-interactivity widgets', () => {
     const widgets = panes.filter(p => p.type === 'composite').flatMap(c => c.widgets || []);
-    assert(widgets.some(w => w.type === 'graph' && w.overlay === true), 'an overlay graph (net rx/tx in one grid)');
+    // (net_box uses stacked, independently-scaled rx/tx sections — btop's shape —
+    // rather than a shared-scale `overlay`, so no overlay widget is asserted here;
+    // the overlay feature itself is covered by test-render-body / test-stats.)
     assert(widgets.some(w => w.type === 'meter'), 'a meter widget (fullest disk)');
-    assert(widgets.some(w => w.type === 'bars' && w.interactive === true), 'an interactive bars widget (cores cursor)');
+    assert(widgets.some(w => w.type === 'bars' && w.interactive === true), 'an interactive bars widget (disk cursor)');
     const multi = panes.find(p => p.type === 'stats' && api.getInstanceSlice(p.paneId).mode === 'multi'
       || (p.type === 'stats' && p.mode === 'multi'));
     assert(multi, 'a mode:multi stats pane (per-process CPU sparklines)');

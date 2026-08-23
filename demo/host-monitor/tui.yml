@@ -227,14 +227,16 @@ panels:
       - { type: graph, topic: host.mem,  row: _, metrics: [mem, swap], height: 55% }
       - { type: meter, topic: host.disk, column: pct, heading: Fullest disk }
       - { type: bars,  topic: host.disk, column: pct, heading: Disk usage, interactive: true }
-  # Network box — total up/down throughput with rx + tx OVERLAID in ONE braille grid
-  # (`overlay: true` — each series a distinct colour under a legend, one shared scale:
-  # the up-and-down read in a single trace) above per-interface rx rates as bars.
+  # Network box — total up/down throughput as two stacked, INDEPENDENTLY-scaled graph
+  # sections (rx then tx). This is btop's Net-box shape: each direction auto-scales to
+  # its OWN max, so a near-zero upload still reads full-height in its band — unlike a
+  # shared-scale `overlay: true`, which flattens the smaller series onto the baseline
+  # (invisible for the common rx≫tx case). Above per-interface rx rates as bars.
   net_box:
     type: composite
     title: Network
     widgets:
-      - { type: graph, topic: host.nettotal, row: _, metrics: [rx, tx], overlay: true, height: 62% }
+      - { type: graph, topic: host.nettotal, row: _, metrics: [rx, tx], height: 62% }
       - { type: bars,  topic: host.net,      column: rx, heading: Iface rx/s }
   # The process TABLE — host.proc rows, sorted by CPU, SELECTABLE. This is the
   # interactive surface: select a row → the Selected drill-down graphs its history
