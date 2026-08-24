@@ -751,7 +751,8 @@ and where it was pushed to."
 ### 7.5 layout (`kind: 'layout'`) — the frame — verified
 
 Owns the grid: `focus`, `viewMode`, `arrange` (columns/pool), `dims`,
-`freeConfig`, `halfView`, `paneMenu`, `panelList`, `bootWarnings`, `dirty`. ~40
+`freeConfig`, `halfView`, `paneMenu`, `panelList`, `bootWarnings`, `dirty`,
+`hover` (graph hover-for-value cursor). ~40
 arms; `update` opens with a **notice auto-clear preface** (clears
 `freeConfig.notice` unless the arm will re-assert it or it's a continuous-motion
 Msg). **All arms pure** — every geometry/arrange transform delegates to a pure
@@ -776,6 +777,7 @@ via a `mode_set`/`mode_clear` Cmd.
 | `pane_menu_place{slot,paneId,viewerPaneId}` | `halfView[slot]` (swap-aware) + focus ★w | `force_full_repaint` ★f | shell² |
 | `term_resized{cols,rows}` | `dims` | — | ✓³ |
 | `focus_set{focus,skipInfo?}` | focus ★w | `show_selected_info` (unless `skipInfo`) | ✓ |
+| `graph_hover{hover}` | `hover` (raw `{paneId,col,row,x,y}` or `null`; identity-preserved on an unchanged payload) | — | ✓⁰ |
 
 **(b) Pane-menu (`[≡]`) + pane-select swap**
 
@@ -813,6 +815,11 @@ via a `mode_set`/`mode_clear` Cmd.
 | `panel_list_open{cursor}`/`close`/`nav{dir}` | `panelList` | `force_full_repaint` ★f (on open/close transition) | ✓ |
 | `panel_list_pick` | closes `panelList` | re-emits `pool_hide`/`pool_show` + `force_full_repaint` | ✓ |
 
+⁰ Graph hover-for-value (mouse mode 1003). `input._handleHover` resolves the body
+  cell under a button-less move over a `stats`/`composite` pane and dispatches this
+  ONLY on cell-change (coalesced). The arm just stores the raw position; the VALUE is
+  derived at paint by the pane's render (`stats.valueAt` → `panel/hover-region.js`),
+  which the footer + cursor tooltip read. See STATS.md §10.
 ¹ `msg.freeConfigMode` threaded by `handleAction` (decides whether to refuse).
 ² `msg.viewerPaneId` threaded by the dispatch shell (for the half-view projection).
 ³ **The single writer of `dims`** (resize-as-Msg). The stdout `'resize'` listener

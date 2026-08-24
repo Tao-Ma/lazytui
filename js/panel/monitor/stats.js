@@ -559,35 +559,26 @@ function valueAt(spec, innerW, innerH, col, row) {
   }
   if (!metric) return null;
 
-  // Column → sample. Braille packs 2 samples/cell (group 2); blocks 1. The window
-  // is the newest `innerW * group` values, front NaN-padded when short (mirrors
-  // stats-graph._cut). For braille prefer the RIGHT (newer) dot of the cell, else
-  // the left. `ago` = samples back from newest.
+  // Column → sample (blocks = group 1, braille = group 2). `ago` = samples back from newest.
   const values = samples.map((s) => (s ? s[metric] : NaN));
-  const group = spec.graph === 'blocks' ? 1 : 2;
-  const cutLen = innerW * group;
-  const at = (cutIdx) => {
-    const origIdx = values.length - cutLen + cutIdx;
-    return (origIdx >= 0 && origIdx < values.length) ? { v: values[origIdx], origIdx } : null;
-  };
-  let hit = group === 2 ? at(col * 2 + 1) : at(col);
-  if ((!hit || !Number.isFinite(hit.v)) && group === 2) hit = at(col * 2) || hit;   // fall back to older dot
-  if (!hit || !Number.isFinite(hit.v)) return null;
+  const hit = _hitAt(values, innerW, col, spec.graph === 'blocks' ? 1 : 2);
+  if (!hit) return null;
   return { metric, value: hit.v, type: (cols[metric] || {}).type, ago: Math.max(0, values.length - 1 - hit.origIdx), col };
 }
 
-// Map a braille column to its (newest-preferred) sample value in a `values` array,
-// mirroring stats-graph._cut's front NaN-pad: the window is the newest `width*2`
-// values. Prefers the RIGHT (newer) dot of the cell, falling back to the left. Shared
-// by the overlay + multi hover reads. Returns `{ v, origIdx }` or null.
-function _brailleHitAt(values, width, col) {
-  const cutLen = width * 2;
+// Map a graph column to its (newest-preferred) sample value in a `values` array,
+// mirroring stats-graph._cut's front NaN-pad: the window is the newest `width*group`
+// values (`group` 2 for braille, 1 for blocks). For braille prefers the RIGHT (newer)
+// dot of the cell, falling back to the left. The one column→sample map, shared by all
+// three hover reads (sectioned/overlay/multi). Returns `{ v, origIdx }` or null.
+function _hitAt(values, width, col, group = 2) {
+  const cutLen = width * group;
   const pick = (cutIdx) => {
     const origIdx = values.length - cutLen + cutIdx;
     return (origIdx >= 0 && origIdx < values.length) ? { v: values[origIdx], origIdx } : null;
   };
-  let hit = pick(col * 2 + 1);
-  if (!hit || !Number.isFinite(hit.v)) hit = pick(col * 2) || hit;
+  let hit = group === 2 ? pick(col * 2 + 1) : pick(col);
+  if ((!hit || !Number.isFinite(hit.v)) && group === 2) hit = pick(col * 2) || hit;   // fall back to older dot
   return (hit && Number.isFinite(hit.v)) ? hit : null;
 }
 
@@ -604,7 +595,7 @@ function _valueAtOverlay(spec, innerW, innerH, col, row) {
   const cols = schema.columns || {};
   const series = [];
   for (const m of metrics) {
-    const hit = _brailleHitAt(samples.map((s) => (s ? s[m] : NaN)), innerW, col);
+    const hit = _hitAt(samples.map((s) => (s ? s[m] : NaN)), innerW, col);
     if (hit) series.push({ metric: m, value: hit.v, type: (cols[m] || {}).type });
   }
   return series.length ? { overlay: series, col } : null;
@@ -622,7 +613,7 @@ function _valueAtMulti(spec, innerW, innerH, col, row) {
   const localCol = col - (labelW + 1);                   // spark starts after `label` + one space
   if (!(localCol >= 0 && localCol < sparkW)) return null;
   const r = rows[row];
-  const hit = _brailleHitAt(r.vals, sparkW, localCol);
+  const hit = _hitAt(r.vals, sparkW, localCol);
   if (!hit) return null;
   return { multi: true, label: r.label, metric: metricCol, value: hit.v, type, ago: Math.max(0, r.vals.length - 1 - hit.origIdx), col };
 }
