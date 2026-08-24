@@ -193,6 +193,17 @@ describe('[renderBody] stats.valueAt — hovered column → sample value (Phase 
     eq(stats.valueAt(spec, 10, 8, 5, 1), null, 'percent meter row');
   });
 
+  it('header:bottom moves the header/meter below the graph (seam resolves; bottom rows null)', () => {
+    // [graph(perMetric=6), meter(1), header(1)] for innerH 8. The TOP row is now a graph
+    // row (the mirror seam in the net box); the header + meter are at the bottom.
+    const hb = { ...spec, header: 'bottom' };
+    assert(stats.valueAt(hb, 10, 8, 0, 0), 'top row is a graph cell (the seam), not the header');
+    eq(stats.valueAt(hb, 10, 8, 5, 7), null, 'header row (now at the bottom)');
+    eq(stats.valueAt(hb, 10, 8, 5, 6), null, 'percent meter row (above the bottom header)');
+    // Contrast: with the header on top (default), row 0 is the header → null.
+    eq(stats.valueAt(spec, 10, 8, 5, 0), null, 'default: header on top → row 0 null');
+  });
+
   it('returns null for out-of-range col', () => {
     eq(stats.valueAt(spec, 10, 8, 99, 2), null, 'col past innerW');
     eq(stats.valueAt(spec, 10, 8, -1, 2), null, 'negative col');

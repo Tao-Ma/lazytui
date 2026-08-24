@@ -544,15 +544,18 @@ function valueAt(spec, innerW, innerH, col, row) {
 
   // Walk the stack to find which metric's GRAPH rows `row` falls in (headers,
   // percent meter rows, and the 1-row separators between sections don't carry a
-  // per-column value).
+  // per-column value). Each section mirrors _renderSection's layout: `header: bottom`
+  // → [graph, meter, header] (graph leads); default → [header, meter, graph]. Only the
+  // graph's offset within the section differs — the section is the same height either way.
+  const headerBottom = spec.header === 'bottom';
   let off = 0;
   let metric = null;
   for (let i = 0; i < metrics.length; i++) {
-    if (i > 0) off += 1;                                  // separator
-    const graphStart = off + 1 + (isPct(metrics[i]) ? 1 : 0);
-    const graphEnd = graphStart + perMetric;
-    if (row >= graphStart && row < graphEnd) { metric = metrics[i]; break; }
-    off = graphEnd;
+    if (i > 0) off += 1;                                  // separator between sections
+    const meter = isPct(metrics[i]) ? 1 : 0;
+    const graphStart = off + (headerBottom ? 0 : 1 + meter);
+    if (row >= graphStart && row < graphStart + perMetric) { metric = metrics[i]; break; }
+    off += 1 + meter + perMetric;                         // whole section: header + meter + graph
   }
   if (!metric) return null;
 
