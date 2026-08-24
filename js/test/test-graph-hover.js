@@ -168,6 +168,53 @@ describe('[graph-hover] composite graph widget → footer value', () => {
   });
 });
 
+describe('[graph-hover] composite header:bottom mirror SEAM (the net-box case)', () => {
+  // The exact reported bug: TX graph (normal) sits flush above an RX graph that is
+  // invert + header:bottom — btop's up/down mirror. The seam (RX graph's TOP row) must
+  // resolve, and the RX header (moved to the BOTTOM) must not.
+  const composite = require('../panel/monitor/composite');
+  const cfg = { id: 'net', type: 'composite', title: 'Net', config: { widgets: [
+    { type: 'graph', topic: 'gh.net', row: '_', metrics: ['tx'], window: 300, height: '45%' },
+    { type: 'graph', topic: 'gh.net', row: '_', metrics: ['rx'], window: 300, invert: true, header: 'bottom', flush: true, height: '45%' },
+  ] } };
+
+  function boot() {
+    sm.bootFresh({
+      groups: { grp: { label: 'G', containers: [], actions: { a: { cmd: 'echo', label: 'A' } } } },
+      layout: { pool: { net: cfg }, columns: [{ panels: [cfg] }] },
+    });
+    sm.resize(120, 30);
+    setMetric('gh.net', { _: Array.from({ length: 300 }, (_x, i) => ({ tx: 1000 + i, rx: 5000 + i })) },
+      { tx: { type: 'bytes' }, rx: { type: 'bytes' } });
+  }
+
+  // The RX (second) widget's body-row range, mirroring composite's stacking (flush → no gap).
+  function rxRange(b) {
+    const innerH = b.h - 2;
+    const heights = composite._split(cfg.config.widgets, innerH);
+    return { start: heights[0], h1: heights[1] };   // flush + no heading → RX body starts right after TX
+  }
+
+  it('the seam (RX graph top row) resolves to RX, not nothing', () => {
+    boot();
+    const { b } = paneOf('composite');
+    const { start } = rxRange(b);
+    const col = b.w - 2 - 4;   // a filled right column
+    sm.capture(() => sm.handleMouse('hover', b.x + col + 2, b.y + start + 2));
+    const hv = hoverRegion.get();
+    assert(hv && /RX/.test(hv.text), `seam resolves to RX, got ${JSON.stringify(hv)}`);
+  });
+
+  it('the RX header (pushed to the bottom by header:bottom) resolves to nothing', () => {
+    boot();
+    const { b } = paneOf('composite');
+    const { start, h1 } = rxRange(b);
+    const col = b.w - 2 - 4;
+    sm.capture(() => sm.handleMouse('hover', b.x + col + 2, b.y + (start + h1 - 1) + 2));   // last RX body row = header
+    eq(hoverRegion.get(), null, 'RX header row → no value');
+  });
+});
+
 describe('[graph-hover] overlay graph → all series in the footer', () => {
   const cfg = { id: 'ov', type: 'stats', title: 'Net',
     config: { topic: 'gh.net', row: '_', metrics: ['rx', 'tx'], overlay: true, window: 300 } };
