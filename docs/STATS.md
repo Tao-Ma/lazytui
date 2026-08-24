@@ -375,8 +375,24 @@ Run via `node js/scripts/run-tests.js -q`.
   rasterizer uses (`stats.valueAt`), so the rasterizer needn't retain per-column
   samples. Needs terminal mouse mode **1003** (all-motion, enabled in `js/io/term.js`);
   the input layer coalesces (a Msg + repaint only when the resolved column changes) so
-  idle motion stays bounded. Standalone `stats` graphs in v1 (composite graph widgets
-  + overlay/multi hover are follow-ons). **Drag-to-zoom** stays deferred.
+  idle motion stays bounded.
+  - **Follow-ons — SHIPPED.** Hover now covers every graph shape, not just the
+    standalone sectioned pane:
+    - **Composite graph widgets.** `_handleHover` treats `composite` panes as hoverable;
+      `composite.render` routes the cursor to the widget under it (`_widgetBodyRanges`,
+      the same stacking render draws) and calls `stats.valueAt` on that widget spec —
+      so a graph inside a btop box hovers exactly like a standalone pane. bars/meter
+      widgets carry no history value → no hover.
+    - **Overlay** (`overlay: true`). Any graph row resolves the column (the legend row
+      does not); the footer shows EVERY series at that column (`RX 1.2MiB  TX 800KiB`),
+      since comparing them is the point of an overlay. The hovered column highlights
+      across the grid.
+    - **`mode: multi`.** The hovered ROW's value at the column (`node12 62.0%`); the row
+      is the identity in multi mode. Off the sparkline (label / value gutter) → nothing.
+      Geometry is single-sourced through `_multiLayout` so the read can't drift from the
+      paint. (Value-only — no per-column highlight, as the rows are independent
+      sparklines sharing an offset.)
+  - **Drag-to-zoom** stays deferred.
 - ~~**Multi-line overlay.** "All containers, one line each."~~ Shipped as
   `mode: multi` (§3 YAML contract) — one height-1 sparkline per row of the
   topic, sorted by latest value. Display-only in v1 (no per-row cursor yet).

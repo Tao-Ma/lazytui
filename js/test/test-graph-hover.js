@@ -120,4 +120,121 @@ describe('[graph-hover] real hover path → footer value + hover-region', () => 
   });
 });
 
+// --- Follow-ons: composite graph widgets + overlay + mode:multi (Phase 2 completion) ---
+
+for (const c of ['composite']) if (!api.getComponent(c)) api.registerComponent(require('../panel/monitor/' + c));
+
+function paneOf(type) {
+  const ls = api.getInstanceSlice('layout');
+  const p = mpool.allPanesInColumns(ls.arrange).find((pp) => pp.type === type);
+  const b = geo.visibleBoundsFor(ls, p.paneId, route.resolveViewerPaneId());
+  return { paneId: p.paneId, b };
+}
+
+describe('[graph-hover] composite graph widget → footer value', () => {
+  // A composite with a single `graph` widget (no gap/heading): body row 0 header,
+  // row 1 percent meter, rows 2+ graph — same stack a standalone stats pane has.
+  // window: 300 fills the wide graph so column 0 carries data (else the NaN-padded
+  // left edge correctly resolves to nothing — same reason the standalone test does it).
+  const cfg = { id: 'nb', type: 'composite', title: 'Box',
+    config: { widgets: [{ type: 'graph', topic: 'gh.cpu', row: '_', metrics: ['cpu'], window: 300 }] } };
+
+  function boot() {
+    sm.bootFresh({
+      groups: { grp: { label: 'G', containers: [], actions: { a: { cmd: 'echo', label: 'A' } } } },
+      layout: { pool: { nb: cfg }, columns: [{ panels: [cfg] }] },
+    });
+    sm.resize(120, 30);
+    setMetric('gh.cpu', { _: Array.from({ length: 300 }, (_x, i) => ({ cpu: i % 100 })) }, { cpu: { type: 'percent' } });
+  }
+
+  it('hovering a graph widget publishes the value + shows it in the footer', () => {
+    boot();
+    const { paneId, b } = paneOf('composite');
+    // Body col 0, row 2 (widget header 0, meter 1, graph 2). Screen: +2 for the border.
+    sm.capture(() => sm.handleMouse('hover', b.x + 0 + 2, b.y + 2 + 2));
+    const hv = hoverRegion.get();
+    assert(hv && hv.paneId === paneId, `hover-region published for the box, got ${JSON.stringify(hv)}`);
+    assert(/CPU/.test(hv.text), `text names the metric, got ${JSON.stringify(hv.text)}`);
+    const footer = require('../render/footer').renderFooter(getModel());
+    assert(footer.includes('⌖') && footer.includes(hv.text), `footer shows the value, got ${JSON.stringify(hv.text)}`);
+  });
+
+  it('hovering the widget HEADER row (not a data cell) publishes nothing', () => {
+    boot();
+    const { b } = paneOf('composite');
+    sm.capture(() => sm.handleMouse('hover', b.x + 2 + 2, b.y + 0 + 2));   // body row 0 = header
+    eq(hoverRegion.get(), null, 'header row → no value');
+  });
+});
+
+describe('[graph-hover] overlay graph → all series in the footer', () => {
+  const cfg = { id: 'ov', type: 'stats', title: 'Net',
+    config: { topic: 'gh.net', row: '_', metrics: ['rx', 'tx'], overlay: true, window: 300 } };
+
+  function boot() {
+    sm.bootFresh({
+      groups: { grp: { label: 'G', containers: [], actions: { a: { cmd: 'echo', label: 'A' } } } },
+      layout: { pool: { ov: cfg }, columns: [{ panels: [cfg] }] },
+    });
+    sm.resize(120, 30);
+    setMetric('gh.net', { _: Array.from({ length: 300 }, (_x, i) => ({ rx: i, tx: 1000 + i })) },
+      { rx: { type: 'bytes' }, tx: { type: 'bytes' } });
+  }
+
+  it('hovering an overlay column shows every series value', () => {
+    boot();
+    const { b } = paneOf('stats');
+    // Overlay body: row 0 legend, rows 1+ graph. Hover a graph row.
+    sm.capture(() => sm.handleMouse('hover', b.x + 10 + 2, b.y + 2 + 2));
+    const hv = hoverRegion.get();
+    assert(hv && hv.text, `overlay hover set, got ${JSON.stringify(hv)}`);
+    assert(/RX/.test(hv.text) && /TX/.test(hv.text), `both series in the footer text, got ${JSON.stringify(hv.text)}`);
+  });
+
+  it('hovering the legend row (row 0) publishes nothing', () => {
+    boot();
+    const { b } = paneOf('stats');
+    sm.capture(() => sm.handleMouse('hover', b.x + 10 + 2, b.y + 0 + 2));
+    eq(hoverRegion.get(), null, 'legend row → no value');
+  });
+});
+
+describe('[graph-hover] mode:multi → the hovered row value in the footer', () => {
+  const cfg = { id: 'mu', type: 'stats', title: 'Procs',
+    config: { topic: 'gh.multi', mode: 'multi', column: 'cpu', window: 300 } };
+
+  function boot() {
+    sm.bootFresh({
+      groups: { grp: { label: 'G', containers: [], actions: { a: { cmd: 'echo', label: 'A' } } } },
+      layout: { pool: { mu: cfg }, columns: [{ panels: [cfg] }] },
+    });
+    sm.resize(120, 30);
+    setMetric('gh.multi',
+      { a: Array.from({ length: 300 }, (_x, i) => ({ cpu: i % 50 })), b: Array.from({ length: 300 }, (_x, i) => ({ cpu: i % 90 })) },
+      { cpu: { type: 'percent' } });
+  }
+
+  it('hovering a sparkline row shows that row label + value', () => {
+    boot();
+    const { paneId } = paneOf('stats');
+    const ls = api.getInstanceSlice('layout');
+    const b = geo.visibleBoundsFor(ls, paneId, route.resolveViewerPaneId());
+    const lay = stats._multiLayout({ topic: 'gh.multi', mode: 'multi', column: 'cpu', window: 300 }, b.w - 2);
+    const sparkMid = lay.labelW + 1 + Math.floor(lay.sparkW / 2);
+    sm.capture(() => sm.handleMouse('hover', b.x + sparkMid + 2, b.y + 0 + 2));   // top row (row 0)
+    const hv = hoverRegion.get();
+    assert(hv && hv.text, `multi hover set, got ${JSON.stringify(hv)}`);
+    assert(new RegExp(`^${lay.rows[0].label}\\b`).test(hv.text), `footer names the row, got ${JSON.stringify(hv.text)}`);
+  });
+
+  it('hovering the label column (not the spark) publishes nothing', () => {
+    boot();
+    const { paneId } = paneOf('stats');
+    const b = geo.visibleBoundsFor(api.getInstanceSlice('layout'), paneId, route.resolveViewerPaneId());
+    sm.capture(() => sm.handleMouse('hover', b.x + 0 + 2, b.y + 0 + 2));   // col 0 = label area
+    eq(hoverRegion.get(), null, 'label column → no value');
+  });
+});
+
 report();

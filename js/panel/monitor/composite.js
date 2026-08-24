@@ -31,7 +31,8 @@
 'use strict';
 
 const { getModel } = require('../../model/store');
-const { esc, theme, renderPanel, getSel, getScroll, getItems: apiGetItems, borderControlsFor, sliceForPane: _sliceForPane } = require('../api');
+const { esc, theme, renderPanel, getSel, getScroll, getItems: apiGetItems, borderControlsFor, sliceForPane: _sliceForPane, getInstanceSlice } = require('../api');
+const hoverRegion = require('../hover-region');
 const { sortControlText, sortControlHits } = require('../../leaves/render/sort-control');
 const { distributeColumnHeights } = require('../../leaves/wm/geometry');
 const { rowInfo } = require('../../leaves/metrics/row-info');   // shared row → detail-card projection
@@ -56,9 +57,9 @@ function _interactiveWidget(widgets) {
 // cursor via `ctx` = { sel, scroll, focused }, threaded into the gauge body. An
 // unknown/mis-typed widget degrades to a dim marker (the lenient-parser
 // philosophy: no throw, a visible hint).
-function _bodyLines(widget, innerW, innerH, ctx) {
+function _bodyLines(widget, innerW, innerH, ctx, hoverCol = -1) {
   const type = widget && widget.type;
-  if (type === 'graph') return stats.renderBody(widget, innerW, innerH).lines;
+  if (type === 'graph') return stats.renderBody(widget, innerW, innerH, hoverCol).lines;
   if (type === 'bars')  return gauge.renderBody(gauge.specFrom(widget), innerW, innerH, ctx || {}).lines;
   // `meter` — a SINGLE gauge bar (one scalar), vs `bars`' one-per-row. `single`
   // takes the top-sorted row; `row:` picks one by key. Reuses the gauge body.
@@ -140,6 +141,42 @@ const _cycleControl = {
   },
 };
 
+// Body-row range of each widget in the assembled `lines`, mirroring render's stacking
+// (leading gap unless `flush`, optional heading row, then `heights[i]` body rows). The
+// single source both render (where to inject the hover column) and _resolveHover (which
+// widget a body row belongs to) read, so the hover cell can't drift from what's drawn.
+function _widgetBodyRanges(widgets, heights) {
+  const ranges = [];
+  let r = 0;
+  widgets.forEach((widget, i) => {
+    if (i > 0 && !(widget && widget.flush)) r += 1;      // inter-widget gap
+    if (widget && widget.heading) r += 1;                // heading row
+    ranges.push({ i, start: r, end: r + heights[i] });
+    r += heights[i];
+  });
+  return ranges;
+}
+
+// Resolve this box's live hover (Phase 2, hover-for-value) → which `graph` widget the
+// cursor is over + the value record to publish. Only `graph` widgets carry a value
+// (bars/meter are current-value, not a history graph → no hover). Delegates the actual
+// value read to stats.valueAt (the single owner of graph geometry), scoped to the
+// widget's own body height. null when not hovered / not over a graph data cell.
+function _resolveHover(panel, innerW, widgets, heights) {
+  const paneId = panel && panel.paneId;
+  if (paneId == null) return null;
+  const layout = getInstanceSlice('layout');
+  const hv = layout && layout.hover;
+  if (!hv || hv.paneId !== paneId) return null;
+  const hit = _widgetBodyRanges(widgets, heights).find((rg) => hv.row >= rg.start && hv.row < rg.end);
+  if (!hit) return null;
+  const widget = widgets[hit.i];
+  if (!widget || widget.type !== 'graph') return null;
+  const res = stats.valueAt(widget, innerW, heights[hit.i], hv.col, hv.row - hit.start);
+  if (!res) return null;
+  return { widgetIndex: hit.i, col: hv.col, record: stats.hoverRecord(res, paneId, hv.x, hv.y, hv.col) };
+}
+
 function render(panel, w, h, _slice, opts) {
   const chrome = opts && opts.chrome;
   const focused = !!(opts && opts.focused);
@@ -149,6 +186,7 @@ function render(panel, w, h, _slice, opts) {
   const widgets = Array.isArray(panel.widgets) ? panel.widgets : [];
 
   let lines;
+  let hover = null;
   if (!widgets.length) {
     lines = [`[${t.dim}](composite needs a widgets: list)[/]`];
   } else if (innerW < 1 || innerH < 1) {
@@ -168,6 +206,9 @@ function render(panel, w, h, _slice, opts) {
     const iCtx = (iw && paneId != null)
       ? { sel: getSel(paneId), scroll: getScroll(paneId), focused }
       : null;
+    // Hover-for-value (Phase 2): resolve which graph widget the cursor is over ONCE, so
+    // that widget's body draws the highlighted column + we publish its value below.
+    hover = _resolveHover(panel, innerW, widgets, heights);
     lines = [];
     widgets.forEach((widget, i) => {
       if (i > 0 && !(widget && widget.flush)) lines.push('');     // 1-row gap between widgets (`flush: true` abuts the previous)
@@ -175,7 +216,8 @@ function render(panel, w, h, _slice, opts) {
       // Pin each widget to EXACTLY its allocated body height so a short body
       // (rounding / few rows) doesn't shift the widgets below it out of their slots.
       const bh = heights[i];
-      const body = _bodyLines(widget, innerW, bh, widget === iw ? iCtx : null);
+      const hoverCol = (hover && hover.widgetIndex === i) ? hover.col : -1;
+      const body = _bodyLines(widget, innerW, bh, widget === iw ? iCtx : null, hoverCol);
       for (let r = 0; r < bh; r++) lines.push(body[r] != null ? body[r] : '');
     });
     // At a tiny innerH the heading/gap rows push the stack past innerH (`_split`'s
@@ -187,6 +229,11 @@ function render(panel, w, h, _slice, opts) {
     // ≤2-row terminal) would make `lines.length = <negative>` throw RangeError.
     if (lines.length > innerH) lines.length = Math.max(0, innerH);
   }
+
+  // Publish the resolved hover value (footer + cursor tooltip read the per-frame
+  // hover-region), mirroring stats.render — a composite graph widget is hoverable
+  // exactly like a standalone stats pane.
+  if (hover) hoverRegion.publish(hover.record);
 
   // Border controls (the selection cycler) — resolved from the Component-declared
   // `borderControls`, same as table/gauge. Self-suppress (null render) → no strip.

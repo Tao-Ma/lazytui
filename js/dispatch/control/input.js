@@ -559,15 +559,17 @@ function _contentCoordsAt(paneId, mx, my, clamp) {
 let _lastHover = null;
 
 // Resolve the body cell under a hover and fold it into the layout slice (or clear).
-// Only STANDALONE `stats` graph panes are hoverable in v1; the value is derived at
-// paint by stats.render (valueAt filters overlay/multi/off-graph). Chain-mode active
-// → no hover (clears any live one so a box doesn't linger under an overlay).
+// Hoverable panes are `stats` graphs AND `composite` boxes (whose graph widgets are
+// hoverable too); the value is derived at paint by the pane's render (stats.valueAt
+// resolves sectioned/overlay/multi; composite routes to the widget under the cursor,
+// and a non-graph cell resolves to nothing). Chain-mode active → no hover (clears any
+// live one so a box doesn't linger under an overlay).
 function _handleHover(mx, my, model) {
   let target = null;
   if (!isChainActive(model.modes)) {
     const layoutSlice = getInstanceSlice('layout');
     for (const p of allPanels()) {
-      if (p.type !== 'stats') continue;
+      if (p.type !== 'stats' && p.type !== 'composite') continue;
       const b = visibleBoundsFor(layoutSlice, p.paneId, route.resolveViewerPaneId());
       if (!b || mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
       const cc = _contentCoordsAt(p.paneId, mx, my);   // {line,col} body coords; null on border/outside

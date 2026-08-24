@@ -198,7 +198,9 @@ function renderBody(spec, innerW, innerH, hoverCol = -1) {
     }
     const seriesArr = metrics.map((m) => samples.map((s) => s && s[m]));
     const { rows, owners } = rasterizeBrailleMulti(seriesArr, { width: innerW, height: graphH, min: oMin, max: oMax });
-    const colored = colorizeOverlay(rows, owners, metrics.map((_m, i) => OVERLAY_COLORS[i % OVERLAY_COLORS.length]));
+    let colored = colorizeOverlay(rows, owners, metrics.map((_m, i) => OVERLAY_COLORS[i % OVERLAY_COLORS.length]));
+    // Hover cursor (Phase 2): highlight the hovered column across the overlaid grid.
+    if (hoverCol >= 0 && hoverCol < innerW) colored = colored.map((r) => _highlightColumn(r, hoverCol, t.selected));
     return { lines: [legend, ...colored], rowKey };
   }
 
@@ -227,8 +229,9 @@ const _MULTI_VALUE_W = 8;   // right-hand current-value column (matches gauge's)
  * rows. Like the `bars` gauge but a HISTORY sparkline in place of the current-value
  * bar. One shared value scale (percent → 0–100, else the max across all rows) keeps
  * the rows comparable; the sparkline is value-mapped through the percent ramp so a
- * spike reads hot. Display-only in v1 (no per-row cursor). Reuses rasterizeBraille /
- * columnNorms / colorizeRows and the shared truncate + format leaves.
+ * spike reads hot. Hover-for-value reads a row's value under the cursor (`_valueAtMulti`,
+ * sharing `_multiLayout`'s geometry); there's still no j/k row SELECTION. Reuses
+ * rasterizeBraille / columnNorms / colorizeRows and the shared truncate + format leaves.
  *
  *   node12   ⣀⣠⣴⣶⣾⣿   62.0%
  *   redis3   ⢀⡠⠔⠊⠉      9.1%
@@ -236,14 +239,23 @@ const _MULTI_VALUE_W = 8;   // right-hand current-value column (matches gauge's)
  * `column:` picks the metric to sparkline (default: the first graphable column);
  * `label:` names a string column for the row label (default: the row key).
  */
-function _renderMulti(spec, metric, schema, innerW, innerH, window, dim) {
-  if (innerW < 1 || innerH < 1) return dim('(panel too small)');
+// Multi-mode GEOMETRY — the sorted rows + label/spark column budget, single-sourced
+// so `_renderMulti` (paint) and `_valueAtMulti` (hover read) can't drift (the
+// paint↔read agreement, reference_paint_hittest_agreement, applied to a derived
+// value). Returns `{ ok: false, reason }` on the empty states (the renderer maps
+// each reason to its dim message; the hover read just treats any non-ok as null).
+// Depends only on `spec` + `innerW` (row count viewport-slicing is the renderer's).
+function _multiLayout(spec, innerW) {
+  if (innerW < 1) return { ok: false, reason: 'small' };
+  const metric = getModel().metrics[spec.topic];
+  const schema = (metric && metric.schema) || { columns: {} };
+  const window = spec.window || 40;
   const series = (metric && metric.series) || {};
   const keys = Object.keys(series);
-  if (!keys.length) return dim('(no data yet)');
+  if (!keys.length) return { ok: false, reason: 'nodata' };
   const cols = schema.columns || {};
   const col = spec.column || _defaultMetrics(schema)[0];
-  if (!col) return dim('(no graphable metrics)');
+  if (!col) return { ok: false, reason: 'nometric' };
   const type = (cols[col] || {}).type;
   const labelCol = spec.label && (cols[spec.label] || {}).type === 'string' ? spec.label : null;
 
@@ -278,6 +290,17 @@ function _renderMulti(spec, metric, schema, innerW, innerH, window, dim) {
   const maxLabel = rows.reduce((m, r) => Math.max(m, visibleLen(esc(r.label))), 3);
   const labelW = Math.max(3, Math.min(16, maxLabel, innerW - _MULTI_VALUE_W - 3));
   const sparkW = Math.max(1, innerW - labelW - _MULTI_VALUE_W - 2);   // two single-space gaps
+  return { ok: true, rows, labelW, sparkW, min, max, type, col };
+}
+
+function _renderMulti(spec, metric, schema, innerW, innerH, window, dim) {
+  if (innerH < 1) return dim('(panel too small)');
+  const lay = _multiLayout(spec, innerW);
+  if (!lay.ok) {
+    return dim(lay.reason === 'small' ? '(panel too small)'
+      : lay.reason === 'nodata' ? '(no data yet)' : '(no graphable metrics)');
+  }
+  const { rows, labelW, sparkW, min, max, type } = lay;
   const cell = (text, width, right) => {
     let s = String(text);
     if (visibleLen(s) > width) s = truncate(s, width);
@@ -493,14 +516,19 @@ function _resolveSeries(spec) {
 
 // The value under a hovered body cell (Phase 2, hover-for-value). Given the pane
 // spec + its inner size + a body-relative (col, row), map back to the underlying
-// sample the graph drew and return `{ metric, value, type, ago, col }` or null. PURE
-// (recomputes from model.metrics via the same window/geometry renderBody uses — the
-// rasterizer needn't retain per-column samples). v1 scope: the standard sectioned
-// graph only (overlay / multi have their own column semantics → null for now); a row
-// on a header / meter / separator (not the graph area) → null.
+// sample the graph drew and return a hover result or null. PURE (recomputes from
+// model.metrics via the same window/geometry renderBody uses — the rasterizer needn't
+// retain per-column samples). Three shapes, one per graph kind (all fed to
+// `hoverText`): sectioned → `{ metric, value, type, ago, col }`; overlay →
+// `{ overlay: [{metric,value,type}], col }` (all series at the column, since the point
+// of an overlay is comparing them); multi → `{ multi, label, metric, value, type, col }`
+// (the hovered ROW's value). A row on a header / meter / separator / legend / off the
+// sparkline (not a data cell) → null.
 function valueAt(spec, innerW, innerH, col, row) {
-  if (!spec || !spec.topic || spec.overlay || spec.mode === 'multi') return null;
+  if (!spec || !spec.topic) return null;
   if (!(col >= 0 && col < innerW) || !(row >= 0)) return null;
+  if (spec.mode === 'multi') return _valueAtMulti(spec, innerW, innerH, col, row);
+  if (spec.overlay) return _valueAtOverlay(spec, innerW, innerH, col, row);
   const resolved = _resolveSeries(spec);
   if (!resolved) return null;
   const { samples, metrics, schema } = resolved;
@@ -545,6 +573,76 @@ function valueAt(spec, innerW, innerH, col, row) {
   return { metric, value: hit.v, type: (cols[metric] || {}).type, ago: Math.max(0, values.length - 1 - hit.origIdx), col };
 }
 
+// Map a braille column to its (newest-preferred) sample value in a `values` array,
+// mirroring stats-graph._cut's front NaN-pad: the window is the newest `width*2`
+// values. Prefers the RIGHT (newer) dot of the cell, falling back to the left. Shared
+// by the overlay + multi hover reads. Returns `{ v, origIdx }` or null.
+function _brailleHitAt(values, width, col) {
+  const cutLen = width * 2;
+  const pick = (cutIdx) => {
+    const origIdx = values.length - cutLen + cutIdx;
+    return (origIdx >= 0 && origIdx < values.length) ? { v: values[origIdx], origIdx } : null;
+  };
+  let hit = pick(col * 2 + 1);
+  if (!hit || !Number.isFinite(hit.v)) hit = pick(col * 2) || hit;
+  return (hit && Number.isFinite(hit.v)) ? hit : null;
+}
+
+// Overlay hover — one braille grid, N series, 1 legend row on top. Every graph row
+// shares the same column→sample mapping, so ANY graph row resolves the column; the
+// legend row (row 0) and a too-short panel carry no value. Returns EVERY series'
+// finite value at the column (the overlay exists to compare them), or null.
+function _valueAtOverlay(spec, innerW, innerH, col, row) {
+  const graphH = innerH - 1;                              // 1 legend row (matches renderBody)
+  if (graphH < 2 || !(row >= 1 && row < 1 + graphH)) return null;
+  const resolved = _resolveSeries(spec);
+  if (!resolved) return null;
+  const { samples, metrics, schema } = resolved;
+  const cols = schema.columns || {};
+  const series = [];
+  for (const m of metrics) {
+    const hit = _brailleHitAt(samples.map((s) => (s ? s[m] : NaN)), innerW, col);
+    if (hit) series.push({ metric: m, value: hit.v, type: (cols[m] || {}).type });
+  }
+  return series.length ? { overlay: series, col } : null;
+}
+
+// Multi hover — one height-1 sparkline per ROW (`label spark value`). `row` indexes
+// the sorted/viewport rows (`_multiLayout`, the same list the renderer draws); `col`
+// must fall inside that row's sparkline span. Returns the hovered ROW's value at the
+// column (the row is the identity in multi mode). Off a row / off the spark → null.
+function _valueAtMulti(spec, innerW, innerH, col, row) {
+  const lay = _multiLayout(spec, innerW);
+  if (!lay.ok) return null;
+  const { rows, labelW, sparkW, type, col: metricCol } = lay;
+  if (!(row < Math.min(rows.length, innerH))) return null;
+  const localCol = col - (labelW + 1);                   // spark starts after `label` + one space
+  if (!(localCol >= 0 && localCol < sparkW)) return null;
+  const r = rows[row];
+  const hit = _brailleHitAt(r.vals, sparkW, localCol);
+  if (!hit) return null;
+  return { multi: true, label: r.label, metric: metricCol, value: hit.v, type, ago: Math.max(0, r.vals.length - 1 - hit.origIdx), col };
+}
+
+// A hover result (valueAt's three shapes) → the one-line label shown in the footer +
+// the cursor tooltip. Sectioned/multi are single-value (`METRIC value` / `row value`);
+// overlay joins every series (`RX 1.2MiB  TX 800KiB`).
+function hoverText(res) {
+  if (!res) return '';
+  if (res.overlay) return res.overlay.map((s) => `${s.metric.toUpperCase()} ${_fmtCell(s.value, s.type || 'number')}`).join('  ');
+  if (res.multi) return `${res.label} ${_fmtCell(res.value, res.type || 'number')}`;
+  return `${res.metric.toUpperCase()} ${_fmtCell(res.value, res.type || 'number')}`;
+}
+
+// Build the hover-region record for a resolved value at (x, y) on a pane. Single-value
+// results carry metric/value metadata; overlay is text-only (multi-series). Shared by
+// the standalone stats pane (`_resolveHover`) and composite graph widgets.
+function hoverRecord(res, paneId, x, y, col) {
+  const rec = { paneId, x, y, text: hoverText(res), col };
+  if (res.metric != null && !res.overlay) { rec.metric = res.metric; rec.value = res.value; }
+  return rec;
+}
+
 // If this pane is the hovered one, resolve the value ONCE for render(): the column to
 // highlight + the record to publish to the per-frame hover-region (footer + tooltip).
 // null when not hovered / not over a resolvable graph cell. Keeps all graph-value
@@ -557,8 +655,7 @@ function _resolveHover(panel, innerW, innerH) {
   if (!hv || hv.paneId !== paneId) return null;
   const res = valueAt(panel, innerW, innerH, hv.col, hv.row);
   if (!res) return null;
-  const text = `${res.metric.toUpperCase()} ${_fmtCell(res.value, res.type || 'number')}`;
-  return { col: hv.col, record: { paneId, x: hv.x, y: hv.y, text, metric: res.metric, value: res.value, col: hv.col } };
+  return { col: hv.col, record: hoverRecord(res, paneId, hv.x, hv.y, hv.col) };
 }
 
 function render(panel, w, h, _slice, opts) {
@@ -615,6 +712,9 @@ module.exports = {
   _fmtRate,
   _renderSection,
   _renderMulti,
+  _multiLayout,
   _highlightColumn,
   valueAt,
+  hoverText,
+  hoverRecord,
 };

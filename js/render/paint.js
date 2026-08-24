@@ -969,7 +969,9 @@ function render(model) {
   if (!modes.isModal(md)) {
     const hv = hoverRegion.get();
     if (hv && hv.text) {
-      _decor().renderOverlay({ lines: [`[accent]${hv.text}[/]`], anchor: { x: hv.x, y: hv.y + 1 }, maxWidth: Math.min(60, hv.text.length + 4) });
+      // esc the resolved text (matches the footer) — it may carry user data (a
+      // mode:multi row label like `[kworker/0]`) whose `[` would else read as markup.
+      _decor().renderOverlay({ lines: [`[accent]${esc(hv.text)}[/]`], anchor: { x: hv.x, y: hv.y + 1 }, maxWidth: Math.min(60, hv.text.length + 4) });
       _prevHoverRows = _hoverBoxRows(hv);
     }
   }

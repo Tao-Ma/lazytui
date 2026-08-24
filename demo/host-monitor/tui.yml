@@ -223,8 +223,11 @@ panels:
     type: composite
     title: Network
     widgets:
-      - { type: graph, topic: host.net, select_from: net_box, metrics: [tx], height: 31% }                               # ↑ rises, label on top
-      - { type: graph, topic: host.net, select_from: net_box, metrics: [rx], invert: true, header: bottom, flush: true, height: 31% }  # ↓ hangs, label below, seam flush
+      # `window: 180` (~6 min at the 2s net poll) fills the graph width instead of a
+      # right-edge stub — same fix as procsel's window:120 (net_box shares col 2, so
+      # the same inner width), scaled for net's faster 2s poll to match that ~6-min depth.
+      - { type: graph, topic: host.net, select_from: net_box, metrics: [tx], window: 180, height: 31% }                               # ↑ rises, label on top
+      - { type: graph, topic: host.net, select_from: net_box, metrics: [rx], window: 180, invert: true, header: bottom, flush: true, height: 31% }  # ↓ hangs, label below, seam flush
       - { type: bars,  topic: host.net, column: rx, heading: Iface rx/s, interactive: true }                             # the iface cursor (‹ eth0 › + j/k)
   # The process TABLE — host.proc rows, sorted by CPU, SELECTABLE. This is the
   # interactive surface: select a row → the Selected drill-down graphs its history

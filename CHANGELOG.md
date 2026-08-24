@@ -6,6 +6,26 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Graph hover-for-value on every graph shape.** The mouse hover-for-value read (footer
+  `⌖` + cursor tooltip) now covers composite graph widgets, overlay graphs, and
+  `mode: multi` sparklines — previously the standalone sectioned `stats` pane only:
+  - **Composite graph widgets.** Hovering a `graph` inside a `composite` box resolves the
+    value for the widget under the cursor (bars/meter widgets have no history value → no
+    hover), so a graph in a btop-density box hovers like a standalone pane.
+  - **Overlay** (`overlay: true`) shows every series at the hovered column
+    (`RX 1.2MiB  TX 800KiB`) with the column highlighted across the grid.
+  - **`mode: multi`** shows the hovered ROW's value (`node12 62.0%`); off the sparkline
+    (the label / value gutter) resolves to nothing.
+
+### Changed
+
+- **Host-monitor demo: network graphs fill their width.** The `net_box` up/down graphs
+  now set `window: 180` (~6 min at the 2s net poll), so the trace fills the pane instead
+  of leaving the right two-thirds empty on a wide terminal — the same fix `procsel`
+  already had (`window: 120`), scaled for `host.net`'s faster poll.
+
 ## [0.6.24] — 2026-08-23
 
 ### Added

@@ -193,10 +193,38 @@ describe('[renderBody] stats.valueAt — hovered column → sample value (Phase 
     eq(stats.valueAt(spec, 10, 8, 5, 1), null, 'percent meter row');
   });
 
-  it('returns null for overlay / multi / out-of-range col', () => {
-    eq(stats.valueAt({ ...spec, overlay: true }, 10, 8, 0, 2), null);
-    eq(stats.valueAt({ ...spec, mode: 'multi' }, 10, 8, 0, 2), null);
+  it('returns null for out-of-range col', () => {
     eq(stats.valueAt(spec, 10, 8, 99, 2), null, 'col past innerW');
+    eq(stats.valueAt(spec, 10, 8, -1, 2), null, 'negative col');
+  });
+
+  it('overlay → every series value at the column; legend row → null', () => {
+    setMetric('h.net', { _: Array.from({ length: 20 }, (_x, i) => ({ rx: i, tx: 100 + i })) },
+      { rx: { type: 'bytes' }, tx: { type: 'bytes' } });
+    const ov = { topic: 'h.net', row: '_', metrics: ['rx', 'tx'], overlay: true };
+    // innerH 8 → 1 legend row (0) + 7 graph rows (1..7). Rightmost col (9) = newest.
+    const r = stats.valueAt(ov, 10, 8, 9, 3);
+    assert(r && Array.isArray(r.overlay), `overlay array, got ${JSON.stringify(r)}`);
+    eq(r.overlay.length, 2, 'both series present');
+    eq(r.overlay[0].metric, 'rx'); eq(r.overlay[0].value, 19, 'rx newest');
+    eq(r.overlay[1].metric, 'tx'); eq(r.overlay[1].value, 119, 'tx newest');
+    eq(stats.valueAt(ov, 10, 8, 9, 0), null, 'legend row → null');
+  });
+
+  it('multi → the hovered ROW value at the column; off the sparkline → null', () => {
+    setMetric('h.multi',
+      { a: Array.from({ length: 20 }, (_x, i) => ({ cpu: i })), b: Array.from({ length: 20 }, (_x, i) => ({ cpu: i * 2 })) },
+      { cpu: { type: 'percent' } });
+    const mu = { topic: 'h.multi', mode: 'multi', column: 'cpu' };
+    const innerW = 40, innerH = 6;
+    const lay = stats._multiLayout(mu, innerW);
+    const sparkRightCol = lay.labelW + 1 + lay.sparkW - 1;   // last spark column
+    const r = stats.valueAt(mu, innerW, innerH, sparkRightCol, 0);
+    assert(r && r.multi, `multi result, got ${JSON.stringify(r)}`);
+    eq(r.label, 'b', 'row 0 = highest latest (b: 38 > a: 19)');
+    eq(r.value, 38, 'newest sample of the hovered row');
+    eq(stats.valueAt(mu, innerW, innerH, 0, 0), null, 'over the label, not the spark → null');
+    eq(stats.valueAt(mu, innerW, innerH, sparkRightCol, 5), null, 'row past the row count → null');
   });
 });
 
