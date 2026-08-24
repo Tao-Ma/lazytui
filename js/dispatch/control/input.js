@@ -506,6 +506,12 @@ function _realizeButtonGesture(intentName, x, y, mx, my) {
 // Module-local, transient (like the free-config drag).
 let _armedSelect = null;   // { paneId, line, col } | null
 
+// Drag-to-zoom arm (docs/STATS.md §10): a press on a GRAPH stats pane (not a mode:multi
+// list) stores the start column; a real drag (release at a different column) freezes
+// that time-range. Module-local, transient, mutually exclusive with _armedSelect (a
+// press arms one or the other by pane type).
+let _armedZoom = null;   // { paneId, startCol } | null
+
 // Is this pane a selection target? Not opted out via config (per-panel
 // `select:` / global default — panel/select-config).
 function _selectablePane(paneId) {
@@ -774,6 +780,23 @@ function handleMouse(kind, x, y) {
       }
       _armedSelect = null;
     }
+    // Drag-to-zoom commit: a real drag across a graph freezes that column range
+    // (docs/STATS.md §10). The frozen snapshot is computed by stats.freezeRange (an
+    // impure read of the live series) and handed to the `graph_zoom` reducer as DATA;
+    // a click / too-small drag yields null → no zoom.
+    if (_armedZoom) {
+      const az = _armedZoom; _armedZoom = null;
+      const cc = _contentCoordsAt(az.paneId, mx, my, true);   // clamp past-edge to the nearest col
+      if (cc) {
+        const ls = getInstanceSlice('layout');
+        const panel = allPanels().find((p) => p.paneId === az.paneId);
+        const b = panel && visibleBoundsFor(ls, az.paneId, route.resolveViewerPaneId());
+        if (panel && b) {
+          const frozen = require('../../panel/monitor/stats').freezeRange(panel, b.w - 2, az.startCol, cc.col);
+          if (frozen) { dispatchMsg(wrap('layout', { type: 'graph_zoom', paneId: az.paneId, frozen })); render(); }
+        }
+      }
+    }
     return;
   }
 
@@ -787,6 +810,7 @@ function handleMouse(kind, x, y) {
   // leave a stale arm that a later motion would begin. The body loop's
   // "Other panels" arm re-sets it when the press lands on a selectable pane.
   _armedSelect = null;
+  _armedZoom = null;
 
   // Tree fold marker (`▾`/`▸`) — a CONTENT-ROW affordance, so it resolves HERE at
   // body precedence, NOT in the border-chrome cluster above: that cluster runs
@@ -868,6 +892,13 @@ function handleMouse(kind, x, y) {
     if (def && typeof def.getItems === 'function') {
       const idx = _rowIndexAt(p.paneId, b, my);
       if (idx >= 0 && idx < getItems(p.paneId).length) navIdx = idx;
+    }
+    // Drag-to-zoom arm: a press on a GRAPH stats pane (sectioned/overlay — getItems
+    // empty, so NOT a mode:multi list) stores the start column; the release freezes the
+    // dragged range (docs/STATS.md §10). A mode:multi pane is a row list → it selects.
+    if (p.type === 'stats' && getItems(p.paneId).length === 0) {
+      const cc = _contentCoordsAt(p.paneId, mx, my);
+      if (cc) _armedZoom = { paneId: p.paneId, startCol: cc.col };
     }
     // v0.6.4 Theme F Phase 2 — the spatial resolution above stays here
     // (which pane, which row); the focus + select now route through the

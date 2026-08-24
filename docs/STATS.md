@@ -392,7 +392,14 @@ Run via `node js/scripts/run-tests.js -q`.
       Geometry is single-sourced through `_multiLayout` so the read can't drift from the
       paint. (Value-only — no per-column highlight, as the rows are independent
       sparklines sharing an offset.)
-  - **Drag-to-zoom** stays deferred.
+  - ~~**Drag-to-zoom** stays deferred.~~ **SHIPPED** (follow-on): press-drag across a
+    standalone sectioned / `select_from` graph to FREEZE that time-range — the drag is
+    snapshotted on release (so it survives the live window aging out) and rendered
+    STRETCHED to the full width (nearest-neighbour resample); hover on a zoomed graph
+    reads the frozen samples (the `_resolveSeries(spec, innerW)` seam keeps zoom + hover
+    in agreement). A `⤢ 1:1` border chip (self-suppresses unless zoomed) resets to live.
+    Sectioned + overlay; not `mode: multi` (a row list). Deferred: a live drag-band
+    highlight, and zoom on composite widgets.
 - ~~**Multi-line overlay.** "All containers, one line each."~~ Shipped as
   `mode: multi` (§3 YAML contract) — one height-1 sparkline per row of the
   topic, sorted by latest value.

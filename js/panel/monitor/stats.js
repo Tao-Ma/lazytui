@@ -23,7 +23,7 @@
 const { getModel } = require('../../model/store');
 const {
   esc, theme, gradient, renderPanel, visibleLen, wrapColor,
-  getItems: apiGetItems, getInstanceSlice, getSel, getScroll, sliceForPane,
+  getItems: apiGetItems, getInstanceSlice, getSel, getScroll, sliceForPane, borderControlsFor,
 } = require('../api');
 const hoverRegion = require('../hover-region');
 const { truncate } = require('../../leaves/render/draw');
@@ -149,23 +149,35 @@ function renderBody(spec, innerW, innerH, hoverCol = -1, ctx = null) {
   // `graph` widget too).
   if (spec.mode === 'multi') return _renderMulti(spec, metric, schema, innerW, innerH, window, dim, ctx);
 
-  if (!spec.select_from && spec.row == null && !spec.aggregate) {
-    return dim('(stats panel needs topic + select_from / row / aggregate)');
-  }
-
-  // `aggregate:` folds ALL rows into one synthetic series (no cursor); otherwise
-  // follow the select_from cursor / static row, sliced to this pane's window.
   let samples;
   let rowKey = '_';
-  if (spec.aggregate) {
-    samples = _aggregateSamples((metric && metric.series) || {}, schema, window, spec.aggregate);
+  let metrics;
+  // Drag-to-zoom (docs/STATS.md §10): a FROZEN pane renders its captured sub-range
+  // STRETCHED across the full width instead of the live window. Resolve it FIRST so a
+  // frozen `select_from` pane keeps showing the snapshot even after its source loses
+  // the selection. Swapping `samples` for the resampled snapshot leaves every downstream
+  // step (rasterize / section walk / valueAt) unchanged. Sectioned + overlay; not multi.
+  const frozen = _zoomFrozen(spec);
+  if (frozen) {
+    samples = _resampleFrozen(frozen, innerW * (spec.graph === 'blocks' ? 1 : 2));
+    metrics = (frozen.metrics && frozen.metrics.length) ? frozen.metrics : _defaultMetrics(schema);
+    rowKey = frozen.rowKey || '_';
   } else {
-    rowKey = _resolveSelection(spec);
-    if (!rowKey) return dim('(no selection)');
-    samples = ((metric && metric.series[rowKey]) || []).slice(-window);
+    if (!spec.select_from && spec.row == null && !spec.aggregate) {
+      return dim('(stats panel needs topic + select_from / row / aggregate)');
+    }
+    // `aggregate:` folds ALL rows into one synthetic series (no cursor); otherwise
+    // follow the select_from cursor / static row, sliced to this pane's window.
+    if (spec.aggregate) {
+      samples = _aggregateSamples((metric && metric.series) || {}, schema, window, spec.aggregate);
+    } else {
+      rowKey = _resolveSelection(spec);
+      if (!rowKey) return dim('(no selection)');
+      samples = ((metric && metric.series[rowKey]) || []).slice(-window);
+    }
+    metrics = spec.metrics || _defaultMetrics(schema);
   }
   if (!samples.length) return dim('(no data yet)');
-  const metrics = spec.metrics || _defaultMetrics(schema);
   if (!metrics.length) return dim('(no graphable metrics)');
 
   // Graph style: braille by default, `graph: blocks` opts out (P4 — a plain
@@ -522,16 +534,64 @@ function _aggregateSamples(series, schema, window, mode) {
   return out;
 }
 
+// A pane's FROZEN zoom snapshot (docs/STATS.md §10) or null. Only standalone panes
+// (a real paneId) can be zoomed; a composite widget's spec has none.
+function _zoomFrozen(spec) {
+  const paneId = spec && spec.paneId;
+  if (paneId == null) return null;
+  const layout = getInstanceSlice('layout');
+  const z = layout && layout.zoom;
+  return (z && z[paneId]) || null;
+}
+
+// Stretch/shrink a frozen snapshot's dragged sub-range across `targetLen` slots by
+// nearest-neighbour, so a narrow drag fills the width (zoom-IN). Returns sample objects.
+function _resampleFrozen(frozen, targetLen) {
+  const sub = frozen.samples.slice(frozen.start, frozen.end + 1);
+  if (!sub.length || targetLen < 1) return sub;
+  return Array.from({ length: targetLen }, (_x, i) => sub[Math.floor(i * sub.length / targetLen)]);
+}
+
+// Reset-zoom border chip (docs/STATS.md §10) — shown ONLY on a zoomed pane. One
+// clickable region → the `reset` action → a `graph_zoom` clear routed to the layout
+// reducer (owner: 'layout'), returning the pane to the live window. Same border-control
+// facility as the composite cycler / table sort selector (paint ↔ hit-test single source).
+const _RESET_TEXT = '⤢ 1:1';
+const _zoomResetControl = {
+  id: 'zoom-reset',
+  slot: 'top',
+  render(model, pane) {
+    if (model && model.modes && model.modes.freeConfigMode) return null;
+    if (!_zoomFrozen({ paneId: pane.paneId })) return null;
+    return { text: `[accent]${_RESET_TEXT}[/]`, visibleW: visibleLen(_RESET_TEXT) };
+  },
+  regions(x0, y, visibleW) {
+    return [{ x0, x1: x0 + visibleW - 1, y, action: 'reset' }];
+  },
+  dispatch(_action, pane) {
+    return { owner: 'layout', msg: { type: 'graph_zoom', paneId: pane.paneId, frozen: null } };
+  },
+};
+
 // Resolve a NON-multi graph's series (the same steps renderBody uses): the samples
 // array (aggregate / select_from cursor / static row, sliced to window) + the metric
 // list + schema. null when there's nothing to graph. valueAt uses this so the hover
 // value maps the SAME samples the graph drew; renderBody keeps its own inline version
 // (which carries the distinct per-case dim messages). Both call the same building
-// blocks (_aggregateSamples / _resolveSelection / _defaultMetrics).
-function _resolveSeries(spec) {
-  const window = spec.window || 40;
+// blocks (_aggregateSamples / _resolveSelection / _defaultMetrics). When `innerW` is
+// passed AND the pane is zoomed, returns the resampled frozen snapshot instead (so hover
+// reads the same stretched samples the graph drew) — the seam that keeps zoom + hover in
+// agreement.
+function _resolveSeries(spec, innerW) {
   const metric = getModel().metrics[spec.topic];
   const schema = (metric && metric.schema) || { columns: {} };
+  const frozen = (innerW != null) ? _zoomFrozen(spec) : null;
+  if (frozen) {
+    const samples = _resampleFrozen(frozen, innerW * (spec.graph === 'blocks' ? 1 : 2));
+    const metrics = (frozen.metrics && frozen.metrics.length) ? frozen.metrics : _defaultMetrics(schema);
+    return (samples.length && metrics.length) ? { samples, metrics, schema } : null;
+  }
+  const window = spec.window || 40;
   let samples;
   if (spec.aggregate) {
     samples = _aggregateSamples((metric && metric.series) || {}, schema, window, spec.aggregate);
@@ -544,6 +604,30 @@ function _resolveSeries(spec) {
   const metrics = spec.metrics || _defaultMetrics(schema);
   if (!metrics.length) return null;
   return { samples, metrics, schema };
+}
+
+// Compute a FROZEN zoom snapshot from a drag [startCol,endCol] on a pane — the impure
+// read the input shell runs on release, handed to the `graph_zoom` reducer as DATA.
+// Maps the two columns → sample indices via the SAME _cut front-pad the rasterizer uses,
+// captures the current resolved series + the range, or null for a click / degenerate
+// drag / a non-sectioned pane. (Overlay is included — it resolves via _resolveSeries;
+// multi is not.)
+function freezeRange(spec, innerW, startCol, endCol) {
+  if (!spec || !spec.topic || spec.mode === 'multi') return null;
+  const resolved = _resolveSeries(spec);   // LIVE (no innerW → ignore any existing zoom)
+  if (!resolved) return null;
+  const { samples, metrics } = resolved;
+  const group = spec.graph === 'blocks' ? 1 : 2;
+  const cutLen = innerW * group;
+  const idxAt = (col) => {
+    const i = samples.length - cutLen + (group === 2 ? col * 2 + 1 : col);
+    return Math.max(0, Math.min(samples.length - 1, i));
+  };
+  const a = idxAt(Math.min(startCol, endCol));
+  const b = idxAt(Math.max(startCol, endCol));
+  if (b - a < 1) return null;   // a click or a range too small to zoom
+  const rowKey = spec.aggregate ? '_' : _resolveSelection(spec);
+  return { samples, start: a, end: b, metrics, rowKey: rowKey || '_' };
 }
 
 // The value under a hovered body cell (Phase 2, hover-for-value). Given the pane
@@ -561,7 +645,7 @@ function valueAt(spec, innerW, innerH, col, row) {
   if (!(col >= 0 && col < innerW) || !(row >= 0)) return null;
   if (spec.mode === 'multi') return _valueAtMulti(spec, innerW, innerH, col, row);
   if (spec.overlay) return _valueAtOverlay(spec, innerW, innerH, col, row);
-  const resolved = _resolveSeries(spec);
+  const resolved = _resolveSeries(spec, innerW);   // innerW → zoom-aware (frozen when zoomed)
   if (!resolved) return null;
   const { samples, metrics, schema } = resolved;
 
@@ -621,7 +705,7 @@ function _hitAt(values, width, col, group = 2) {
 function _valueAtOverlay(spec, innerW, innerH, col, row) {
   const graphH = innerH - 1;                              // 1 legend row (matches renderBody)
   if (graphH < 2 || !(row >= 1 && row < 1 + graphH)) return null;
-  const resolved = _resolveSeries(spec);
+  const resolved = _resolveSeries(spec, innerW);         // zoom-aware
   if (!resolved) return null;
   const { samples, metrics, schema } = resolved;
   const cols = schema.columns || {};
@@ -706,6 +790,8 @@ function render(panel, w, h, _slice, opts) {
   // A selectable multi list reports windowed paint (count + scrollbar + click scroll);
   // every other stats shape draws a plain box (renderPanel defaults).
   const windowed = ctx && body.rowCount > 0;
+  // Border controls — the reset-zoom chip (self-suppresses unless the pane is zoomed).
+  const ctl = borderControlsFor({ paneId: panel.paneId, type: 'stats', focused, innerW: w - 2 }, getModel());
   return renderPanel({
     width: w, height: h, lines,
     // Single-stream topics use the sentinel rowKey '_' (no entity to name) — show
@@ -716,6 +802,7 @@ function render(panel, w, h, _slice, opts) {
     panelType: 'stats',
     focused,
     chrome,
+    topControls: ctl.map((c) => c.text),
     windowed: windowed || undefined,
     count: windowed ? [body.sel + 1, body.rowCount] : undefined,
     scrollOffset: windowed ? body.scroll : undefined,
@@ -784,6 +871,7 @@ module.exports = {
       getItems,
       getInfo,
       idOf: (rowKey) => String(rowKey),
+      borderControls: [_zoomResetControl],   // reset-zoom chip (self-suppresses unless zoomed)
     },
   },
   // Border-less body reused by the `composite` panel (docs/compact-panes.md).
@@ -803,4 +891,7 @@ module.exports = {
   valueAt,
   hoverText,
   hoverRecord,
+  freezeRange,
+  _zoomFrozen,
+  _resampleFrozen,
 };

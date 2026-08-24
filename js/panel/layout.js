@@ -271,6 +271,12 @@ function init() {
     // from the input layer's all-motion (mode 1003) hover path. The value is derived
     // at paint (stats.render → hover-region), never stored here.
     hover: null,
+    // Drag-to-zoom (docs/STATS.md §10). `zoom` maps paneId → a FROZEN snapshot
+    // `{ samples, start, end, metrics, rowKey }` (the resolved series + the dragged
+    // index range, captured on release so it survives the live window aging out); a
+    // zoomed pane renders + hovers that snapshot STRETCHED to width until reset. (A
+    // live drag-band highlight is a deferred follow-on — v1 commits on release.)
+    zoom: {},
   };
 }
 
@@ -333,6 +339,18 @@ function update(msg, slice) {
       if (!h && !cur) return slice;
       if (h && cur && h.paneId === cur.paneId && h.col === cur.col && h.row === cur.row && h.x === cur.x && h.y === cur.y) return slice;
       return { ...slice, hover: h };
+    }
+    // Drag-to-zoom (docs/STATS.md §10). The input shell computes the FROZEN snapshot on
+    // release (an impure read of the live series, sliced to the dragged range) and hands
+    // it here as DATA — the reducer just stores it per pane (mirrors graph_hover's
+    // shell-computes-payload split). `frozen: null` resets that pane back to live.
+    case 'graph_zoom': {
+      const { paneId, frozen } = msg;
+      if (!paneId) return slice;
+      if (!frozen && !slice.zoom[paneId]) return slice;
+      const zoom = { ...slice.zoom };
+      if (frozen) zoom[paneId] = frozen; else delete zoom[paneId];
+      return { ...slice, zoom };
     }
     // viewMode. Each transition that actually changes the value asks
     // the effects layer for a full repaint — a view change re-exposes

@@ -752,7 +752,7 @@ and where it was pushed to."
 
 Owns the grid: `focus`, `viewMode`, `arrange` (columns/pool), `dims`,
 `freeConfig`, `halfView`, `paneMenu`, `panelList`, `bootWarnings`, `dirty`,
-`hover` (graph hover-for-value cursor). ~40
+`hover` (graph hover-for-value cursor), `zoom` (per-pane drag-to-zoom snapshots). ~40
 arms; `update` opens with a **notice auto-clear preface** (clears
 `freeConfig.notice` unless the arm will re-assert it or it's a continuous-motion
 Msg). **All arms pure** — every geometry/arrange transform delegates to a pure
@@ -778,6 +778,7 @@ via a `mode_set`/`mode_clear` Cmd.
 | `term_resized{cols,rows}` | `dims` | — | ✓³ |
 | `focus_set{focus,skipInfo?}` | focus ★w | `show_selected_info` (unless `skipInfo`) | ✓ |
 | `graph_hover{hover}` | `hover` (raw `{paneId,col,row,x,y}` or `null`; identity-preserved on an unchanged payload) | — | ✓⁰ |
+| `graph_zoom{paneId,frozen}` | `zoom[paneId]` (a FROZEN snapshot `{samples,start,end,metrics,rowKey}`, or delete when `frozen:null`) | — | ✓⁰ᵃ |
 
 **(b) Pane-menu (`[≡]`) + pane-select swap**
 
@@ -820,6 +821,11 @@ via a `mode_set`/`mode_clear` Cmd.
   ONLY on cell-change (coalesced). The arm just stores the raw position; the VALUE is
   derived at paint by the pane's render (`stats.valueAt` → `panel/hover-region.js`),
   which the footer + cursor tooltip read. See STATS.md §10.
+⁰ᵃ Drag-to-zoom (STATS.md §10). The input shell arms a start column on press and, on
+  release, computes the FROZEN snapshot (`stats.freezeRange` — an impure read of the live
+  series, sliced to the dragged range) and hands it here as DATA; the reducer just stores
+  it per pane (shell-computes-payload, like graph_hover). renderBody/valueAt render + hover
+  the resampled snapshot; the `⤢ 1:1` reset chip re-fires with `frozen:null` (owner: layout).
 ¹ `msg.freeConfigMode` threaded by `handleAction` (decides whether to refuse).
 ² `msg.viewerPaneId` threaded by the dispatch shell (for the half-view projection).
 ³ **The single writer of `dims`** (resize-as-Msg). The stdout `'resize'` listener

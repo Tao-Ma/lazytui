@@ -27,6 +27,13 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   uses the cursor). The host-monitor demo re-adds a selectable **CPU trend** overview that
   drives the **Selected** drill-down.
 
+- **Drag-to-zoom on graphs.** Press-drag across a standalone `stats` graph (sectioned or
+  `select_from`) to FREEZE that time-range: the drag is snapshotted on release (so it
+  survives the live window aging out) and rendered STRETCHED to the full width; hovering a
+  zoomed graph reads the frozen samples. A `⤢ 1:1` border chip (shown only when zoomed)
+  resets to live. Not `mode: multi` (a row list). A live drag-band highlight + composite-
+  widget zoom are deferred.
+
 ### Changed
 
 - **Host-monitor demo: network graphs fill their width.** The `net_box` up/down graphs
