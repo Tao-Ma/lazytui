@@ -94,19 +94,19 @@ describe('[host-monitor] composite dashboard + density', () => {
     // the overlay feature itself is covered by test-render-body / test-stats.)
     assert(widgets.some(w => w.type === 'meter'), 'a meter widget (fullest disk)');
     assert(widgets.some(w => w.type === 'bars' && w.interactive === true), 'an interactive bars widget (disk cursor)');
-    // The selected-process drill-down is a MULTI-METRIC select_from stats pane
-    // (cpu/mem/rss history for whichever row the procs table has selected) — the
-    // stats-interactivity read that replaced the display-only mode:multi trend wall
-    // (removed because it looked selectable but wasn't and only spanned a stub of
-    // history; the drill-down turns the table's own selection into real multi-stat
-    // history). mode:multi itself stays covered by test-render-body / test-stats.
+    // The CPU-trend overview is a SELECTABLE `mode: multi` pane (re-added by the stats-
+    // interactivity follow-on — it now owns a row cursor + is a select_from source,
+    // unlike the v0.6.18 display-only wall that was removed for looking selectable but
+    // not being it). It DRIVES the multi-metric drill-down: procsel (select_from:
+    // proctrend) graphs cpu/mem/rss history for whichever row the overview has selected.
+    assert(panes.some(p => p.type === 'stats' && p.mode === 'multi'), 'a selectable mode:multi overview (proctrend)');
     const drill = panes.find(p => p.type === 'stats' && p.select_from
       && Array.isArray(p.metrics) && p.metrics.length >= 2);
     assert(drill, 'a multi-metric select_from drill-down (procsel: cpu/mem/rss)');
   });
 
-  it('density: the reshape holds the placed-pane count btop-low (12 → 8; a mode:multi trend pane was briefly +1, then removed)', () => {
-    assert(panes.length <= 8, `expected ≤8 placed panes, got ${panes.length}: ${panes.map(p => p.paneId).join(',')}`);
+  it('density: the reshape holds the placed-pane count btop-low (12 → 9; the selectable mode:multi overview re-added)', () => {
+    assert(panes.length <= 9, `expected ≤9 placed panes, got ${panes.length}: ${panes.map(p => p.paneId).join(',')}`);
   });
 
   it('no metrics pane sits in a multi-tab slot (no phantom tab strip / misrouted click)', () => {
@@ -164,11 +164,13 @@ describe('[host-monitor] select_from drill-downs resolve their intended table', 
       'both bare pool-ids collapse to the same primary table');
   });
 
-  it('procsel (select_from: procs) reads the PROCESS rows via the resolved pane', () => {
+  it('procsel (select_from: proctrend) reads the PROCESS rows via the resolved pane', () => {
     const procsel = placedPanes().find(pn => pn.type === 'stats' && pn.select_from);
-    eq(procsel.select_from, 'procs');
-    const items = api.getItems(route.resolveSourcePaneId(procsel.select_from));   // exactly what stats._resolveSelection reads
-    assert(items.includes('404185'), `procsel resolves host.proc rows (got ${JSON.stringify(items)})`);
+    eq(procsel.select_from, 'proctrend');
+    // proctrend is a mode:multi host.proc pane → its getItems is the process rows (pids);
+    // this is exactly what stats._resolveSelection reads to follow the overview's cursor.
+    const items = api.getItems(route.resolveSourcePaneId(procsel.select_from));
+    assert(items.includes('404185'), `procsel resolves host.proc rows via proctrend (got ${JSON.stringify(items)})`);
     assert(!items.includes('vda'), 'must NOT be the diskio rows');
   });
 });

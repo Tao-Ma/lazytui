@@ -19,12 +19,23 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   - **`mode: multi`** shows the hovered ROW's value (`node12 62.0%`); off the sparkline
     (the label / value gutter) resolves to nothing.
 
+- **`mode: multi` per-row selection.** A `mode: multi` stats pane (per-row sparklines) is
+  now SELECTABLE like `gauge`: `j`/`k` and click move a row cursor, the selected row
+  highlights (scroll-follows past the viewport), and the pane is a `select_from` source +
+  feeds the Info detail card. So a compact per-process sparkline list can drive a
+  drill-down. `stats` stays effectively stateless for every other shape (only `mode: multi`
+  uses the cursor). The host-monitor demo re-adds a selectable **CPU trend** overview that
+  drives the **Selected** drill-down.
+
 ### Changed
 
 - **Host-monitor demo: network graphs fill their width.** The `net_box` up/down graphs
   now set `window: 180` (~6 min at the 2s net poll), so the trace fills the pane instead
   of leaving the right two-thirds empty on a wide terminal — the same fix `procsel`
   already had (`window: 120`), scaled for `host.net`'s faster poll.
+- **Host-monitor demo layout.** Re-added the `mode: multi` **CPU trend** overview (col 2,
+  above the drill-down it now drives); moved the **Disk I/O** table to col 3 to keep the
+  Network box its full height. `procsel` now follows `proctrend` (overview → drill).
 
 ## [0.6.24] — 2026-08-23
 

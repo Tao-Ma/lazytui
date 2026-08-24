@@ -140,6 +140,47 @@ describe('[renderBody] stats — multi mode (one sparkline per row)', () => {
   });
 });
 
+describe('[renderBody] stats — mode:multi row SELECTION (j/k cursor)', () => {
+  setMetric('t.sel',
+    { p1: [{ cpu: 30 }], p2: [{ cpu: 90 }], p3: [{ cpu: 50 }] }, { cpu: { type: 'percent' } });
+  const spec = { topic: 't.sel', mode: 'multi', column: 'cpu' };   // sorted desc: p2, p3, p1
+
+  it('getItems returns the sorted row keys for a mode:multi slice; [] otherwise', () => {
+    eq(stats.getItems({ mode: 'multi', topic: 't.sel', column: 'cpu' }), ['p2', 'p3', 'p1'], 'sorted desc by latest');
+    eq(stats.getItems({ mode: 'multi', topic: 't.sel', column: 'cpu', sort_dir: 'asc' }), ['p1', 'p3', 'p2'], 'asc flips');
+    eq(stats.getItems({ topic: 't.sel', column: 'cpu' }), [], 'non-multi stats pane exposes no rows');
+    eq(stats.getItems({ mode: 'multi', topic: 't.none' }), [], 'empty topic → no rows');
+  });
+
+  it('ctx cursor highlights ONLY the selected row (focused), leaving the rest plain', () => {
+    const disp = stats.renderBody(spec, 40, 10, -1, null).lines;                    // display mode
+    const sel0 = stats.renderBody(spec, 40, 10, -1, { sel: 0, scroll: 0, focused: true }).lines;
+    assert(sel0[0] !== disp[0], 'selected row 0 is highlighted (differs from display)');
+    eq(sel0[1], disp[1], 'unselected row 1 unchanged');
+    eq(sel0[2], disp[2], 'unselected row 2 unchanged');
+    // Cursor on a different row moves the highlight.
+    const sel1 = stats.renderBody(spec, 40, 10, -1, { sel: 1, scroll: 0, focused: true }).lines;
+    eq(sel1[0], disp[0], 'row 0 no longer highlighted');
+    assert(sel1[1] !== disp[1], 'row 1 now highlighted');
+  });
+
+  it('unfocused → no highlight even with a cursor (matches gauge)', () => {
+    const disp = stats.renderBody(spec, 40, 10, -1, null).lines;
+    const sel0 = stats.renderBody(spec, 40, 10, -1, { sel: 0, scroll: 0, focused: false }).lines;
+    eq(sel0[0], disp[0], 'no highlight when the pane is not focused');
+  });
+
+  it('scroll follows the cursor past the viewport (selected row stays visible)', () => {
+    // innerH 2, 3 rows, cursor on the last row (index 2) → scroll to 1 → rows p3, p1.
+    const body = stats.renderBody(spec, 40, 2, -1, { sel: 2, scroll: 0, focused: true });
+    eq(body.lines.length, 2, 'viewport is innerH rows');
+    eq(body.rowCount, 3, 'reports the full row count');
+    eq(body.scroll, 1, 'scrolled so the selected row is in view');
+    eq(body.sel, 2, 'clamped selection');
+    assert(body.lines[1].includes('p1'), `selected (last) row visible, got ${JSON.stringify(body.lines[1])}`);
+  });
+});
+
 describe('[renderBody] gauge — display mode vs interactive cursor', () => {
   setMetric('t.proc',
     { a: [{ cpu: 10, comm: 'a' }], b: [{ cpu: 90, comm: 'b' }], c: [{ cpu: 50, comm: 'c' }] },

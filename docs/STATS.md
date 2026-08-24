@@ -395,6 +395,14 @@ Run via `node js/scripts/run-tests.js -q`.
   - **Drag-to-zoom** stays deferred.
 - ~~**Multi-line overlay.** "All containers, one line each."~~ Shipped as
   `mode: multi` (§3 YAML contract) — one height-1 sparkline per row of the
-  topic, sorted by latest value. Display-only in v1 (no per-row cursor yet).
+  topic, sorted by latest value.
+  - ~~Display-only (no per-row cursor).~~ **Now SELECTABLE** (follow-on): a `mode: multi`
+    pane owns a row cursor exactly like `gauge` — `j`/`k` + click move it, the selected
+    row highlights (scroll-follows past the viewport), and the pane is a `select_from`
+    SOURCE + feeds the Info detail card (`getItems`/`getInfo`). `stats` stays effectively
+    stateless everywhere else — only `mode: multi` uses the nav slice (sectioned/overlay
+    panes carry an inert cursor, `getItems` → `[]`). The row SET is single-sourced through
+    `_multiRows` so selection can't drift from the paint. Standalone panes only (a
+    composite's interactive widget stays `bars`).
 - **Faster docker stats poll.** Currently 10s. A stats-only fast poll
   is a separate concern from the panel itself.

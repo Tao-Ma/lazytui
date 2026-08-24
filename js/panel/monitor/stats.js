@@ -22,12 +22,14 @@
 
 const { getModel } = require('../../model/store');
 const {
-  esc, theme, gradient, renderPanel, visibleLen,
-  getItems: apiGetItems, getInstanceSlice,
+  esc, theme, gradient, renderPanel, visibleLen, wrapColor,
+  getItems: apiGetItems, getInstanceSlice, getSel, getScroll, sliceForPane,
 } = require('../api');
 const hoverRegion = require('../hover-region');
 const { truncate } = require('../../leaves/render/draw');
 const { fmt: _fmtCell } = require('../../leaves/metrics/format');   // shared compact cell formatter (see gauge/table)
+const { rowInfo } = require('../../leaves/metrics/row-info');       // shared row → detail-card projection (gauge/table)
+const mnav = require('../../leaves/wm/nav');                        // shared cursor/scroll reducer (mode:multi selection)
 const { rasterize, rasterizeBraille, rasterizeBrailleMulti, columnNorms, colorizeRows, colorizeOverlay, colorizeByHeight, quantizeNorm, meterRow } = require('./stats-graph');
 
 // Distinct-hue palette for overlaid series (net up/down, etc.) — semantic theme
@@ -130,7 +132,7 @@ function _resolveSelection(panel) {
 // message (so the wrapper draws a bordered box either way). Pure of chrome/focus:
 // the height-mapped graph colour doesn't depend on focus. `spec` is the pane/widget
 // config (topic, row/select_from/aggregate, metrics, window, graph, graph_color).
-function renderBody(spec, innerW, innerH, hoverCol = -1) {
+function renderBody(spec, innerW, innerH, hoverCol = -1, ctx = null) {
   const t = theme();
   const dim = (msg) => ({ lines: [`[${t.dim}]${esc(msg)}[/]`], rowKey: '_' });
   if (!spec.topic) {
@@ -145,7 +147,7 @@ function renderBody(spec, innerW, innerH, hoverCol = -1) {
   // needs only a topic — no select_from / row / aggregate — so it branches ahead of
   // that guard. See docs/STATS.md + docs/compact-panes.md (works as a composite
   // `graph` widget too).
-  if (spec.mode === 'multi') return _renderMulti(spec, metric, schema, innerW, innerH, window, dim);
+  if (spec.mode === 'multi') return _renderMulti(spec, metric, schema, innerW, innerH, window, dim, ctx);
 
   if (!spec.select_from && spec.row == null && !spec.aggregate) {
     return dim('(stats panel needs topic + select_from / row / aggregate)');
@@ -239,14 +241,11 @@ const _MULTI_VALUE_W = 8;   // right-hand current-value column (matches gauge's)
  * `column:` picks the metric to sparkline (default: the first graphable column);
  * `label:` names a string column for the row label (default: the row key).
  */
-// Multi-mode GEOMETRY — the sorted rows + label/spark column budget, single-sourced
-// so `_renderMulti` (paint) and `_valueAtMulti` (hover read) can't drift (the
-// paint↔read agreement, reference_paint_hittest_agreement, applied to a derived
-// value). Returns `{ ok: false, reason }` on the empty states (the renderer maps
-// each reason to its dim message; the hover read just treats any non-ok as null).
-// Depends only on `spec` + `innerW` (row count viewport-slicing is the renderer's).
-function _multiLayout(spec, innerW) {
-  if (innerW < 1) return { ok: false, reason: 'small' };
+// Multi-mode ROWS — the sorted per-row series + scale, WIDTH-INDEPENDENT. Single-
+// sourced so the renderer, the hover read (`_valueAtMulti`), AND `getItems` (row
+// selection) all agree on the row SET + ORDER (the paint↔hittest agreement,
+// reference_paint_hittest_agreement). Returns `{ ok:false, reason }` on empty states.
+function _multiRows(spec) {
   const metric = getModel().metrics[spec.topic];
   const schema = (metric && metric.schema) || { columns: {} };
   const window = spec.window || 40;
@@ -285,15 +284,31 @@ function _multiLayout(spec, innerW) {
   if (type === 'percent') max = 100;
   else max = rows.reduce((m, r) => r.vals.reduce((mm, v) => (Number.isFinite(v) && v > mm ? v : mm), m), 1);
 
+  return { ok: true, rows, min, max, type, col };
+}
+
+// Multi-mode GEOMETRY — `_multiRows` PLUS the label/spark column budget (needs `innerW`).
+// Used by the renderer + the hover read; `getItems` uses `_multiRows` directly (the row
+// SET is width-independent). Returns `{ ok:false, reason }` on the empty states.
+function _multiLayout(spec, innerW) {
+  if (innerW < 1) return { ok: false, reason: 'small' };
+  const base = _multiRows(spec);
+  if (!base.ok) return base;
+  const { rows } = base;
   // Widths: label left (capped + truncated), value right (fixed), sparkline fills the
   // middle — the same budget the `bars` gauge uses, so composites line up.
   const maxLabel = rows.reduce((m, r) => Math.max(m, visibleLen(esc(r.label))), 3);
   const labelW = Math.max(3, Math.min(16, maxLabel, innerW - _MULTI_VALUE_W - 3));
   const sparkW = Math.max(1, innerW - labelW - _MULTI_VALUE_W - 2);   // two single-space gaps
-  return { ok: true, rows, labelW, sparkW, min, max, type, col };
+  return { ...base, labelW, sparkW };
 }
 
-function _renderMulti(spec, metric, schema, innerW, innerH, window, dim) {
+// `ctx` (STANDALONE pane only): { sel, scroll, focused } — the live cursor for row
+// SELECTION. Present → interactive: clamp + windowed scroll + highlight the selected
+// row (exactly gauge's model). Absent (composite widget / no cursor) → DISPLAY mode:
+// the top `innerH` rows, no highlight. Returns rowCount/sel/scroll so `render` can
+// draw the `N of M` count + scrollbar and click hit-testing reads the painted scroll.
+function _renderMulti(spec, metric, schema, innerW, innerH, window, dim, ctx) {
   if (innerH < 1) return dim('(panel too small)');
   const lay = _multiLayout(spec, innerW);
   if (!lay.ok) {
@@ -308,16 +323,33 @@ function _renderMulti(spec, metric, schema, innerW, innerH, window, dim) {
     return right ? pad + s : s + pad;
   };
 
-  const lines = rows.slice(0, innerH).map((r) => {
+  // Cursor + scroll (mirrors gauge.renderBody): getSel isn't re-clamped on row-shrink,
+  // so clamp here; keep the selected row inside the viewport.
+  const t = theme();
+  const interactive = !!ctx && Number.isFinite(ctx.sel);
+  const focused = !!(ctx && ctx.focused);
+  let sel = interactive ? Math.max(0, Math.min(ctx.sel, rows.length - 1)) : -1;
+  let scroll = interactive ? (ctx.scroll || 0) : 0;
+  if (interactive) {
+    if (sel < scroll) scroll = sel;
+    else if (sel >= scroll + innerH) scroll = sel - innerH + 1;
+    scroll = Math.max(0, Math.min(scroll, Math.max(0, rows.length - innerH)));
+  }
+
+  const lines = rows.slice(scroll, scroll + innerH).map((r, vi) => {
     const opts = { width: sparkW, height: 1, min, max };
     const norms = columnNorms(r.vals, { width: sparkW, min, max, group: 2 });
     const spark = colorizeRows(rasterizeBraille(r.vals, opts), norms,
       (n) => (Number.isFinite(n) ? gradient('percent', n) : null))[0] || ' '.repeat(sparkW);
     const label = cell(esc(r.label), labelW, false);
     const value = cell(esc(_fmtCell(r.latest, type || 'number')), _MULTI_VALUE_W, true);
-    return `${label} ${spark} ${value}`;
+    const line = `${label} ${spark} ${value}`;
+    // Selected row: tint the whole row with `selected` while KEEPING the sparkline
+    // gradient (wrapColor re-opens the slot after each inner [/]; a fg-only gradient
+    // rides the selection bg) — the same treatment as the gauge selected bar.
+    return (interactive && scroll + vi === sel && focused) ? wrapColor(t.selected, line) : line;
   });
-  return { lines, rowKey: '_' };
+  return { lines, rowKey: '_', rowCount: rows.length, sel: interactive ? sel : 0, scroll };
 }
 
 // Wrap the glyph at VISIBLE column `visCol` of a colorized graph row in a highlight
@@ -654,9 +686,9 @@ function _resolveHover(panel, innerW, innerH) {
 
 function render(panel, w, h, _slice, opts) {
   const chrome = opts && opts.chrome;
-  // v0.6.4 Theme A Phase 5 — per-pane focus (opts.focused). stats reads
-  // ANOTHER pane's cursor via panel.select_from (cross-pane by design),
-  // so its own slice is empty; only the focus flag is per-pane here.
+  // v0.6.4 Theme A Phase 5 — per-pane focus (opts.focused). A sectioned/overlay stats
+  // reads ANOTHER pane's cursor via panel.select_from (cross-pane by design); only
+  // `mode: multi` owns its OWN row cursor (interactive selection), threaded below.
   const focused = !!(opts && opts.focused);
   // Finding B — renderBody reads the store-mirror'd model.metrics[topic] (kept
   // current by the metrics-mirror Sub), so this is a pure render over the model.
@@ -664,8 +696,16 @@ function render(panel, w, h, _slice, opts) {
   // highlight in the graph + the value record to publish to the per-frame hover-region
   // (read by the footer + the cursor tooltip, both painted after the pane pass).
   const hover = _resolveHover(panel, w - 2, h - 2);
-  const { lines, rowKey } = renderBody(panel, w - 2, h - 2, hover ? hover.col : -1);
+  // `mode: multi` selection: thread this pane's live cursor (getSel/getScroll) so the
+  // selected row highlights + scrolls, and click hit-testing reads the painted scroll.
+  const ctx = (panel.mode === 'multi' && panel.paneId != null)
+    ? { sel: getSel(panel.paneId), scroll: getScroll(panel.paneId), focused } : null;
+  const body = renderBody(panel, w - 2, h - 2, hover ? hover.col : -1, ctx);
+  const { lines, rowKey } = body;
   if (hover) hoverRegion.publish(hover.record);
+  // A selectable multi list reports windowed paint (count + scrollbar + click scroll);
+  // every other stats shape draws a plain box (renderPanel defaults).
+  const windowed = ctx && body.rowCount > 0;
   return renderPanel({
     width: w, height: h, lines,
     // Single-stream topics use the sentinel rowKey '_' (no entity to name) — show
@@ -676,28 +716,80 @@ function render(panel, w, h, _slice, opts) {
     panelType: 'stats',
     focused,
     chrome,
+    windowed: windowed || undefined,
+    count: windowed ? [body.sel + 1, body.rowCount] : undefined,
+    scrollOffset: windowed ? body.scroll : undefined,
   });
 }
 
-// Stateless Component — `stats` is a pure render over model.metrics[topic]
-// (v0.6.6 Finding B; the `metrics-mirror` Sub samples docker.js's hub time series
-// into the model). It owns no slice of its own — the empty slice + no-op update
-// are the API-uniformity cost; the series it renders is cross-cutting model
-// state. See docs/v0.5-layering.md + docs/v0.6.6.md §9.
+// Per-pane slice: a nav cursor for `mode: multi` row SELECTION. A sectioned/overlay/
+// aggregate stats pane carries an unused cursor (getItems → [] makes nav a no-op), so
+// it stays effectively stateless — the series it renders is still cross-cutting model
+// state read cross-pane. getItems reads the SLICE (all it's given), so the multi-row
+// fields `_multiRows` needs are hoisted here from the placed pane def.
+function init(paneId, seed) {
+  const pd = (seed && seed.paneDef) || {};
+  return {
+    nav: mnav.init(),
+    paneId: paneId == null ? undefined : paneId,
+    mode: pd.mode || null,
+    topic: pd.topic || null,
+    column: pd.column || null,
+    sort_dir: pd.sort_dir || null,
+    label: pd.label || null,
+    window: pd.window || null,
+  };
+}
+
+// Cursor + scroll are the only runtime state (mode:multi selection) — fold the nav
+// Msgs (set_cursor / set_scroll from nav_select + scroll). Everything else is a pure
+// render over model.metrics; a non-multi pane never gets nav Msgs (getItems → []).
+function update(msg, slice) {
+  if (mnav.isNavMsg(msg)) return mnav.apply(slice, msg);
+  return slice;
+}
+
+// getItems — the ORDERED row keys for a `mode: multi` pane (the selectable list; drives
+// the cursor bounds, click hit-testing, and a `select_from` follower). Empty for every
+// other stats shape, so they stay non-list. Row SET/ORDER is width-independent
+// (`_multiRows`), so it agrees with what the renderer paints.
+function getItems(slice) {
+  if (!slice || slice.mode !== 'multi' || !slice.topic) return [];
+  const base = _multiRows(slice);
+  return base.ok ? base.rows.map((r) => r.key) : [];
+}
+
+// getInfo — the SELECTED row's detail card (viewer Info tab), same shared `rowInfo`
+// projection as gauge/table so all three agree.
+function getInfo(rowKey, paneId) {
+  const slice = paneId != null ? sliceForPane(paneId, 'stats') : null;
+  const metric = getModel().metrics[(slice && slice.topic)];
+  return metric ? rowInfo(metric, rowKey) : [`row: ${rowKey}`];
+}
+
+// `stats` is a pure render over model.metrics[topic] (v0.6.6 Finding B; the
+// `metrics-mirror` Sub samples the hub time series into the model). Its ONLY runtime
+// state is the `mode: multi` row cursor (above) — a sectioned/overlay pane's cursor is
+// inert. See docs/v0.5-layering.md + docs/v0.6.6.md §9 + STATS.md.
 module.exports = {
   name: 'stats',
-  init: () => ({}),
-  update: (msg, slice) => slice,
+  init,
+  update,
   // v0.6.6 Finding B — declares a `metrics-mirror` Sub (pure projection of the
   // pane config); the framework reconciles it. See the `subscriptions` comment.
   subscriptions,
   panelTypes: {
     stats: {
       render,
+      getItems,
+      getInfo,
+      idOf: (rowKey) => String(rowKey),
     },
   },
   // Border-less body reused by the `composite` panel (docs/compact-panes.md).
   renderBody,
+  getItems,
+  _multiRows,
   // Test-only internals.
   _defaultMetrics,
   _aggregateSamples,

@@ -229,10 +229,10 @@ panels:
       - { type: graph, topic: host.net, select_from: net_box, metrics: [tx], window: 180, height: 31% }                               # ↑ rises, label on top
       - { type: graph, topic: host.net, select_from: net_box, metrics: [rx], window: 180, invert: true, header: bottom, flush: true, height: 31% }  # ↓ hangs, label below, seam flush
       - { type: bars,  topic: host.net, column: rx, heading: Iface rx/s, interactive: true }                             # the iface cursor (‹ eth0 › + j/k)
-  # The process TABLE — host.proc rows, sorted by CPU, SELECTABLE. This is the
-  # interactive surface: select a row → the Selected drill-down graphs its history
-  # and the Output pane's Info tab shows its detail card. FIRST table = the
-  # select_from primary.
+  # The process TABLE — host.proc rows, sorted by CPU, SELECTABLE + KILLABLE. The
+  # detailed columnar list: focus it and the Output pane's Info tab shows the selected
+  # process's full column set; `K` opens the signal picker. (The compact CPU-trend
+  # overview is the pane that drives the Selected drill-down; this is the actions list.)
   procs:
     type: table
     title: Processes
@@ -249,16 +249,30 @@ panels:
     topic: host.diskio
     columns: [read, write]
     sort: write
+  # Compact per-process CPU OVERVIEW — one braille sparkline per process (host.proc,
+  # `mode: multi`), sorted by CPU, and SELECTABLE (focus it, then j/k or click a row).
+  # The selected process drives the `Selected` drill-down below (`select_from`) and its
+  # detail card shows in the Output pane's Info tab. This is btop's "pick a process by
+  # its trend at a glance" surface; the Processes TABLE (col 3) is the detailed, killable
+  # list. `label: comm` names each row by command; `window: 60` (~3 min at the 3s poll).
+  proctrend:
+    type: stats
+    title: CPU trend
+    topic: host.proc
+    mode: multi
+    column: cpu
+    label: comm
+    window: 60
   # Drill-down: the SELECTED process's recent HISTORY — CPU%, MEM%, and RSS
   # (absolute memory footprint) as three stacked graphs, each with peak/avg. Follows
-  # the procs table's cursor (`select_from`), so picking a row there inspects it here;
-  # the full current-value column set still lives in the Info card. `window: 120`
-  # (~6 min at the 3s poll) fills the graph width instead of leaving a right-edge stub.
+  # the CPU-trend overview's cursor (`select_from: proctrend`) — pick a process in the
+  # sparkline list above and it inspects here; the full current-value column set lives
+  # in the Info card. `window: 120` (~6 min at the 3s poll) fills the graph width.
   procsel:
     type: stats
     title: Selected
     topic: host.proc
-    select_from: procs
+    select_from: proctrend
     window: 120
     metrics: [cpu, mem, rss]
   # The Output pane. Its Info tab is the process DETAIL CARD: focus the process
@@ -280,8 +294,8 @@ layout:
   # Content follows the width: the elastic last column holds the width-HUNGRY,
   # always-populated PROCESS TABLE (long command lines use the room) above actions +
   # Output — so the widest column is the busiest, not a mostly-empty drill-down.
-  # `select_from` resolves the SPECIFIC named pane (B-F3), so procsel follows procs
-  # cross-column. `actions` must sit in the LAST column (framework rule). A single-
+  # `select_from` resolves the SPECIFIC named pane (B-F3), so procsel follows proctrend
+  # cross-pane. `actions` must sit in the LAST column (framework rule). A single-
   # tab slot (`{tabs:[x]}`) renders no strip; a metrics pane in a MULTI-tab slot
   # would show invisible tabs, so each stays in its own slot.
   columns:
@@ -291,22 +305,22 @@ layout:
       panels:
         - cpu_box                       # composite: cpu graph + per-core bars
         - mem_box                       # composite: mem graph + disk-usage bars
-    # Col 2 — FLEX: the Network composite + the selected-process drill-down graph +
-    # the disk-I/O table. Shares the leftover with col 3.
+    # Col 2 — FLEX: the Network composite + the SELECTABLE CPU-trend overview + the
+    # drill-down it drives. Overview sits directly above its drill (pick a process
+    # above → inspect it below). Shares the leftover width with col 3.
     - width: flex
       panels:
-        # net_box carries the overlaid up/down graph — anchor it so the trace + the
-        # per-iface bars fit; procsel (the drill-down) takes the room the old
-        # per-process trend wall used, so its three graphs fit; diskio flexes the rest.
-        - { tabs: [net_box], heightPct: 36 }   # composite: net up/down OVERLAY graph + per-iface bars
-        - { tabs: [procsel], heightPct: 44 }   # selected-proc drill-down: cpu/mem/rss history (3 graphs need room)
-        - diskio                               # disk THROUGHPUT table (counter → B/s)
+        - { tabs: [net_box],  heightPct: 36 }  # composite: net up/down mirror graph + per-iface bars (needs the room)
+        - { tabs: [proctrend], heightPct: 20 } # mode:multi CPU sparklines — SELECTABLE (j/k/click) → drives procsel
+        - { tabs: [procsel],  heightPct: 44 }  # selected-proc drill-down: cpu/mem/rss history (3 graphs need room)
     # Col 3 — FLEX (implicit-last): the elastic column's star is the PROCESS TABLE,
-    # which always has rows and whose command column expands to use the width.
+    # which always has rows and whose command column expands to use the width. The
+    # disk-I/O table rides below it (a compact counter→rate table).
     - panels:
-        - procs                                # process table (host.proc) — procsel's select_from target
-        - { tabs: [actions], heightPct: 16 }   # host actions (compact)
-        - { tabs: [detail], heightPct: 34 }    # Output (detail card / action transcript)
+        - procs                                # detailed process table (Info card + K kill)
+        - { tabs: [diskio], heightPct: 18 }    # disk THROUGHPUT table (counter → B/s)
+        - { tabs: [actions], heightPct: 14 }   # host actions (compact)
+        - { tabs: [detail], heightPct: 30 }    # Output (detail card / action transcript)
 
 # --- Host actions --------------------------------------------------------------
 groups:
