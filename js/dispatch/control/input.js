@@ -508,8 +508,9 @@ let _armedSelect = null;   // { paneId, line, col } | null
 
 // Drag-to-zoom arm (docs/STATS.md §10): a press on a GRAPH stats pane (not a mode:multi
 // list) stores the start column; a real drag (release at a different column) freezes
-// that time-range. Module-local, transient, mutually exclusive with _armedSelect (a
-// press arms one or the other by pane type).
+// that time-range. Module-local, transient, and mutually exclusive with _armedSelect —
+// ENFORCED, not incidental: a stats pane is text-selectable by default, so the zoom arm
+// explicitly clears any _armedSelect the same press set (zoom wins the gesture).
 let _armedZoom = null;   // { paneId, startCol } | null
 
 // Is this pane a selection target? Not opted out via config (per-panel
@@ -765,6 +766,20 @@ function handleMouse(kind, x, y) {
       if (cc) dispatchMsg(wrap(paneId, { type: 'select_extend', line: cc.line, col: cc.col }));
       render();
     }
+    // Live drag-band (docs/STATS.md §10): while a zoom drag is in flight, fold the
+    // pending [start,current] column range into the layout slice so the pane highlights
+    // the range being selected. `graph_drag` is identity-preserving, so idle motion that
+    // stays in the same body cell dispatches nothing. The zoom arm cleared any _armedSelect
+    // (zoom wins on a stats graph), so this and the text-select block above never co-fire.
+    if (_armedZoom) {
+      const cc = _contentCoordsAt(_armedZoom.paneId, mx, my, true);   // clamp past-edge to the nearest col
+      if (cc) {
+        const lo = Math.min(_armedZoom.startCol, cc.col);
+        const hi = Math.max(_armedZoom.startCol, cc.col);
+        dispatchMsg(wrap('layout', { type: 'graph_drag', band: { paneId: _armedZoom.paneId, lo, hi } }));
+        render();
+      }
+    }
     return;
   }
   if (kind === 'release') {
@@ -786,6 +801,14 @@ function handleMouse(kind, x, y) {
     // a click / too-small drag yields null → no zoom.
     if (_armedZoom) {
       const az = _armedZoom; _armedZoom = null;
+      let dirty = false;
+      // Clear the live drag band (if one was painted): the pending range is now either
+      // committed to a `zoom` snapshot or discarded (a click / too-small drag). Either
+      // way the highlight must go, so we repaint even when nothing zooms.
+      if (getInstanceSlice('layout').dragBand) {
+        dispatchMsg(wrap('layout', { type: 'graph_drag', band: null }));
+        dirty = true;
+      }
       const cc = _contentCoordsAt(az.paneId, mx, my, true);   // clamp past-edge to the nearest col
       if (cc) {
         const ls = getInstanceSlice('layout');
@@ -793,9 +816,10 @@ function handleMouse(kind, x, y) {
         const b = panel && visibleBoundsFor(ls, az.paneId, route.resolveViewerPaneId());
         if (panel && b) {
           const frozen = require('../../panel/monitor/stats').freezeRange(panel, b.w - 2, az.startCol, cc.col);
-          if (frozen) { dispatchMsg(wrap('layout', { type: 'graph_zoom', paneId: az.paneId, frozen })); render(); }
+          if (frozen) { dispatchMsg(wrap('layout', { type: 'graph_zoom', paneId: az.paneId, frozen })); dirty = true; }
         }
       }
+      if (dirty) render();
     }
     return;
   }
@@ -896,9 +920,14 @@ function handleMouse(kind, x, y) {
     // Drag-to-zoom arm: a press on a GRAPH stats pane (sectioned/overlay — getItems
     // empty, so NOT a mode:multi list) stores the start column; the release freezes the
     // dragged range (docs/STATS.md §10). A mode:multi pane is a row list → it selects.
+    // Zoom WINS the gesture: a stats pane is text-selectable by default, so the block
+    // above already armed _armedSelect — clear it, or the same drag would ALSO run a text
+    // selection of the graph glyphs (a competing mid-drag highlight + braille pushed to
+    // the yank register on release). The graph body is braille (nothing meaningful to
+    // copy), so a press-drag here is unambiguously a zoom, never a selection.
     if (p.type === 'stats' && getItems(p.paneId).length === 0) {
       const cc = _contentCoordsAt(p.paneId, mx, my);
-      if (cc) _armedZoom = { paneId: p.paneId, startCol: cc.col };
+      if (cc) { _armedZoom = { paneId: p.paneId, startCol: cc.col }; _armedSelect = null; }
     }
     // v0.6.4 Theme F Phase 2 — the spatial resolution above stays here
     // (which pane, which row); the focus + select now route through the

@@ -132,7 +132,7 @@ function _resolveSelection(panel) {
 // message (so the wrapper draws a bordered box either way). Pure of chrome/focus:
 // the height-mapped graph colour doesn't depend on focus. `spec` is the pane/widget
 // config (topic, row/select_from/aggregate, metrics, window, graph, graph_color).
-function renderBody(spec, innerW, innerH, hoverCol = -1, ctx = null) {
+function renderBody(spec, innerW, innerH, hoverCol = -1, ctx = null, band = null) {
   const t = theme();
   const dim = (msg) => ({ lines: [`[${t.dim}]${esc(msg)}[/]`], rowKey: '_' });
   if (!spec.topic) {
@@ -215,6 +215,8 @@ function renderBody(spec, innerW, innerH, hoverCol = -1, ctx = null) {
     let colored = colorizeOverlay(rows, owners, metrics.map((_m, i) => OVERLAY_COLORS[i % OVERLAY_COLORS.length]));
     // Hover cursor (Phase 2): highlight the hovered column across the overlaid grid.
     if (hoverCol >= 0 && hoverCol < innerW) colored = colored.map((r) => _highlightColumn(r, hoverCol, t.selected));
+    // Live drag-band (§10): highlight the pending zoom range across the overlaid grid.
+    if (band) colored = colored.map((r) => _highlightRange(r, band.lo, band.hi, t.selected));
     return { lines: [legend, ...colored], rowKey };
   }
 
@@ -230,7 +232,7 @@ function renderBody(spec, innerW, innerH, hoverCol = -1, ctx = null) {
   const lines = [];
   metrics.forEach((m, i) => {
     if (i > 0) lines.push('');
-    lines.push(..._renderSection(m, samples, schema, innerW, perMetric, style, colorMode, hoverCol, spec.invert, spec.header === 'bottom'));
+    lines.push(..._renderSection(m, samples, schema, innerW, perMetric, style, colorMode, hoverCol, spec.invert, spec.header === 'bottom', band));
   });
   return { lines, rowKey };
 }
@@ -364,14 +366,17 @@ function _renderMulti(spec, metric, schema, innerW, innerH, window, dim, ctx) {
   return { lines, rowKey: '_', rowCount: rows.length, sel: interactive ? sel : 0, scroll };
 }
 
-// Wrap the glyph at VISIBLE column `visCol` of a colorized graph row in a highlight
-// atom (Phase 2 hover — the vertical cursor line under the mouse). Walks the markup
-// string tracking the current color run: at the target column it closes the run,
-// emits `[hl]glyph[/]`, and reopens the run for the rest. Graph glyphs are single-
-// width braille/blocks/space with no literal `[`, so `[` unambiguously starts a
-// markup token here. Pure; a no-op when visCol is out of range.
-function _highlightColumn(row, visCol, hlAtom) {
-  if (!(visCol >= 0)) return row;
+// Wrap every glyph in the VISIBLE column range [lo,hi] of a colorized graph row in a
+// highlight atom. Two callers: the Phase 2 hover cursor (a single column — the vertical
+// line under the mouse) and the live drag-band (the range being dragged for a zoom, §10).
+// Walks the markup string tracking the current color run: at a highlighted column it
+// closes the run, emits `[hl]glyph[/]`, and reopens the run. Graph glyphs are single-
+// width braille/blocks/space with no literal `[`, so `[` unambiguously starts a markup
+// token here. The per-glyph wrap is a touch verbose across a wide band, but a band is
+// only painted DURING an active drag (transient), so the wire cost never hits idle
+// frames. Pure; a no-op when the range is empty / out of range.
+function _highlightRange(row, lo, hi, hlAtom) {
+  if (!(hi >= 0) || lo > hi) return row;
   let out = '', vis = 0, cur = null, i = 0;
   while (i < row.length) {
     const ch = row[i];
@@ -384,12 +389,19 @@ function _highlightColumn(row, visCol, hlAtom) {
       i = end + 1;
       continue;
     }
-    if (vis === visCol) out += `${cur ? '[/]' : ''}[${hlAtom}]${ch}[/]${cur ? `[${cur}]` : ''}`;
+    if (vis >= lo && vis <= hi) out += `${cur ? '[/]' : ''}[${hlAtom}]${ch}[/]${cur ? `[${cur}]` : ''}`;
     else out += ch;
     vis++;
     i++;
   }
   return out;
+}
+
+// Single-column hover cursor — the degenerate lo===hi case (kept as a named seam so the
+// hover call sites read as intent, not an off-by-one range).
+function _highlightColumn(row, visCol, hlAtom) {
+  if (!(visCol >= 0)) return row;
+  return _highlightRange(row, visCol, visCol, hlAtom);
 }
 
 /**
@@ -417,7 +429,7 @@ function _highlightColumn(row, visCol, hlAtom) {
  * a consumer could use, but the panel stays scale-of-its-own — empty
  * containers and busy ones both get a graph that fills the rows.
  */
-function _renderSection(metric, samples, schema, width, graphHeight, style, colorMode, hoverCol, invert, headerBottom) {
+function _renderSection(metric, samples, schema, width, graphHeight, style, colorMode, hoverCol, invert, headerBottom, band) {
   const col = (schema.columns || {})[metric] || {};
   const values = samples.map(s => s && s[metric]);
   const finite = values.filter(Number.isFinite);
@@ -479,6 +491,8 @@ function _renderSection(metric, samples, schema, width, graphHeight, style, colo
   if (hoverCol >= 0 && hoverCol < width) {
     colored = colored.map((r) => _highlightColumn(r, hoverCol, t.selected));
   }
+  // Live drag-band (§10): highlight the pending zoom range across the graph rows.
+  if (band) colored = colored.map((r) => _highlightRange(r, band.lo, band.hi, t.selected));
 
   // Percent metrics carry a one-row current-value meter next to the header.
   const extras = [];
@@ -768,6 +782,22 @@ function _resolveHover(panel, innerW, innerH) {
   return { col: hv.col, record: hoverRecord(res, paneId, hv.x, hv.y, hv.col) };
 }
 
+// If this pane owns the in-flight zoom drag, resolve the pending column band to highlight
+// (docs/STATS.md §10). Clamped to the body ([0, innerW-1]) — a drag past the right edge
+// yields an over-wide `hi`. Returns `{ lo, hi }` (visible cols) or null. Columnar only,
+// so no innerH; sectioned + overlay honour it (multi is a row list — not zoomable).
+function _resolveDragBand(panel, innerW) {
+  const paneId = panel && panel.paneId;
+  if (!paneId) return null;
+  const layout = getInstanceSlice('layout');
+  const db = layout && layout.dragBand;
+  if (!db || db.paneId !== paneId) return null;
+  const lo = Math.max(0, Math.min(db.lo, db.hi));
+  const hi = Math.min(innerW - 1, Math.max(db.lo, db.hi));
+  if (hi < lo || lo > innerW - 1) return null;
+  return { lo, hi };
+}
+
 function render(panel, w, h, _slice, opts) {
   const chrome = opts && opts.chrome;
   // v0.6.4 Theme A Phase 5 — per-pane focus (opts.focused). A sectioned/overlay stats
@@ -776,15 +806,21 @@ function render(panel, w, h, _slice, opts) {
   const focused = !!(opts && opts.focused);
   // Finding B — renderBody reads the store-mirror'd model.metrics[topic] (kept
   // current by the metrics-mirror Sub), so this is a pure render over the model.
+  // Live drag-band (§10): if a zoom drag is in flight on THIS pane, resolve the pending
+  // column range to highlight. While dragging we suppress the hover cursor + its value
+  // tooltip — a range is being SELECTED, so a lingering single-column read (from the
+  // hover position before the press) would compete with the band and publish a stale
+  // footer value.
+  const band = _resolveDragBand(panel, w - 2);
   // Phase 2 (hover-for-value): resolve this pane's hover ONCE → the column to
   // highlight in the graph + the value record to publish to the per-frame hover-region
   // (read by the footer + the cursor tooltip, both painted after the pane pass).
-  const hover = _resolveHover(panel, w - 2, h - 2);
+  const hover = band ? null : _resolveHover(panel, w - 2, h - 2);
   // `mode: multi` selection: thread this pane's live cursor (getSel/getScroll) so the
   // selected row highlights + scrolls, and click hit-testing reads the painted scroll.
   const ctx = (panel.mode === 'multi' && panel.paneId != null)
     ? { sel: getSel(panel.paneId), scroll: getScroll(panel.paneId), focused } : null;
-  const body = renderBody(panel, w - 2, h - 2, hover ? hover.col : -1, ctx);
+  const body = renderBody(panel, w - 2, h - 2, hover ? hover.col : -1, ctx, band);
   const { lines, rowKey } = body;
   if (hover) hoverRegion.publish(hover.record);
   // A selectable multi list reports windowed paint (count + scrollbar + click scroll);

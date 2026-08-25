@@ -31,8 +31,13 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   `select_from`) to FREEZE that time-range: the drag is snapshotted on release (so it
   survives the live window aging out) and rendered STRETCHED to the full width; hovering a
   zoomed graph reads the frozen samples. A `⤢ 1:1` border chip (shown only when zoomed)
-  resets to live. Not `mode: multi` (a row list). A live drag-band highlight + composite-
-  widget zoom are deferred.
+  resets to live. Not `mode: multi` (a row list).
+  - **Live drag-band highlight.** While the zoom drag is IN FLIGHT the graph now
+    highlights the pending column range (the range version of the hover cursor, same
+    `selected` treatment) so you can see what you're selecting before release commits it.
+    The hover cursor + value tooltip are suppressed mid-drag. Transient: the range is
+    folded into `layout.dragBand` on motion (mirroring `hover`) and cleared on release.
+    (Composite-widget zoom is still deferred — a composite graph widget has no `paneId`.)
 
 ### Changed
 
@@ -52,6 +57,12 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   box no longer selects a row in that box's interactive widget — the click→row map now
   reports the interactive widget's start (`headerRows`), so only clicks ON the bars move
   the cursor. (Fixes "clicking the network TX graph sometimes switched the interface".)
+- **Zoom drag no longer runs a stray text selection.** A `stats` pane is text-selectable
+  by default, so a drag-to-zoom press armed BOTH the zoom and a text selection of the
+  graph glyphs — the drag showed a competing selection highlight and, on release, pushed
+  the selected braille/whitespace into the yank register. The zoom arm now clears the
+  text-select arm (zoom wins the gesture on a stats graph), so the drag is purely a zoom.
+  (Surfaced while adding the live drag-band; the double-arm predates it.)
 
 ## [0.6.24] — 2026-08-23
 

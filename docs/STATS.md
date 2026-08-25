@@ -398,8 +398,18 @@ Run via `node js/scripts/run-tests.js -q`.
     STRETCHED to the full width (nearest-neighbour resample); hover on a zoomed graph
     reads the frozen samples (the `_resolveSeries(spec, innerW)` seam keeps zoom + hover
     in agreement). A `⤢ 1:1` border chip (self-suppresses unless zoomed) resets to live.
-    Sectioned + overlay; not `mode: multi` (a row list). Deferred: a live drag-band
-    highlight, and zoom on composite widgets.
+    Sectioned + overlay; not `mode: multi` (a row list).
+    - ~~Deferred: a live drag-band highlight.~~ **SHIPPED** (follow-on): while the zoom
+      drag is IN FLIGHT the input shell folds the pending column range into
+      `layout.dragBand` (`{ paneId, lo, hi }`, mirroring `hover`), and `stats.render`
+      highlights that range with the `selected` atom — the range version of the hover
+      cursor (`_highlightRange`; the single-column hover is the degenerate `lo===hi`
+      case). The hover cursor + its value tooltip are suppressed mid-drag (a range is
+      being selected, not a column read). The band is transient: set on motion, cleared
+      on release (whether the range commits to a `zoom` or is discarded). Sectioned +
+      overlay, same as the commit.
+    - Deferred: zoom on composite widgets (a composite graph widget has no `paneId`, so
+      the `paneId`-keyed `zoom` / `dragBand` don't reach it yet).
 - ~~**Multi-line overlay.** "All containers, one line each."~~ Shipped as
   `mode: multi` (§3 YAML contract) — one height-1 sparkline per row of the
   topic, sorted by latest value.

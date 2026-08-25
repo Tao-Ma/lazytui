@@ -106,4 +106,56 @@ describe('[stats-zoom] press→release drag freezes a range; reset clears it', (
   });
 });
 
+describe('[stats-zoom] live drag band — highlight the range mid-drag, clear on release', () => {
+  it('a motion after the press folds the pending [start,current] band into the slice', () => {
+    boot();
+    const { paneId, b } = pane();
+    // Press body col 30, drag to col 50 on a graph row (header 0, meter 1, graph 2+).
+    sm.capture(() => sm.handleMouse('press', b.x + 30 + 2, b.y + 2 + 2));
+    sm.capture(() => sm.handleMouse('motion', b.x + 50 + 2, b.y + 2 + 2));
+    const band = api.getInstanceSlice('layout').dragBand;
+    assert(band && band.paneId === paneId, `dragBand set for the pane, got ${JSON.stringify(band)}`);
+    eq(band.lo, 30, 'band lo = the press column');
+    eq(band.hi, 50, 'band hi = the current column');
+  });
+
+  it('the band highlights the dragged columns across the graph rows (markup)', () => {
+    boot();
+    const spec = { paneId: pane().paneId, topic: 'z.cpu', row: '_', metrics: ['cpu'], window: 300 };
+    const sel = api.theme().selected;                       // the highlight atom (fg on bg)
+    const occ = (lines) => lines.join('\n').split(`[${sel}]`).length - 1;
+    const plain = stats.renderBody(spec, 60, 8, -1, null, null).lines;
+    const banded = stats.renderBody(spec, 60, 8, -1, null, { lo: 10, hi: 20 }).lines;
+    eq(occ(plain), 0, 'no selected-atom highlight without a band');
+    // 11 columns (10..20) wrapped on each graph row → at least the band width once.
+    assert(occ(banded) >= 11, `band wraps the 11-col range on ≥1 graph row, got ${occ(banded)}`);
+  });
+
+  it('release clears the band (committed to zoom or discarded)', () => {
+    boot();
+    const { paneId, b } = pane();
+    sm.capture(() => sm.handleMouse('press', b.x + 30 + 2, b.y + 2 + 2));
+    sm.capture(() => sm.handleMouse('motion', b.x + 50 + 2, b.y + 2 + 2));
+    assert(api.getInstanceSlice('layout').dragBand, 'precondition: band is live mid-drag');
+    sm.capture(() => sm.handleMouse('release', b.x + 50 + 2, b.y + 2 + 2));
+    eq(api.getInstanceSlice('layout').dragBand, null, 'dragBand cleared on release');
+    // A real drag also committed the zoom (the release path does both).
+    assert(api.getInstanceSlice('layout').zoom[paneId], 'the dragged range froze into a zoom');
+  });
+
+  it('zoom wins the gesture: a stats drag does NOT text-select or push to the register', () => {
+    boot();
+    const { paneId, b } = pane();
+    const psel = require('../panel/select-view');
+    const before = ((getModel().register || {}).history || []).length;
+    // A full drag: press → motion (would begin a text selection if _armedSelect stayed armed).
+    sm.capture(() => sm.handleMouse('press', b.x + 30 + 2, b.y + 2 + 2));
+    sm.capture(() => sm.handleMouse('motion', b.x + 50 + 2, b.y + 2 + 2));
+    assert(!psel.selectionFor(paneId), 'no text selection armed on the graph (zoom won the press)');
+    sm.capture(() => sm.handleMouse('release', b.x + 50 + 2, b.y + 2 + 2));
+    const after = ((getModel().register || {}).history || []).length;
+    eq(after, before, 'the yank register is untouched by the zoom drag (no braille pushed)');
+  });
+});
+
 report();

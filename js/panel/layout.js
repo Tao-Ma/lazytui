@@ -274,9 +274,14 @@ function init() {
     // Drag-to-zoom (docs/STATS.md §10). `zoom` maps paneId → a FROZEN snapshot
     // `{ samples, start, end, metrics, rowKey }` (the resolved series + the dragged
     // index range, captured on release so it survives the live window aging out); a
-    // zoomed pane renders + hovers that snapshot STRETCHED to width until reset. (A
-    // live drag-band highlight is a deferred follow-on — v1 commits on release.)
+    // zoomed pane renders + hovers that snapshot STRETCHED to width until reset.
     zoom: {},
+    // Live drag-band highlight (docs/STATS.md §10). While a zoom drag is IN FLIGHT the
+    // input shell folds the pending column range here — `{ paneId, lo, hi }` (body
+    // visible cols, lo≤hi) or null — so stats.render can highlight the range being
+    // selected BEFORE release commits it to `zoom`. Transient: set on motion, cleared on
+    // release (mirrors `hover` — a small position fact; the highlight is derived at paint).
+    dragBand: null,
   };
 }
 
@@ -351,6 +356,17 @@ function update(msg, slice) {
       const zoom = { ...slice.zoom };
       if (frozen) zoom[paneId] = frozen; else delete zoom[paneId];
       return { ...slice, zoom };
+    }
+    // Live drag-band (docs/STATS.md §10). The input shell computes the pending column
+    // range each motion and folds it here as DATA (mirrors graph_hover); `band: null`
+    // clears it on release. Identity-preserving so a repaint mid-drag that resolves the
+    // same range doesn't thrash the slice.
+    case 'graph_drag': {
+      const b = msg.band || null;
+      const cur = slice.dragBand || null;
+      if (!b && !cur) return slice;
+      if (b && cur && b.paneId === cur.paneId && b.lo === cur.lo && b.hi === cur.hi) return slice;
+      return { ...slice, dragBand: b };
     }
     // viewMode. Each transition that actually changes the value asks
     // the effects layer for a full repaint — a view change re-exposes
