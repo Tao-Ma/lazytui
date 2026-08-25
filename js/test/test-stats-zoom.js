@@ -25,7 +25,7 @@ function setMetric(topic, series, cols) {
   getModel().metrics = { ...(getModel().metrics || {}), [topic]: { series, schema: { columns: cols } } };
 }
 
-const cfg = { id: 'g', type: 'stats', title: 'CPU', config: { topic: 'z.cpu', row: '_', metrics: ['cpu'], window: 300 } };
+const cfg = { id: 'g', type: 'stats', title: 'CPU', config: { topic: 'z.cpu', row: '_', metrics: ['cpu'], window: 300, y_axis: 'off' } };
 const det = { id: 'd', type: 'detail', title: 'Out' };
 
 function boot() {
@@ -72,7 +72,7 @@ describe('[stats-zoom] press→release drag freezes a range; reset clears it', (
   it('the zoomed graph renders STRETCHED + hover reads the frozen samples', () => {
     boot();
     const { paneId, b } = pane();
-    const spec = { paneId, topic: 'z.cpu', row: '_', metrics: ['cpu'], window: 300 };
+    const spec = { paneId, topic: 'z.cpu', row: '_', metrics: ['cpu'], window: 300, y_axis: 'off' };
     const innerW = b.w - 2;
     // Live: col 0 is the oldest of the window. Freeze a narrow later range → col 0 becomes
     // the frozen sub-range's START (stretched), a DIFFERENT value → proves the swap.
@@ -121,7 +121,7 @@ describe('[stats-zoom] live drag band — highlight the range mid-drag, clear on
 
   it('the band highlights the dragged columns across the graph rows (markup)', () => {
     boot();
-    const spec = { paneId: pane().paneId, topic: 'z.cpu', row: '_', metrics: ['cpu'], window: 300 };
+    const spec = { paneId: pane().paneId, topic: 'z.cpu', row: '_', metrics: ['cpu'], window: 300, y_axis: 'off' };
     const sel = api.theme().selected;                       // the highlight atom (fg on bg)
     const occ = (lines) => lines.join('\n').split(`[${sel}]`).length - 1;
     const plain = stats.renderBody(spec, 60, 8, -1, null, null).lines;

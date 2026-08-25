@@ -44,7 +44,7 @@ describe('[layout] graph_hover arm — stores the raw position / clears / identi
 });
 
 describe('[graph-hover] real hover path → footer value + hover-region', () => {
-  const paneCfg = { id: 'g', type: 'stats', title: 'CPU', config: { topic: 'gh.cpu', row: '_', metrics: ['cpu'], window: 300 } };
+  const paneCfg = { id: 'g', type: 'stats', title: 'CPU', config: { topic: 'gh.cpu', row: '_', metrics: ['cpu'], window: 300, y_axis: 'off' } };
 
   function boot() {
     sm.bootFresh({
@@ -137,7 +137,7 @@ describe('[graph-hover] composite graph widget → footer value', () => {
   // window: 300 fills the wide graph so column 0 carries data (else the NaN-padded
   // left edge correctly resolves to nothing — same reason the standalone test does it).
   const cfg = { id: 'nb', type: 'composite', title: 'Box',
-    config: { widgets: [{ type: 'graph', topic: 'gh.cpu', row: '_', metrics: ['cpu'], window: 300 }] } };
+    config: { widgets: [{ type: 'graph', topic: 'gh.cpu', row: '_', metrics: ['cpu'], window: 300, y_axis: 'off' }] } };
 
   function boot() {
     sm.bootFresh({
@@ -174,8 +174,8 @@ describe('[graph-hover] composite header:bottom mirror SEAM (the net-box case)',
   // resolve, and the RX header (moved to the BOTTOM) must not.
   const composite = require('../panel/monitor/composite');
   const cfg = { id: 'net', type: 'composite', title: 'Net', config: { widgets: [
-    { type: 'graph', topic: 'gh.net', row: '_', metrics: ['tx'], window: 300, height: '45%' },
-    { type: 'graph', topic: 'gh.net', row: '_', metrics: ['rx'], window: 300, invert: true, header: 'bottom', flush: true, height: '45%' },
+    { type: 'graph', topic: 'gh.net', row: '_', metrics: ['tx'], window: 300, height: '45%', y_axis: 'off' },
+    { type: 'graph', topic: 'gh.net', row: '_', metrics: ['rx'], window: 300, invert: true, header: 'bottom', flush: true, height: '45%', y_axis: 'off' },
   ] } };
 
   function boot() {
@@ -217,7 +217,7 @@ describe('[graph-hover] composite header:bottom mirror SEAM (the net-box case)',
 
 describe('[graph-hover] overlay graph → all series in the footer', () => {
   const cfg = { id: 'ov', type: 'stats', title: 'Net',
-    config: { topic: 'gh.net', row: '_', metrics: ['rx', 'tx'], overlay: true, window: 300 } };
+    config: { topic: 'gh.net', row: '_', metrics: ['rx', 'tx'], overlay: true, window: 300, y_axis: 'off' } };
 
   function boot() {
     sm.bootFresh({

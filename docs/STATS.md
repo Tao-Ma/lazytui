@@ -89,6 +89,7 @@ panels:
     window: 40              # samples retained per row (panel-driven sub)
     graph: braille          # braille (default) | blocks
     graph_color: height     # height (default) | value | banded
+    y_axis: auto            # auto (default) | off | always — left tick gutter
 ```
 
 | Field         | Required | Default                                | Notes |
@@ -105,6 +106,7 @@ panels:
 | `mode`        | no       | —                                      | `multi`: draw ONE height-1 sparkline **per row** of the topic (btop process-list style — one metric across all rows), sorted by latest value (desc; `sort_dir: asc` flips), instead of one series across `metrics:`. `column:` picks the metric (default: first graphable); `label:` a string column for the row label (default: the row key); the sparkline is value-mapped through the `percent` ramp on one shared scale. Needs only `topic:` (no `select_from`/`row`/`aggregate`), and works as a `composite` `graph` widget too. |
 | `invert`      | no       | `false`                                | Hang the graph from the **top** edge downward instead of rising from the bottom (the height-gradient flips with it so value→colour stays consistent). Pair two single-metric graphs — one `invert: true` above a normal one — for btop's mirrored network up/down shape (download hangs from the top, upload rises from the bottom). **Braille only** (blocks have no upper-eighths ramp; `invert` is ignored for `graph: blocks`). |
 | `header`      | no       | `top`                                  | `bottom` puts the section header line (metric name + current/peak/avg, and the percent meter) BELOW the graph instead of above. For the net mirror: the inverted (bottom) graph uses `header: bottom` so its label reads on the outer edge and its graph rows sit against the seam. |
+| `y_axis`      | no       | `auto`                                 | Left value-tick gutter (`100% ┤` … `0% ┤`). `auto` shows it only when the reserve stays ≤15% of the width (so wide panes gain the scale, cramped ones keep the full-width trace); `off` never; `always` even on a narrow pane (as long as ≥8 trace cols remain). The gutter width is a per-type constant, so the trace-column offset stays a pure function of `(type, width)` shared by paint + hover + drag-to-zoom. Labels respect `invert`. Sectioned + overlay; ignored for `mode: multi` (its own label gutter). |
 
 **Color + meter (truecolor arc Phase 2, docs/truecolor.md).** Graph
 color maps through the active theme's `percent` gradient (cool→hot); the
@@ -304,11 +306,17 @@ For a graph rendered in `H` rows of height by `W` columns of width:
 The rasterizer is in `panel/monitor/stats-graph.js` (separate file so
 it's testable in isolation against fixed sample arrays).
 
-**Y-axis labels NOT shipped in v1.** Originally planned (`100% ┤` /
-`75% ┤` / ...), dropped during implementation: at the panel widths we
-get in practice (~50 cols) the axis labels eat too much horizontal
-real estate from the graph itself. Revisit if a wider panel makes
-labels worthwhile.
+**Y-axis labels — shipped as an adaptive per-pane option.** Originally
+dropped from v1 (at ~50-col panels the gutter ate too much of the graph),
+now `y_axis: auto | off | always`, default `auto`. `auto` shows the tick
+gutter (`100% ┤` / `0% ┤`) ONLY when it stays ≤15% of the width — so wide
+panes gain the scale and cramped ones keep the full-width trace, exactly
+the "revisit on wider slots" call. The gutter reserve is a per-type
+constant (`percent` 6 cols, `bytes` 7, `rate` 9), so its width — and thus
+the trace-column offset — is a pure function of `(type, width)` that both
+paint and every hit-test (hover, drag-to-zoom) compute identically; the
+`_axisForSpec` seam is the single source that keeps them from drifting.
+Sectioned + overlay; not `mode: multi` (its own label gutter). See §10.
 
 **Numeric overlay** (header line) — what shipped:
 - `percent`: `12.8%  peak 49.9%  avg 25.7%`
@@ -360,9 +368,18 @@ Run via `node js/scripts/run-tests.js -q`.
 
 ## 10. Deferred
 
-- **Y-axis labels.** Dropped from v1 — axis labels eat too much
-  horizontal space at typical panel widths (~50 cols). Revisit on
-  wider panel slots.
+- ~~**Y-axis labels.** Dropped from v1 — axis labels eat too much
+  horizontal space at typical panel widths (~50 cols).~~ **SHIPPED** as an
+  adaptive per-pane option: `y_axis: auto | off | always` (default `auto`).
+  `auto` draws the tick gutter (`100% ┤` … `0% ┤`) only when it stays ≤15%
+  of the width, so the width objection self-resolves — narrow panes keep the
+  full-width trace, wide ones gain the scale. The gutter reserve is a per-type
+  constant (`_axisGutterW`), making the trace-column OFFSET a pure function of
+  `(type, width)`; `_axisForSpec` is the single source both the paint and every
+  hit-test (hover, drag-to-zoom, drag-band) read, so the offset trace and its
+  column→sample map can't drift. Labels respect `invert` (max moves to the
+  bottom). Sectioned + overlay; not `mode: multi`. **Time-axis labels**
+  (`now−5m` / `now`) — the horizontal twin — stay deferred (same width trade).
 - ~~**Color-coded thresholds** (CPU > 80% → red).~~ Shipped in stronger
   form by the truecolor arc: `graph_color: value` (or `banded`) maps each
   column through the theme's `percent` gradient (continuous cool→hot, not a

@@ -210,9 +210,16 @@ function renderBody(spec, innerW, innerH, hoverCol = -1, ctx = null, band = null
       for (const m of metrics) for (const s of samples) { const v = s && s[m]; if (Number.isFinite(v) && v > mx) mx = v; }
       oMax = mx;
     }
+    // Y-axis gutter — one shared scale (oMin..oMax), so a single tick column labels every
+    // series. `effW` is the trace width; gutterW 0 → full-width (byte-identical to before).
+    const oAxis = _axisFor(_paneAxisType(metrics, schema), innerW, graphH, spec.y_axis);
+    const effW = innerW - oAxis.gutterW;
     const seriesArr = metrics.map((m) => samples.map((s) => s && s[m]));
-    const { rows, owners } = rasterizeBrailleMulti(seriesArr, { width: innerW, height: graphH, min: oMin, max: oMax });
+    const { rows, owners } = rasterizeBrailleMulti(seriesArr, { width: effW, height: graphH, min: oMin, max: oMax });
     let colored = colorizeOverlay(rows, owners, metrics.map((_m, i) => OVERLAY_COLORS[i % OVERLAY_COLORS.length]));
+    if (oAxis.gutterW > 0) {
+      colored = colored.map((r, i) => _axisGutterCell(i, colored.length, oMin, oMax, _paneAxisType(metrics, schema), oAxis.gutterW, false, t.dim) + r);
+    }
     // Hover cursor (Phase 2): highlight the hovered column across the overlaid grid.
     if (hoverCol >= 0 && hoverCol < innerW) colored = colored.map((r) => _highlightColumn(r, hoverCol, t.selected));
     // Live drag-band (§10): highlight the pending zoom range across the overlaid grid.
@@ -220,19 +227,16 @@ function renderBody(spec, innerW, innerH, hoverCol = -1, ctx = null, band = null
     return { lines: [legend, ...colored], rowKey };
   }
 
-  const sepRows = Math.max(0, metrics.length - 1);
-  const headerRows = metrics.length;
-  // Percent metrics carry a one-row current-value meter under the header.
-  const meterRows = metrics
-    .filter((m) => ((schema.columns || {})[m] || {}).type === 'percent').length;
-  const graphRowsTotal = innerH - sepRows - headerRows - meterRows;
-  const perMetric = Math.floor(graphRowsTotal / metrics.length);
+  const perMetric = _sectionPerMetric(metrics, schema, innerH);
   if (perMetric < 2) return dim('(panel too short for graph)');
+  // Pane-uniform y-axis gutter — the WIDEST metric's reserve, shared by every section so
+  // all traces start at the same column (and the column→sample map stays pane-uniform).
+  const gutterW = _axisFor(_paneAxisType(metrics, schema), innerW, perMetric, spec.y_axis).gutterW;
 
   const lines = [];
   metrics.forEach((m, i) => {
     if (i > 0) lines.push('');
-    lines.push(..._renderSection(m, samples, schema, innerW, perMetric, style, colorMode, hoverCol, spec.invert, spec.header === 'bottom', band));
+    lines.push(..._renderSection(m, samples, schema, innerW, perMetric, style, colorMode, hoverCol, spec.invert, spec.header === 'bottom', band, gutterW));
   });
   return { lines, rowKey };
 }
@@ -404,6 +408,106 @@ function _highlightColumn(row, visCol, hlAtom) {
   return _highlightRange(row, visCol, visCol, hlAtom);
 }
 
+// --- Y-axis labels (docs/STATS.md §7, §10) -----------------------------------------
+// A left gutter of value ticks (`100% ┤` … `0% ┤`) down each graph. `y_axis: auto|off|
+// always` per pane, default `auto` (show only when the gutter stays ≤15% of the width).
+// The gutter shifts the trace ORIGIN, so its width is the one fact every column consumer
+// (paint, hover, drag-zoom) must agree on — kept a pure function of (metric type, width,
+// height) here so paint and hit-test can't drift. When hidden, gutterW is 0 → the exact
+// full-width trace shipped before this. Sectioned + overlay; not mode:multi (own gutter).
+
+// Terse axis label formatter (round, single-letter units) — an axis wants `100%` / `512M`,
+// not the header's `100.0%` / `512.0MiB`. Kept short so the gutter reserve stays narrow.
+function _axisFmt(type) {
+  if (type === 'percent') return (v) => (Number.isFinite(v) ? `${Math.round(v)}%` : '—');
+  if (type === 'bytes' || type === 'rate') {
+    const suf = type === 'rate' ? '/s' : '';
+    return (v) => {
+      if (!Number.isFinite(v)) return '—';
+      if (v < 1024) return `${Math.round(v)}B${suf}`;
+      if (v < 1024 ** 2) return `${Math.round(v / 1024)}K${suf}`;
+      if (v < 1024 ** 3) return `${Math.round(v / 1024 ** 2)}M${suf}`;
+      return `${Math.round(v / 1024 ** 3)}G${suf}`;
+    };
+  }
+  return (v) => (!Number.isFinite(v) ? '—' : (Number.isInteger(v) ? String(v) : v.toFixed(1)));
+}
+
+// Reserved value-label width per type (the ` ┤` tick adds 2). Constant per type so the
+// gutter width — and thus the trace offset — is decided WITHOUT the min/max scale: paint
+// and hit-test both derive it from the type alone.
+const _AXIS_LABEL_W = { percent: 4, bytes: 5, rate: 7, number: 5 };
+function _axisGutterW(type) { return (_AXIS_LABEL_W[type] || _AXIS_LABEL_W.number) + 2; }
+
+// Right-align a label into the gutter, clipping if a value somehow exceeds the reserve —
+// so the gutter width stays exactly constant (never pushes the trace off by a column).
+function _axisPad(s, w) { s = String(s); return s.length > w ? s.slice(0, w) : s.padStart(w); }
+
+// Per-section graph height (rows). Factored so renderBody, valueAt, and the axis decision
+// derive the SAME stacking geometry (header + optional percent meter + separators).
+function _sectionPerMetric(metrics, schema, innerH) {
+  const cols = schema.columns || {};
+  const meterRows = metrics.filter((m) => (cols[m] || {}).type === 'percent').length;
+  const sepRows = Math.max(0, metrics.length - 1);
+  const headerRows = metrics.length;
+  return Math.floor((innerH - sepRows - headerRows - meterRows) / metrics.length);
+}
+
+// The pane's widest gutter type — a multi-metric pane shares ONE gutter width, so every
+// section's trace starts at the same column and the column→sample map is pane-uniform.
+function _paneAxisType(metrics, schema) {
+  const cols = schema.columns || {};
+  let best = 'number', bestW = -1;
+  for (const m of metrics) {
+    const ty = (cols[m] || {}).type || 'number';
+    const w = _axisGutterW(ty);
+    if (w > bestW) { bestW = w; best = ty; }
+  }
+  return best;
+}
+
+// The axis decision: { show, gutterW }. `mode` is y_axis. `auto` shows only when the
+// gutter is ≤15% of the width; `always` still needs a usable trace (effW≥8); both need
+// ≥2 rows to place ticks. Off / hidden → gutterW 0 (today's full-width trace).
+function _axisFor(type, innerW, graphH, mode) {
+  const m = (mode === 'off' || mode === 'always') ? mode : 'auto';
+  if (m === 'off') return { show: false, gutterW: 0 };
+  const gutterW = _axisGutterW(type);
+  const effW = innerW - gutterW;
+  const widthOK = (m === 'always') ? true : (gutterW <= 0.15 * innerW);
+  if (!(widthOK && graphH >= 2 && effW >= 8)) return { show: false, gutterW: 0 };
+  return { show: true, gutterW };
+}
+
+// The ONE axis entry point — { show, gutterW } for a spec at a given inner size. Handles
+// overlay (one grid, N series, 1 legend row) vs sectioned geometry; multi has none. Reads
+// only the schema + configured metrics (no sample resolve), so it's a cheap pure decision
+// every caller — renderBody, valueAt, freezeRange, the drag-band — computes identically.
+function _axisForSpec(spec, innerW, innerH) {
+  if (!spec || !spec.topic || spec.mode === 'multi') return { show: false, gutterW: 0 };
+  const metricObj = getModel().metrics[spec.topic];
+  const schema = (metricObj && metricObj.schema) || { columns: {} };
+  const metrics = spec.metrics || _defaultMetrics(schema);
+  if (!metrics.length) return { show: false, gutterW: 0 };
+  const graphH = spec.overlay ? (innerH - 1) : _sectionPerMetric(metrics, schema, innerH);
+  return _axisFor(_paneAxisType(metrics, schema), innerW, graphH, spec.y_axis);
+}
+
+// Build the gutter cell for graph row `r` of `graphH` (0 = top): a right-aligned value
+// tick on the top / bottom (and the middle, if ≥5 rows tall), a plain axis line elsewhere.
+// `invert` flips the value order (an inverted graph fills from the top, so max sits at the
+// bottom). Dim so the trace stays the focus. Pure; returns a markup string `gutterW` wide.
+function _axisGutterCell(r, graphH, min, max, type, gutterW, invert, dimAtom) {
+  const labelW = gutterW - 2;
+  const midR = graphH >= 5 ? Math.floor((graphH - 1) / 2) : -1;
+  let val = null;
+  if (r === 0) val = invert ? min : max;
+  else if (r === graphH - 1) val = invert ? max : min;
+  else if (r === midR) val = (min + max) / 2;
+  if (val == null) return `[${dimAtom}]${' '.repeat(labelW)} │[/]`;
+  return `[${dimAtom}]${_axisPad(_axisFmt(type)(val), labelW)} ┤[/]`;
+}
+
 /**
  * Render one metric's section: header line, meter row (percent metrics),
  * graph rows.
@@ -429,8 +533,13 @@ function _highlightColumn(row, visCol, hlAtom) {
  * a consumer could use, but the panel stays scale-of-its-own — empty
  * containers and busy ones both get a graph that fills the rows.
  */
-function _renderSection(metric, samples, schema, width, graphHeight, style, colorMode, hoverCol, invert, headerBottom, band) {
+function _renderSection(metric, samples, schema, width, graphHeight, style, colorMode, hoverCol, invert, headerBottom, band, gutterW = 0) {
   const col = (schema.columns || {})[metric] || {};
+  // Y-axis gutter (docs/STATS.md §10): reserve `gutterW` cols on the left for value ticks
+  // and rasterize the trace into the remainder. `effW` is the trace width; when gutterW is
+  // 0 (axis off / too narrow) effW === width, so every step below is byte-identical to the
+  // pre-axis path. Header spans the FULL width; the meter + graph rows share the gutter.
+  const effW = Math.max(1, width - gutterW);
   const values = samples.map(s => s && s[metric]);
   const finite = values.filter(Number.isFinite);
   const latest = finite.length ? finite[finite.length - 1] : NaN;
@@ -469,9 +578,9 @@ function _renderSection(metric, samples, schema, width, graphHeight, style, colo
   // the top edge downward instead of rising from the bottom (btop's mirrored net
   // shape). The height-gradient flips with it so value→colour stays consistent.
   const inv = !!invert && style !== 'blocks';
-  const opts = { width, height: graphHeight, min, max, invert: inv };
+  const opts = { width: effW, height: graphHeight, min, max, invert: inv };
   const rows = style === 'blocks' ? rasterize(values, opts) : rasterizeBraille(values, opts);
-  const norms = columnNorms(values, { width, min, max, group: style === 'blocks' ? 1 : 2 });
+  const norms = columnNorms(values, { width: effW, min, max, group: style === 'blocks' ? 1 : 2 });
   let colored;
   if (colorMode === 'value') {
     // value-mapped through the full ramp (highest fidelity, most wire bytes).
@@ -486,6 +595,14 @@ function _renderSection(metric, samples, schema, width, graphHeight, style, colo
     colored = colorizeByHeight(rows, (frac) => gradient('percent', frac), inv);
   }
 
+  // Y-axis gutter: prepend the value-tick column to each graph row BEFORE the highlights,
+  // so hover/band (body-relative cols) index the full row (gutter + trace) without an
+  // offset — the gutter's `[dim]…┤[/]` markup isn't counted as visible cols by the walker,
+  // and hover/band never resolve into the gutter (valueAt / _resolveDragBand exclude it).
+  if (gutterW > 0) {
+    colored = colored.map((r, i) => _axisGutterCell(i, colored.length, min, max, col.type || 'number', gutterW, inv, t.dim) + r);
+  }
+
   // Hover cursor (Phase 2): highlight the hovered column across this section's graph
   // rows — a vertical line under the mouse. Only the graph rows (not header/meter).
   if (hoverCol >= 0 && hoverCol < width) {
@@ -494,12 +611,14 @@ function _renderSection(metric, samples, schema, width, graphHeight, style, colo
   // Live drag-band (§10): highlight the pending zoom range across the graph rows.
   if (band) colored = colored.map((r) => _highlightRange(r, band.lo, band.hi, t.selected));
 
-  // Percent metrics carry a one-row current-value meter next to the header.
+  // Percent metrics carry a one-row current-value meter next to the header. It aligns
+  // UNDER the trace, so it shares the gutter (blank there) and spans the trace width.
   const extras = [];
   if (col.type === 'percent') {
     const frac = Number.isFinite(latest) ? latest / 100 : NaN;
-    const meter = meterRow(frac, width);
-    extras.push(Number.isFinite(frac) ? `[${gradient('percent', frac)}]${meter}[/]` : meter);
+    const meter = meterRow(frac, effW);
+    const bar = Number.isFinite(frac) ? `[${gradient('percent', frac)}]${meter}[/]` : meter;
+    extras.push(gutterW > 0 ? ' '.repeat(gutterW) + bar : bar);
   }
   // `header: bottom` — put the header (+ its meter) BELOW the graph instead of above.
   // Pairs with `invert` for a btop net mirror: the inverted (bottom) graph's label
@@ -626,15 +745,20 @@ function _resolveSeries(spec, innerW) {
 // captures the current resolved series + the range, or null for a click / degenerate
 // drag / a non-sectioned pane. (Overlay is included — it resolves via _resolveSeries;
 // multi is not.)
-function freezeRange(spec, innerW, startCol, endCol) {
+function freezeRange(spec, innerW, innerH, startCol, endCol) {
   if (!spec || !spec.topic || spec.mode === 'multi') return null;
   const resolved = _resolveSeries(spec);   // LIVE (no innerW → ignore any existing zoom)
   if (!resolved) return null;
   const { samples, metrics } = resolved;
   const group = spec.graph === 'blocks' ? 1 : 2;
-  const cutLen = innerW * group;
+  // Y-axis gutter: the drag cols are body-relative; shift into trace-space and size the
+  // cut to the trace width, so the frozen range matches what the offset trace drew.
+  const { gutterW } = _axisForSpec(spec, innerW, innerH);
+  const effW = innerW - gutterW;
+  const cutLen = effW * group;
   const idxAt = (col) => {
-    const i = samples.length - cutLen + (group === 2 ? col * 2 + 1 : col);
+    const tc = Math.max(0, Math.min(effW - 1, col - gutterW));   // body → trace col
+    const i = samples.length - cutLen + (group === 2 ? tc * 2 + 1 : tc);
     return Math.max(0, Math.min(samples.length - 1, i));
   };
   const a = idxAt(Math.min(startCol, endCol));
@@ -663,13 +787,17 @@ function valueAt(spec, innerW, innerH, col, row) {
   if (!resolved) return null;
   const { samples, metrics, schema } = resolved;
 
+  // Y-axis gutter (docs/STATS.md §10): a hover in the left tick column is not a data
+  // cell → null; otherwise shift into trace-space (the SAME { gutterW } the paint used).
+  const { gutterW } = _axisForSpec(spec, innerW, innerH);
+  if (col < gutterW) return null;
+  const traceCol = col - gutterW;
+  const effW = innerW - gutterW;
+
   // Section geometry — MUST match renderBody's stacking exactly.
   const cols = schema.columns || {};
   const isPct = (m) => (cols[m] || {}).type === 'percent';
-  const sepRows = Math.max(0, metrics.length - 1);
-  const headerRows = metrics.length;
-  const meterRows = metrics.filter(isPct).length;
-  const perMetric = Math.floor((innerH - sepRows - headerRows - meterRows) / metrics.length);
+  const perMetric = _sectionPerMetric(metrics, schema, innerH);
   if (perMetric < 2) return null;
 
   // Walk the stack to find which metric's GRAPH rows `row` falls in (headers,
@@ -691,7 +819,7 @@ function valueAt(spec, innerW, innerH, col, row) {
 
   // Column → sample (blocks = group 1, braille = group 2). `ago` = samples back from newest.
   const values = samples.map((s) => (s ? s[metric] : NaN));
-  const hit = _hitAt(values, innerW, col, spec.graph === 'blocks' ? 1 : 2);
+  const hit = _hitAt(values, effW, traceCol, spec.graph === 'blocks' ? 1 : 2);
   if (!hit) return null;
   return { metric, value: hit.v, type: (cols[metric] || {}).type, ago: Math.max(0, values.length - 1 - hit.origIdx), col };
 }
@@ -719,13 +847,18 @@ function _hitAt(values, width, col, group = 2) {
 function _valueAtOverlay(spec, innerW, innerH, col, row) {
   const graphH = innerH - 1;                              // 1 legend row (matches renderBody)
   if (graphH < 2 || !(row >= 1 && row < 1 + graphH)) return null;
+  // Y-axis gutter — same shift as the sectioned read (the overlay shares one tick column).
+  const { gutterW } = _axisForSpec(spec, innerW, innerH);
+  if (col < gutterW) return null;
+  const traceCol = col - gutterW;
+  const effW = innerW - gutterW;
   const resolved = _resolveSeries(spec, innerW);         // zoom-aware
   if (!resolved) return null;
   const { samples, metrics, schema } = resolved;
   const cols = schema.columns || {};
   const series = [];
   for (const m of metrics) {
-    const hit = _hitAt(samples.map((s) => (s ? s[m] : NaN)), innerW, col);
+    const hit = _hitAt(samples.map((s) => (s ? s[m] : NaN)), effW, traceCol);
     if (hit) series.push({ metric: m, value: hit.v, type: (cols[m] || {}).type });
   }
   return series.length ? { overlay: series, col } : null;
@@ -783,16 +916,17 @@ function _resolveHover(panel, innerW, innerH) {
 }
 
 // If this pane owns the in-flight zoom drag, resolve the pending column band to highlight
-// (docs/STATS.md §10). Clamped to the body ([0, innerW-1]) — a drag past the right edge
-// yields an over-wide `hi`. Returns `{ lo, hi }` (visible cols) or null. Columnar only,
-// so no innerH; sectioned + overlay honour it (multi is a row list — not zoomable).
-function _resolveDragBand(panel, innerW) {
+// (docs/STATS.md §10). Clamped to the TRACE region ([gutterW, innerW-1]) so the highlight
+// never paints into the y-axis label gutter; a drag past the right edge yields an over-wide
+// `hi`. Returns `{ lo, hi }` (visible cols) or null. Sectioned + overlay (multi isn't zoomable).
+function _resolveDragBand(panel, innerW, innerH) {
   const paneId = panel && panel.paneId;
   if (!paneId) return null;
   const layout = getInstanceSlice('layout');
   const db = layout && layout.dragBand;
   if (!db || db.paneId !== paneId) return null;
-  const lo = Math.max(0, Math.min(db.lo, db.hi));
+  const { gutterW } = _axisForSpec(panel, innerW, innerH);
+  const lo = Math.max(gutterW, Math.min(db.lo, db.hi));
   const hi = Math.min(innerW - 1, Math.max(db.lo, db.hi));
   if (hi < lo || lo > innerW - 1) return null;
   return { lo, hi };
@@ -811,7 +945,7 @@ function render(panel, w, h, _slice, opts) {
   // tooltip — a range is being SELECTED, so a lingering single-column read (from the
   // hover position before the press) would compete with the band and publish a stale
   // footer value.
-  const band = _resolveDragBand(panel, w - 2);
+  const band = _resolveDragBand(panel, w - 2, h - 2);
   // Phase 2 (hover-for-value): resolve this pane's hover ONCE → the column to
   // highlight in the graph + the value record to publish to the per-frame hover-region
   // (read by the footer + the cursor tooltip, both painted after the pane pass).
@@ -930,4 +1064,7 @@ module.exports = {
   freezeRange,
   _zoomFrozen,
   _resampleFrozen,
+  _axisFor,
+  _axisForSpec,
+  _axisGutterW,
 };

@@ -39,6 +39,17 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
     folded into `layout.dragBand` on motion (mirroring `hover`) and cleared on release.
     (Composite-widget zoom is still deferred — a composite graph widget has no `paneId`.)
 
+- **Y-axis labels — adaptive per-pane `y_axis: auto | off | always`** (default `auto`).
+  A `stats` graph can now carry a left value-tick gutter (`100% ┤` … `0% ┤`). `auto`
+  shows it only when the gutter stays ≤15% of the pane width — so wide panes gain the
+  scale while cramped ones keep the full-width trace (the reason it was dropped from v1).
+  `always` forces it (as long as ≥8 trace cols remain); `off` is the old behavior. The
+  gutter reserve is a per-type constant, so the trace-column offset is a pure function of
+  `(type, width)` that the paint AND every hit-test (hover, drag-to-zoom, drag-band)
+  compute from one shared `_axisForSpec` seam — the offset trace and its column→sample
+  map can't drift. Labels respect `invert` (max moves to the bottom). Sectioned + overlay
+  (and composite graph widgets, for display + hover); not `mode: multi`.
+
 ### Changed
 
 - **Host-monitor demo: network graphs fill their width.** The `net_box` up/down graphs

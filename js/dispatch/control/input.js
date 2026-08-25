@@ -815,7 +815,7 @@ function handleMouse(kind, x, y) {
         const panel = allPanels().find((p) => p.paneId === az.paneId);
         const b = panel && visibleBoundsFor(ls, az.paneId, route.resolveViewerPaneId());
         if (panel && b) {
-          const frozen = require('../../panel/monitor/stats').freezeRange(panel, b.w - 2, az.startCol, cc.col);
+          const frozen = require('../../panel/monitor/stats').freezeRange(panel, b.w - 2, b.h - 2, az.startCol, cc.col);
           if (frozen) { dispatchMsg(wrap('layout', { type: 'graph_zoom', paneId: az.paneId, frozen })); dirty = true; }
         }
       }
