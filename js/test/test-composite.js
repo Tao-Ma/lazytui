@@ -228,6 +228,29 @@ describe('[composite] interactive widget — cursor inside the box', () => {
     eq(ctl.dispatch('prev', pane).msg.index, 2, 'prev from 0 wraps to the last (2 of c1,c2,c0)');
   });
 
+  it('clicking a GRAPH widget does NOT switch the cursor; clicking the interactive bars does', () => {
+    boot();
+    const mpool = require('../leaves/wm/pool');
+    const geo = require('../leaves/wm/geometry');
+    const route = require('../panel/route');
+    const { handleMouse } = require('../dispatch/control/input');
+    const ls = api.getInstanceSlice('layout');
+    const paneId = mpool.allPanesInColumns(ls.arrange).find((p) => p.type === 'composite').paneId;
+    ls.focus = paneId;
+    nav.setSel(paneId, 0);
+    sm.resize(60, 24);
+    const b = geo.visibleBoundsFor(ls, paneId, route.resolveViewerPaneId());
+    sm.capture(() => sm.render());   // populate the click hit-test capture
+    const hr = require('../panel/select-view').contentFor(paneId).headerRows;
+    assert(hr > 0, `the interactive bars start below the graph (headerRows ${hr})`);
+    // Click a GRAPH row (well above the bars) — must NOT move the cursor (the bug).
+    sm.capture(() => { handleMouse('press', b.x + 4, b.y + 2); handleMouse('release', b.x + 4, b.y + 2); });
+    eq(nav.getSel(paneId), 0, 'clicking the graph widget does not switch the selected row');
+    // Click the SECOND bar row (iface index 1) — must select it.
+    sm.capture(() => { handleMouse('press', b.x + 4, b.y + hr + 3); handleMouse('release', b.x + 4, b.y + hr + 3); });
+    eq(nav.getSel(paneId), 1, 'clicking an interactive bar row selects it');
+  });
+
   it('a display-only composite (no interactive widget) exposes NO cursor rows + suppresses the cycler', () => {
     const display = { id: 'd', type: 'composite', title: 'D', config: { widgets: [{ type: 'graph', topic: 'ci.cpu', row: '_', metrics: ['cpu'] }] } };
     sm.bootFresh({

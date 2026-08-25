@@ -46,6 +46,13 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   to keep the dashboard at 8 panes / a clean 3-per-column — no soft-cap warning, no
   cramped composites.
 
+### Fixed
+
+- **Composite click hit-test.** Clicking a display widget (e.g. a graph) in a `composite`
+  box no longer selects a row in that box's interactive widget — the click→row map now
+  reports the interactive widget's start (`headerRows`), so only clicks ON the bars move
+  the cursor. (Fixes "clicking the network TX graph sometimes switched the interface".)
+
 ## [0.6.24] — 2026-08-23
 
 ### Added

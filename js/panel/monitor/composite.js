@@ -187,6 +187,11 @@ function render(panel, w, h, _slice, opts) {
 
   let lines;
   let hover = null;
+  // Body-row where the interactive widget's rows begin (0 if none). Reported to
+  // renderPanel as `headerRows` so a CLICK maps to a bar only when it lands ON the
+  // interactive widget — a click on a graph widget ABOVE it resolves to itemRow < 0
+  // (no select), fixing "clicking the TX graph switches the interface".
+  let interactiveStart = 0;
   if (!widgets.length) {
     lines = [`[${t.dim}](composite needs a widgets: list)[/]`];
   } else if (innerW < 1 || innerH < 1) {
@@ -206,6 +211,10 @@ function render(panel, w, h, _slice, opts) {
     const iCtx = (iw && paneId != null)
       ? { sel: getSel(paneId), scroll: getScroll(paneId), focused }
       : null;
+    if (iw) {
+      const rg = _widgetBodyRanges(widgets, heights).find((r) => widgets[r.i] === iw);
+      if (rg) interactiveStart = rg.start;
+    }
     // Hover-for-value (Phase 2): resolve which graph widget the cursor is over ONCE, so
     // that widget's body draws the highlighted column + we publish its value below.
     hover = _resolveHover(panel, innerW, widgets, heights);
@@ -243,6 +252,9 @@ function render(panel, w, h, _slice, opts) {
     title: panel.title, hotkey: panel.hotkey, panelType: 'composite', focused, chrome,
     topControls: ctl.filter((c) => (c.spec.slot || 'top') !== 'bottom').map((c) => c.text),
     bottomControls: ctl.filter((c) => (c.spec.slot || 'top') === 'bottom').map((c) => c.text),
+    // Click hit-test: the interactive widget's rows start here, so a click above them
+    // (a graph widget) resolves to no row (see interactiveStart above).
+    headerRows: interactiveStart,
   });
 }
 
