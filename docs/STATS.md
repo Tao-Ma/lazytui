@@ -425,8 +425,19 @@ Run via `node js/scripts/run-tests.js -q`.
       being selected, not a column read). The band is transient: set on motion, cleared
       on release (whether the range commits to a `zoom` or is discarded). Sectioned +
       overlay, same as the commit.
-    - Deferred: zoom on composite widgets (a composite graph widget has no `paneId`, so
-      the `paneId`-keyed `zoom` / `dragBand` don't reach it yet).
+    - **Zoom on composite widgets — WON'T DO (by design), not deferred.** It's mechanically
+      reachable (a composite graph widget has no `paneId`, so `zoom`/`dragBand` would need a
+      widget-level key + gesture arbitration inside the box), but the ergonomics don't earn
+      it: composite graph widgets run **2–4 rows** tall (demo heights 30–55% of the box), and
+      zoom pays off by STRETCHING a range to reveal detail — the vertical resolution is
+      already coarse there, so it's weakest exactly where it'd apply. It also fights the
+      point of a composite (glanceable **density**, not investigation) and piles a third
+      gesture onto an already-busy box (row cursor + click + `‹ ›` cycler), with no clean
+      reset affordance for N independently-zoomed widgets. The escape hatch already exists:
+      to zoom a metric, give it a standalone `stats` pane (full zoom + hover + drag-band +
+      y-axis). If a real "look closer at this widget" need ever surfaces, the right shape is
+      **promote-widget-to-full-pane** (inherits every pane interaction for free), NOT in-place
+      zoom — and only built when the need is concrete.
 - ~~**Multi-line overlay.** "All containers, one line each."~~ Shipped as
   `mode: multi` (§3 YAML contract) — one height-1 sparkline per row of the
   topic, sorted by latest value.

@@ -37,7 +37,7 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
     `selected` treatment) so you can see what you're selecting before release commits it.
     The hover cursor + value tooltip are suppressed mid-drag. Transient: the range is
     folded into `layout.dragBand` on motion (mirroring `hover`) and cleared on release.
-    (Composite-widget zoom is still deferred — a composite graph widget has no `paneId`.)
+    (Zoom on composite widgets is a deliberate non-goal — see STATS.md §10 for the why.)
 
 - **Y-axis labels — adaptive per-pane `y_axis: auto | off | always`** (default `auto`).
   A `stats` graph can now carry a left value-tick gutter (`100% ┤` … `0% ┤`). `auto`
