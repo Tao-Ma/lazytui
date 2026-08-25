@@ -157,22 +157,6 @@ metrics:
         used: { type: bytes }
         size: { type: bytes }
 
-  # Disk THROUGHPUT — /proc/diskstats sector counters (field 6 = sectors read,
-  # field 10 = sectors written; a sector is 512 B). The awk skips loop/ram/dm
-  # devices and idle disks, and pre-multiplies to a monotonic BYTE tally so the
-  # `counter` derivation publishes a byte/s RATE (same mechanism as host.net).
-  host.diskio:
-    cmd: |-
-      awk '$3 !~ /^(loop|ram|dm-)/ && ($6+$10)>0 {printf "%s\t%d\t%d\n",$3,$6*512,$10*512}' /proc/diskstats
-    interval: 2000
-    extract:
-      mode: columns
-      delimiter: tab
-      row_key: dev
-      fields: { dev: 0, read: 1, write: 2 }
-    schema:
-      row_key: dev
-      columns: { read: { type: counter }, write: { type: counter } }
 
 # --- Panels --------------------------------------------------------------------
 # btop-density COMPOSITE boxes (docs/compact-panes.md): each `type: composite`
@@ -241,14 +225,6 @@ panels:
     sort: cpu                    # default sort (desc for a metric); siblings honour it in tree mode
     killable: true               # rows are pids → K / bottom-bar chip opens a signal picker
     tree: { parent: ppid }       # hierarchical (ppid) — opens as a tree; `t` flat, `z` fold
-  # Disk THROUGHPUT TABLE — per-device read/write rates (host.diskio counters →
-  # B/s), kept as its own selectable table (a second topic alongside procs).
-  diskio:
-    type: table
-    title: Disk I/O
-    topic: host.diskio
-    columns: [read, write]
-    sort: write
   # Compact per-process CPU OVERVIEW — one braille sparkline per process (host.proc,
   # `mode: multi`), sorted by CPU, and SELECTABLE (focus it, then j/k or click a row).
   # The selected process drives the `Selected` drill-down below (`select_from`) and its
@@ -300,7 +276,8 @@ layout:
   # would show invisible tabs, so each stays in its own slot.
   columns:
     # Col 1 — FIXED narrow: the CPU + Memory composite boxes (each graph + a bar
-    # strip). Two per column so each box gets the vertical room its graph needs.
+    # strip). Two per column so each box gets the vertical room its graph needs — a
+    # third pane here would cramp them (and trip the soft cap on small terminals).
     - width: 34
       panels:
         - cpu_box                       # composite: cpu graph + per-core bars
@@ -314,13 +291,11 @@ layout:
         - { tabs: [proctrend], heightPct: 20 } # mode:multi CPU sparklines — SELECTABLE (j/k/click) → drives procsel
         - { tabs: [procsel],  heightPct: 44 }  # selected-proc drill-down: cpu/mem/rss history (3 graphs need room)
     # Col 3 — FLEX (implicit-last): the elastic column's star is the PROCESS TABLE,
-    # which always has rows and whose command column expands to use the width. The
-    # disk-I/O table rides below it (a compact counter→rate table).
+    # which always has rows and whose command column expands to use the width.
     - panels:
         - procs                                # detailed process table (Info card + K kill)
-        - { tabs: [diskio], heightPct: 18 }    # disk THROUGHPUT table (counter → B/s)
-        - { tabs: [actions], heightPct: 14 }   # host actions (compact)
-        - { tabs: [detail], heightPct: 30 }    # Output (detail card / action transcript)
+        - { tabs: [actions], heightPct: 16 }   # host actions (compact)
+        - { tabs: [detail], heightPct: 34 }    # Output (detail card / action transcript)
 
 # --- Host actions --------------------------------------------------------------
 groups:

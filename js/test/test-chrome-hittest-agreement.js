@@ -58,7 +58,6 @@ getModel().metrics = {
   'host.proc': { schema: cfg.metrics['host.proc'].schema, series: { 100: [{ cpu: 5, mem: 1, comm: 'x', command: 'x', state: 'S', threads: 1, rss: 0, ppid: 1, user: 'r' }] } },
   'host.net': { schema: cfg.metrics['host.net'].schema, series: { eth0: [{ rx: 1, tx: 1 }] } },
   'host.disk': { schema: cfg.metrics['host.disk'].schema, series: { '/': [{ pct: 1, used: 1, size: 1 }] } },
-  'host.diskio': { schema: cfg.metrics['host.diskio'].schema, series: { vda: [{ read: 1, write: 1 }] } },
 };
 
 // Decode the painted frame into screen rows (paint uses cursor moves, not '\n').

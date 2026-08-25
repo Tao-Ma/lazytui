@@ -41,8 +41,10 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   of leaving the right two-thirds empty on a wide terminal — the same fix `procsel`
   already had (`window: 120`), scaled for `host.net`'s faster poll.
 - **Host-monitor demo layout.** Re-added the `mode: multi` **CPU trend** overview (col 2,
-  above the drill-down it now drives); moved the **Disk I/O** table to col 3 to keep the
-  Network box its full height. `procsel` now follows `proctrend` (overview → drill).
+  above the drill-down it now drives; `procsel` follows `proctrend` — overview → drill).
+  Dropped the redundant **Disk I/O** table (disk usage is already shown in the Memory box)
+  to keep the dashboard at 8 panes / a clean 3-per-column — no soft-cap warning, no
+  cramped composites.
 
 ## [0.6.24] — 2026-08-23
 

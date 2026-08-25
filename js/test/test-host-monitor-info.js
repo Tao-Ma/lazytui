@@ -3,12 +3,13 @@
  * the compact-pane reshape (docs/compact-panes.md). Guards, against the actual
  * parsed + placed layout:
  *   1. The dashboard is COMPOSITE boxes (CPU/Memory/Network) — the density win —
- *      each carrying its widget list; the placed-pane count stays btop-low.
- *   2. The two kept TABLES (procs = host.proc, diskio = host.diskio) each resolve
- *      ITS OWN topic via the pane-instance routing (sliceForPane arm 1 by paneId),
- *      not the kind primary — and the enriched host.proc schema reaches the card.
- *   3. select_from drill-downs (procsel → procs) resolve their intended table
- *      (B-F3), and a NON-primary table (diskio) resolves to its own rows.
+ *      each carrying its widget list; the placed-pane count stays btop-low (8) and
+ *      every column stays at/under the soft cap of 3.
+ *   2. The process TABLE resolves host.proc via the pane-instance routing (sliceForPane
+ *      arm 1 by paneId) and the enriched host.proc schema reaches the detail card.
+ *   3. The select_from drill-down (procsel → proctrend) resolves its intended pane
+ *      (B-F3) — which also guards NON-PRIMARY resolution (proctrend's own mode:multi
+ *      slice, not a collapse onto another stats pane).
  *   4. No metrics pane sits in a multi-tab slot (the middle-column click bug).
  *
  * (The detail-card PROJECTION itself is unit-tested in test-metrics-row-info; the
@@ -39,17 +40,14 @@ getModel().config = cfg;
 getModel().projectDir = cfg.project_dir;
 initState();
 
-// Inject one sample per asserted topic (the producers are async; the card reads
-// the mirror the same way render does — frame = f(model)). procs + diskio are the
-// two selectable tables; distinct row keys make a kind-primary COLLAPSE detectable.
+// Inject one sample for the process topic (the producers are async; the card reads
+// the mirror the same way render does — frame = f(model)). procs (table) + proctrend
+// (mode:multi) + procsel (drill) are three host.proc panes — the non-primary pane
+// resolution is guarded via proctrend below.
 getModel().metrics = {
   'host.proc': {
     schema: cfg.metrics['host.proc'].schema,
     series: { '404185': [{ cpu: 2.3, mem: 4.0, state: 'Sl+', threads: 10, rss: 800296960, ppid: 185, user: 'root', comm: 'claude', command: 'claude --resume' }] },
-  },
-  'host.diskio': {
-    schema: cfg.metrics['host.diskio'].schema,
-    series: { vda: [{ read: 4096, write: 8192 }] },
   },
 };
 
@@ -105,8 +103,12 @@ describe('[host-monitor] composite dashboard + density', () => {
     assert(drill, 'a multi-metric select_from drill-down (procsel: cpu/mem/rss)');
   });
 
-  it('density: the reshape holds the placed-pane count btop-low (12 → 9; the selectable mode:multi overview re-added)', () => {
-    assert(panes.length <= 9, `expected ≤9 placed panes, got ${panes.length}: ${panes.map(p => p.paneId).join(',')}`);
+  it('density: the reshape holds the placed-pane count btop-low (12 → 8; every column at/under the soft cap of 3)', () => {
+    assert(panes.length <= 8, `expected ≤8 placed panes, got ${panes.length}: ${panes.map(p => p.paneId).join(',')}`);
+    const cols = api.getInstanceSlice('layout').arrange.columns || [];
+    for (let i = 0; i < cols.length; i++) {
+      assert((cols[i].panels || []).length <= 3, `col ${i} exceeds the soft cap of 3 (would warn)`);
+    }
   });
 
   it('no metrics pane sits in a multi-tab slot (no phantom tab strip / misrouted click)', () => {
@@ -116,14 +118,12 @@ describe('[host-monitor] composite dashboard + density', () => {
   });
 });
 
-describe('[host-monitor] detail card + per-pane topic resolution (two tables)', () => {
-  const tables = panesOfType('table');   // pane-procs, pane-diskio
+describe('[host-monitor] detail card + per-pane topic resolution', () => {
+  const tables = panesOfType('table');   // pane-procs (the one detailed table)
 
-  it('two table panes on distinct topics (procs = host.proc, diskio = host.diskio)', () => {
-    assert(tables.length >= 2, `expected ≥2 table panes, got ${tables.join(',')}`);
-    const topics = tables.map(id => api.getInstanceSlice(id).topic).sort();
-    assert(topics.includes('host.proc') && topics.includes('host.diskio'),
-      `tables on host.proc + host.diskio, got ${topics.join(',')}`);
+  it('the process table resolves host.proc', () => {
+    const procs = tables.find(id => api.getInstanceSlice(id).topic === 'host.proc');
+    assert(procs, `a table pane on host.proc, got ${tables.map(id => api.getInstanceSlice(id).topic).join(',')}`);
   });
 
   it('the process table card shows OFF-TABLE columns, formatted by type', () => {
@@ -137,41 +137,18 @@ describe('[host-monitor] detail card + per-pane topic resolution (two tables)', 
     assert(/\[dim\]ppid +\[\/]  185/.test(body), 'parent pid');
     assert(/\[dim\]command\[\/]  claude --resume/.test(body), 'full command line (tab-delimited field)');
   });
-
-  it('each table resolves ITS OWN topic — no kind-primary collapse', () => {
-    const procs = tables.find(id => api.getInstanceSlice(id).topic === 'host.proc');
-    const diskio = tables.find(id => api.getInstanceSlice(id).topic === 'host.diskio');
-    assert(procs && diskio && procs !== diskio, 'two distinct table panes on distinct topics');
-    eq(api.getPanelDef(diskio).getInfo('vda', diskio)[0], '[bold]dev vda[/]', 'diskio card keyed by dev (not collapsed to procs/pid)');
-  });
 });
 
-describe('[host-monitor] select_from drill-downs resolve their intended table', () => {
-  it('each named table resolves to ITS OWN rows; a bare pool-id collapses to the primary (B-F3)', () => {
-    // NAMED resolution (what select_from uses via resolveSourcePaneId) reads the
-    // SPECIFIC pane's rows — mint-order-independent, the B-F3 guarantee.
-    const procRows = api.getItems(route.resolveSourcePaneId('procs'));
-    const diskRows = api.getItems(route.resolveSourcePaneId('diskio'));
-    assert(procRows.includes('404185') && !procRows.includes('vda'),
-      `resolveSourcePaneId(procs) → host.proc rows (got ${JSON.stringify(procRows)})`);
-    assert(diskRows.includes('vda') && !diskRows.includes('404185'),
-      `resolveSourcePaneId(diskio) → host.diskio rows (got ${JSON.stringify(diskRows)})`);
-    // Whereas a BARE kind pool-id collapses onto the kind-PRIMARY (first-minted)
-    // table — the SAME rows for both bare lookups, whichever table mints first
-    // (diskio, now that procs moved to the elastic last column). That mint-order-
-    // dependent collapse is exactly why select_from must name + resolve the pane.
-    eq(api.getItems('procs'), api.getItems('diskio'),
-      'both bare pool-ids collapse to the same primary table');
-  });
-
+describe('[host-monitor] select_from drill-down resolves its intended pane (B-F3)', () => {
   it('procsel (select_from: proctrend) reads the PROCESS rows via the resolved pane', () => {
     const procsel = placedPanes().find(pn => pn.type === 'stats' && pn.select_from);
     eq(procsel.select_from, 'proctrend');
-    // proctrend is a mode:multi host.proc pane → its getItems is the process rows (pids);
-    // this is exactly what stats._resolveSelection reads to follow the overview's cursor.
+    // proctrend is a mode:multi host.proc pane → its getItems is the process rows (pids).
+    // This ALSO guards NON-PRIMARY resolution: proctrend must resolve its OWN slice, not
+    // collapse onto another stats pane (procsel/procsel are NOT mode:multi → getItems []),
+    // so a non-empty list here proves the paneId-keyed resolution held.
     const items = api.getItems(route.resolveSourcePaneId(procsel.select_from));
     assert(items.includes('404185'), `procsel resolves host.proc rows via proctrend (got ${JSON.stringify(items)})`);
-    assert(!items.includes('vda'), 'must NOT be the diskio rows');
   });
 });
 
