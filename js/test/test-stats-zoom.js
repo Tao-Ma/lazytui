@@ -158,4 +158,25 @@ describe('[stats-zoom] live drag band — highlight the range mid-drag, clear on
   });
 });
 
+describe('[stats-zoom] a y-axis gutter does not clip the frozen range (§10 offset)', () => {
+  it('the leftmost TRACE column reads the frozen START (gutter or not)', () => {
+    boot();
+    const { paneId, b } = pane();
+    // Hand-build a frozen snapshot over a monotone range [100..199] so each sample has a
+    // distinct value; the leftmost drawn TRACE column must read the START (100), whether or
+    // not a y-axis gutter shifts the trace origin. (Bug: the frozen resample used innerW, but
+    // the trace draws effW — so a gutter dropped the oldest gutterW/innerW of the range.)
+    const frozen = { samples: Array.from({ length: 200 }, (_x, i) => ({ cpu: i })), start: 100, end: 199, metrics: ['cpu'], rowKey: '_' };
+    sm.capture(() => api.dispatchMsg(api.wrap('layout', { type: 'graph_zoom', paneId, frozen })));
+    const innerW = b.w - 2, innerH = b.h - 2, gRow = 3;   // header 0, meter 1, graph 2+
+    const off = { paneId, topic: 'z.cpu', row: '_', metrics: ['cpu'], window: 300, y_axis: 'off' };
+    const on = { ...off, y_axis: 'always' };
+    const g = stats._axisGutterW('percent');                              // 6
+    const offStart = stats.valueAt(off, innerW, innerH, 0, gRow).value;   // no gutter → col 0 is leftmost trace
+    const onStart = stats.valueAt(on, innerW, innerH, g, gRow).value;     // gutter → col gutterW is leftmost trace
+    eq(offStart, 100, 'sanity: no-gutter leftmost trace = frozen start');
+    eq(onStart, offStart, 'gutter leftmost trace also = frozen start (oldest not clipped)');
+  });
+});
+
 report();

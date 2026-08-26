@@ -159,7 +159,12 @@ function renderBody(spec, innerW, innerH, hoverCol = -1, ctx = null, band = null
   // step (rasterize / section walk / valueAt) unchanged. Sectioned + overlay; not multi.
   const frozen = _zoomFrozen(spec);
   if (frozen) {
-    samples = _resampleFrozen(frozen, innerW * (spec.graph === 'blocks' ? 1 : 2));
+    // Resample to the TRACE width (innerW − gutterW), not innerW: the rasterizer draws only
+    // effW columns, so resampling to innerW would let the y-axis gutter clip the OLDEST
+    // gutterW/innerW of the frozen range off the left edge (§10). effW === innerW when no
+    // gutter shows, so this is a no-op on the pre-y-axis path.
+    const effW = innerW - _axisForSpec(spec, innerW, innerH).gutterW;
+    samples = _resampleFrozen(frozen, effW * (spec.graph === 'blocks' ? 1 : 2));
     metrics = (frozen.metrics && frozen.metrics.length) ? frozen.metrics : _defaultMetrics(schema);
     rowKey = frozen.rowKey || '_';
   } else {
@@ -715,12 +720,16 @@ const _zoomResetControl = {
 // passed AND the pane is zoomed, returns the resampled frozen snapshot instead (so hover
 // reads the same stretched samples the graph drew) — the seam that keeps zoom + hover in
 // agreement.
-function _resolveSeries(spec, innerW) {
+function _resolveSeries(spec, innerW, innerH) {
   const metric = getModel().metrics[spec.topic];
   const schema = (metric && metric.schema) || { columns: {} };
   const frozen = (innerW != null) ? _zoomFrozen(spec) : null;
   if (frozen) {
-    const samples = _resampleFrozen(frozen, innerW * (spec.graph === 'blocks' ? 1 : 2));
+    // Resample to the TRACE width, not innerW — see the same fix in renderBody's frozen
+    // branch. innerH lets `_axisForSpec` derive the gutter that the hover read must honour so
+    // the frozen range it reads matches the range the graph drew.
+    const effW = innerW - _axisForSpec(spec, innerW, innerH).gutterW;
+    const samples = _resampleFrozen(frozen, effW * (spec.graph === 'blocks' ? 1 : 2));
     const metrics = (frozen.metrics && frozen.metrics.length) ? frozen.metrics : _defaultMetrics(schema);
     return (samples.length && metrics.length) ? { samples, metrics, schema } : null;
   }
@@ -783,7 +792,7 @@ function valueAt(spec, innerW, innerH, col, row) {
   if (!(col >= 0 && col < innerW) || !(row >= 0)) return null;
   if (spec.mode === 'multi') return _valueAtMulti(spec, innerW, innerH, col, row);
   if (spec.overlay) return _valueAtOverlay(spec, innerW, innerH, col, row);
-  const resolved = _resolveSeries(spec, innerW);   // innerW → zoom-aware (frozen when zoomed)
+  const resolved = _resolveSeries(spec, innerW, innerH);   // innerW+innerH → zoom-aware (frozen resample honours the y-axis gutter)
   if (!resolved) return null;
   const { samples, metrics, schema } = resolved;
 
@@ -852,7 +861,7 @@ function _valueAtOverlay(spec, innerW, innerH, col, row) {
   if (col < gutterW) return null;
   const traceCol = col - gutterW;
   const effW = innerW - gutterW;
-  const resolved = _resolveSeries(spec, innerW);         // zoom-aware
+  const resolved = _resolveSeries(spec, innerW, innerH);         // zoom-aware (gutter-honouring frozen)
   if (!resolved) return null;
   const { samples, metrics, schema } = resolved;
   const cols = schema.columns || {};

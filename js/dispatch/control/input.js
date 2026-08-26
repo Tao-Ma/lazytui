@@ -920,11 +920,14 @@ function handleMouse(kind, x, y) {
     // Drag-to-zoom arm: a press on a GRAPH stats pane (sectioned/overlay — getItems
     // empty, so NOT a mode:multi list) stores the start column; the release freezes the
     // dragged range (docs/STATS.md §10). A mode:multi pane is a row list → it selects.
-    // Zoom WINS the gesture: a stats pane is text-selectable by default, so the block
-    // above already armed _armedSelect — clear it, or the same drag would ALSO run a text
-    // selection of the graph glyphs (a competing mid-drag highlight + braille pushed to
-    // the yank register on release). The graph body is braille (nothing meaningful to
-    // copy), so a press-drag here is unambiguously a zoom, never a selection.
+    // Zoom WINS the gesture PANE-WIDE: a stats pane is text-selectable by default, so the
+    // block above already armed _armedSelect — clear it, or the same drag would ALSO run a
+    // text selection (a competing mid-drag highlight + the selected glyphs pushed to the
+    // yank register on release). We treat a press-drag ANYWHERE on a graph stats pane as a
+    // zoom, so you can start the drag on any row (the column→range map is row-independent).
+    // Trade-off: the header line's numbers (`CPU 45% peak … avg …`) are no longer
+    // drag-selectable on a graph pane — a deliberate call; they stay visible, and copying a
+    // stat isn't the pane's job. (mode:multi is a row list → getItems non-empty → selects.)
     if (p.type === 'stats' && getItems(p.paneId).length === 0) {
       const cc = _contentCoordsAt(p.paneId, mx, my);
       if (cc) { _armedZoom = { paneId: p.paneId, startCol: cc.col }; _armedSelect = null; }
