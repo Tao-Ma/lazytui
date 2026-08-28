@@ -6,6 +6,23 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Time-axis labels on graphs (`x_axis: auto | off | always`).** A `stats` graph can
+  now carry scale on the time axis — a bottom row reading `-6m00s … now` (with a centred
+  mid tick on a wide trace), the horizontal twin of the `y_axis` value gutter. Where the
+  y-axis costs a left gutter (width), the time-axis costs one bottom row (height); the
+  whole pane shares one window, so it's a single row. `auto` (default) reserves the row
+  only when the pane is tall/wide enough to keep the graph usable; `always` forces it on
+  any usable pane; `off` never. Sectioned + overlay standalone panes (not `mode: multi`,
+  not composite widgets). A frozen (drag-to-zoomed) graph — whose right edge is no longer
+  "now" — shows the range DURATION (`‹ 2m30s ›`) instead.
+  - **Samples now carry a capture timestamp.** The `metrics:` producer stamps every
+    published sample with `ts` (wall-clock capture time). The time-axis labels are a pure
+    function of those timestamps (no render-side clock read), and `ts` rides the existing
+    sample-mirror Msg so it records and replays identically. `ts` is a reserved field — it
+    never graphs as a metric or shows in the row-detail card (both read schema columns).
+
 ## [0.6.25] — 2026-08-26
 
 ### Added

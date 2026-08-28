@@ -244,6 +244,8 @@ panels:
   # the CPU-trend overview's cursor (`select_from: proctrend`) — pick a process in the
   # sparkline list above and it inspects here; the full current-value column set lives
   # in the Info card. `window: 120` (~6 min at the 3s poll) fills the graph width.
+  # `x_axis: always` adds the bottom time-axis (`-6m00s … now`) — the horizontal twin
+  # of `y_axis`; drag-to-zoom a section and it shows that range's DURATION instead.
   procsel:
     type: stats
     title: Selected
@@ -251,6 +253,8 @@ panels:
     select_from: proctrend
     window: 120
     metrics: [cpu, mem, rss]
+    y_axis: auto
+    x_axis: always
   # The Output pane. Its Info tab is the process DETAIL CARD: focus the process
   # table and it shows the selected process's full column set — state, threads,
   # RSS, parent pid, user, command line. Host-action output (ps/uptime) lands in

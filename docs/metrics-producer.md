@@ -183,6 +183,16 @@ declare (v0.6.6 Finding B) throttle-samples the hub into the model, so
 `frame = f(model)` (#D5) is preserved unchanged. Producer and consumer
 share nothing but the topic string.
 
+Each published sample carries a reserved **`ts`** field — the wall-clock
+capture time (`Date.now()` in the poll effect, the blessed shell read). It's
+read at event time and rides the hub → mirror → `metrics_synced` Msg as
+recorded data, so it replays identically (the `model.now`/tick discipline,
+`docs/model-now-tick.md`) — not a render-side clock read. `ts` is NOT a schema
+column: the `stats` time-axis (`x_axis`, STATS.md §10) reads it to label the
+trace span, but it never graphs as a metric or appears in the row-detail card
+(both iterate `schema.columns`). A field literally named `ts` in your `extract`
+would be overwritten by the stamp — pick another name.
+
 ### 4.1 The `metrics-poll` kind (shape)
 
 > This sketch shows the base shape only. The **counter→rate** additions (§6.1) —

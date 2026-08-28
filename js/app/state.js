@@ -341,11 +341,18 @@ const _subKinds = {
                 const now = Date.now();
                 const seen = new Map();
                 for (const { rowKey, sample } of rows) {
-                  let outSample = sample;
+                  // Every published sample carries `ts` — the wall-clock capture time
+                  // (blessed shell read, the same `now` the counter-rate math uses). It
+                  // rides the hub → metrics-mirror → `metrics_synced` Msg, so it's
+                  // recorded data and replays identically (docs/model-now-tick.md's
+                  // event-time-into-the-model pattern; NOT a render-side clock read). The
+                  // stats time-axis reads it to label the trace span (docs/STATS.md §10).
+                  // A reserved field (never a schema column) → it never graphs or shows
+                  // in the row-detail card, which iterate `schema.columns` only.
+                  const outSample = { ...sample, ts: now };
                   if (counterFields.length) {
                     // Derive per-second rates for counter fields from the prior
                     // RAW sample; publish those in place of the raw tally.
-                    outSample = { ...sample };
                     const prev = token.prev.get(rowKey);
                     const dt = prev ? (now - prev.t) / 1000 : 0;
                     for (const f of counterFields) {

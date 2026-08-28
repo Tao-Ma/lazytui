@@ -378,8 +378,27 @@ Run via `node js/scripts/run-tests.js -q`.
   `(type, width)`; `_axisForSpec` is the single source both the paint and every
   hit-test (hover, drag-to-zoom, drag-band) read, so the offset trace and its
   column→sample map can't drift. Labels respect `invert` (max moves to the
-  bottom). Sectioned + overlay; not `mode: multi`. **Time-axis labels**
-  (`now−5m` / `now`) — the horizontal twin — stay deferred (same width trade).
+  bottom). Sectioned + overlay; not `mode: multi`.
+- ~~**Time-axis labels** (`now−5m` / `now`) — the horizontal twin — stay
+  deferred (same width trade).~~ **SHIPPED** as the adaptive per-pane option
+  `x_axis: auto | off | always` (default `auto`). Where the y-axis costs a
+  LEFT gutter (width), the time-axis costs ONE BOTTOM row (height) — and the
+  whole pane shares one window, so it's a single row, not per-metric. Labels
+  read `-6m00s … now` (a centred mid tick on a wide trace). `auto` reserves the
+  row only when the pane clears a min height/width and the graph keeps its ≥2
+  floor; `always` drops the min-height gate; `off` never. Single-sourced through
+  `_timeAxisRows` (the vertical mirror of `_axisForSpec`'s gutterW) so paint,
+  hover, drag-zoom, and freeze all subtract the SAME reserved row and can't
+  drift. **Time enters as data, not a render clock:** the metrics-poll producer
+  stamps every sample with a `ts` (wall-clock capture time, the blessed shell
+  read — it rides the `metrics_synced` Msg, so it replays identically, per
+  `docs/model-now-tick.md`); the labels are a PURE function of the sample `ts`
+  (span = newest − oldest, right edge ≈ now), needing no render-side `Date.now()`
+  and no clock tick. A frozen (zoomed) pane's right edge is NOT now, so it shows
+  the range DURATION (`‹ 2m30s ›`) instead of the now anchor. A topic fed some
+  other way (no `ts`) draws no time-axis. Sectioned + overlay STANDALONE panes;
+  not `mode: multi`, not composite widgets (2–4 rows tall — a bottom row would
+  eat a third of the box, the same call as composite-widget zoom).
 - ~~**Color-coded thresholds** (CPU > 80% → red).~~ Shipped in stronger
   form by the truecolor arc: `graph_color: value` (or `banded`) maps each
   column through the theme's `percent` gradient (continuous cool→hot, not a

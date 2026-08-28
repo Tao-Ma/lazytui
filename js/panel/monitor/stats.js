@@ -28,6 +28,7 @@ const {
 const hoverRegion = require('../hover-region');
 const { truncate } = require('../../leaves/render/draw');
 const { fmt: _fmtCell } = require('../../leaves/metrics/format');   // shared compact cell formatter (see gauge/table)
+const { fmtDurationMs } = require('../../leaves/text/time');        // shared pure span formatter (jobs/history/status) — time-axis labels
 const { rowInfo } = require('../../leaves/metrics/row-info');       // shared row → detail-card projection (gauge/table)
 const mnav = require('../../leaves/wm/nav');                        // shared cursor/scroll reducer (mode:multi selection)
 const { rasterize, rasterizeBraille, rasterizeBrailleMulti, columnNorms, colorizeRows, colorizeOverlay, colorizeByHeight, quantizeNorm, meterRow } = require('./stats-graph');
@@ -149,6 +150,14 @@ function renderBody(spec, innerW, innerH, hoverCol = -1, ctx = null, band = null
   // `graph` widget too).
   if (spec.mode === 'multi') return _renderMulti(spec, metric, schema, innerW, innerH, window, dim, ctx);
 
+  // Time-axis reserve (docs/STATS.md §10): decide the bottom label row NOW so ALL geometry
+  // below (the frozen resample's trace width via the y-axis gutter, overlay/section height)
+  // is built against the reduced graph height `gH`; the label row is appended last. `gH`
+  // is the single height every hit-test (valueAt / freezeRange / drag-band) also derives,
+  // so the reserved row can't drift from the trace.
+  const taRows = _timeAxisRows(spec, innerW, innerH);
+  const gH = innerH - taRows;
+
   let samples;
   let rowKey = '_';
   let metrics;
@@ -163,7 +172,7 @@ function renderBody(spec, innerW, innerH, hoverCol = -1, ctx = null, band = null
     // effW columns, so resampling to innerW would let the y-axis gutter clip the OLDEST
     // gutterW/innerW of the frozen range off the left edge (§10). effW === innerW when no
     // gutter shows, so this is a no-op on the pre-y-axis path.
-    const effW = innerW - _axisForSpec(spec, innerW, innerH).gutterW;
+    const effW = innerW - _axisForSpec(spec, innerW, gH).gutterW;
     samples = _resampleFrozen(frozen, effW * (spec.graph === 'blocks' ? 1 : 2));
     metrics = (frozen.metrics && frozen.metrics.length) ? frozen.metrics : _defaultMetrics(schema);
     rowKey = frozen.rowKey || '_';
@@ -204,7 +213,7 @@ function renderBody(spec, innerW, innerH, hoverCol = -1, ctx = null, band = null
   // series are comparable. See docs/compact-panes.md §5 + STATS.md.
   if (spec.overlay) {
     const legend = metrics.map((m, i) => `[${OVERLAY_COLORS[i % OVERLAY_COLORS.length]}]${esc(m.toUpperCase())}[/]`).join('  ');
-    const graphH = innerH - 1;                                   // 1 legend row
+    const graphH = gH - 1;                                       // 1 legend row (gH already drops the time-axis row)
     if (graphH < 2) return dim('(panel too short for graph)');
     // Shared scale: all-percent → 0..100; else 0..max-finite-across-all-series.
     let oMin = 0, oMax = 1;
@@ -229,10 +238,12 @@ function renderBody(spec, innerW, innerH, hoverCol = -1, ctx = null, band = null
     if (hoverCol >= 0 && hoverCol < innerW) colored = colored.map((r) => _highlightColumn(r, hoverCol, t.selected));
     // Live drag-band (§10): highlight the pending zoom range across the overlaid grid.
     if (band) colored = colored.map((r) => _highlightRange(r, band.lo, band.hi, t.selected));
-    return { lines: [legend, ...colored], rowKey };
+    const lines = [legend, ...colored];
+    if (taRows) lines.push(_timeAxisRow(samples, oAxis.gutterW, innerW, !!frozen, t.dim));
+    return { lines, rowKey };
   }
 
-  const perMetric = _sectionPerMetric(metrics, schema, innerH);
+  const perMetric = _sectionPerMetric(metrics, schema, gH);
   if (perMetric < 2) return dim('(panel too short for graph)');
   // Pane-uniform y-axis gutter — the WIDEST metric's reserve, shared by every section so
   // all traces start at the same column (and the column→sample map stays pane-uniform).
@@ -243,6 +254,9 @@ function renderBody(spec, innerW, innerH, hoverCol = -1, ctx = null, band = null
     if (i > 0) lines.push('');
     lines.push(..._renderSection(m, samples, schema, innerW, perMetric, style, colorMode, hoverCol, spec.invert, spec.header === 'bottom', band, gutterW));
   });
+  // Time-axis label row at the very bottom of the pane (docs/STATS.md §10), aligned to the
+  // trace via the shared gutterW; `frozen` swaps the now-anchored labels for the duration.
+  if (taRows) lines.push(_timeAxisRow(samples, gutterW, innerW, !!frozen, t.dim));
   return { lines, rowKey };
 }
 
@@ -513,6 +527,113 @@ function _axisGutterCell(r, graphH, min, max, type, gutterW, invert, dimAtom) {
   return `[${dimAtom}]${_axisPad(_axisFmt(type)(val), labelW)} ┤[/]`;
 }
 
+// --- Time-axis labels (docs/STATS.md §1, §10) --------------------------------------
+// The horizontal twin of the y-axis gutter: reserve ONE bottom row for time-span labels
+// (`-6m00s` … `now`) so a graph carries scale on the time axis. `x_axis: auto|off|always`
+// per pane, default `auto`. Unlike the y-axis (a per-metric LEFT gutter — a WIDTH cost),
+// the whole pane shares ONE window, so this is a single BOTTOM row (a HEIGHT cost). The
+// reserve shrinks the graph's available HEIGHT — the one fact every geometry consumer
+// (paint, hover, drag-zoom, freeze) must agree on — so it's a pure function of (spec,w,h)
+// here, the vertical mirror of `_axisForSpec`'s gutterW. Labels are PURE from the sample
+// `ts` (metrics-poll stamps it, app/state.js): the trace spans oldest→newest ts, the right
+// edge ≈ now. A frozen (zoomed) pane's right edge is NOT now → it shows the range DURATION
+// instead. No render-side wall-clock read (docs/model-now-tick.md). Sectioned + overlay
+// STANDALONE panes only; NOT mode:multi, NOT composite widgets (display-only + only 2–4
+// rows tall — the same call as zoom-won't-do: a bottom row would eat a third of the box).
+
+const _TIME_AXIS_MIN_H = 6;    // `auto`: a pane shorter than this keeps the full-height graph
+const _TIME_AXIS_MIN_W = 12;   // need room for two end labels (`-6m00s` + gap + `now`)
+
+// Does this topic's data carry capture timestamps? metrics-poll stamps every published
+// sample with `ts`; a topic fed another way (e.g. docker per-pane stats) may not — then
+// `auto`/`always` draw no time-axis (nothing to label). Cheap: probe the newest sample of
+// each row, not the whole window.
+function _hasSampleTs(topic) {
+  const m = getModel().metrics[topic];
+  const series = m && m.series;
+  if (!series) return false;
+  for (const k in series) {
+    const arr = series[k];
+    const s = arr && arr[arr.length - 1];
+    if (s && Number.isFinite(s.ts)) return true;
+  }
+  return false;
+}
+
+// Rows the time-axis reserves at the BOTTOM (0 or 1) — the SINGLE source every geometry
+// consumer subtracts, so paint / hover / drag-zoom / freeze can't drift on the graph's
+// available height (mirrors `_axisForSpec`). `auto` shows only when reserving the row
+// leaves the graph at its ≥2 floor AND the pane clears the min height/width AND the data
+// carries `ts`; `always` drops the min-height gate but still needs the floor + `ts`; `off`
+// never. Composite widgets (no paneId) and mode:multi are excluded outright.
+function _timeAxisRows(spec, innerW, innerH) {
+  if (!spec || !spec.topic || spec.mode === 'multi' || spec.paneId == null) return 0;
+  const mode = (spec.x_axis === 'off' || spec.x_axis === 'always') ? spec.x_axis : 'auto';
+  if (mode === 'off') return 0;
+  if (innerW < _TIME_AXIS_MIN_W) return 0;
+  if (!_hasSampleTs(spec.topic)) return 0;
+  const metricObj = getModel().metrics[spec.topic];
+  const schema = (metricObj && metricObj.schema) || { columns: {} };
+  const metrics = spec.metrics || _defaultMetrics(schema);
+  if (!metrics.length) return 0;
+  const gH = innerH - 1;   // graph height if we reserve the row
+  const graphFits = spec.overlay ? (gH - 1 >= 2) : (_sectionPerMetric(metrics, schema, gH) >= 2);
+  if (!graphFits) return 0;
+  if (mode === 'auto' && innerH < _TIME_AXIS_MIN_H) return 0;
+  return 1;
+}
+
+// The effective inner height available to the GRAPH stack — innerH minus the time-axis
+// reserve. EVERY geometry site (section stacking, overlay graphH, the y-axis decision, the
+// frozen resample, the hover walk, freeze) uses THIS in place of raw innerH, so the
+// reserved bottom row never overlaps the trace and the column/row maps stay in lockstep.
+function _graphInnerH(spec, innerW, innerH) {
+  return innerH - _timeAxisRows(spec, innerW, innerH);
+}
+
+// Newest / oldest finite `ts` in a sample window (scanning inward from the end / start).
+function _lastFiniteTs(samples) {
+  for (let i = samples.length - 1; i >= 0; i--) { const t = samples[i] && samples[i].ts; if (Number.isFinite(t)) return t; }
+  return null;
+}
+function _firstFiniteTs(samples) {
+  for (let i = 0; i < samples.length; i++) { const t = samples[i] && samples[i].ts; if (Number.isFinite(t)) return t; }
+  return null;
+}
+
+// Build the bottom time-axis row: `[dim]` span labels aligned to the TRACE region (the
+// `gutterW` left cols stay blank so labels sit under the trace, never the y-axis gutter).
+// LIVE → left `-<span>` (oldest→newest ts) + right `now` (newest ≈ now) + a centred mid
+// tick when the trace is wide enough to clear both ends. FROZEN (zoomed) → the right edge
+// isn't now, so show the range DURATION centred (`‹ 2m30s ›`). Pure of the clock — reads
+// only sample `ts`. All glyphs are width-1 (ASCII + `‹ ›`), so length === visible width.
+function _timeAxisRow(samples, gutterW, innerW, frozen, dimAtom) {
+  const effW = Math.max(1, innerW - gutterW);
+  const first = _firstFiniteTs(samples);
+  const last = _lastFiniteTs(samples);
+  const buf = new Array(effW).fill(' ');
+  const put = (str, at) => { for (let i = 0; i < str.length; i++) { const c = at + i; if (c >= 0 && c < effW) buf[c] = str[i]; } };
+  if (first != null && last != null && last >= first) {
+    const span = last - first;
+    if (frozen) {
+      // Centred range duration; drop it wholesale if the trace is too narrow to hold it
+      // (a y-axis gutter can shrink effW below the label) rather than truncate mid-glyph.
+      const label = `‹ ${fmtDurationMs(span)} ›`;
+      if (label.length <= effW) put(label, Math.floor((effW - label.length) / 2));
+    } else {
+      const left = `-${fmtDurationMs(span)}`;
+      const right = 'now';
+      put(right, effW - right.length);
+      if (left.length + 1 <= effW - right.length) put(left, 0);
+      // A centred mid tick, only if it clears both ends with a gap on each side.
+      const mid = `-${fmtDurationMs(span / 2)}`;
+      const midAt = Math.floor((effW - mid.length) / 2);
+      if (midAt > left.length && midAt + mid.length < effW - right.length) put(mid, midAt);
+    }
+  }
+  return `[${dimAtom}]${' '.repeat(gutterW)}${buf.join('')}[/]`;
+}
+
 /**
  * Render one metric's section: header line, meter row (percent metrics),
  * graph rows.
@@ -761,8 +882,9 @@ function freezeRange(spec, innerW, innerH, startCol, endCol) {
   const { samples, metrics } = resolved;
   const group = spec.graph === 'blocks' ? 1 : 2;
   // Y-axis gutter: the drag cols are body-relative; shift into trace-space and size the
-  // cut to the trace width, so the frozen range matches what the offset trace drew.
-  const { gutterW } = _axisForSpec(spec, innerW, innerH);
+  // cut to the trace width, so the frozen range matches what the offset trace drew. Use the
+  // reduced height (§10) so the gutter agrees with the paint even when a time-axis shows.
+  const { gutterW } = _axisForSpec(spec, innerW, _graphInnerH(spec, innerW, innerH));
   const effW = innerW - gutterW;
   const cutLen = effW * group;
   const idxAt = (col) => {
@@ -792,13 +914,18 @@ function valueAt(spec, innerW, innerH, col, row) {
   if (!(col >= 0 && col < innerW) || !(row >= 0)) return null;
   if (spec.mode === 'multi') return _valueAtMulti(spec, innerW, innerH, col, row);
   if (spec.overlay) return _valueAtOverlay(spec, innerW, innerH, col, row);
-  const resolved = _resolveSeries(spec, innerW, innerH);   // innerW+innerH → zoom-aware (frozen resample honours the y-axis gutter)
+  // Time-axis reserve (docs/STATS.md §10): the graph occupies the top `gH` rows; a hover on
+  // the reserved bottom label row carries no value. Every geometry read below uses `gH`, the
+  // same reduced height renderBody built the trace against.
+  const gH = _graphInnerH(spec, innerW, innerH);
+  if (row >= gH) return null;
+  const resolved = _resolveSeries(spec, innerW, gH);   // innerW+gH → zoom-aware (frozen resample honours the y-axis gutter)
   if (!resolved) return null;
   const { samples, metrics, schema } = resolved;
 
   // Y-axis gutter (docs/STATS.md §10): a hover in the left tick column is not a data
   // cell → null; otherwise shift into trace-space (the SAME { gutterW } the paint used).
-  const { gutterW } = _axisForSpec(spec, innerW, innerH);
+  const { gutterW } = _axisForSpec(spec, innerW, gH);
   if (col < gutterW) return null;
   const traceCol = col - gutterW;
   const effW = innerW - gutterW;
@@ -806,7 +933,7 @@ function valueAt(spec, innerW, innerH, col, row) {
   // Section geometry — MUST match renderBody's stacking exactly.
   const cols = schema.columns || {};
   const isPct = (m) => (cols[m] || {}).type === 'percent';
-  const perMetric = _sectionPerMetric(metrics, schema, innerH);
+  const perMetric = _sectionPerMetric(metrics, schema, gH);
   if (perMetric < 2) return null;
 
   // Walk the stack to find which metric's GRAPH rows `row` falls in (headers,
@@ -854,14 +981,15 @@ function _hitAt(values, width, col, group = 2) {
 // legend row (row 0) and a too-short panel carry no value. Returns EVERY series'
 // finite value at the column (the overlay exists to compare them), or null.
 function _valueAtOverlay(spec, innerW, innerH, col, row) {
-  const graphH = innerH - 1;                              // 1 legend row (matches renderBody)
+  const gH = _graphInnerH(spec, innerW, innerH);         // drop the time-axis reserve (§10)
+  const graphH = gH - 1;                                  // 1 legend row (matches renderBody)
   if (graphH < 2 || !(row >= 1 && row < 1 + graphH)) return null;
   // Y-axis gutter — same shift as the sectioned read (the overlay shares one tick column).
-  const { gutterW } = _axisForSpec(spec, innerW, innerH);
+  const { gutterW } = _axisForSpec(spec, innerW, gH);
   if (col < gutterW) return null;
   const traceCol = col - gutterW;
   const effW = innerW - gutterW;
-  const resolved = _resolveSeries(spec, innerW, innerH);         // zoom-aware (gutter-honouring frozen)
+  const resolved = _resolveSeries(spec, innerW, gH);            // zoom-aware (gutter-honouring frozen)
   if (!resolved) return null;
   const { samples, metrics, schema } = resolved;
   const cols = schema.columns || {};
@@ -934,7 +1062,7 @@ function _resolveDragBand(panel, innerW, innerH) {
   const layout = getInstanceSlice('layout');
   const db = layout && layout.dragBand;
   if (!db || db.paneId !== paneId) return null;
-  const { gutterW } = _axisForSpec(panel, innerW, innerH);
+  const { gutterW } = _axisForSpec(panel, innerW, _graphInnerH(panel, innerW, innerH));   // gutter on the reduced height (§10)
   const lo = Math.max(gutterW, Math.min(db.lo, db.hi));
   const hi = Math.min(innerW - 1, Math.max(db.lo, db.hi));
   if (hi < lo || lo > innerW - 1) return null;
@@ -1076,4 +1204,7 @@ module.exports = {
   _axisFor,
   _axisForSpec,
   _axisGutterW,
+  _timeAxisRows,
+  _timeAxisRow,
+  _hasSampleTs,
 };
