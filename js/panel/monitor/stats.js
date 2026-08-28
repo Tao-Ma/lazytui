@@ -28,7 +28,7 @@ const {
 const hoverRegion = require('../hover-region');
 const { truncate } = require('../../leaves/render/draw');
 const { fmt: _fmtCell } = require('../../leaves/metrics/format');   // shared compact cell formatter (see gauge/table)
-const { fmtDurationMs } = require('../../leaves/text/time');        // shared pure span formatter (jobs/history/status) — time-axis labels
+const { fmtDurationMs } = require('../../leaves/text/time');        // shared pure span formatter (history/action-status) — time-axis labels
 const { rowInfo } = require('../../leaves/metrics/row-info');       // shared row → detail-card projection (gauge/table)
 const mnav = require('../../leaves/wm/nav');                        // shared cursor/scroll reducer (mode:multi selection)
 const { rasterize, rasterizeBraille, rasterizeBrailleMulti, columnNorms, colorizeRows, colorizeOverlay, colorizeByHeight, quantizeNorm, meterRow } = require('./stats-graph');
@@ -256,7 +256,13 @@ function renderBody(spec, innerW, innerH, hoverCol = -1, ctx = null, band = null
   });
   // Time-axis label row at the very bottom of the pane (docs/STATS.md §10), aligned to the
   // trace via the shared gutterW; `frozen` swaps the now-anchored labels for the duration.
-  if (taRows) lines.push(_timeAxisRow(samples, gutterW, innerW, !!frozen, t.dim));
+  // `_sectionPerMetric` floors, so the section stack can be a row or two short of `gH`;
+  // pad the graph region up to `gH` FIRST so the label lands flush on the bottom row
+  // (renderPanel would otherwise pad blanks BELOW it, floating it off the border).
+  if (taRows) {
+    while (lines.length < gH) lines.push('');
+    lines.push(_timeAxisRow(samples, gutterW, innerW, !!frozen, t.dim));
+  }
   return { lines, rowKey };
 }
 
@@ -547,7 +553,10 @@ const _TIME_AXIS_MIN_W = 12;   // need room for two end labels (`-6m00s` + gap +
 // Does this topic's data carry capture timestamps? metrics-poll stamps every published
 // sample with `ts`; a topic fed another way (e.g. docker per-pane stats) may not — then
 // `auto`/`always` draw no time-axis (nothing to label). Cheap: probe the newest sample of
-// each row, not the whole window.
+// each row, not the whole window. This raw-series scan is a valid proxy for the samples the
+// pane actually DRAWS because a producer stamps `ts` UNIFORMLY across a topic's rows (all
+// or none): a select_from/static pane's resolved row therefore matches, and `_aggregateSamples`
+// carries `ts` forward, so an `aggregate:` pane's synthetic series carries it too.
 function _hasSampleTs(topic) {
   const m = getModel().metrics[topic];
   const series = m && m.series;
@@ -574,7 +583,11 @@ function _timeAxisRows(spec, innerW, innerH) {
   if (!_hasSampleTs(spec.topic)) return 0;
   const metricObj = getModel().metrics[spec.topic];
   const schema = (metricObj && metricObj.schema) || { columns: {} };
-  const metrics = spec.metrics || _defaultMetrics(schema);
+  // Use the SAME metric set the paint draws so the height-fit floor can't disagree with
+  // the section count: a frozen pane paints its captured `frozen.metrics`, not spec's.
+  const frozen = _zoomFrozen(spec);
+  const metrics = (frozen && frozen.metrics && frozen.metrics.length)
+    ? frozen.metrics : (spec.metrics || _defaultMetrics(schema));
   if (!metrics.length) return 0;
   const gH = innerH - 1;   // graph height if we reserve the row
   const graphFits = spec.overlay ? (gH - 1 >= 2) : (_sectionPerMetric(metrics, schema, gH) >= 2);
@@ -625,10 +638,13 @@ function _timeAxisRow(samples, gutterW, innerW, frozen, dimAtom) {
       const right = 'now';
       put(right, effW - right.length);
       if (left.length + 1 <= effW - right.length) put(left, 0);
-      // A centred mid tick, only if it clears both ends with a gap on each side.
-      const mid = `-${fmtDurationMs(span / 2)}`;
-      const midAt = Math.floor((effW - mid.length) / 2);
-      if (midAt > left.length && midAt + mid.length < effW - right.length) put(mid, midAt);
+      // A centred mid tick, only on a real span (a single-sample span 0 would just
+      // duplicate the left `-0ms`) and only if it clears both ends with a gap on each side.
+      if (span > 0) {
+        const mid = `-${fmtDurationMs(span / 2)}`;
+        const midAt = Math.floor((effW - mid.length) / 2);
+        if (midAt > left.length && midAt + mid.length < effW - right.length) put(mid, midAt);
+      }
     }
   }
   return `[${dimAtom}]${' '.repeat(gutterW)}${buf.join('')}[/]`;
@@ -778,6 +794,7 @@ function _aggregateSamples(series, schema, window, mode) {
   const out = [];
   for (let i = 0; i < maxLen; i++) {
     const sample = {};
+    let ts = NaN;
     for (const [col, cdef] of Object.entries(cols)) {
       if (cdef && (cdef.type === 'string' || cdef.meta)) continue;
       const vals = [];
@@ -788,6 +805,17 @@ function _aggregateSamples(series, schema, window, mode) {
       }
       sample[col] = vals.length ? _reduceVals(vals, cdef && cdef.type, mode) : NaN;
     }
+    // Carry the newest capture `ts` across the rows at this time-slice (a reserved
+    // non-column field, so the column loop above never sees it). All rows come from
+    // one poll tick per index, so their ts agree; taking the max keeps the synthetic
+    // series time-stamped, letting an `aggregate:` pane drive the time-axis (§10)
+    // instead of reserving a blank row (the reserve gate probes the raw series).
+    for (const r of rows) {
+      const idx = i - (maxLen - r.length);
+      const t = idx >= 0 && r[idx] ? r[idx].ts : undefined;
+      if (Number.isFinite(t) && (!Number.isFinite(ts) || t > ts)) ts = t;
+    }
+    if (Number.isFinite(ts)) sample.ts = ts;
     out.push(sample);
   }
   return out;

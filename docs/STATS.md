@@ -18,8 +18,8 @@ The panel shows what a one-line row decorator (sparkline) can't:
   to ~5% precision; a sparkline resolves to one of 8 block heights.
 - **Two metrics in parallel.** CPU and MEM stacked, each with its own
   scale.
-- **Time-axis labels.** "now − 5m" / "now" labels give scale that a
-  sparkline can't carry.
+- **Time-axis labels.** `-5m00s` / `now` labels (the `x_axis` row) give
+  scale that a sparkline can't carry — see §7 / §10.
 - **Peak / avg annotations.** Numeric overlays alongside the graph
   (`peak 92%  avg 38%`).
 - **Drill-down affordance.** The panel reacts to selection in another
@@ -41,7 +41,7 @@ numeric overlays.
 │  50% ┤      ▄█████▄    ▄▄                  │
 │  25% ┤   ▄▄█████████▄▄████                 │
 │   0% ┴───────────────────────────          │
-│      └─ now − 5m              now          │
+│      -5m00s                   now          │
 │                                            │
 │ MEM                  125MiB / 2GiB  6.1%   │
 │ 100% ┤      ▂▂▃▃▃▃▃▃▃▃▃                    │
@@ -90,6 +90,7 @@ panels:
     graph: braille          # braille (default) | blocks
     graph_color: height     # height (default) | value | banded
     y_axis: auto            # auto (default) | off | always — left tick gutter
+    x_axis: auto            # auto (default) | off | always — bottom time-span row
 ```
 
 | Field         | Required | Default                                | Notes |
@@ -107,6 +108,7 @@ panels:
 | `invert`      | no       | `false`                                | Hang the graph from the **top** edge downward instead of rising from the bottom (the height-gradient flips with it so value→colour stays consistent). Pair two single-metric graphs — one `invert: true` above a normal one — for btop's mirrored network up/down shape (download hangs from the top, upload rises from the bottom). **Braille only** (blocks have no upper-eighths ramp; `invert` is ignored for `graph: blocks`). |
 | `header`      | no       | `top`                                  | `bottom` puts the section header line (metric name + current/peak/avg, and the percent meter) BELOW the graph instead of above. For the net mirror: the inverted (bottom) graph uses `header: bottom` so its label reads on the outer edge and its graph rows sit against the seam. |
 | `y_axis`      | no       | `auto`                                 | Left value-tick gutter (`100% ┤` … `0% ┤`). `auto` shows it only when the reserve stays ≤15% of the width (so wide panes gain the scale, cramped ones keep the full-width trace); `off` never; `always` even on a narrow pane (as long as ≥8 trace cols remain). The gutter width is a per-type constant, so the trace-column offset stays a pure function of `(type, width)` shared by paint + hover + drag-to-zoom. Labels respect `invert`. Sectioned + overlay; ignored for `mode: multi` (its own label gutter). |
+| `x_axis`      | no       | `auto`                                 | Bottom time-span row (`-6m00s … now`, + a centred mid tick on a wide trace) — the horizontal twin of `y_axis`, but a HEIGHT reserve (one bottom row) not a width one, and pane-wide (one window). `auto` reserves it only when the pane clears a min height/width and the graph keeps its ≥2-row floor; `off` never; `always` drops the min-height gate. Labels are derived from the sample capture `ts` (needs a `metrics:` producer, which stamps it; a topic without `ts` draws none), so no render-side clock is read. A drag-to-zoomed (frozen) graph shows the range's DURATION (`‹ 2m30s ›`) since its right edge is no longer "now". Sectioned + overlay standalone panes; ignored for `mode: multi` and composite widgets. See §7 + §10. |
 
 **Color + meter (truecolor arc Phase 2, docs/truecolor.md).** Graph
 color maps through the active theme's `percent` gradient (cool→hot); the
@@ -317,6 +319,25 @@ the trace-column offset — is a pure function of `(type, width)` that both
 paint and every hit-test (hover, drag-to-zoom) compute identically; the
 `_axisForSpec` seam is the single source that keeps them from drifting.
 Sectioned + overlay; not `mode: multi` (its own label gutter). See §10.
+
+**Time-axis labels — shipped as an adaptive per-pane option** (the §1
+motivation, "scale a sparkline can't carry"). `x_axis: auto | off | always`,
+default `auto`. The horizontal twin of `y_axis`, but where that costs a LEFT
+gutter (width) this costs ONE BOTTOM row (height) — and the whole pane shares
+one time window, so it's a single row, not per-metric. The row reads
+`-6m00s … now` (a centred mid tick when the trace is wide); a drag-to-zoomed
+(frozen) graph shows the range DURATION (`‹ 2m30s ›`) since its right edge is
+no longer "now". `auto` reserves the row only when the pane clears a min
+height/width and the graph keeps its ≥2-row floor; `always` drops the
+min-height gate; `off` never. **Time enters as data, not a render clock:** the
+`metrics:` producer stamps every sample with a capture `ts` (the blessed shell
+`Date.now()`, riding the sample-mirror Msg so it replays identically —
+docs/model-now-tick.md); the labels are a pure function of that `ts` (span =
+newest − oldest), so `render` reads no wall clock. A topic without `ts` (fed
+some other way) draws none. Single-sourced via `_timeAxisRows`/`_graphInnerH`
+(the vertical mirror of `_axisForSpec`) so paint, hover, drag-zoom, and freeze
+all subtract the SAME reserved row and can't drift. Sectioned + overlay
+standalone panes; not `mode: multi`, not composite widgets. See §10.
 
 **Numeric overlay** (header line) — what shipped:
 - `percent`: `12.8%  peak 49.9%  avg 25.7%`

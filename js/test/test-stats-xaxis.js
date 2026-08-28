@@ -167,4 +167,35 @@ describe('[stats-xaxis] offset guard — the reserved row carries no value; grap
   });
 });
 
+describe('[stats-xaxis] review regressions — aggregate ts, flush bottom, span-0', () => {
+  it('an aggregate: pane labels a REAL span (its synthetic samples carry ts)', () => {
+    // Multi-row topic; aggregate folds rows into a synthetic series that must carry ts
+    // forward (else the reserve gate probes the raw series → reserves a BLANK row).
+    const mk = (off) => Array.from({ length: 300 }, (_x, i) => ({ cpu: (i + off) % 100, ts: BASE + i * STEP }));
+    setMetric('x.agg', { r1: mk(0), r2: mk(10), r3: mk(20) }, { cpu: { type: 'percent' } });
+    const spec = { paneId: 'x1', topic: 'x.agg', aggregate: 'avg', metrics: ['cpu'], window: 300, y_axis: 'off', x_axis: 'always' };
+    const lines = stats.renderBody(spec, 60, 8, -1, null).lines;
+    const last = lines[lines.length - 1];
+    assert(last.includes(`-${SPAN}`) && last.includes('now'), `aggregate pane labels the span, not a blank row (${JSON.stringify(last)})`);
+  });
+
+  it('a multi-metric label row sits FLUSH on the bottom (floor slack padded above it)', () => {
+    setMetric('x.two', { _: Array.from({ length: 300 }, (_x, i) => ({ cpu: i % 100, mem: (i * 2) % 100, ts: BASE + i * STEP })) },
+      { cpu: { type: 'percent' }, mem: { type: 'percent' } });
+    const spec = { paneId: 'x1', topic: 'x.two', row: '_', metrics: ['cpu', 'mem'], window: 300, y_axis: 'off', x_axis: 'always' };
+    const lines = stats.renderBody(spec, 60, 11, -1, null).lines;   // 11 → _sectionPerMetric floors, leaving slack
+    eq(lines.length, 11, 'the pane fills innerH');
+    assert(lines[lines.length - 1].includes('now'), 'the LAST row is the label (flush to the bottom border)');
+  });
+
+  it('a single-sample (span 0) live row shows no duplicate mid tick', () => {
+    setMetric('x.one', { _: [{ cpu: 50, ts: BASE }] }, { cpu: { type: 'percent' } });
+    const spec = { paneId: 'x1', topic: 'x.one', row: '_', metrics: ['cpu'], window: 300, y_axis: 'off', x_axis: 'always' };
+    const lines = stats.renderBody(spec, 60, 8, -1, null).lines;
+    const last = lines[lines.length - 1];
+    eq((last.match(/-0ms/g) || []).length, 1, 'exactly one -0ms (the left label) — the mid tick is suppressed on a zero span');
+    assert(last.includes('now'), 'still anchors now on the right');
+  });
+});
+
 report();
