@@ -23,7 +23,7 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
     sample-mirror Msg so it records and replays identically. `ts` is a reserved field — it
     never graphs as a metric or shows in the row-detail card (both read schema columns).
 
-## [0.6.25] — 2026-08-26
+## [0.6.25] — 2026-08-28
 
 ### Added
 
