@@ -550,13 +550,17 @@ function _axisGutterCell(r, graphH, min, max, type, gutterW, invert, dimAtom) {
 const _TIME_AXIS_MIN_H = 6;    // `auto`: a pane shorter than this keeps the full-height graph
 const _TIME_AXIS_MIN_W = 12;   // need room for two end labels (`-6m00s` + gap + `now`)
 
-// Does this topic's data carry capture timestamps? metrics-poll stamps every published
-// sample with `ts`; a topic fed another way (e.g. docker per-pane stats) may not — then
-// `auto`/`always` draw no time-axis (nothing to label). Cheap: probe the newest sample of
-// each row, not the whole window. This raw-series scan is a valid proxy for the samples the
-// pane actually DRAWS because a producer stamps `ts` UNIFORMLY across a topic's rows (all
-// or none): a select_from/static pane's resolved row therefore matches, and `_aggregateSamples`
-// carries `ts` forward, so an `aggregate:` pane's synthetic series carries it too.
+// Does this topic's data carry capture timestamps? `ts` is a reserved sample field the
+// producers stamp: BOTH the `metrics:` poll producer (app/state.js) AND the built-in
+// `docker.stats` topic (navigator/docker.js) stamp `Date.now()` on every sample — so the
+// time-axis works over either. A topic fed some OTHER way (a custom producer that doesn't
+// stamp it) carries none → `auto`/`always` draw no time-axis (nothing to label). Probes
+// the newest sample of each row (not the whole window) and returns on the first ts-bearing
+// row; O(#rows) worst-case (the ts-less miss), single-digit µs for real host topics. This
+// raw-series scan is a valid proxy for the samples the pane actually DRAWS because a
+// producer stamps `ts` UNIFORMLY across a topic's rows (all or none): a select_from/static
+// pane's resolved row matches, and `_aggregateSamples` carries `ts` forward so an
+// `aggregate:` pane's synthetic series carries it too.
 function _hasSampleTs(topic) {
   const m = getModel().metrics[topic];
   const series = m && m.series;
@@ -621,6 +625,7 @@ function _firstFiniteTs(samples) {
 // isn't now, so show the range DURATION centred (`‹ 2m30s ›`). Pure of the clock — reads
 // only sample `ts`. All glyphs are width-1 (ASCII + `‹ ›`), so length === visible width.
 function _timeAxisRow(samples, gutterW, innerW, frozen, dimAtom) {
+  gutterW = Math.max(0, gutterW);                 // defensive: `' '.repeat(neg)` throws (unreachable via real callers)
   const effW = Math.max(1, innerW - gutterW);
   const first = _firstFiniteTs(samples);
   const last = _lastFiniteTs(samples);
@@ -791,10 +796,12 @@ function _aggregateSamples(series, schema, window, mode) {
   if (!rows.length) return [];
   const maxLen = Math.max(...rows.map((r) => r.length));
   const cols = schema.columns || {};
+  // Does this series carry capture timestamps at all? Probe ONCE (uniform producer →
+  // all rows or none), so a ts-less topic pays nothing for the per-slice ts-carry below.
+  const hasTs = rows.some((r) => Number.isFinite(r[r.length - 1] && r[r.length - 1].ts));
   const out = [];
   for (let i = 0; i < maxLen; i++) {
     const sample = {};
-    let ts = NaN;
     for (const [col, cdef] of Object.entries(cols)) {
       if (cdef && (cdef.type === 'string' || cdef.meta)) continue;
       const vals = [];
@@ -805,17 +812,17 @@ function _aggregateSamples(series, schema, window, mode) {
       }
       sample[col] = vals.length ? _reduceVals(vals, cdef && cdef.type, mode) : NaN;
     }
-    // Carry the newest capture `ts` across the rows at this time-slice (a reserved
-    // non-column field, so the column loop above never sees it). All rows come from
-    // one poll tick per index, so their ts agree; taking the max keeps the synthetic
-    // series time-stamped, letting an `aggregate:` pane drive the time-axis (§10)
-    // instead of reserving a blank row (the reserve gate probes the raw series).
-    for (const r of rows) {
-      const idx = i - (maxLen - r.length);
-      const t = idx >= 0 && r[idx] ? r[idx].ts : undefined;
-      if (Number.isFinite(t) && (!Number.isFinite(ts) || t > ts)) ts = t;
+    // Carry the capture `ts` for this time-slice (a reserved non-column field, so the
+    // column loop above never sees it) so an `aggregate:` pane can drive the time-axis
+    // (§10) instead of reserving a blank row. All rows share one poll tick per index, so
+    // the FIRST finite ts is representative — break there (no max/scan-all-rows).
+    if (hasTs) {
+      for (const r of rows) {
+        const idx = i - (maxLen - r.length);
+        const t = idx >= 0 && r[idx] ? r[idx].ts : undefined;
+        if (Number.isFinite(t)) { sample.ts = t; break; }
+      }
     }
-    if (Number.isFinite(ts)) sample.ts = ts;
     out.push(sample);
   }
   return out;

@@ -108,7 +108,7 @@ panels:
 | `invert`      | no       | `false`                                | Hang the graph from the **top** edge downward instead of rising from the bottom (the height-gradient flips with it so value→colour stays consistent). Pair two single-metric graphs — one `invert: true` above a normal one — for btop's mirrored network up/down shape (download hangs from the top, upload rises from the bottom). **Braille only** (blocks have no upper-eighths ramp; `invert` is ignored for `graph: blocks`). |
 | `header`      | no       | `top`                                  | `bottom` puts the section header line (metric name + current/peak/avg, and the percent meter) BELOW the graph instead of above. For the net mirror: the inverted (bottom) graph uses `header: bottom` so its label reads on the outer edge and its graph rows sit against the seam. |
 | `y_axis`      | no       | `auto`                                 | Left value-tick gutter (`100% ┤` … `0% ┤`). `auto` shows it only when the reserve stays ≤15% of the width (so wide panes gain the scale, cramped ones keep the full-width trace); `off` never; `always` even on a narrow pane (as long as ≥8 trace cols remain). The gutter width is a per-type constant, so the trace-column offset stays a pure function of `(type, width)` shared by paint + hover + drag-to-zoom. Labels respect `invert`. Sectioned + overlay; ignored for `mode: multi` (its own label gutter). |
-| `x_axis`      | no       | `auto`                                 | Bottom time-span row (`-6m00s … now`, + a centred mid tick on a wide trace) — the horizontal twin of `y_axis`, but a HEIGHT reserve (one bottom row) not a width one, and pane-wide (one window). `auto` reserves it only when the pane clears a min height/width and the graph keeps its ≥2-row floor; `off` never; `always` drops the min-height gate. Labels are derived from the sample capture `ts` (needs a `metrics:` producer, which stamps it; a topic without `ts` draws none), so no render-side clock is read. A drag-to-zoomed (frozen) graph shows the range's DURATION (`‹ 2m30s ›`) since its right edge is no longer "now". Sectioned + overlay standalone panes; ignored for `mode: multi` and composite widgets. See §7 + §10. |
+| `x_axis`      | no       | `auto`                                 | Bottom time-span row (`-6m00s … now`, + a centred mid tick on a wide trace) — the horizontal twin of `y_axis`, but a HEIGHT reserve (one bottom row) not a width one, and pane-wide (one window). `auto` reserves it only when the pane clears a min height/width and the graph keeps its ≥2-row floor; `off` never; `always` drops the min-height gate. Labels are derived from the sample capture `ts`, which BOTH a `metrics:` producer AND the built-in `docker.stats` topic stamp (a topic fed some other way, with no `ts`, draws none), so no render-side clock is read. A drag-to-zoomed (frozen) graph shows the range's DURATION (`‹ 2m30s ›`) since its right edge is no longer "now". Sectioned + overlay standalone panes; ignored for `mode: multi` and composite widgets. See §7 + §10. |
 
 **Color + meter (truecolor arc Phase 2, docs/truecolor.md).** Graph
 color maps through the active theme's `percent` gradient (cool→hot); the
@@ -330,11 +330,12 @@ one time window, so it's a single row, not per-metric. The row reads
 no longer "now". `auto` reserves the row only when the pane clears a min
 height/width and the graph keeps its ≥2-row floor; `always` drops the
 min-height gate; `off` never. **Time enters as data, not a render clock:** the
-`metrics:` producer stamps every sample with a capture `ts` (the blessed shell
-`Date.now()`, riding the sample-mirror Msg so it replays identically —
-docs/model-now-tick.md); the labels are a pure function of that `ts` (span =
-newest − oldest), so `render` reads no wall clock. A topic without `ts` (fed
-some other way) draws none. Single-sourced via `_timeAxisRows`/`_graphInnerH`
+producers stamp every sample with a capture `ts` (the blessed shell `Date.now()`,
+riding the sample-mirror Msg so it replays identically — docs/model-now-tick.md)
+— BOTH the `metrics:` poll producer AND the built-in `docker.stats` topic do, so
+the axis works over either; the labels are a pure function of that `ts` (span =
+newest − oldest), so `render` reads no wall clock. A topic fed some other way,
+with no `ts`, draws none. Single-sourced via `_timeAxisRows`/`_graphInnerH`
 (the vertical mirror of `_axisForSpec`) so paint, hover, drag-zoom, and freeze
 all subtract the SAME reserved row and can't drift. Sectioned + overlay
 standalone panes; not `mode: multi`, not composite widgets. See §10.

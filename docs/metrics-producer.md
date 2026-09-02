@@ -184,14 +184,18 @@ declare (v0.6.6 Finding B) throttle-samples the hub into the model, so
 share nothing but the topic string.
 
 Each published sample carries a reserved **`ts`** field — the wall-clock
-capture time (`Date.now()` in the poll effect, the blessed shell read). It's
-read at event time and rides the hub → mirror → `metrics_synced` Msg as
-recorded data, so it replays identically (the `model.now`/tick discipline,
-`docs/model-now-tick.md`) — not a render-side clock read. `ts` is NOT a schema
-column: the `stats` time-axis (`x_axis`, STATS.md §10) reads it to label the
-trace span, but it never graphs as a metric or appears in the row-detail card
-(both iterate `schema.columns`). A field literally named `ts` in your `extract`
-would be overwritten by the stamp — pick another name.
+capture time (`Date.now()` in the poll effect, the blessed shell read). This is
+a codebase-wide convention: the built-in `docker.stats` topic
+(`navigator/docker.js`) stamps the same `ts`, so both producers feed the `stats`
+time-axis uniformly. It's read at event time and rides the hub → mirror →
+`metrics_synced` Msg as recorded data (recorded on the root lane, re-fed
+verbatim on replay), so it replays identically — the event-time-into-the-Msg
+discipline (`docs/model-now-tick.md`), NOT a render-side clock read. `ts` is NOT
+a schema column: the `stats` time-axis (`x_axis`, STATS.md §10) reads it to label
+the trace span, but it never graphs as a metric or appears in the row-detail card
+(both iterate `schema.columns`). `ts` is RESERVED — a field named `ts` in your
+`extract.fields` is rejected at parse time by the schema validator (it would be
+silently overwritten by the stamp every tick); pick another name.
 
 ### 4.1 The `metrics-poll` kind (shape)
 

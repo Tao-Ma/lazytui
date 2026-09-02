@@ -245,6 +245,14 @@ function validateMetrics(v) {
     if (!isMapping(ex.fields) || Object.keys(ex.fields).length === 0) {
       throw new SchemaError(`'${exCtx}.fields' is required and must be a non-empty mapping`);
     }
+    // `ts` is a RESERVED sample field: the producer stamps every sample with a wall-clock
+    // capture time there (read by the stats time-axis, docs/metrics-producer.md). A user
+    // field named `ts` would be silently overwritten each tick, so reject it up front —
+    // an authoring error the user must see (like the shape errors above), not a runtime
+    // surprise. Applies to every extract mode (field names become sample keys).
+    if ('ts' in ex.fields) {
+      throw new SchemaError(`'${exCtx}.fields.ts' uses the reserved field name 'ts' — the producer stamps a capture timestamp there (read by the stats time-axis); rename this field`);
+    }
     if ('skip' in ex && (typeof ex.skip !== 'number' || ex.skip < 0 || !Number.isInteger(ex.skip))) {
       throw new SchemaError(`'${exCtx}.skip' must be a non-negative integer`);
     }

@@ -327,6 +327,13 @@ describe('metrics producers', () => {
     validate(withMetrics({ x: { cmd: 'echo', interval: 1000, timeout: 800, focus_gate: false, extract: { fields: { a: 'x' } } } }), 'test');
     assert(true);
   });
+  // `ts` is a reserved sample field (the producer stamps a capture timestamp there for
+  // the stats time-axis, docs/metrics-producer.md) — a user field named `ts` would be
+  // silently overwritten each tick, so the validator rejects it up front (all modes).
+  it("reserved 'ts' extract field throws", () => {
+    expectThrow(/reserved field name 'ts'/, () => validate(withMetrics({ x: { cmd: 'echo', extract: { mode: 'columns', fields: { ts: 0, cpu: 1 } } } }), 'test'));
+    expectThrow(/reserved field name 'ts'/, () => validate(withMetrics({ x: { cmd: 'echo', extract: { mode: 'regex', fields: { ts: '(\\d+)' } } } }), 'test'));
+  });
 });
 
 report();
