@@ -89,6 +89,13 @@ function waitFor(pred, ms, label) {
     const s = hub.snapshot(TOPIC).get('_');
     eq(s.cpu, 42.5, 'cpu percent-coerced');
     eq(s.mem, 128, 'mem bytes-coerced (bare number = bytes)');
+    // The published sample is frozen at the source (state.js): it is retained by
+    // ref + aliased into model.metrics, so "never mutate a published sample" is an
+    // enforced contract, not just a rule. A mutation throws in strict mode.
+    assert(Object.isFrozen(s), 'published metrics sample is frozen');
+    let mutThrew = false;
+    try { s.cpu = 0; } catch (_) { mutThrew = true; }
+    assert(mutThrew, 'mutating a published sample throws');
     state._resetSubscriptions();
     assert(!state._liveSubKeys().includes(KEY), 'producer torn down on reset');
 

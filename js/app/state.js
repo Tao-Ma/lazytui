@@ -365,7 +365,13 @@ const _subKinds = {
                         ? delta / dt : NaN;
                     }
                   }
-                  hub.publish(d.topic, rowKey, outSample);
+                  // Freeze the sample before publish: it's RETAINED by ref in the
+                  // hub ring, handed out live by matrix()/snapshot(), and aliased
+                  // into model.metrics — enforce "never mutate a published sample"
+                  // end-to-end. Samples are flat scalar maps (schema column types are
+                  // all scalar), so a shallow freeze is complete. The counter-rate
+                  // mutation above already ran on the not-yet-frozen object.
+                  hub.publish(d.topic, rowKey, Object.freeze(outSample));
                   seen.set(rowKey, { sample, t: now });   // RAW counters for the next delta
                 }
                 for (const rk of token.prev.keys()) if (!seen.has(rk)) hub.delete(d.topic, rk); // GC vanished rows

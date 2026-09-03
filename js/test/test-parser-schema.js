@@ -334,6 +334,13 @@ describe('metrics producers', () => {
     expectThrow(/reserved field name 'ts'/, () => validate(withMetrics({ x: { cmd: 'echo', extract: { mode: 'columns', fields: { ts: 0, cpu: 1 } } } }), 'test'));
     expectThrow(/reserved field name 'ts'/, () => validate(withMetrics({ x: { cmd: 'echo', extract: { mode: 'regex', fields: { ts: '(\\d+)' } } } }), 'test'));
   });
+  // The same reserved name declared ONLY under schema.columns (no extract field) — the
+  // display iterates schema.columns, so a `ts` column would surface the raw capture epoch.
+  it("reserved 'ts' schema column throws", () => {
+    expectThrow(/reserved column name 'ts'/, () => validate(withMetrics({
+      x: { cmd: 'echo', extract: { mode: 'columns', fields: { cpu: 1 } }, schema: { columns: { ts: { type: 'number' } } } },
+    }), 'test'));
+  });
 });
 
 report();

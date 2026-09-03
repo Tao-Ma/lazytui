@@ -108,6 +108,16 @@ describe('[fabric-menu] wire_create handler', () => {
     handleAction('wire_create', { from: 'controldata.redo_lsn' });   // no `to`
     eq((getModel().fabric.wires[getModel().currentGroup] || []).length, 0);
   });
+
+  it('refuses a wire to an endpoint that does not exist (no wire)', () => {
+    seedWire();
+    // `to` names a port that isn't declared anywhere in the group.
+    handleAction('wire_create', { from: 'controldata.redo_lsn', to: 'ghost.nope' });
+    eq((getModel().fabric.wires[getModel().currentGroup] || []).length, 0, 'unknown endpoint not created');
+    // …and an unknown `from` is refused symmetrically.
+    handleAction('wire_create', { from: 'ghost.nope', to: 'xlogminer.start_lsn' });
+    eq((getModel().fabric.wires[getModel().currentGroup] || []).length, 0, 'unknown source not created');
+  });
 });
 
 report();

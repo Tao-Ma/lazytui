@@ -87,6 +87,11 @@ function start(label, cmd, opts = {}) {
   // Detached entries close immediately — we never see their exit.
   if (opts.detached) entry.endedAt = now;
 
+  // Unlike a metrics SAMPLE (frozen at its source — an immutable time-series
+  // point), a history entry is a MUTABLE RECORD: appendOutput/endEntry update it
+  // in place as the operation streams + completes, each paired with a _notify()
+  // re-mirror so model.history + the recorded stream stay consistent. So it is
+  // deliberately NOT frozen — a different, replay-sound contract on the same hub.
   hub.publish(TOPIC, '_', entry);
   _notify();   // new entry — sync model.history (store-mirror, §8.1)
 

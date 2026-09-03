@@ -99,6 +99,15 @@ describe('[1b] subscriptions() declares the poll + events-watcher Subs', () => {
     assert(subs.some(s => s.kind === 'interval'), 'interval poll still declared');
     assert(!subs.some(s => s.kind === 'process-stream'), 'no process-stream without a tracked container');
   });
+  it('reads the PASSED model, not the global (referential transparency)', () => {
+    // Global has NO containers, but the supplied model does → the events watcher is
+    // declared from the arg. Proves subscriptions honors (paneDef, model), not getModel().
+    setup([]);
+    const suppliedModel = { config: { groups: { g1: { name: 'g1', containers: ['from-arg'] } } } };
+    const subs = docker.subscriptions(PANE, suppliedModel);
+    assert(subs.some(s => s.kind === 'process-stream'),
+      'events watcher declared from the passed model\'s containers, not the empty global');
+  });
 });
 
 describe('[2] inFlight guards overlapping fetches', () => {

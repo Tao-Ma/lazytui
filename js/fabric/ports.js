@@ -23,6 +23,18 @@
 
 const { compileParse, projectFrom, compileExtract } = require('./parse');
 
+// Deep-freeze the memoized parse record. `parsed()` hands the SAME cached record
+// (and portValue hands out projections of it) to every reader across ports/wires;
+// a consumer mutating one would corrupt the shared memo for all. Frozen once per
+// output change (the memo key), not per read — cheap. Cycle-safe + no-op on a
+// non-object / already-frozen value.
+function _deepFreeze(o) {
+  if (o === null || typeof o !== 'object' || Object.isFrozen(o)) return o;
+  Object.freeze(o);
+  for (const k of Object.keys(o)) _deepFreeze(o[k]);
+  return o;
+}
+
 let _host = null;
 /** Wire the fabric host seam at boot (see contract above). */
 function setFabricHost(host) { _host = host; }
@@ -60,7 +72,7 @@ function parsed(name) {
   const parseFn = _parseFnFor(spec.parse);
   const hit = _parseCache.get(lines);
   if (hit && hit.parseFn === parseFn) return hit.record;
-  const record = parseFn(lines.join('\n'));
+  const record = _deepFreeze(parseFn(lines.join('\n')));
   _parseCache.set(lines, { parseFn, record });
   return record;
 }

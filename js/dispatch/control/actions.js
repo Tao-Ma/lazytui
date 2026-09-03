@@ -471,19 +471,27 @@ function handleAction(action, arg, from) {
     case 'wire_create': {
       // The component-ports pane's "connect to…" pick — create a RUNTIME wire
       // from a producer output to the selected input. The picker is compatible-
-      // first, but validate type-equality here too (wires are the typed edge; a
-      // P2 agent could emit this verb): mismatch → error-and-tell, no wire.
+      // first, but validate here too (wires are the typed edge; a P2 agent could
+      // emit this verb): unknown endpoint OR type mismatch → error-and-tell, no wire.
       if (!arg || !arg.from || !arg.to) break;
       const ports = require('../../fabric/ports').listPorts();
-      const typeOf = (addr, dir) => {
+      const portOf = (addr, dir) => {
         const [c, p] = String(addr).split('.');
-        const hit = ports.find(x => x.component === c && x.port === p && x.dir === dir);
-        return hit ? hit.type : undefined;
+        return ports.find(x => x.component === c && x.port === p && x.dir === dir);
       };
-      const ft = typeOf(arg.from, 'out'), tt = typeOf(arg.to, 'in');
-      if (ft !== undefined && tt !== undefined && ft !== tt) {
+      const fromP = portOf(arg.from, 'out'), toP = portOf(arg.to, 'in');
+      // Reject an endpoint that doesn't exist in the current group. Previously an
+      // unknown endpoint SKIPPED the (both-known) type check and the wire was
+      // created anyway — dead config wiring nothing, and (post-B3 group scoping) a
+      // silent way to wire to a port from another group.
+      if (!fromP || !toP) {
+        require('../../io/diag-log').warn('fabric_wire_endpoint',
+          `wire endpoint unknown: ${arg.from} (out ${fromP ? 'ok' : 'missing'}) → ${arg.to} (in ${toP ? 'ok' : 'missing'}) — not created`);
+        break;
+      }
+      if (fromP.type !== undefined && toP.type !== undefined && fromP.type !== toP.type) {
         require('../../io/diag-log').warn('fabric_wire_type',
-          `wire type mismatch: ${arg.from} (${ft}) → ${arg.to} (${tt}) — not created`);
+          `wire type mismatch: ${arg.from} (${fromP.type}) → ${arg.to} (${toP.type}) — not created`);
         break;
       }
       applyMsg({ type: 'wire_create', from: arg.from, to: arg.to });

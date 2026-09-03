@@ -294,6 +294,14 @@ function validateMetrics(v) {
       if ('columns' in def.schema) {
         if (!isMapping(def.schema.columns)) throw new SchemaError(`'${ctx}.schema.columns' must be a mapping`);
         for (const [cname, cdef] of Object.entries(def.schema.columns)) {
+          // `ts` is reserved (see extract.fields above): the producer stamps a
+          // capture timestamp there, and the display iterates schema.columns —
+          // a `ts` column would surface the raw epoch as if it were data. Reject
+          // it here too (the extract.fields guard doesn't cover a column declared
+          // ONLY under schema.columns).
+          if (cname === 'ts') {
+            throw new SchemaError(`'${ctx}.schema.columns.ts' uses the reserved column name 'ts' — the producer stamps a capture timestamp there (read by the stats time-axis), so it must never be a display column; rename it`);
+          }
           if (!isMapping(cdef)) throw new SchemaError(`'${ctx}.schema.columns.${cname}' must be a mapping`);
           if ('type' in cdef && !VALID_COLUMN_TYPES.has(cdef.type)) {
             throw new SchemaError(`'${ctx}.schema.columns.${cname}.type' must be one of: ${[...VALID_COLUMN_TYPES].join(', ')}`);

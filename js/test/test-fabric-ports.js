@@ -87,6 +87,15 @@ describe('[fabric] parsed — memoized on output identity', () => {
     assert(a !== b, 'new lines array → fresh parse');
     eq(b.extra, 'y');
   });
+  it('freezes the memoized record so a reader can\'t corrupt the shared memo', () => {
+    setFabricHost(makeHost({ controldata: CONTROLDATA_LINES }));
+    const rec = parsed('controldata');
+    assert(Object.isFrozen(rec), 'the memoized parse record is frozen');
+    let threw = false;
+    try { rec["Latest checkpoint's REDO location"] = 'HACKED'; } catch (_) { threw = true; }
+    assert(threw, 'mutating the shared record throws (strict-mode frozen write)');
+    eq(parsed('controldata')["Latest checkpoint's REDO location"], '0/1A2B3C0', 'memo uncorrupted');
+  });
 });
 
 describe('[fabric] listPorts / listWires', () => {

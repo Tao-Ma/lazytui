@@ -97,8 +97,8 @@ function _refreshMs()    { const s = _slice(); return clampRefreshMs(s.refreshMs
 
 // --- app-global reads (explicit, per the Component contract) ---
 
-function _containers() {
-  const cfg = getModel().config || {};
+function _containers(config) {
+  const cfg = config || getModel().config || {};
   const out = [];
   for (const g of Object.values(cfg.groups || {})) out.push(...(g.containers || []));
   return out;
@@ -446,9 +446,11 @@ function installEffects(registerEffect) {
             // Publish a numeric sample each tick so the series advances even
             // when the formatted strings repeat; drops cheaply if unsubscribed.
             const memInfo = parseMem(stats[name].mem);
-            hub.publish('docker.stats', name, {
+            // Frozen before publish (flat scalar sample): retained by ref in the hub
+            // ring + aliased into model.metrics, so enforce immutability at the source.
+            hub.publish('docker.stats', name, Object.freeze({
               ts, cpu: parsePercent(stats[name].cpu), mem: memInfo.used, memLimit: memInfo.limit,
-            });
+            }));
           }
         }
         // Drop the hub series for any tracked container that isn't running now.
@@ -708,7 +710,14 @@ const containerCommands = [
 // refresh control): the interval subKind keys on `${id}:${ms}`, so a changed
 // refreshMs re-arms the timer at the new rate via the #D13 reconciler — see the
 // `set_refresh_ms` arm + the sub-gate input in app/state.js.
-function subscriptions(/* paneDef, model */) {
+function subscriptions(paneDef, model) {
+  // Honor the passed model (the pure `subscriptions(paneDef, model)` contract) for
+  // config-derived state instead of reaching for getModel(). config is boot-immutable
+  // so the two are equal today, but the arg keeps this referentially transparent (a
+  // test/replay can drive it with a supplied model). _refreshMs() is the ONE
+  // deliberate exception: it reads docker's own SLICE (not on the root model), and the
+  // reconciler gates on _dockerRefreshMs (state.js) so a stepped cadence re-arms.
+  const config = (model && model.config) || getModel().config;
   const subs = [{
     kind: 'interval',
     id: 'docker-poll',
@@ -723,7 +732,7 @@ function subscriptions(/* paneDef, model */) {
   // (config is immutable post-boot — matches the old dockerEventsStart gate);
   // the reconciler tears the child down on pane-remove, and quit teardown runs
   // via tui.js's teardownSubscriptions (a spawned child does NOT die with us).
-  if (_containers().length > 0) {
+  if (_containers(config).length > 0) {
     subs.push({
       kind: 'process-stream',
       id: 'docker-events',
@@ -732,7 +741,7 @@ function subscriptions(/* paneDef, model */) {
       reconnectMs: EVENTS_RECONNECT_MS,
       onLine: (line, ctx) => handleEventLine(
         line,
-        getModel().config,
+        config,
         () => { ctx.dispatch(ctx.wrap('docker', { type: 'dockerPoll' })); return true; },
         ctx.scheduleRender,
       ),
