@@ -501,6 +501,20 @@ describe('error propagation', () => {
 `);
     expectThrow(/undefined helper/, () => parse(p), ResolutionError);
   });
+  it('mistyped files: mapping + a plugin split → clean SchemaError, not a raw TypeError (B9)', () => {
+    // Plugin merge runs BEFORE validate(); the merge-target guards must leave a wrong-typed
+    // field intact so validate() rejects it cleanly, rather than crashing on `.push`.
+    expectThrow(/'files' must be a list/, () => parseFixture('b9_files_mapping_with_plugin.yml'), SchemaError);
+  });
+  it('config_branch.branch with shell metacharacters → SchemaError (B2, injection)', () => {
+    // Interpolated into a synthesized sh -c script; a quote/`$(…)`/`;` must be rejected at
+    // parse, not executed at save/load.
+    expectThrow(/shell metacharacters/, () => parseFixture('b2_branch_injection.yml'), SchemaError);
+  });
+  it('files[].path with a shell metacharacter → SchemaError (B2, injection via config_copy_to)', () => {
+    const p = tmpYaml('files:\n  - { path: "a$b" }\ngroups:\n  g: { label: G, actions: { a: { cmd: "x", label: A } } }\n');
+    expectThrow(/shell metacharacters/, () => parse(p), SchemaError);
+  });
 });
 
 describe('args / default_cmd round-trip', () => {

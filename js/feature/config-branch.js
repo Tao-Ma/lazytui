@@ -109,10 +109,12 @@ const WORKTREE_SETUP_REQUIRE_BRANCH = [
 ];
 
 function preamble(branch, paths, excludes = []) {
-  // PATHS / EXCLUDES are space-separated; the schema enforces non-empty
-  // strings, and we don't accept paths with whitespace (schema rejects
-  // empty, doesn't explicitly forbid spaces — keep an eye on this if it
-  // ever bites).
+  // PATHS / EXCLUDES are space-separated. The schema enforces non-empty strings AND rejects
+  // shell metacharacters in `branch`/`paths`/`excludes` (parser/schema.js rejectShellMeta,
+  // B2) — so the values interpolated below cannot break out of the quoting / inject commands.
+  // A literal SPACE is still permitted by the schema (legal in a quoted file path) but WOULD
+  // word-split here in `for p in $PATHS`; paths with spaces are an unsupported edge, not a
+  // security hole.
   return [
     `BRANCH="${branch}"`,
     `PATHS="${paths.join(' ')}"`,

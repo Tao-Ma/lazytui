@@ -713,6 +713,20 @@ function validateRegister(regBlock) {
   }
 }
 
+// Values string-interpolated into SYNTHESIZED shell scripts — config_branch's git-worktree
+// save/load scripts and the auto-generated `config_copy_to` helper (parser/index.js) — must
+// not carry shell metacharacters, or a `"`, backtick, `$(…)`, `;`, … breaks out of the
+// quoting and executes (B2, command injection). Reject at parse time — fail loud, per
+// PRINCIPLES §9 — rather than escaping at each synthesis site. Normal path chars and globs
+// (`*`) stay legal; a literal space is allowed (paths are double-quoted at those sites),
+// control chars are not.
+const SHELL_META_RE = /[$`"'\\;&|<>(){}\x00-\x1f]/;
+function rejectShellMeta(value, what, ctx) {
+  if (typeof value === 'string' && SHELL_META_RE.test(value)) {
+    throw new SchemaError(`${what} must not contain shell metacharacters ($ \` " ' \\ ; & | < > ( ) { } or control chars)`, { context: ctx });
+  }
+}
+
 function validateFiles(files) {
   if (!Array.isArray(files)) throw new SchemaError("'files' must be a list");
   for (let i = 0; i < files.length; i++) {
@@ -722,11 +736,18 @@ function validateFiles(files) {
     if (isMapping(entry)) {
       if (!('path' in entry)) throw new SchemaError("'path' is required", { context: ctx });
       if (typeof entry.path !== 'string') throw new SchemaError("'path' must be a string", { context: ctx });
+      rejectShellMeta(entry.path, "'path'", ctx);
       checkUnknownKeys(entry, VALID_FILE_KEYS, ctx);
       if ('var' in entry && typeof entry.var !== 'string')   throw new SchemaError("'var' must be a string", { context: ctx });
       if ('desc' in entry && typeof entry.desc !== 'string') throw new SchemaError("'desc' must be a string", { context: ctx });
       if ('exclude' in entry && !Array.isArray(entry.exclude)) {
         throw new SchemaError("'exclude' must be a list", { context: ctx });
+      }
+      if (Array.isArray(entry.exclude)) {
+        for (let j = 0; j < entry.exclude.length; j++) {
+          if (typeof entry.exclude[j] !== 'string') throw new SchemaError(`'exclude[${j}]' must be a string`, { context: ctx });
+          rejectShellMeta(entry.exclude[j], `'exclude[${j}]'`, ctx);
+        }
       }
       if ('category' in entry && typeof entry.category !== 'string') {
         throw new SchemaError("'category' must be a string", { context: ctx });
@@ -802,6 +823,7 @@ function validateGroup(gname, gdata, parentPath = '') {
     if (!('branch' in cb) || typeof cb.branch !== 'string' || !cb.branch) {
       throw new SchemaError("'config_branch.branch' must be a non-empty string", { context: ctx });
     }
+    rejectShellMeta(cb.branch, "'config_branch.branch'", ctx);
     const hasSource = 'source' in cb;
     const hasPaths  = 'paths'  in cb;
     if (hasSource && hasPaths) {
@@ -842,6 +864,7 @@ function validateGroup(gname, gdata, parentPath = '') {
         if (typeof paths[i] !== 'string' || !paths[i]) {
           throw new SchemaError(`'config_branch.paths[${i}]' must be a non-empty string`, { context: ctx });
         }
+        rejectShellMeta(paths[i], `'config_branch.paths[${i}]'`, ctx);
       }
       if ('excludes' in cb) {
         const excludes = cb.excludes;
@@ -852,6 +875,7 @@ function validateGroup(gname, gdata, parentPath = '') {
           if (typeof excludes[i] !== 'string' || !excludes[i]) {
             throw new SchemaError(`'config_branch.excludes[${i}]' must be a non-empty string`, { context: ctx });
           }
+          rejectShellMeta(excludes[i], `'config_branch.excludes[${i}]'`, ctx);
         }
       }
     }

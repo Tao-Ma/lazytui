@@ -419,6 +419,10 @@ function mergePluginInto(main, plugin) {
   for (const [gname, gdata] of Object.entries(plugin.groups || {})) {
     if (!gdata || typeof gdata !== 'object' || Array.isArray(gdata)) continue;
     if (!main.groups) main.groups = {};
+    // B9: merge runs BEFORE validate(), so a wrong-typed merge target must be left intact
+    // (not written into) — validate() then rejects it with a clean SchemaError instead of a
+    // raw TypeError thrown here. (Same guard on containers/vars/helpers/files below.)
+    if (typeof main.groups !== 'object' || Array.isArray(main.groups)) continue;
     const existing = main.groups[gname];
     if (existing === undefined) {
       main.groups[gname] = gdata;
@@ -433,7 +437,7 @@ function mergePluginInto(main, plugin) {
       }
       if ('containers' in gdata && Array.isArray(gdata.containers)) {
         if (!('containers' in existing)) existing.containers = [];
-        existing.containers.push(...gdata.containers);
+        if (Array.isArray(existing.containers)) existing.containers.push(...gdata.containers);   // B9
       }
       for (const f of ['label', 'compose']) {
         if (f in gdata && !(f in existing)) existing[f] = gdata[f];
@@ -442,15 +446,17 @@ function mergePluginInto(main, plugin) {
   }
   for (const [k, v] of Object.entries(plugin.vars || {})) {
     if (!main.vars) main.vars = {};
-    if (!(k in main.vars)) main.vars[k] = v;
+    // B9: only merge into a plain-object target (a wrong-typed vars/helpers — e.g. a string —
+    // would throw on property assignment under strict mode; leave it for validate()).
+    if (typeof main.vars === 'object' && !Array.isArray(main.vars) && !(k in main.vars)) main.vars[k] = v;
   }
   for (const [k, v] of Object.entries(plugin.helpers || {})) {
     if (!main.helpers) main.helpers = {};
-    if (!(k in main.helpers)) main.helpers[k] = v;
+    if (typeof main.helpers === 'object' && !Array.isArray(main.helpers) && !(k in main.helpers)) main.helpers[k] = v;
   }
   if (Array.isArray(plugin.files)) {
     if (!main.files) main.files = [];
-    main.files.push(...plugin.files);
+    if (Array.isArray(main.files)) main.files.push(...plugin.files);   // B9
   }
 }
 
@@ -502,7 +508,9 @@ function mergeYamlPlugins(data, baseDir) {
     }
     mergePluginInto(data, pdata);
     if (!data.files) data.files = [];
-    data.files.push({ path: pluginPath, desc: `TUI plugin: ${name}` });
+    // B9: a wrong-typed data.files is left intact for validate() to reject with a clean
+    // SchemaError instead of the raw TypeError a .push on a non-array would throw here.
+    if (Array.isArray(data.files)) data.files.push({ path: pluginPath, desc: `TUI plugin: ${name}` });
   }
 }
 

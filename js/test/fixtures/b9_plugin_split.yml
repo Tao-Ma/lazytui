@@ -1,0 +1,7 @@
+# Minimal valid plugin split for the B9 regression fixture. Carries both a `vars` mapping
+# and its own `files` list so the merge exercises the guarded targets (vars assign + files
+# push + the plugin-path marker push in mergeYamlPlugins).
+vars:
+  X: "1"
+files:
+  - { path: pluginfile }

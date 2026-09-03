@@ -1,0 +1,12 @@
+# B2 regression: a config_branch `branch` carrying shell metacharacters must be REJECTED at
+# parse. config_branch values are string-interpolated into a synthesized `sh -c` git-worktree
+# script (feature/config-branch.js), so a `"; …` here would break out of the quoting and
+# execute on Save/Load — command injection. The schema rejects it up front.
+groups:
+  g:
+    label: G
+    actions:
+      a: { cmd: "echo hi", label: A }
+    config_branch:
+      branch: 'main"; touch /tmp/PWNED; echo "'
+      paths: [data]

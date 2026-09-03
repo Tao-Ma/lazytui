@@ -1,0 +1,14 @@
+# B9 regression: `files:` is a MAPPING (wrong type — must be a list) AND a `plugins:` split
+# is present. Plugin merge runs before validate(), so before the B9 guards the merge did
+# `data.files.push(...)` on a non-array and threw a raw TypeError. With the guards the merge
+# leaves the wrong-typed field intact and validate() rejects it with a clean SchemaError.
+files:
+  bad: mapping
+plugins:
+  p:
+    path: b9_plugin_split.yml
+groups:
+  g:
+    label: G
+    actions:
+      a: { cmd: "echo hi", label: A }
