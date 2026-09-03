@@ -318,6 +318,7 @@ describe('[immutable] root reducer — filter mode', () => {
 
 describe('[immutable] root reducer — prefix mode', () => {
   it('enter_prefix arms the mode with the root binding node', () => {
+    const kb = require('../leaves/input/keybindings');
     const m = freshModel();
     const [next] = expectNoMutation(
       'enter_prefix leaves input frozen',
@@ -326,7 +327,11 @@ describe('[immutable] root reducer — prefix mode', () => {
     );
     eq(next.modes.prefixMode, true);
     eq(next.prefixSeq.length, 0);
-    assert(next.prefixNode !== null, 'prefixNode armed');
+    // The live tree node is re-derived from prefixSeq, never stored — the model
+    // must stay closure-free (a checkpoint structuredClone's it; a `run`
+    // closure there would DataCloneError mid-chord).
+    assert(!('prefixNode' in next), 'no live node on the model');
+    eq(kb.nodeForSeq(next.prefixSeq), kb.rootNode(), 'empty seq derives the root');
     eq(m.modes.prefixMode, false, 'original untouched');
   });
 

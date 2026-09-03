@@ -60,6 +60,13 @@ const jobs = require('../../feature/jobs');
 const procs = new Map();         // jobId → ProcCtx
 const slotIndex = new Map();      // slotKey → jobId
 
+// Ring cap for a fabric producer's captured raw output. flushFabric only fires
+// on close/error, so a STREAMING producer that never closes would grow rawLines
+// unbounded in memory, then dump one huge array into model.fabric.output + the
+// WAL when it eventually closes. Keep the last N lines (drop oldest); one-shot
+// commands (the common case) stay far under this.
+const FABRIC_RAW_MAX = 5000;
+
 // Async producer-side writes. Dispatch is lazy-required to dodge the
 // stream→dispatch→actions cycle.
 //   Routed (tabInstId set) → the action's text-view instance (U2c P1): tv_append /
@@ -238,6 +245,10 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
   // display buffer. Flushed to model.fabric.output on close/error.
   const fab = opts.fabric || null;
   const rawLines = [];
+  const pushRaw = (line) => {
+    rawLines.push(line);
+    if (rawLines.length > FABRIC_RAW_MAX) rawLines.splice(0, rawLines.length - FABRIC_RAW_MAX);
+  };
   const flushFabric = () => {
     if (fab) require('../control/dispatch').applyMsg({
       type: 'fabric_output_set', group: fab.group, name: fab.name, lines: rawLines.slice(),
@@ -357,7 +368,7 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
     for (const line of lines) {
       appendDetailLine(esc(line), tabInstId);
       rec.append(line);
-      if (fab) rawLines.push(line);
+      if (fab) pushRaw(line);
     }
     scheduleRender();
   };
@@ -380,7 +391,7 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
     // dispatches (the status row must be recorded distinctly for right-align).
     const tail = decoder.end();
     if (tail) buffer += tail;
-    if (buffer) { appendDetailLine(esc(buffer), tabInstId); rec.append(buffer); if (fab) rawLines.push(buffer); buffer = ''; }
+    if (buffer) { appendDetailLine(esc(buffer), tabInstId); rec.append(buffer); if (fab) pushRaw(buffer); buffer = ''; }
     if (signal) rec.end(`signal:${signal}`);
     else rec.end(code);
     // Completion status line — the reverse-filled ` ✓ 0  dur  time ` (` ✗ N ` /

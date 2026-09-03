@@ -175,7 +175,7 @@ describe('[4] T13 regression: handleMouse modal gating', () => {
   });
   it('wheel during prefixMode does NOT trigger groups cascade', () => {
     // The most subtle path the audit flagged: prefix-chord state
-    // (prefixMode + prefixNode + prefixSeq) has no clear-on-group-
+    // (prefixMode + prefixSeq) has no clear-on-group-
     // switch, so a wheel-over-groups during a leader chord used to
     // leave the partial chord bound against the new group's tree.
     setupContentSlot();

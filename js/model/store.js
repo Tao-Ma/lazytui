@@ -79,7 +79,9 @@
  *   - modal{ filter, menu, confirm, prompt, copy, registerPopup, cmdline }
  *                                    — modal sub-model editing buffers
  *   - config / projectDir / configPath — parsed config + paths
- *   - focused / prefixNode / prefixSeq — misc
+ *   - focused / prefixSeq            — misc (prefixSeq is the leader-chord token
+ *                                      path; the live tree node is re-derived via
+ *                                      kb.nodeForSeq, never stored — it holds closures)
  *   - register                       — yank register
  */
 function init() {
@@ -200,7 +202,6 @@ function init() {
     // support (docs/kitty-keyboard.md). Single-writer = the reducer's
     // `kkp_detected` arm; folds identically from the WAL on replay.
     caps: { keyboard: 'legacy' },
-    prefixNode: null,
     prefixSeq: [],
     register: null,                  // yank register {history, cap} (register.js)
     // v0.6.6 FIX-1 — module-local live stores mirrored into the model by the

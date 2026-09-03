@@ -105,7 +105,7 @@ function suppressesChromeClicks(md) { return MODES.some(m => m.suppressChrome &&
 function isChainActive(md) { return CHAIN_MODES.some(f => md[f]); }
 
 /** Clear every resettable mode flag on the given modes bag (mutates it
- *  in place). Non-flag buffers (prefixNode, detail-slice search state,
+ *  in place). Non-flag buffers (prefixSeq, detail-slice search state,
  *  etc.) are reset by their owners; this only flips the booleans. */
 function resetModes(md) { for (const m of MODES) if (m.reset) md[m.flag] = false; }
 

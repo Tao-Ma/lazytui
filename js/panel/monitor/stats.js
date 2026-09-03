@@ -794,7 +794,9 @@ function _renderSection(metric, samples, schema, width, graphHeight, style, colo
 function _reduceVals(vals, type, mode) {
   const red = (mode === 'avg' || mode === 'sum' || mode === 'max')
     ? mode : (type === 'percent' ? 'avg' : 'sum');
-  if (red === 'max') return Math.max(...vals);
+  // reduce (not `Math.max(...vals)`): spread RangeErrors past V8's arg-count
+  // ceiling on a huge topic. Same semantics — [] → -Infinity, NaN propagates.
+  if (red === 'max') return vals.reduce((a, b) => Math.max(a, b), -Infinity);
   const sum = vals.reduce((a, b) => a + b, 0);
   return red === 'avg' ? sum / vals.length : sum;
 }

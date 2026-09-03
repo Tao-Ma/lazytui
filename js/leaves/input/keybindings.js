@@ -145,6 +145,20 @@ function tokenForEvent(key, seq) {
   return (seq != null && seq.length > 0) ? seq : key;
 }
 
+/** Walk the leader tree from the root by a token sequence; the node reached, or
+ *  null if any step is unbound. Lets the model carry only the serializable
+ *  `prefixSeq` and re-derive the live node on demand — the node holds `run`
+ *  closures, which are structuredClone-hostile and must never sit on the model
+ *  (a checkpoint taken mid-chord would DataCloneError). */
+function nodeForSeq(seq) {
+  let node = _root;
+  for (const tok of (seq || [])) {
+    node = resolve(node, tok);
+    if (!node) return null;
+  }
+  return node;
+}
+
 /** Sorted [token, node] pairs for popup rendering. */
 function continuations(node) {
   if (!node || !node.children) return [];
@@ -155,5 +169,5 @@ function continuations(node) {
 
 module.exports = {
   rootNode, clearBindings, parseSeq, registerKeyBinding,
-  labelSubtree, resolve, tokenForEvent, continuations,
+  labelSubtree, resolve, nodeForSeq, tokenForEvent, continuations,
 };

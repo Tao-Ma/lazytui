@@ -741,7 +741,8 @@ function handleNormalKey(key, seq) {
 // any selection / text mode. Once in prefix mode, each key walks the
 // binding tree: a leaf runs + exits, a subtree descends + stays. Esc
 // (or a second leader press) cancels. The which-key popup (stage 2)
-// renders the available continuations from getModel().prefixNode.
+// renders the available continuations of the node kb.nodeForSeq derives
+// from getModel().prefixSeq.
 
 // Prefix mode now lives in the reducer (runtime.update: enter_prefix /
 // prefix_key → run_binding Cmd). These remain only as the test-facing entry

@@ -162,19 +162,22 @@ function update(model, msg) {
       return [next, []];
     }
     case 'enter_prefix':
-      // Leader pressed — arm prefix mode at the binding-tree root. All of
-      // prefixMode/prefixNode/prefixSeq are model-resident.
-      return [{ ..._withModes(model, { prefixMode: true }), prefixNode: kb.rootNode(), prefixSeq: [] }, []];
+      // Leader pressed — arm prefix mode at the binding-tree root. Only the
+      // serializable prefixMode/prefixSeq are model-resident; the live tree
+      // node is re-derived (kb.nodeForSeq) from prefixSeq wherever it's needed
+      // — it holds `run` closures that must never ride the model (checkpoint =
+      // structuredClone; a closure there DataCloneErrors mid-chord).
+      return [{ ..._withModes(model, { prefixMode: true }), prefixSeq: [] }, []];
     case 'prefix_key': {
       // Walk the leader tree. Esc / a second leader press cancels. An
       // unbound token silently drops out. A subtree descends (stay armed);
       // a leaf exits + emits a run_binding Cmd carrying the thunk. kb.resolve
       // is a pure read of the leaf registry.
       const cancelled = () =>
-        ({ ..._withModes(model, { prefixMode: false }), prefixNode: null, prefixSeq: [] });
+        ({ ..._withModes(model, { prefixMode: false }), prefixSeq: [] });
       if (msg.key === 'escape' || msg.seq === ' ' || msg.key === ' ') return [cancelled(), []];
       const tok = kb.tokenForEvent(msg.key, msg.seq);
-      const nextNode = kb.resolve(model.prefixNode, tok);
+      const nextNode = kb.resolve(kb.nodeForSeq(model.prefixSeq), tok);
       if (!nextNode) return [cancelled(), []];
       const seq = model.prefixSeq.concat(tok);
       // Descend: which-key popup re-renders with the subtree's
@@ -182,9 +185,10 @@ function update(model, msg) {
       // are exposed under-content the diff cache treats as unchanged
       // (panels are frozen during prefix mode), so prior pixels stick.
       // Force a full repaint on every descend.
-      if (nextNode.children) return [{ ...model, prefixNode: nextNode, prefixSeq: seq }, [{ type: 'force_full_repaint' }]];
-      // leaf — exit prefix mode and emit the binding
-      return [{ ..._withModes(model, { prefixMode: false }), prefixNode: null, prefixSeq: [] },
+      if (nextNode.children) return [{ ...model, prefixSeq: seq }, [{ type: 'force_full_repaint' }]];
+      // leaf — exit prefix mode and emit the binding. The `run` closure rides
+      // the run_binding Cmd (an effect, discarded after firing), never the model.
+      return [{ ..._withModes(model, { prefixMode: false }), prefixSeq: [] },
               [{ type: 'run_binding', run: nextNode.run }]];
     }
     // --- Cmd-only verbs: no model change, the reducer just routes the

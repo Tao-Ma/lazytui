@@ -151,7 +151,7 @@ route topology; runs I/O) by design.
 
 | Home | Module | Writer | Examples |
 |---|---|---|---|
-| **Root model** (centralized chrome) | `model/store.js` (`_modelRef.current`) | `reducer.update` + `modal/*` + `fabric` sub-reducer ONLY | `modes{}` (modal flags), `modal{}` (editing buffers), `currentGroup`, `now`, `theme`, `history`/`diagLog`/`jobs` (store-mirror'd, FIX-1), `metrics[topic]` (metrics-mirror'd, Finding B), `caps` (kitty-keyboard capability), `nav` (jumplist ring, v0.6.7), `fabric{injects,output,wires}` (dataflow fabric, P1.5), `config`, `register`, `focused`, `prefixNode/Seq` |
+| **Root model** (centralized chrome) | `model/store.js` (`_modelRef.current`) | `reducer.update` + `modal/*` + `fabric` sub-reducer ONLY | `modes{}` (modal flags), `modal{}` (editing buffers), `currentGroup`, `now`, `theme`, `history`/`diagLog`/`jobs` (store-mirror'd, FIX-1), `metrics[topic]` (metrics-mirror'd, Finding B), `caps` (kitty-keyboard capability), `nav` (jumplist ring, v0.6.7), `fabric{injects,output,wires}` (dataflow fabric, P1.5), `config`, `register`, `focused`, `prefixSeq` (leader-chord token path; live node re-derived via `kb.nodeForSeq`) |
 | **Component slices** (decentralized) | `panel/route.js` instance store | each Component's own `update` ONLY | `layout` (focus/viewMode/arrange/freeConfig), the content-slot panes `info`/`text-view`/`agent` (lines/scroll/search/select/cursor via `tvu`) + `terminal` (cmd/label; grid is foreign), `groups` (tree/expanded), `docker`, `files`, `config-status`, `component-ports` (pinned target), `fabric-wires` (nav), `nav[panelType]` (cursor/scroll/multiSel/filter) |
 | **Out-of-TEA stores** (global-by-nature) | `feature/*`, `io/*` | module-local mutators | `feature/jobs` (live child procs), `feature/history`, `io/diag-log` (ring buffer), `io/terminal` (xterm buffers) |
 
@@ -246,8 +246,8 @@ identity-preserves on no-op. **All 30 arms are pure** — verified.
 |---|---|---|---|---|
 | `escape` | Esc handler | `modes.listSelectMode→false` (if set) | `msg→multisel_clear` (focused nav) when `msg.route` set & had selection | shell¹ |
 | `list_select` | `v` (toggle) / `*` (on) | `modes.listSelectMode` | `msg→multisel_clear` when toggled OFF | shell¹ |
-| `enter_prefix` | leader key | `modes.prefixMode→true`, `prefixNode`=kb root, `prefixSeq=[]` | — | ✓ |
-| `prefix_key` | key in prefix mode | `prefixNode`/`prefixSeq` (descend) or clears prefix (leaf/cancel) | `force_full_repaint` (descend) · `run_binding` (leaf) | ✓² |
+| `enter_prefix` | leader key | `modes.prefixMode→true`, `prefixSeq=[]` (live node re-derived via `kb.nodeForSeq`, never stored — it holds closures) | — | ✓ |
+| `prefix_key` | key in prefix mode | `prefixSeq` (descend) or clears prefix (leaf/cancel) | `force_full_repaint` (descend) · `run_binding` (leaf) | ✓² |
 | `next_tab` / `prev_tab` | `]` / `[` | — | `msg→set_active_tab` (layout — cycle the content slot's position-tabs) | shell³ |
 | `nav_select` | row select (kbd/mouse) | — | `msg→set_cursor` + `show_selected_info` (+ `msg→groups_selected` if groups) | shell⁴ |
 | `terminal_enter` | enter-terminal verb | `modes.terminalMode→true` | `kkp_suspend` (child owns the terminal → legacy encoding) | ✓ |

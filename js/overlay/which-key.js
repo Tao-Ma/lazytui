@@ -2,7 +2,7 @@
  * Which-key popup — a centered overlay listing the available
  * continuations from the current point in the leader binding tree.
  *
- * Pure paint over getModel().prefixNode / getModel().prefixSeq (set by dispatch's prefix
+ * Pure paint over the node kb.nodeForSeq derives from getModel().prefixSeq (set by dispatch's prefix
  * mode). Reused for every level: after the bare leader it shows the
  * root's children; after descending into a subtree (e.g. `g`) it shows
  * that subtree's children. Subtrees render with a `+` and a trailing
@@ -35,7 +35,10 @@ function whichKeyLines(node) {
 }
 
 function renderWhichKey() {
-  const node = getModel().prefixNode || kb.rootNode();
+  // Re-derive the live tree node from the serializable prefixSeq (the node
+  // itself is never model-resident — it holds run closures). A broken/empty
+  // path falls back to the root.
+  const node = kb.nodeForSeq(getModel().prefixSeq) || kb.rootNode();
   // Title shows the pending path so nested levels are legible:
   //   "leader"  →  "leader g"
   const seq = (getModel().prefixSeq && getModel().prefixSeq.length)
