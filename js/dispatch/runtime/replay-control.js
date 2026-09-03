@@ -53,6 +53,16 @@ function _setClock(o = {}) {
 
 let S = null;  // active session, or null when not replaying
 
+// Injected at boot (app/tui.js setExternalRegistrar) — registers the recorded
+// session's external Components from a WAL log so enter() reconstructs their
+// panels WITHOUT this dispatch-layer module importing UP into app/. That upward
+// require was the lone deferred dispatch→app back-edge (dep-walker acyclicity;
+// guarded by test-dep-layering). null until wired — a bare headless harness that
+// skips wiring just doesn't reconstruct external panels (the same degrade as the
+// prior "module absent on this host" catch).
+let _externalRegistrar = null;
+function setExternalRegistrar(fn) { _externalRegistrar = fn; }
+
 const _replay = () => require('./replay');
 const _terminal = () => require('../../io/terminal');
 const _sessionLog = () => require('../../io/session-log');
@@ -200,11 +210,12 @@ function enter(file, opts = {}) {
   if (!log.length) { _diag(`record-load: empty session ${file}`); return null; }
   // Register the recorded session's external Components (peeked from the WAL) so
   // the interactive scrubber reconstructs their panels too (replay parity).
-  // Best-effort — a module absent on this host diagnoses, not aborts the load.
-  try {
-    const ext = require('../../app/external-components');
-    ext.registerExternal(ext.configFromLog(log), require('../../panel/api').registerComponent);
-  } catch (e) { _diag(`record-load: ${e.message}`); }
+  // Best-effort via the INJECTED registrar (setExternalRegistrar, wired at boot)
+  // so this module doesn't import up into app/ — a module absent on this host, or
+  // an unwired harness, diagnoses rather than aborting the load.
+  if (_externalRegistrar) {
+    try { _externalRegistrar(log); } catch (e) { _diag(`record-load: ${e.message}`); }
+  }
   const checkpoints = [];
   for (let i = 0; i < log.length; i++) if (log[i].kind === 'checkpoint') checkpoints.push({ seq: log[i].seq, t: log[i].t, idx: i });
   const tl = _timeline();
@@ -531,6 +542,7 @@ module.exports = {
   // B6 — debugger surface (seekToNextChange is keyboard-only via handleKey n/N).
   toggleLock, toggleDiffPanel,
   handleKey, renderData,
+  setExternalRegistrar,
   // test seams
   _state: () => S,
   _setClock,

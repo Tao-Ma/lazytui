@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 'use strict';
-// One-shot dependency-graph walker for the v0.6.5 §1 layering pass.
-// Walks js/ (minus test/scripts), classifies each require() as top-level
-// (module scope) or deferred (inside a function body), resolves it to a
-// target file, and reports the directory-layer graph + the cyclic edges.
+// Dependency-graph walker for the layering pass. Walks js/ (minus test/scripts),
+// classifies each require() as top-level (module scope) or deferred (inside a
+// function body), resolves it to a target file, and computes the directory-layer
+// graph + its cyclic edges (SCCs).
 //
-// NOT a build artifact — a planning instrument. Heuristic, not a parser:
-// "top-level" = require() appearing at indent column 0 or assigned at
-// module scope (no enclosing brace depth). Good enough to find the cut.
+// TWO consumers: run directly (`node js/scripts/dep-walker.js`) it prints the
+// full planning report; required as a module it exposes analyze() so the layering
+// GATE (test/test-dep-layering.js) can assert the graph stays acyclic — layering
+// is enforced, not convention. Heuristic, not a parser: "top-level" = a require()
+// at brace-depth 0. Good enough to find (and hold) the cut.
 
 const fs = require('fs');
 const path = require('path');
@@ -26,8 +28,6 @@ function walk(dir, out) {
   }
   return out;
 }
-
-const files = walk(ROOT, []);
 
 // Layer = first path segment under js/ (app, dispatch, panel, leaves, io,
 // parser, render, overlay, feature). panel/* subdirs collapse to "panel".
@@ -87,50 +87,6 @@ function resolveTarget(fromFile, spec) {
   return null;
 }
 
-// Build layer-level edges. edge key "A->B" => {top:n, deferred:n, samples:[]}
-const edges = new Map();
-const fileEdges = []; // {from, to, deferred, line, fromLayer, toLayer}
-
-for (const f of files) {
-  const src = fs.readFileSync(f, 'utf8');
-  const fromLayer = layerOf(f);
-  for (const r of classifyRequires(src)) {
-    const tgt = resolveTarget(f, r.target);
-    if (!tgt) continue;
-    const toLayer = layerOf(tgt);
-    if (toLayer === fromLayer) continue; // intra-layer: not part of the cross-layer graph
-    fileEdges.push({
-      from: path.relative(ROOT, f),
-      to: path.relative(ROOT, tgt),
-      deferred: r.deferred,
-      line: r.line,
-      fromLayer,
-      toLayer,
-    });
-    const key = `${fromLayer}->${toLayer}`;
-    if (!edges.has(key)) edges.set(key, { top: 0, deferred: 0 });
-    edges.get(key)[r.deferred ? 'deferred' : 'top']++;
-  }
-}
-
-// Report cross-layer edge summary
-console.log('=== CROSS-LAYER EDGES (top-level | deferred) ===\n');
-const sorted = [...edges.entries()].sort();
-for (const [k, v] of sorted) {
-  console.log(`  ${k.padEnd(28)}  top=${String(v.top).padStart(3)}  deferred=${String(v.deferred).padStart(3)}`);
-}
-
-// Find layer-level cycles via the edge set (top-level edges only — those
-// are the ones that constrain load order / make the cycle "real").
-const layers = [...new Set(files.map(layerOf))];
-const topAdj = new Map(layers.map(l => [l, new Set()]));
-const allAdj = new Map(layers.map(l => [l, new Set()]));
-for (const [k, v] of edges) {
-  const [a, b] = k.split('->');
-  if (v.top > 0) topAdj.get(a).add(b);
-  allAdj.get(a).add(b);
-}
-
 function sccs(adj) {
   // Tarjan
   let idx = 0;
@@ -154,32 +110,81 @@ function sccs(adj) {
   return out.filter(c => c.length > 1);
 }
 
-console.log('\n=== LAYER SCCs (top-level edges only) ===');
-console.log(JSON.stringify(sccs(topAdj)));
-console.log('\n=== LAYER SCCs (all edges incl. deferred) ===');
-console.log(JSON.stringify(sccs(allAdj)));
+// Build the whole cross-layer picture: per-file edges, the layer-edge summary
+// (top-level vs deferred counts), and the layer SCCs both ways. Pure over the
+// on-disk tree — no shared mutable state, so the gate can call it repeatedly.
+function analyze() {
+  const files = walk(ROOT, []);
+  const edges = new Map();   // "A->B" => { top, deferred }
+  const fileEdges = [];      // { from, to, deferred, line, fromLayer, toLayer }
 
-// For the {app,dispatch,panel} SCC: dump the TOP-LEVEL edges between them,
-// file by file — these are the ones that must be cut.
-const SCC = new Set(['app', 'dispatch', 'panel']);
-console.log('\n=== TOP-LEVEL edges WITHIN {app,dispatch,panel} (the cut targets) ===\n');
-const within = fileEdges
-  .filter(e => SCC.has(e.fromLayer) && SCC.has(e.toLayer) && !e.deferred && e.fromLayer !== e.toLayer)
-  .sort((a, b) => (a.from + a.to).localeCompare(b.from + b.to));
-for (const e of within) {
-  console.log(`  ${e.from}:${e.line}  ->  ${e.to}`);
-}
-console.log(`\n  (${within.length} top-level cross-edges inside the SCC)`);
+  for (const f of files) {
+    const src = fs.readFileSync(f, 'utf8');
+    const fromLayer = layerOf(f);
+    for (const r of classifyRequires(src)) {
+      const tgt = resolveTarget(f, r.target);
+      if (!tgt) continue;
+      const toLayer = layerOf(tgt);
+      if (toLayer === fromLayer) continue; // intra-layer: not part of the cross-layer graph
+      fileEdges.push({
+        from: path.relative(ROOT, f), to: path.relative(ROOT, tgt),
+        deferred: r.deferred, line: r.line, fromLayer, toLayer,
+      });
+      const key = `${fromLayer}->${toLayer}`;
+      if (!edges.has(key)) edges.set(key, { top: 0, deferred: 0 });
+      edges.get(key)[r.deferred ? 'deferred' : 'top']++;
+    }
+  }
 
-// Deferred ratio per layer
-console.log('\n=== DEFERRED-REQUIRE RATIO per layer (cross-layer requires) ===\n');
-const byLayer = new Map();
-for (const e of fileEdges) {
-  if (!byLayer.has(e.fromLayer)) byLayer.set(e.fromLayer, { top: 0, deferred: 0 });
-  byLayer.get(e.fromLayer)[e.deferred ? 'deferred' : 'top']++;
+  const layers = [...new Set(files.map(layerOf))];
+  const topAdj = new Map(layers.map(l => [l, new Set()]));
+  const allAdj = new Map(layers.map(l => [l, new Set()]));
+  for (const [k, v] of edges) {
+    const [a, b] = k.split('->');
+    if (v.top > 0) topAdj.get(a).add(b);
+    allAdj.get(a).add(b);
+  }
+
+  return { files, edges, fileEdges, topSCCs: sccs(topAdj), allSCCs: sccs(allAdj) };
 }
-for (const [l, v] of [...byLayer.entries()].sort()) {
-  const total = v.top + v.deferred;
-  const pct = total ? Math.round((v.deferred / total) * 100) : 0;
-  console.log(`  ${l.padEnd(10)}  total=${String(total).padStart(3)}  deferred=${String(v.deferred).padStart(3)}  (${pct}%)`);
+
+function _printReport() {
+  const { edges, fileEdges, topSCCs, allSCCs } = analyze();
+
+  console.log('=== CROSS-LAYER EDGES (top-level | deferred) ===\n');
+  for (const [k, v] of [...edges.entries()].sort()) {
+    console.log(`  ${k.padEnd(28)}  top=${String(v.top).padStart(3)}  deferred=${String(v.deferred).padStart(3)}`);
+  }
+
+  console.log('\n=== LAYER SCCs (top-level edges only) ===');
+  console.log(JSON.stringify(topSCCs));
+  console.log('\n=== LAYER SCCs (all edges incl. deferred) ===');
+  console.log(JSON.stringify(allSCCs));
+
+  // For the {app,dispatch,panel} historic SCC: dump the TOP-LEVEL edges between
+  // them, file by file — the ones a regression would have to cut.
+  const SCC = new Set(['app', 'dispatch', 'panel']);
+  console.log('\n=== TOP-LEVEL edges WITHIN {app,dispatch,panel} ===\n');
+  const within = fileEdges
+    .filter(e => SCC.has(e.fromLayer) && SCC.has(e.toLayer) && !e.deferred && e.fromLayer !== e.toLayer)
+    .sort((a, b) => (a.from + a.to).localeCompare(b.from + b.to));
+  for (const e of within) console.log(`  ${e.from}:${e.line}  ->  ${e.to}`);
+  console.log(`\n  (${within.length} top-level cross-edges inside {app,dispatch,panel})`);
+
+  // Deferred ratio per layer
+  console.log('\n=== DEFERRED-REQUIRE RATIO per layer (cross-layer requires) ===\n');
+  const byLayer = new Map();
+  for (const e of fileEdges) {
+    if (!byLayer.has(e.fromLayer)) byLayer.set(e.fromLayer, { top: 0, deferred: 0 });
+    byLayer.get(e.fromLayer)[e.deferred ? 'deferred' : 'top']++;
+  }
+  for (const [l, v] of [...byLayer.entries()].sort()) {
+    const total = v.top + v.deferred;
+    const pct = total ? Math.round((v.deferred / total) * 100) : 0;
+    console.log(`  ${l.padEnd(10)}  total=${String(total).padStart(3)}  deferred=${String(v.deferred).padStart(3)}  (${pct}%)`);
+  }
 }
+
+if (require.main === module) _printReport();
+
+module.exports = { analyze, sccs, layerOf, classifyRequires };

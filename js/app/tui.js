@@ -322,6 +322,14 @@ function bootInteractive(opts) {
   require('../panel/nav-state').setNavDispatch(require('../dispatch/runtime/effects').effectHost());
   // Inject the same host into the command run-closures (cmdline / leader).
   require('../panel/commands').setCommandsDispatch(require('../dispatch/runtime/effects').effectHost());
+  // Inject the external-Component registrar so replay-control (dispatch layer) can
+  // reconstruct a recorded session's external panels WITHOUT importing UP into
+  // app/external-components — the cut that removes the lone deferred dispatch→app
+  // back-edge (dep-walker acyclicity; test-dep-layering).
+  require('../dispatch/runtime/replay-control').setExternalRegistrar((log) => {
+    const ext = require('./external-components');
+    ext.registerExternal(ext.configFromLog(log), require('../panel/api').registerComponent);
+  });
 
   // Install the Component effect handlers (focus/render/apply_msg/...) before
   // any Component registers — a Component's update→effects must resolve at
