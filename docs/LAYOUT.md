@@ -18,8 +18,12 @@ count are YAML-configurable.
   together, e.g. `34 / flex / flex` on 200 cols → `34 / 83 / 83`.)
   A numeric `width:` on the last column is ignored (it takes the
   remainder). Narrow terminals squeeze the FIXED columns proportionally
-  (each ≥ 10 cells) so every flex column can still reach ~20. Two
-  columns is the default shape; three or more is supported (run-time
+  (each ≥ 10 cells) so every flex column can still reach ~20. If the
+  terminal is too narrow to fit even that (many fixed columns on a very
+  small split, where the ≥ 10 floors + the flex minimum would exceed the
+  width), the layout falls back to an even split of the available columns
+  so the row always fits on-screen rather than overflowing the right edge.
+  Two columns is the default shape; three or more is supported (run-time
   via drag-edge spawn / `:add-column`).
 - Bordered panels with scrollbar, focus color, position counter
 - Detail panel(s) with tabs, scroll — position-agnostic since v0.6.4

@@ -203,4 +203,21 @@ describe('[semantic theme tokens] a slot atom resolves to the LIVE palette + tra
   });
 });
 
+describe('[B4] visibleLen / stripMarkup treat SGR as zero-width plain text', () => {
+  const { visibleLen, stripMarkup, esc } = require('../leaves/text/ansi');
+  const colored = '\x1b[34mdirname\x1b[0m';   // 7 visible glyphs, blue
+  it('visibleLen counts SGR as 0 — raw and esc()d forms', () => {
+    eq(visibleLen(colored), 7, 'raw SGR → 7');
+    eq(visibleLen(esc(colored)), 7, 'esc()d SGR (\\x1b\\[…m) → 7');
+  });
+  it('stripMarkup drops SGR (returns true plain text) — both forms', () => {
+    eq(stripMarkup(colored), 'dirname');
+    eq(stripMarkup(esc(colored)), 'dirname');
+  });
+  it('markup atoms are still stripped and still zero-width (no regression)', () => {
+    eq(stripMarkup('[red]hi[/]'), 'hi');
+    eq(visibleLen('[red]hi[/]'), 2);
+  });
+});
+
 report();

@@ -297,7 +297,16 @@ function richToAnsi(text) {
 function stripMarkup(text) {
   return text.replace(/\\\[/g, _BRACKET_SENTINEL)
     .replace(/(?<!\x1b)\[[^\]\x1b]*\]/g, '')
-    .replace(_SENTINEL_RE, '[');
+    .replace(_SENTINEL_RE, '[')
+    // SGR color/style sequences (\x1b[…m) are ZERO-width and are not "plain text". Content
+    // that reaches here carrying SGR (esc() preserves it from streamed colored output) must
+    // not have those bytes counted as visible columns. Strip them LAST — after the escaped-
+    // bracket sentinel is restored to `[`, so both raw (\x1b[…m) and esc()'d (\x1b\[…m, whose
+    // `\[` became the sentinel above) content SGR are now the same \x1b[…m form and removed
+    // together. This fixes every width/position consumer at once — visibleLen (panel width →
+    // border placement), select / search / mouse column maps, and clipboard copy (B4). Normal
+    // markup-themed content carries no SGR here, so this is a no-op for it.
+    .replace(/\x1b\[[0-9;]*m/g, '');
 }
 
 /**

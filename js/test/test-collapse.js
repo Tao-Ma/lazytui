@@ -215,6 +215,35 @@ describe('[distributeColumnHeights] keys by paneId — two same-type panes', () 
   });
 });
 
+describe('[distributeColumnHeights] degenerate detail heights never NaN or overflow (B8)', () => {
+  const { _distributeColumnHeights } = require('../leaves/wm/geometry');
+  const sum = (m) => Object.values(m).reduce((s, v) => s + v, 0);
+
+  it('(a) detail with no heightPct AND no scalar fallback → finite, not NaN→0-row invisible', () => {
+    const h = _distributeColumnHeights([{ type: 'x', id: 'x' }, { type: 'detail', id: 'detail' }], 24, true, 3, undefined);
+    assert(!Object.values(h).some(Number.isNaN), 'no NaN height');
+    assert(h.detail >= 3, 'detail renders at a real (defaulted) height, not 0');
+    eq(sum(h), 24, 'column fills availH');
+  });
+
+  it('(b) detail height:100% sharing a column does not overflow availH', () => {
+    const h = _distributeColumnHeights([{ type: 'a', id: 'a' }, { type: 'detail', id: 'detail', heightPct: 100 }], 24, true, 3, 60);
+    assert(sum(h) <= 24, `no overflow: ${JSON.stringify(h)} sum ${sum(h)}`);
+    assert(h.a >= 3, 'the sibling keeps at least minH');
+  });
+
+  it('(b) a large detail reserve leaves room for every sibling (no starve)', () => {
+    const h = _distributeColumnHeights([{ type: 'a', id: 'a' }, { type: 'detail', id: 'detail', heightPct: 92 }], 24, true, 3, 60);
+    eq(sum(h), 24, 'sums exactly to availH');
+    assert(h.a >= 3 && h.detail >= 3, 'both panes >= minH');
+  });
+
+  it('control: detail alone still takes the whole column (cap only bites when shared)', () => {
+    const h = _distributeColumnHeights([{ type: 'detail', id: 'detail', heightPct: 100 }], 24, true, 3, 60);
+    eq(h.detail, 24, 'no sibling → detail fills the column');
+  });
+});
+
 // --- Section 3: YAML serializer ---
 describe('[yaml-layout] collapsed serialization', () => {
   const yaml = require('../feature/yaml-layout');

@@ -366,6 +366,26 @@ describe('[distributeColumnWidths] renderer + hit-test single source of truth', 
     const r = pool.distributeColumnWidths(arrange, 120);
     eq(r.map(c => c.w), [40, 40, 40], 'three equal flex shares');
   });
+
+  it('over-narrow terminal never overflows COLS (B7)', () => {
+    // 3 explicit-30 columns + a flex last on a 25-col terminal: the MIN_COL_W floors
+    // ([10,10,10]) plus the min flex (1) sum to 31, pushing the last column off-screen and
+    // unclickable. The even-split fallback keeps the whole row inside COLS.
+    const arrange = { columns: [{ width: 30 }, { width: 30 }, { width: 30 }, {}] };
+    const r = pool.distributeColumnWidths(arrange, 25);
+    const right = r[r.length - 1].x + r[r.length - 1].w;
+    eq(right, 25, 'row ends exactly at the screen edge (no overflow)');
+    eq(r.reduce((s, c) => s + c.w, 0), 25, 'widths sum to COLS');
+    assert(r.every((c, i) => (i === 0 ? c.x === 0 : c.x === r[i - 1].x + r[i - 1].w)),
+      'columns stay contiguous (no gap / overlap) — paint and hit-test agree');
+  });
+
+  it('B7 fit clamp does not touch layouts that already fit', () => {
+    eq(pool.distributeColumnWidths({ columns: [{ width: 30 }, {}] }, 25).map(c => c.w), [10, 15],
+      '2-column squeeze unchanged');
+    eq(pool.distributeColumnWidths({ columns: [{ width: 34 }, { width: 'flex' }, { width: 'flex' }] }, 200).map(c => c.w), [34, 83, 83],
+      'wide terminal two-flex layout unchanged');
+  });
 });
 
 report();

@@ -90,8 +90,13 @@ function distributeColumnHeights(panels, availH, isLastCol, minH, detailHeightPc
       // stays "reserved" (protected from the anchored overflow-scale)
       // when it's the first detail in the column; additional detail panes
       // self-sized via the anchored heightPct path below.
+      // B8: the fallback arg must be finite too — an undefined/NaN detailHeightPct (a
+      // programmatically-built arrange that omits it) would make reserved NaN, which
+      // calcLayout masks to a 0-row (invisible) detail pane. Default to 60 (the production
+      // default seeded by arrange.js / parser) as the last resort.
       const detailPct = (typeof detailPanel.heightPct === 'number' && isFinite(detailPanel.heightPct))
-        ? detailPanel.heightPct : detailHeightPct;
+        ? detailPanel.heightPct
+        : (isFinite(detailHeightPct) ? detailHeightPct : 60);
       reserved = Math.max(minH, Math.floor(innerAvail * detailPct / 100));
     }
   }
@@ -109,6 +114,19 @@ function distributeColumnHeights(panels, availH, isLastCol, minH, detailHeightPc
     } else {
       flex.push(p);
     }
+  }
+
+  // B8: cap the detail reservation so it can't starve the sibling FLEX panels below their
+  // minimum. Flex floors at minH and is NEVER scaled, while the detail reserve is never scaled
+  // either — so a `detail height:100%` (or any large pct) sharing a column with a flex pane
+  // overflows availH (detail=22, flex=3, availH=24 → sum 25). Leave at least minH for every
+  // other visible pane. Only when a flex pane is present: anchored (heightPct) siblings are
+  // already scaled to fit by the block below, so with no flex there is nothing the cap can
+  // protect, and lowering `reserved` there only shifts the anchored-scale's floor rounding
+  // (adds a row to an already-over-subscribed, truncated column — a cosmetic regression).
+  if (reserved > 0 && flex.length) {
+    const otherMin = (flex.length + anchored.length) * minH;
+    reserved = Math.max(minH, Math.min(reserved, innerAvail - otherMin));
   }
 
   // If anchored + reserved + (flex × minH) > innerAvail, scale anchored

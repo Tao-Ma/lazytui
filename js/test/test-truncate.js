@@ -99,4 +99,18 @@ describe('[truncate] never overruns — parametric no-overrun invariant', () => 
   });
 });
 
+describe('[truncate] SGR content — color survives, width counts SGR as 0 (B4)', () => {
+  const { esc } = require('../leaves/text/ansi');
+  const colored = esc('\x1b[34mdirname\x1b[0m');   // 7 glyphs, esc()d SGR
+  it('a colored line at its true width is unchanged (SGR not counted)', () => {
+    eq(truncate(colored, 7), colored, 'exactly fits → unchanged');
+    eq(visibleLen(truncate(colored, 7)), 7);
+  });
+  it('truncation keeps the color and respects the budget', () => {
+    const out = truncate(colored, 5);
+    assert(visibleLen(out) <= 5, `within width: ${JSON.stringify(out)} (${visibleLen(out)})`);
+    assert(out.includes('[34m'), 'the SGR color survives the cut');
+  });
+});
+
 report();

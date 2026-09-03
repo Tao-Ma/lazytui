@@ -139,6 +139,25 @@ function distributeColumnWidths(arrange, COLS) {
     out.push({ columnIndex: i, x, w });
     x += w;
   }
+  // Guarantee the row never overflows COLS. In the normal + squeeze paths the widths already
+  // sum to COLS, but on a terminal too narrow to fit even the MIN_COL_W-floored fixed columns
+  // ((N-1)·MIN_COL_W + numFlex > COLS), those floors push the sum PAST the screen edge — the
+  // right-most column(s) would render off-screen and be unclickable (B7). When that happens,
+  // fall back to an even split of COLS: each column gets floor(COLS/N), the left-most absorb
+  // the remainder, so the row fits exactly. paint + every hit-test read THIS fn, so they stay
+  // consistent. (If N > COLS — more columns than screen columns — the surplus collapse to 0,
+  // unavoidable, but nothing overflows.)
+  if (N && x > COLS) {
+    const baseW = Math.floor(COLS / N);
+    let rem = COLS - baseW * N;
+    let cx = 0;
+    for (let i = 0; i < N; i++) {
+      const w = baseW + (rem > 0 ? 1 : 0);
+      if (rem > 0) rem--;
+      out[i] = { columnIndex: i, x: cx, w };
+      cx += w;
+    }
+  }
   return out;
 }
 

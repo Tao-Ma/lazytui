@@ -50,6 +50,11 @@ function leftBorderPrefix(hotkey) {
  * is preserved as-is (a literal `[`, 1 col) so richToAnsi re-emits a literal,
  * not a tag start.
  */
+// SGR color/style run — zero visible width; kept verbatim through truncation so the color
+// survives the cut, exactly like a Rich `[...]` tag. Matches BOTH the raw form (\x1b[…m) and
+// the esc()'d content form (\x1b\[…m — esc escapes the SGR's `[`). Sticky to avoid slicing
+// per step.
+const _SGR_RUN = /\x1b\\?\[[0-9;]*m/y;
 function truncate(text, maxWidth) {
   // Non-positive budget → nothing fits (not even the ellipsis). Return empty so
   // `visibleLen(out) <= max(0, maxWidth)` holds unconditionally — the cell-diff
@@ -70,6 +75,14 @@ function truncate(text, maxWidth) {
       w += 1;
       i += 2;
       continue;
+    }
+    // SGR color/style sequence `\x1b[…m` — zero visible width, kept verbatim so the
+    // color survives the cut, like a Rich tag. (A non-SGR escape falls through and is
+    // treated as a visible char, matching charWidth's cp<0x300 → 1.)
+    if (text[i] === '\x1b') {
+      _SGR_RUN.lastIndex = i;
+      const m = _SGR_RUN.exec(text);
+      if (m) { out += m[0]; i += m[0].length; continue; }
     }
     // Rich tag `[...]` — zero visible width, kept verbatim (incl. `[/]`).
     if (text[i] === '[') {
