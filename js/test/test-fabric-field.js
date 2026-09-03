@@ -14,10 +14,13 @@ const pane = require('../panel/fabric/ports-pane');
 
 function freshModel() {
   const m = runtime.init();
+  m.currentGroup = 'g';                     // runtime injects are group-scoped (B3)
   m.register = { history: [], cap: 10 };
   return m;
 }
 const ADDR = 'xlogminer.start_lsn';
+// This group's inject slice — injects are keyed by currentGroup (B3).
+const inj = (m) => (m.fabric.injects[m.currentGroup] || {});
 
 describe('[fabric-field] enter / key / submit', () => {
   it('enter opens the editor (mode + buffer) on a fresh model (frozen input)', () => {
@@ -64,8 +67,8 @@ describe('[fabric-field] enter / key / submit', () => {
     m.now = 999;
     [m] = runtime.update(m, { type: 'fabric_field_enter', paneId: 'p', addr: ADDR, text: '0/1A2B3C0' });
     const [next, cmds] = runtime.update(m, { type: 'fabric_field_submit' });
-    eq(next.fabric.injects[ADDR].value, '0/1A2B3C0', 'raw value, never re-parsed');
-    eq(next.fabric.injects[ADDR].at, 999, 'stamped from model.now');
+    eq(inj(next)[ADDR].value, '0/1A2B3C0', 'raw value, never re-parsed');
+    eq(inj(next)[ADDR].at, 999, 'stamped from model.now');
     assert(!next.modes.fabricFieldMode, 'editor closed');
     eq(next.modal.fabricField.addr, null, 'buffer cleared');
     eq(cmds.length, 0, 'atomic reduction — inject folded in, no cascade');
@@ -76,7 +79,7 @@ describe('[fabric-field] enter / key / submit', () => {
     [m] = runtime.update(m, { type: 'fabric_field_enter', paneId: 'p', addr: ADDR, text: 'x' });
     const [next] = runtime.update(m, { type: 'fabric_field_cancel' });
     assert(!next.modes.fabricFieldMode);
-    assert(!(ADDR in next.fabric.injects), 'no inject written');
+    assert(!(ADDR in inj(next)), 'no inject written');
   });
 
   it('key / submit / cancel outside the mode are no-ops', () => {

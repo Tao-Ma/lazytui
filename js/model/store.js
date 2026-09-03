@@ -223,19 +223,21 @@ function init() {
     // sub-reducer; transient (never serialised to config) but in-model so it
     // rides the WAL + replay.
     //   injects — by-value, sticky one-shot pushes into an input port, keyed by
-    //     `component.port` ({ value, at }) (port_inject / port_clear).
+    //     [group][`component.port`] → { value, at } (port_inject / port_clear).
+    //     GROUP-SCOPED (B3): a `component.port` name may be reused across groups, so a
+    //     global store let one group's inject bleed into another's same-named component.
     //   output  — a producer's RAW stdout (un-esc'd, no stream chrome), keyed by
     //     [group][component], captured on process close (fabric_output_set). The
     //     parse source for output ports — SEPARATE from the chrome/esc'd display
     //     buffer (the action's text-view instance), so JSON/kv/regex parse clean text.
     //   wires   — RUNTIME wires created interactively (the pane's "connect to…"
-    //     + wire-list edits), a flat [{ from, to }] list. Transient-in-model like
-    //     injects (session-only, rides the WAL, replayable) — the config file
-    //     stays purely user-authored. The fabric host MERGES these over the
-    //     config `wires:` (runtime overrides config per input; wire_create /
-    //     wire_delete). Config-authored wires still live on the parsed config.
+    //     + wire-list edits), keyed by [group] → [{ from, to }] (GROUP-SCOPED, B3, same
+    //     reason as injects). Transient-in-model like injects (session-only, rides the
+    //     WAL, replayable) — the config file stays purely user-authored. The fabric host
+    //     MERGES these over the group's config `wires:` (runtime overrides config per
+    //     input; wire_create / wire_delete). Config-authored wires live on the config.
     // Port VALUES are derived selectors (js/fabric/ports.js), never stored.
-    fabric: { injects: {}, output: {}, wires: [] },
+    fabric: { injects: {}, output: {}, wires: {} },
     // (Per-pane text selection lives on each pane instance's slice —
     // `slice.select`, single-writer = the update spine via the shared
     // select_* arms; see docs/pane-selection.md.)

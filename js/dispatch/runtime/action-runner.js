@@ -265,7 +265,8 @@ function doRunFabric(actionKey, action) {
   const inputs = (action.ports && action.ports.in) || {};
 
   const { ready, values, missing } = resolveInputs(actionKey, inputs, {
-    injects: (model.fabric && model.fabric.injects) || {},
+    // Group-scoped injects (B3) — this run's group, matching listWires() (group-bound).
+    injects: ((model.fabric && model.fabric.injects) || {})[group] || {},
     // config + runtime wires, MERGED by the fabric host — the SAME source the
     // component-ports pane / wire-list resolve against. Reading config-only here
     // would ignore a wire created interactively (the pane's "connect to…" writes

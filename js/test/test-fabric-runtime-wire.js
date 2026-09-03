@@ -35,7 +35,7 @@ const SINK = {
 const base = init();
 base.currentGroup = 'g';
 base.config = { groups: { g: { label: 'g', actions: { src: SRC, sink: SINK } } } };   // note: no `wires:`
-base.fabric = { injects: {}, output: {}, wires: [{ from: 'src.val', to: 'sink.x' }] }; // runtime wire only
+base.fabric = { injects: {}, output: {}, wires: { g: [{ from: 'src.val', to: 'sink.x' }] } }; // runtime wire only, group-scoped (B3)
 setModel(base);
 route.setInstanceSlice('detail', { actionTabBuffers: {}, tab: 0, scroll: 0, viewerStreamBuffer: { lines: [], cap: 1000 } });
 wireFabricHost();

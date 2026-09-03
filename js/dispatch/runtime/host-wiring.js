@@ -67,7 +67,12 @@ function wireFabricHost() {
       const cfg = getModel().config;
       const g = cfg && cfg.groups && cfg.groups[group()];
       const configWires = (g && g.wires) || [];
-      const runtimeWires = (getModel().fabric && getModel().fabric.wires) || [];
+      // Runtime wires are group-scoped (B3) — read THIS group's slice, mirroring the
+      // group-scoped config wires above (and model.fabric.output[group]). Array.isArray
+      // guards a group named like an Object.prototype member (unvalidated YAML key) whose
+      // inherited value would otherwise crash mergeWires' for..of.
+      const rw = ((getModel().fabric && getModel().fabric.wires) || {})[group()];
+      const runtimeWires = Array.isArray(rw) ? rw : [];
       return mergeWires(configWires, runtimeWires);
     },
   });

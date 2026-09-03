@@ -88,7 +88,8 @@ function _resolveComponent(slice) { return _targetInfo(slice).name; }
 // The current inspect context off the live model — shared by render + getItems.
 function _ctx() {
   return {
-    injects: (getModel().fabric && getModel().fabric.injects) || {},
+    // Group-scoped injects (B3) — this group's slice, matching listWires() (group-bound).
+    injects: ((getModel().fabric && getModel().fabric.injects) || {})[getModel().currentGroup] || {},
     wires: listWires(),
     portValue,
     hasOutput,
@@ -295,7 +296,7 @@ function installEffects(registerEffect) {
   registerEffect('fabric_field_open', (eff, host) => {
     const row = rowAt(eff.paneId, eff.cursor);
     if (!row) return;
-    const inj = (getModel().fabric && getModel().fabric.injects) || {};
+    const inj = ((getModel().fabric && getModel().fabric.injects) || {})[getModel().currentGroup] || {};   // group-scoped (B3)
     const cur = inj[row.addr] && inj[row.addr].value;
     host.applyMsg({ type: 'fabric_field_enter', paneId: eff.paneId, addr: row.addr, text: cur != null ? String(cur) : '' });
   });

@@ -53,7 +53,7 @@ const CD = "Latest checkpoint's REDO location: 0/1A2B3C0";
 function seed(runtimeWires) {
   setModel({
     currentGroup: 'pg', modes: {},
-    fabric: { injects: {}, output: { pg: { controldata: [CD] } }, wires: runtimeWires || [] },
+    fabric: { injects: {}, output: { pg: { controldata: [CD] } }, wires: { pg: runtimeWires || [] } },   // group-scoped (B3)
     config: {
       groups: {
         pg: {
@@ -84,7 +84,7 @@ describe('[fabric] wire-list render', () => {
   });
 
   it('empty wire set → helpful empty state', () => {
-    setModel({ currentGroup: 'g', modes: {}, fabric: { injects: {}, output: {}, wires: [] },
+    setModel({ currentGroup: 'g', modes: {}, fabric: { injects: {}, output: {}, wires: {} },
       config: { groups: { g: { label: 'g', actions: {} } } } });
     wireFabricHost();
     const out = pane.panelTypes['fabric-wires'].render(

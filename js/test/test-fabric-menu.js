@@ -42,7 +42,7 @@ describe('[fabric-menu] handlers', () => {
   it('port_inject stores a sticky inject', () => {
     seed();
     handleAction('port_inject', { port: 'xlogminer.start_lsn', value: '0/1A2B3C0' });
-    eq(getModel().fabric.injects['xlogminer.start_lsn'].value, '0/1A2B3C0');
+    eq((getModel().fabric.injects[getModel().currentGroup] || {})['xlogminer.start_lsn'].value, '0/1A2B3C0');   // group-scoped (B3)
   });
 
   it('send_to_port opens a port picker whose row carries {port, value}', () => {
@@ -91,7 +91,7 @@ describe('[fabric-menu] wire_create handler', () => {
   it('creates a runtime wire for a type-compatible pick', () => {
     seedWire();
     handleAction('wire_create', { from: 'controldata.redo_lsn', to: 'xlogminer.start_lsn' });
-    const wires = getModel().fabric.wires;
+    const wires = getModel().fabric.wires[getModel().currentGroup] || [];   // group-scoped (B3)
     eq(wires.length, 1);
     eq(wires[0].from, 'controldata.redo_lsn');
     eq(wires[0].to, 'xlogminer.start_lsn');
@@ -100,13 +100,13 @@ describe('[fabric-menu] wire_create handler', () => {
   it('refuses a type-mismatched wire (error-and-tell, no wire)', () => {
     seedWire();
     handleAction('wire_create', { from: 'controldata.tli', to: 'xlogminer.start_lsn' }); // pg.tli → pg.lsn
-    eq(getModel().fabric.wires.length, 0, 'mismatch not created');
+    eq((getModel().fabric.wires[getModel().currentGroup] || []).length, 0, 'mismatch not created');
   });
 
   it('ignores a malformed arg', () => {
     seedWire();
     handleAction('wire_create', { from: 'controldata.redo_lsn' });   // no `to`
-    eq(getModel().fabric.wires.length, 0);
+    eq((getModel().fabric.wires[getModel().currentGroup] || []).length, 0);
   });
 });
 

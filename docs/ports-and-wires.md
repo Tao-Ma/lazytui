@@ -209,8 +209,10 @@ values. Fan-in (several producers → one consumer) is just several independent 
 An inject pushes a concrete value into one input port. It is **by value** — a frozen
 literal captured at inject time, distinct from a wire's by-reference tracking. It is a
 Msg (`port_inject { port, value }`) → WAL → replayable, and lives in the model at
-`model.fabric.injects` keyed by `component.port` — **transient (never serialised to
-config), but in-model** (so replay reproduces it; same discipline as
+`model.fabric.injects[group][component.port]` — **group-scoped** (B3: a `component.port`
+name may be reused across groups, so a global store bled one group's inject into another's
+same-named component; mirrors the group-scoped `output`) and **transient (never serialised
+to config), but in-model** (so replay reproduces it; same discipline as
 `model.modal.continuation`). Written by a small `confirm.js`-shaped sub-reducer
 (`TYPES = ['port_inject', 'port_clear']`).
 
@@ -445,11 +447,12 @@ read-only inspector · C1 nav · C2 field-edit → inject · D connect-to wiring
 · E wire-list · F `fields` parser + check-half · G replay property).
 
 - **Runtime wires.** Interactive wire creation (the pane's "connect to…" + the
-  wire list's delete) lives in a transient-in-model store `model.fabric.wires`,
-  mirroring injects (session-only, rides the WAL, replayable). The fabric host
-  MERGES it over the config `wires:` (`fabric/wires.js#mergeWires`, runtime
-  overrides config per input `to`, `source`-tagged); the config file stays purely
-  user-authored. `wire_create` / `wire_delete` are pure sub-reducer arms.
+  wire list's delete) lives in a transient-in-model store `model.fabric.wires[group]`
+  (**group-scoped**, B3, same reason as injects), mirroring injects (session-only, rides
+  the WAL, replayable). The fabric host MERGES the current group's slice over that group's
+  config `wires:` (`fabric/wires.js#mergeWires`, runtime overrides config per input `to`,
+  `source`-tagged); the config file stays purely user-authored. `wire_create` /
+  `wire_delete` are pure sub-reducer arms keyed on `model.currentGroup`.
 - **Field editing = an inject**, via a dedicated in-grid edit mode
   (`fabricFieldMode`, not the args-prompt — the fabric needs the RAW value never
   re-parsed). Commit folds `applyInject` (the shared canonical write, also behind

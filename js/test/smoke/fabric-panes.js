@@ -95,7 +95,7 @@ describe('[3] e edits a field → sticky inject', () => {
     key('e');
     for (const ch of '0/BEEF') key(ch, ch);
     key('return');
-    const inj = getModel().fabric.injects['miner.start'];
+    const inj = (getModel().fabric.injects[getModel().currentGroup] || {})['miner.start'];   // group-scoped (B3)
     assert(inj && inj.value === '0/BEEF', `inject committed: ${JSON.stringify(inj)}`);
     assert(!getModel().modes.fabricFieldMode, 'editor closed after Enter');
     const f = frame();
@@ -118,8 +118,9 @@ describe('[4] w offers EVERY compatible producer (multi-source) → runtime wire
       `current wire tagged + floated first: ${JSON.stringify(items)}`);
     key('return');   // pick the highlighted producer (first = primary.lsn)
     assert(!getModel().modes.menuOpen, 'picker closed');
-    const w = getModel().fabric.wires.find((x) => x.to === 'miner.start' && x.from === 'primary.lsn');
-    assert(w, `runtime wire created: ${JSON.stringify(getModel().fabric.wires)}`);
+    const gWires = getModel().fabric.wires[getModel().currentGroup] || [];   // group-scoped (B3)
+    const w = gWires.find((x) => x.to === 'miner.start' && x.from === 'primary.lsn');
+    assert(w, `runtime wire created: ${JSON.stringify(gWires)}`);
   });
 });
 
@@ -134,7 +135,7 @@ describe('[5] p pins the pane; x clears the inject', () => {
   it('x clears the inject on the selected input', () => {
     focusPorts();
     key('x');
-    assert(!('miner.start' in getModel().fabric.injects), 'inject removed');
+    assert(!('miner.start' in (getModel().fabric.injects[getModel().currentGroup] || {})), 'inject removed');   // group-scoped (B3)
   });
 });
 

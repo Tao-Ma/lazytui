@@ -14,10 +14,13 @@ const runtime = require('../app/runtime');
 
 function freshModel() {
   const m = runtime.init();
+  m.currentGroup = 'g';                     // runtime wires are group-scoped (B3)
   m.register = { history: [], cap: 10 };   // avoid lazy auto-init under freeze
   return m;
 }
 const A = 'controldata.redo_lsn';
+// This group's runtime-wire slice — wires are keyed by currentGroup (B3).
+const wr = (m) => (m.fabric.wires[m.currentGroup] || []);
 const B = 'xlogminer.start_lsn';
 
 describe('[fabric] mergeWires (pure)', () => {
@@ -72,10 +75,10 @@ describe('[fabric] wire_create', () => {
       () => runtime.update(m, { type: 'wire_create', from: A, to: B }),
       m,
     );
-    eq(next.fabric.wires.length, 1);
-    eq(next.fabric.wires[0].from, A);
-    eq(next.fabric.wires[0].to, B);
-    eq(m.fabric.wires.length, 0, 'original untouched');
+    eq(wr(next).length, 1);
+    eq(wr(next)[0].from, A);
+    eq(wr(next)[0].to, B);
+    eq(wr(m).length, 0, 'original untouched');
     eq(cmds.length, 0, 'pure state, no effects');
   });
 
@@ -83,15 +86,15 @@ describe('[fabric] wire_create', () => {
     const m = freshModel();
     const [m1] = runtime.update(m, { type: 'wire_create', from: A, to: B });
     const [m2] = runtime.update(m1, { type: 'wire_create', from: 'other.z', to: B });
-    eq(m2.fabric.wires.length, 1, 'replaced, not appended');
-    eq(m2.fabric.wires[0].from, 'other.z');
+    eq(wr(m2).length, 1, 'replaced, not appended');
+    eq(wr(m2)[0].from, 'other.z');
   });
 
   it('wires to different inputs coexist', () => {
     const m = freshModel();
     const [m1] = runtime.update(m, { type: 'wire_create', from: A, to: B });
     const [m2] = runtime.update(m1, { type: 'wire_create', from: A, to: 'xlogminer.end_lsn' });
-    eq(m2.fabric.wires.length, 2);
+    eq(wr(m2).length, 2);
   });
 
   it('re-creating the identical sole edge is a no-op (identity-preserved)', () => {
@@ -116,8 +119,8 @@ describe('[fabric] wire_delete', () => {
     const [m1] = runtime.update(m, { type: 'wire_create', from: A, to: B });
     const [m2] = runtime.update(m1, { type: 'wire_create', from: A, to: 'xlogminer.end_lsn' });
     const [m3] = runtime.update(m2, { type: 'wire_delete', from: A, to: B });
-    eq(m3.fabric.wires.length, 1);
-    eq(m3.fabric.wires[0].to, 'xlogminer.end_lsn', 'other survives');
+    eq(wr(m3).length, 1);
+    eq(wr(m3)[0].to, 'xlogminer.end_lsn', 'other survives');
   });
 
   it('deleting an absent wire is a no-op (same ref)', () => {
@@ -130,7 +133,42 @@ describe('[fabric] wire_delete', () => {
     const m = freshModel();
     const [m1] = runtime.update(m, { type: 'wire_create', from: A, to: B });
     const [m2] = runtime.update(m1, { type: 'wire_delete', from: 'other.z', to: B });
-    eq(m2.fabric.wires.length, 1, 'endpoints must both match');
+    eq(wr(m2).length, 1, 'endpoints must both match');
+  });
+});
+
+describe('[fabric] runtime wires are group-scoped — no cross-group bleed (B3)', () => {
+  it('a wire in one group is invisible to another group with the same input port', () => {
+    let m = freshModel();
+    m.currentGroup = 'staging';
+    [m] = runtime.update(m, { type: 'wire_create', from: 'stg.redo', to: B });
+    m.currentGroup = 'prod';
+    eq(wr(m).length, 0, 'prod sees NO staging wire to the same input (the B3 bleed)');
+    [m] = runtime.update(m, { type: 'wire_create', from: 'prod.redo', to: B });
+    eq(m.fabric.wires.staging.length, 1, 'each group keeps its own wire');
+    eq(m.fabric.wires.staging[0].from, 'stg.redo');
+    eq(m.fabric.wires.prod[0].from, 'prod.redo');
+    [m] = runtime.update(m, { type: 'wire_delete', from: 'prod.redo', to: B });   // currentGroup is prod
+    eq(m.fabric.wires.staging.length, 1, 'a prod delete leaves staging intact');
+    eq(wr(m).length, 0, 'prod wire deleted');
+  });
+
+  it('a group named like an Object.prototype member does not crash the wire path (B3 hardening)', () => {
+    // Group names are unvalidated YAML keys; a group `constructor`/`__proto__`/`toString`
+    // must not read the inherited prototype member as the wire array (which threw on .filter).
+    for (const g of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+      let m = freshModel();
+      m.currentGroup = g;
+      let threw = false;
+      try {
+        [m] = runtime.update(m, { type: 'wire_create', from: 'a.x', to: 'b.y' });
+        [m] = runtime.update(m, { type: 'wire_delete', from: 'a.x', to: 'b.y' });
+        [m] = runtime.update(m, { type: 'port_inject', port: 'a.x', value: 'v' });
+        [m] = runtime.update(m, { type: 'port_clear', port: 'a.x' });
+      } catch (e) { threw = true; }
+      assert(!threw, `group '${g}' must not throw on the fabric store path`);
+    }
+    assert(({}).x === undefined, 'no prototype pollution');
   });
 });
 

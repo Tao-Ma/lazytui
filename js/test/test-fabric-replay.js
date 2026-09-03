@@ -54,7 +54,7 @@ const WAL = [
 
 function xlogminerReady() {
   const ctx = {
-    injects: getModel().fabric.injects,
+    injects: getModel().fabric.injects[getModel().currentGroup] || {},   // group-scoped (B3)
     wires: require('../fabric/ports').listWires(),
     portValue,
   };
@@ -100,7 +100,7 @@ describe('[fabric-replay] derived values track each reconstructed frame', () => 
     replay.replayEntries(WAL.slice(0, 3));
     assert(xlogminerReady().ready, 'at the end: ready');
     replay.replayEntries(WAL.slice(0, 1), { fromState: base });   // seek back to frame 1
-    assert(!('xlogminer.end_lsn' in getModel().fabric.injects), 'the inject is gone at the earlier frame');
+    assert(!('xlogminer.end_lsn' in (getModel().fabric.injects[getModel().currentGroup] || {})), 'the inject is gone at the earlier frame');
     eq(portValue('controldata', 'redo_lsn'), '0/1A2B3C0', 'but the output is present');
   });
 });

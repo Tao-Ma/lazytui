@@ -25,27 +25,49 @@
 
 const TYPES = ['port_inject', 'port_clear', 'fabric_output_set', 'wire_create', 'wire_delete'];
 
-function _withInjects(model, injects) {
-  return { ...model, fabric: { ...(model.fabric || {}), injects } };
+// Runtime injects and wires are GROUP-SCOPED — keyed by the current group, mirroring
+// model.fabric.output[group][name]. A `component.port` name may be reused across groups
+// (e.g. a `stats` component in two groups), so a GLOBAL store let an inject/wire made in one
+// group silently bleed into an identically-named component in another (B3: prod resolving a
+// staging inject value). The group is the reducer's model input (model.currentGroup) — pure,
+// and reconstructed on replay before each fabric Msg (group switches ride the WAL too).
+// Own-property / type guards: a group named like an Object.prototype member (`constructor`,
+// `toString`, `__proto__`, …) — group names are unvalidated YAML keys — must NOT pick up the
+// inherited member. Without this, `_wiresOf` returned a function and `.filter`/`.find` threw
+// on the resolve/render path (and `_injectsOf` returned a function / Object.prototype).
+function _injectsOf(model, group) {
+  const all = (model.fabric && model.fabric.injects) || {};
+  const g = Object.prototype.hasOwnProperty.call(all, group) ? all[group] : null;
+  return (g && typeof g === 'object') ? g : {};
 }
-
-function _withWires(model, wires) {
-  return { ...model, fabric: { ...(model.fabric || {}), wires } };
+function _wiresOf(model, group) {
+  const all = (model.fabric && model.fabric.wires) || {};
+  const g = all[group];
+  return Array.isArray(g) ? g : [];   // Array.isArray rejects every inherited member
+}
+function _withGroupInjects(model, group, groupInjects) {
+  const fab = model.fabric || {};
+  return { ...model, fabric: { ...fab, injects: { ...(fab.injects || {}), [group]: groupInjects } } };
+}
+function _withGroupWires(model, group, groupWires) {
+  const fab = model.fabric || {};
+  return { ...model, fabric: { ...fab, wires: { ...(fab.wires || {}), [group]: groupWires } } };
 }
 
 /**
- * Write a sticky by-value inject for `port`, `at`-stamped from model.now
+ * Write a sticky by-value inject for `port` in the current group, `at`-stamped from model.now
  * (replay-safe). The canonical inject write — shared by the `port_inject` arm
  * and the component-ports field editor's submit (modal/fabric-field.js) so both
  * paths land identical state. Last-write-wins on the same port.
  */
 function applyInject(model, port, value) {
-  const injects = (model.fabric && model.fabric.injects) || {};
-  return _withInjects(model, { ...injects, [port]: { value, at: model.now } });
+  const group = model.currentGroup;
+  const groupInjects = _injectsOf(model, group);
+  return _withGroupInjects(model, group, { ...groupInjects, [port]: { value, at: model.now } });
 }
 
 function update(model, msg) {
-  const injects = (model.fabric && model.fabric.injects) || {};
+  const group = model.currentGroup;
   switch (msg.type) {
     case 'fabric_output_set': {
       // Raw producer stdout (un-esc'd, no chrome) captured for parsing, keyed by
@@ -64,38 +86,39 @@ function update(model, msg) {
       return [applyInject(model, msg.port, msg.value), []];
     }
     case 'port_clear': {
-      // { port } — remove one; identity-preserve when absent (no-op).
-      if (typeof msg.port !== 'string' || !(msg.port in injects)) return [model, []];
-      const next = { ...injects };
+      // { port } — remove one from the current group; identity-preserve when absent (no-op).
+      const groupInjects = _injectsOf(model, group);
+      if (typeof msg.port !== 'string' || !(msg.port in groupInjects)) return [model, []];
+      const next = { ...groupInjects };
       delete next[msg.port];
-      return [_withInjects(model, next), []];
+      return [_withGroupInjects(model, group, next), []];
     }
     case 'wire_create': {
-      // { from, to } — a RUNTIME wire (the pane's "connect to…"). Transient-in-
-      // model, WAL-replayable; the host merges it OVER config wires. One wire per
+      // { from, to } — a RUNTIME wire (the pane's "connect to…") in the current group.
+      // Transient-in-model, WAL-replayable; the host merges it OVER config wires. One wire per
       // input `to` (an input resolves a single wire), so a new wire to the same
       // `to` REPLACES the prior runtime one — last-write-wins, like injects.
       // Shape-guarded here; type-equality is validated at the handler (where the
       // port types are in scope) so this stays a pure, dependency-light reducer.
       if (typeof msg.from !== 'string' || !msg.from) return [model, []];
       if (typeof msg.to !== 'string' || !msg.to) return [model, []];
-      const wires = (model.fabric && model.fabric.wires) || [];
+      const wires = _wiresOf(model, group);
       // Identity-preserve when re-creating the exact edge that's already the sole
       // wire for this input (no churn/re-render on a no-op re-wire).
       const forTo = wires.filter((w) => w && w.to === msg.to);
       if (forTo.length === 1 && forTo[0].from === msg.from) return [model, []];
       const kept = wires.filter((w) => w && w.to !== msg.to);
-      return [_withWires(model, [...kept, { from: msg.from, to: msg.to }]), []];
+      return [_withGroupWires(model, group, [...kept, { from: msg.from, to: msg.to }]), []];
     }
     case 'wire_delete': {
-      // { from, to } — remove a RUNTIME wire by exact endpoints; identity-preserve
-      // when absent (a config-authored wire isn't in this store, so deleting one
-      // is a no-op — config wires are user-authored on disk, not runtime-editable).
+      // { from, to } — remove a RUNTIME wire by exact endpoints from the current group;
+      // identity-preserve when absent (a config-authored wire isn't in this store, so
+      // deleting one is a no-op — config wires are user-authored on disk, not runtime-editable).
       if (typeof msg.from !== 'string' || typeof msg.to !== 'string') return [model, []];
-      const wires = (model.fabric && model.fabric.wires) || [];
+      const wires = _wiresOf(model, group);
       const kept = wires.filter((w) => !(w && w.from === msg.from && w.to === msg.to));
       if (kept.length === wires.length) return [model, []];
-      return [_withWires(model, kept), []];
+      return [_withGroupWires(model, group, kept), []];
     }
     default:
       return [model, []];
