@@ -26,7 +26,12 @@
  */
 'use strict';
 
-// paneId -> { trigger: {x0,x1}|null, close: {x0,x1}|null, collapse: {x0,x1}|null }
+// paneId -> { trigger: {x0,x1}|null, close: {x0,x1}|null, collapse: {x0,x1}|null,
+//             titleClip: number|null }
+//   titleClip — pane-local exclusive column past which no INTACT title glyph drew
+//   (the drawn title extent after truncation). The slot tab-strip hit-test clips its
+//   re-derived tabBounds to it so a tab cut off on a narrow pane isn't reported
+//   clickable; number = clip there, null = no clippable strip drew this frame.
 const _regions = new Map();
 
 /** Drop everything. Called once at the top of every main-frame paint. */

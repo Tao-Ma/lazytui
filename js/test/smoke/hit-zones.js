@@ -21,6 +21,9 @@
  *     matches the `x`/`w` bounds input.js hit-tests (paint-vs-hittest).
  *   - Clicking inside (x, x+w) switches the slot's active tab to it.
  *   - Clicking ONE column outside that range does NOT switch to it.
+ *   - When the strip OVERFLOWS a narrow pane, renderPanel truncates its tail;
+ *     paint publishes the drawn extent (chrome-regions.titleClip) and the
+ *     hit-test clips its bounds to it, so a cut-off tab is unclickable.
  *   - `x` on a focused content text-view tab closes it (remove_tab); Info +
  *     Transcript are permanent (no close).
  *
@@ -251,6 +254,62 @@ describe('[4] `x` does not close the permanent Info / Transcript tabs', () => {
       const stillThere = (contentPane().tabs || []).some(t => t.poolId === poolId);
       assert(stillThere, `${label} MUST be permanent — \`x\` must not close it`);
     }
+  });
+});
+
+// --- [5] A slot strip that OVERFLOWS the pane truncates its tail tabs; a
+//     clipped tab must NOT be reported clickable (paint↔hit-test agreement). --
+//
+// buildEntryStrip lays tabBounds at FULL width, but renderPanel truncates the
+// title's tail when it overflows the pane. paint publishes the drawn extent
+// (chrome-regions.titleClip) and input.js clips tabBounds to it — so a tab whose
+// glyph was cut can't switch a sibling the user can't even see. Without the clip
+// the old hit-test matched the full (undrawn) bound: the residual drift this pins.
+
+describe('[5] a truncated slot strip does not report its clipped tail tabs clickable', () => {
+  it('a click on a clipped tab\'s undrawn bound switches nothing', () => {
+    sm.bootFresh();
+    sm.resize(100, 40);
+    // Enough long-labelled content tabs that the strip far overflows the pane.
+    for (const n of ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot', 'Golf', 'Hotel']) {
+      contentTab.addContentTab('g1', 'doc-' + n, n + '-tab', [n]);
+    }
+    api.getInstanceSlice('layout').focus = 'pane-detail';
+    sm.capture(() => sm.render());
+
+    const cp = contentPane();
+    const layout = api.getInstanceSlice('layout');
+    const b = geo.visibleBoundsFor(layout, 'pane-detail');
+    assert(b, 'content pane bounds present');
+    const reg = require('../../panel/chrome-regions').get(cp.paneId);
+    assert(reg && typeof reg.titleClip === 'number',
+      `paint published a numeric titleClip for the content pane (got ${reg && reg.titleClip})`);
+    const bounds = slotTabBounds();
+    const lastEnd = bounds.length ? bounds[bounds.length - 1].x + bounds[bounds.length - 1].w : 0;
+    assert(reg.titleClip < lastEnd,
+      `the strip overflowed and truncated (titleClip=${reg.titleClip} < full strip end ${lastEnd})`);
+
+    // The leftmost tab whose glyph was cut AND whose bound still starts inside the
+    // pane — so the click reaches the pane row (not skipped by the outer bounds
+    // test), exercising the CLIP, not an off-pane miss.
+    const clipped = bounds.find(t => t.x + t.w > reg.titleClip && t.x < b.w);
+    assert(clipped, `a clipped tab starts inside the pane (titleClip=${reg.titleClip}, paneW=${b.w})`);
+
+    const before = cp.activeTabId;
+    assert(clipped.poolId !== before, 'the clipped tab is not already active (a real switch would be visible)');
+    const [sx, sy] = sgr0(b.x + clipped.x, b.y);
+    sm.capture(() => sm.handleMouse('press', sx, sy));
+    eq(contentPane().activeTabId, before,
+      `a click on clipped tab '${clipped.poolId}' (x+w=${clipped.x + clipped.w} > titleClip=${reg.titleClip}) MUST switch nothing`);
+
+    // Positive control: a tab fully WITHIN titleClip is still clickable — the clip
+    // didn't just disable the whole strip.
+    const survivor = bounds.find(t => t.x + t.w <= reg.titleClip && t.poolId !== before);
+    assert(survivor, 'at least one surviving (fully-drawn) tab exists');
+    const [ix, iy] = sgr0(b.x + survivor.x + Math.floor(survivor.w / 2), b.y);
+    sm.capture(() => sm.handleMouse('press', ix, iy));
+    eq(contentPane().activeTabId, survivor.poolId,
+      `a surviving tab '${survivor.poolId}' within titleClip MUST still be clickable`);
   });
 });
 

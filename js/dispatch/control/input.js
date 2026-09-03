@@ -879,7 +879,17 @@ function handleMouse(kind, x, y) {
     if (my === b.y && Array.isArray(p.tabs) && p.tabs.length > 1) {
       const strip = require('../../panel/slot-strip').unifiedSlotStrip(p);
       const localX = mx - b.x;
+      // Clip tabBounds to the ACTUALLY-DRAWN title extent paint published this
+      // frame (chrome-regions.titleClip). A slot strip that overflowed a narrow
+      // pane is truncated at its tail, cutting the rightmost tabs — their
+      // re-derived bounds must not stay clickable where no glyph drew (the
+      // paint↔hit-test agreement rule; reference_paint_hittest_agreement). reg
+      // absent (pre-first-paint) → no clip; reg present but non-numeric (a pane
+      // that drew no clippable strip) → clip all.
+      const reg = require('../../panel/chrome-regions').get(p.paneId);
+      const clip = reg ? (typeof reg.titleClip === 'number' ? reg.titleClip : 0) : Infinity;
       for (const tab of (strip ? strip.tabBounds : [])) {
+        if (tab.x + tab.w > clip) continue;   // tail-clipped by truncation — not drawn
         if (localX >= tab.x && localX < tab.x + tab.w) {
           dispatchMsg(wrap('layout', { type: 'activate_tab', paneId: p.paneId, tabPoolId: tab.poolId }));
           mutated = true;

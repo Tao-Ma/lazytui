@@ -160,6 +160,9 @@ function renderPanel({
   let top = null;
   let chromeDrew = false;   // did the [≡]/[X]/[_] cluster actually paint (fits)?
   let triggerReg = null;    // the [≡] pane-local x-range IFF it survived leftPart truncation
+  let titleClip = null;     // pane-local exclusive column past which no intact title glyph drew
+                            // (the tab-strip hit-test clips its tabBounds to this — a slot strip
+                            // truncated on a narrow pane must not report a clipped tab as clickable)
   const wantLeftTrigger  = chrome && chrome.tabTrigger;
   const wantRightCollapse = chrome && chrome.collapse;
   const wantRightClose    = chrome && chrome.close;
@@ -207,6 +210,11 @@ function renderPanel({
     const fits = hasControls ? (leftCap >= 2) : (midFill >= 1);
     if (fits) {
       chromeDrew = true;
+      // Drawn title extent for the tab-strip hit-test: leftPart is composed
+      // (prefix + [≡] + dash + title) THEN truncated at its tail, so surviving
+      // tabs keep their pane-local x — only the tail is cut. A truncated leftPart
+      // ends in `…` (1 cell), so intact glyphs stop one col short of leftCap.
+      titleClip = (leftVisFull <= leftCap) ? leftVisFull : (leftCap - 1);
       // The [≡] lives INSIDE leftPart, which `truncate` cuts INDEPENDENTLY of
       // `fits` (a border-control strip or a long title shrinks leftCap and can
       // clip the glyph while the row still composites). So the trigger is painted
@@ -260,6 +268,7 @@ function renderPanel({
       trigger:  triggerReg,
       close:    chromeDrew && wantRightClose    ? { x0: width - 8, x1: width - 6 } : null,
       collapse: chromeDrew && wantRightCollapse ? { x0: width - 4, x1: width - 2 } : null,
+      titleClip,
     });
   }
 

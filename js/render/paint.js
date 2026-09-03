@@ -210,6 +210,7 @@ function _renderCollapsed(p, w, chrome) {
         trigger:  null,
         close:    chrome && chrome.close    ? { x0: w - 8, x1: w - 6 } : null,
         collapse: chrome && chrome.collapse ? { x0: w - 4, x1: w - 2 } : null,
+        titleClip: null,   // a collapsed pane draws no multi-tab slot strip
       });
       return wrapColor(fc, `╭─${titleText}${'─'.repeat(midFill)}${rightPart}`);
     }
@@ -217,7 +218,7 @@ function _renderCollapsed(p, w, chrome) {
   }
 
   // Bare bar — no chrome painted, so record none (a click finds nothing).
-  chromeRegions.publish(p.paneId, { trigger: null, close: null, collapse: null });
+  chromeRegions.publish(p.paneId, { trigger: null, close: null, collapse: null, titleClip: null });
   const fill = innerW - visibleLen(titleText);
   if (fill >= 2)      return wrapColor(fc, `╭─${titleText}${'─'.repeat(fill - 1)}╮`);
   else if (fill === 1) return wrapColor(fc, `╭${titleText}─╮`);
@@ -408,7 +409,7 @@ function _safeRender(panel, w, h, opts) {
     // The error block paints NO chrome. If render() published a chrome region via
     // the sink before it threw, wipe it so a click can't land on a glyph the error
     // block overwrote (same-frame; next frame's clear() handles the steady state).
-    chromeRegions.publish(panel.paneId, { trigger: null, close: null, collapse: null });
+    chromeRegions.publish(panel.paneId, { trigger: null, close: null, collapse: null, titleClip: null });
     return rows.join('\n');
   } finally {
     selectView.exitPane();
