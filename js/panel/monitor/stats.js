@@ -239,7 +239,8 @@ function renderBody(spec, innerW, innerH, hoverCol = -1, ctx = null, band = null
     // Live drag-band (§10): highlight the pending zoom range across the overlaid grid.
     if (band) colored = colored.map((r) => _highlightRange(r, band.lo, band.hi, t.selected));
     const lines = [legend, ...colored];
-    if (taRows) lines.push(_timeAxisRow(samples, oAxis.gutterW, innerW, !!frozen, t.dim));
+    // Overlay is always braille (perCol 2); label the drawn window, not the full retention.
+    if (taRows) lines.push(_timeAxisRow(_drawnSamples(samples, effW, 2), oAxis.gutterW, innerW, !!frozen, t.dim));
     return { lines, rowKey };
   }
 
@@ -261,7 +262,8 @@ function renderBody(spec, innerW, innerH, hoverCol = -1, ctx = null, band = null
   // (renderPanel would otherwise pad blanks BELOW it, floating it off the border).
   if (taRows) {
     while (lines.length < gH) lines.push('');
-    lines.push(_timeAxisRow(samples, gutterW, innerW, !!frozen, t.dim));
+    // Label the drawn window (newest effW*perCol), matching the trace's `_cut`.
+    lines.push(_timeAxisRow(_drawnSamples(samples, innerW - gutterW, style === 'braille' ? 2 : 1), gutterW, innerW, !!frozen, t.dim));
   }
   return { lines, rowKey };
 }
@@ -616,6 +618,17 @@ function _lastFiniteTs(samples) {
 function _firstFiniteTs(samples) {
   for (let i = 0; i < samples.length; i++) { const t = samples[i] && samples[i].ts; if (Number.isFinite(t)) return t; }
   return null;
+}
+
+// The bottom label row must describe the DRAWN trace, not the full retained window.
+// The rasterizers draw only the newest `effW * perCol` samples (stats-graph `_cut`;
+// perCol = 2 for braille, 1 for blocks), so the `-<span>` left edge must measure from
+// that SAME slice — otherwise a window wider than the trace overstates the visible age
+// (and disagrees with hover, which maps over the drawn window). Frozen panes already
+// hand us exactly `effW*perCol` samples, so the slice is a no-op there.
+function _drawnSamples(samples, effW, perCol) {
+  const drawn = Math.max(1, effW) * Math.max(1, perCol);
+  return samples.length > drawn ? samples.slice(samples.length - drawn) : samples;
 }
 
 // Build the bottom time-axis row: `[dim]` span labels aligned to the TRACE region (the

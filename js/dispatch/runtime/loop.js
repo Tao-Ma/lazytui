@@ -103,6 +103,11 @@ function _layoutArrange() {
 // Unchanged counter → no finalize, no added cost on the hot root-Msg path.
 const _mnav = require('../../leaves/wm/nav');
 let _navMsgSeq = 0;
+// Age overlays (jobs/diag) arm the 1 s `clock` Sub via app/state.js#_desiredSubs
+// (`overlayClock`); detect the flag transition here so the finalize gate reconciles the
+// Sub on open/close. reconcileSubscriptions' own perf-gate already keys on these flags —
+// this only ensures it gets CALLED (a mode flip moves neither arrange/nav/jobs).
+function _overlayClockOn(m) { return !!(m && m.modes && (m.modes.jobsMode || m.modes.diagLogMode)); }
 function applyMsg(msg) {
   _dispatchDepth++;
   const arrangeBefore = _dispatchDepth === 1 ? _layoutArrange() : undefined;
@@ -116,6 +121,10 @@ function applyMsg(msg) {
   // `jobs_synced` replaces `model.jobs` wholesale, so a cheap reference compare
   // (no _liveActionStatus recompute on the hot path) catches every job change.
   const jobsBefore = _dispatchDepth === 1 ? getModel().jobs : undefined;
+  // Age-overlay clock gate — see _overlayClockOn: an open/close flips only a mode flag, so
+  // without this the clock Sub is never armed on open (age column freezes) nor torn down on
+  // close (idle ticks on an otherwise-quiet TUI).
+  const overlayBefore = _dispatchDepth === 1 ? _overlayClockOn(getModel()) : undefined;
   try { mw.run({ lane: 'root', msg }, _termRoot); }
   finally {
     _dispatchDepth--;
@@ -123,7 +132,8 @@ function applyMsg(msg) {
       flushNavCapture();
       if ((arrangeBefore !== undefined && _layoutArrange() !== arrangeBefore)
         || (navBefore !== undefined && _navMsgSeq !== navBefore)
-        || (jobsBefore !== undefined && getModel().jobs !== jobsBefore)) finalizeDispatch();
+        || (jobsBefore !== undefined && getModel().jobs !== jobsBefore)
+        || (overlayBefore !== undefined && _overlayClockOn(getModel()) !== overlayBefore)) finalizeDispatch();
     }
   }
 }
@@ -182,7 +192,14 @@ function _dispatchMsgInner(msg) {
     // (agent_input/agent_activate) can't fire in free-config (its mode owns
     // the keys), so only the event lane needs the pass.
     const isAgentEvent = msg && msg.msg && msg.msg.type === 'agent_event' && msg.type === undefined;
-    if (!isLayoutWrap && !isAgentEvent) return;
+    // Same class as agent_event: docker's fetch effect ALWAYS dispatches a `dockerResult`
+    // to clear its `inFlight` latch (every settle path — success / no-containers / unfocused /
+    // aborted `dropStale`). Dropping it here wedges the latch permanently (`_maybeFetch`
+    // refuses a new fetch while inFlight), so docker status/stats freeze for the rest of the
+    // session if the user enters free-config mid-fetch. The fold touches only the docker
+    // content slice — no pane moves — which is all this gate protects.
+    const isDockerResult = msg && msg.msg && msg.msg.type === 'dockerResult' && msg.type === undefined;
+    if (!isLayoutWrap && !isAgentEvent && !isDockerResult) return;
   }
   // Wrapped-Msg path. Routes to exactly one Component instance. Discriminator:
   // `{ kind: string, msg: any }` AND no top-level `type`.

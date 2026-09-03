@@ -38,8 +38,14 @@ function seedTs(topic = 'x.cpu') {
 function seedNoTs(topic = 'x.nots') {
   setMetric(topic, { _: Array.from({ length: 300 }, (_x, i) => ({ cpu: i % 100 })) }, { cpu: { type: 'percent' } });
 }
-const SPAN = '9m58s';   // fmtDurationMs(299 * 2000)
+const SPAN = '9m58s';   // fmtDurationMs(299 * 2000) — full window (builder labels what it's handed)
 const HALF = '4m59s';   // fmtDurationMs(299 * 1000)
+// The PAINT path draws only the newest effW*perCol samples (a 60-wide, y_axis:off, braille
+// pane → effW 60, perCol 2 → 120 drawn of 300 retained), so its axis labels the DRAWN window,
+// not the full retention (B1: labeling the full window overstated the visible age). Drawn
+// span = 119*STEP = 238000 ms = 3m58s; half = 119000 ms = 1m59s.
+const DRAWN_SPAN = '3m58s';
+const DRAWN_HALF = '1m59s';
 
 describe('[stats-xaxis] _timeAxisRows — the shared 0/1 reserve decision', () => {
   const spec = (mode, over = {}) => ({ paneId: 'x1', topic: 'x.cpu', row: '_', metrics: ['cpu'], window: 300, y_axis: 'off', x_axis: mode, ...over });
@@ -86,8 +92,8 @@ describe('[stats-xaxis] paint — the label row is appended last; the graph shri
     const on = stats.renderBody(spec('always'), 60, 8, -1, null).lines;
     const off = stats.renderBody(spec('off'), 60, 8, -1, null).lines;
     const last = on[on.length - 1];
-    assert(last.includes('now') && last.includes(`-${SPAN}`), `axis row shows the span + now (${JSON.stringify(last)})`);
-    assert(last.includes(`-${HALF}`), 'a centred mid tick appears on a wide trace');
+    assert(last.includes('now') && last.includes(`-${DRAWN_SPAN}`), `axis row shows the DRAWN span + now (${JSON.stringify(last)})`);
+    assert(last.includes(`-${DRAWN_HALF}`), 'a centred mid tick appears on a wide trace');
     assert(!off.some((l) => l.includes('now')), 'x_axis off draws no time-axis row');
   });
 
@@ -176,7 +182,7 @@ describe('[stats-xaxis] review regressions — aggregate ts, flush bottom, span-
     const spec = { paneId: 'x1', topic: 'x.agg', aggregate: 'avg', metrics: ['cpu'], window: 300, y_axis: 'off', x_axis: 'always' };
     const lines = stats.renderBody(spec, 60, 8, -1, null).lines;
     const last = lines[lines.length - 1];
-    assert(last.includes(`-${SPAN}`) && last.includes('now'), `aggregate pane labels the span, not a blank row (${JSON.stringify(last)})`);
+    assert(last.includes(`-${DRAWN_SPAN}`) && last.includes('now'), `aggregate pane labels the span, not a blank row (${JSON.stringify(last)})`);
   });
 
   it('a multi-metric label row sits FLUSH on the bottom (floor slack padded above it)', () => {

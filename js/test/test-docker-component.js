@@ -638,4 +638,25 @@ describe('[19] item-action invariants', () => {
   });
 });
 
+describe('[8] B5 — the free-config gate must not drop dockerResult (inFlight wedge)', () => {
+  it('a dockerResult dispatched during free-config still clears the inFlight latch', () => {
+    require('../dispatch/runtime/effects').installBuiltins();
+    api.registerComponent(docker);
+    setup(['c1']);
+    // Establish the registered content-owner slice, then simulate an in-flight fetch
+    // that started BEFORE the user entered free-config.
+    api.dispatchMsg(api.wrap('docker', { type: 'dockerResult', status: {}, stats: {} }));
+    api.getInstanceSlice('docker').inFlight = true;
+    const m = getModel();
+    m.modes = { ...(m.modes || {}), freeConfigMode: true };
+    // The fetch effect settles and dispatches its result — the ONLY writer that clears
+    // inFlight. Before the fix the free-config gate dropped it → latch wedged for the
+    // whole session (docker status/stats frozen).
+    api.dispatchMsg(api.wrap('docker', { type: 'dockerResult', status: {}, stats: {} }));
+    assert(!api.getInstanceSlice('docker').inFlight,
+      'dockerResult passes the gate under free-config → inFlight cleared (polling resumes)');
+    m.modes.freeConfigMode = false;
+  });
+});
+
 report();
