@@ -67,7 +67,17 @@ function classifyRequires(src) {
         if (noStr[k] === '{') d++;
         else if (noStr[k] === '}') d = Math.max(0, d - 1);
       }
-      reqs.push({ target: m[1], deferred: d > 0, line: i + 1 });
+      // A require inside a function body is DEFERRED (lazy). Brace-depth catches
+      // `function(){…}` and braced arrows `()=>{…}`; a CONCISE arrow body
+      // `()=>require(…)` has NO braces, so also treat a require preceded on this
+      // line by an arrow whose body isn't `{`-braced as deferred. Without this the
+      // `const x = () => require(...)` idiom (16× in-tree, e.g. replay-control.js's
+      // lazy seams) counts as a TOP-LEVEL edge — over-approximating the load-order
+      // graph so a future legal lazy upward arrow-require could trip a false cycle.
+      const before = noStr.slice(0, m.index);
+      const arrowIdx = before.lastIndexOf('=>');
+      const conciseArrow = arrowIdx >= 0 && !/^\s*\{/.test(before.slice(arrowIdx + 2));
+      reqs.push({ target: m[1], deferred: d > 0 || conciseArrow, line: i + 1 });
     }
     // carry running depth to subsequent lines
     for (const ch of noStr) {

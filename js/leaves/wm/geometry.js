@@ -422,7 +422,7 @@ const _normalBoundsMap = createSelector(
 // No focused pane → renderHalf falls back to renderNormal, so do we.
 function _halfBoundsMap(layoutSlice, viewerPaneId) {
   const dims = layoutSlice.dims;
-  const COLS = dims.cols, ROWS = dims.rows;
+  const COLS = dims.cols;   // ROWS no longer read here — availRows(dims) owns the height floor (B8c)
   const all = mpool.allPanesInColumns(layoutSlice.arrange);
   const focusedPanel = all.find(p => mpane.paneMatchesFocus(p, layoutSlice.focus));
   if (!focusedPanel) return _normalBoundsMap(layoutSlice);

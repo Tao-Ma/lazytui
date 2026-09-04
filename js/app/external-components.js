@@ -101,9 +101,11 @@ function configFromLog(log) {
 
 /**
  * Register every external Component declared in `config` through the given
- * `registerComponent`. Shared by the live boot (app/tui.js) and the replay
- * harness (app/replay-cli, dispatch/runtime/replay-control, app/dev-console) so
- * replay registers the identical set. Errors propagate — the caller picks the
+ * `registerComponent`. Shared by the live boot (app/tui.js), the replay CLIs
+ * (app/replay-cli, app/dev-console), and — via the `setExternalRegistrar` seam
+ * app/tui.js wires at boot — the interactive replay harness (dispatch/runtime/
+ * replay-control, which no longer imports app/ directly; the dispatch→app cut).
+ * So replay registers the identical set. Errors propagate — the caller picks the
  * policy (boot = fail loud; replay = best-effort diagnostic).
  */
 function registerExternal(config, registerComponent) {

@@ -501,7 +501,8 @@ Walked one-by-one and pinned 2026-07-02.
    `extract:{regex,group}`. The regex-*table* (`parse:{fields}`) defers to P1.5, landing
    with its check-half ✓/✗ UI. `fn` is implicit for code components (not a config feature).
    *(Build note — RESOLVED: `viewerStreamBuffer` is display-capped at 1000 lines, but the
-   fabric parse path captures a SEPARATE, uncapped raw-output buffer (`model.fabric.output`,
+   fabric parse path captures a SEPARATE ring-capped raw-output buffer (last `FABRIC_RAW_MAX`
+   = 5000 lines, `dispatch/runtime/stream.js`; `model.fabric.output`,
    flushed on process close), so a big-output producer parses its full output.)*
 4. **Addressing** — **`component.port` (attribute-access `.`)**, same-group in P1, group
    implicit (wires in the group's `wires:`). Dot-free-identifier guard on fabric names.
@@ -523,7 +524,8 @@ Walked one-by-one and pinned 2026-07-02.
   dependency-inversion *hosts*. The fabric code lives in `js/fabric/`; `js/ports/` is
   vacated and reserved for the dataflow-fabric *concept*.
 - **Full-output capture for parse** — DONE: the fabric run path captures raw stdout into
-  `model.fabric.output` (un-esc'd, uncapped), separate from the 1000-line display buffer
+  `model.fabric.output` (un-esc'd, ring-capped to the last 5000 lines — `FABRIC_RAW_MAX`),
+  separate from the 1000-line display buffer
   (see decision 3's note).
 - **Dot-free fabric names** — see decision 4; enforced at load for `ports`-declaring
   components and their port names.

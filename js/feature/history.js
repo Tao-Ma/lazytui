@@ -87,11 +87,15 @@ function start(label, cmd, opts = {}) {
   // Detached entries close immediately — we never see their exit.
   if (opts.detached) entry.endedAt = now;
 
-  // Unlike a metrics SAMPLE (frozen at its source — an immutable time-series
-  // point), a history entry is a MUTABLE RECORD: appendOutput/endEntry update it
-  // in place as the operation streams + completes, each paired with a _notify()
-  // re-mirror so model.history + the recorded stream stay consistent. So it is
-  // deliberately NOT frozen — a different, replay-sound contract on the same hub.
+  // Unlike a metrics SAMPLE (frozen at its source — an immutable time-series point),
+  // a history entry is a MUTABLE RECORD: appendOutput streams lines into it and
+  // endEntry stamps the terminal state, both IN PLACE — so it is deliberately NOT
+  // frozen. The two mutations differ in mirroring: endEntry (+ this initial publish)
+  // re-mirror via _notify(); per-line appendOutput does NOT (see the note at `start`
+  // above) — it updates the shared model.history entry ref that the detail card
+  // renders live. The WAL stays faithful (session-log serializes each entry eagerly
+  // at publish); the in-place output growth is a live-only detail a from-snapshot
+  // replay omits (a pre-existing history nuance, not a freeze concern).
   hub.publish(TOPIC, '_', entry);
   _notify();   // new entry — sync model.history (store-mirror, §8.1)
 

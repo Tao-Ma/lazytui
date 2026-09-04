@@ -267,16 +267,23 @@ function init() {
     // a plain string (the user-facing message).
     bootWarnings: [],
     // --- Graph-interaction transient state (hover / zoom / dragBand) ---
-    // These three live on the layout (SINGLETON UI-state) slice ON PURPOSE, keyed
-    // by paneId — NOT on a per-pane stats slice. They are CROSS-COMPONENT: `hover`
-    // is read by BOTH monitor/stats (a standalone graph pane) AND monitor/composite
-    // (a box that embeds graph widgets) — two distinct Components with no shared
-    // per-pane slice. The mouse SHELL (dispatch/control/input) that drives these
-    // gestures also lives above any one pane. So the singleton is the one home both
-    // sides can reach; moving them onto stats' slice would strand composite (for
-    // hover) and fragment one cohesive gesture family across slices (for zoom/band).
-    // (Phase-5 review flagged this as "stats' own state on the wrong slice" — it is
-    // not stats-only; the placement is deliberate. See docs/STATS.md.)
+    // These live on the layout (SINGLETON) slice ON PURPOSE, not a per-pane stats
+    // slice, for two reasons:
+    //   1. `hover` and `dragBand` are GLOBAL-SINGLETON facts — exactly ONE hovered
+    //      cell and ONE in-flight drag UI-wide. Each is a single nullable object that
+    //      merely CARRIES a `paneId` for the reader's filter, NOT a per-pane map. A
+    //      singleton fact belongs on a singleton slice; modeling it per-pane would be
+    //      N-1 permanently-null fields plus explicit clear-on-leave logic the shell
+    //      gets for free by overwriting the one slot. (`zoom` alone IS a paneId-keyed
+    //      map — multiple panes can stay zoomed — but only stats paneIds ever key it.)
+    //   2. `hover` is CROSS-COMPONENT: read by BOTH monitor/stats AND monitor/composite
+    //      (a box embedding graph widgets — a distinct Component with no shared per-pane
+    //      slice), and the mouse SHELL (dispatch/control/input) that drives all three
+    //      lives above any one pane. Moving to stats' slice would strand composite.
+    // Contrast: genuinely PER-PANE gesture state (text selection) DOES live on the owning
+    // pane's slice (via the _selectFallback seam in dispatch/runtime/loop); hover/drag
+    // fail that per-pane test, so they stay here. (Phase-5 review flagged this as "stats'
+    // state on the wrong slice"; it is not stats-only — deliberate. See docs/STATS.md.)
     //
     // hover — the raw graph-hover position `{ paneId, col, row, x, y }` or null,
     // set/cleared by the `graph_hover` arm from the input all-motion (mode 1003)

@@ -54,10 +54,11 @@ const windowCache = new Map();  // topic -> number
 // it serves two contracts. Immutable time-series SAMPLES (metrics/docker.stats)
 // are frozen AT THEIR SOURCE (the producer, before publish) so "never mutate a
 // published sample" is enforced end-to-end (model.metrics aliases them). But the
-// command-history topic publishes a MUTABLE RECORD that is updated in place as an
-// operation streams + completes (feature/history: appendOutput / endEntry, each
-// followed by a re-mirror) — a different, replay-sound contract. A blanket freeze
-// here would break it, so immutability is a per-producer choice, not a hub rule.
+// command-history topic publishes a MUTABLE RECORD updated in place as an operation
+// streams + completes (feature/history appendOutput / endEntry; only endEntry
+// re-mirrors — per-line appendOutput mutates the shared ref without a _notify). A
+// blanket freeze here would break it, so immutability is a per-producer choice, not
+// a hub rule (see feature/history for the WAL-fidelity nuance).
 
 // --- Pattern matching ---
 
