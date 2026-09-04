@@ -91,6 +91,31 @@ describe('visibleBoundsFor tracks the VISIBLE pane per view mode (derived)', () 
   });
 });
 
+describe('B8(c) — the availH floor agrees between viewport + painted bounds on a ≤6-row terminal', () => {
+  // On a tiny terminal (rows-1 < 6) the availH floor (max(6, rows-1)) engages.
+  // getPanelViewportH floored while the half/full bounds maps used RAW rows-1 —
+  // so the scroll/hit-test viewport disagreed with the painted pane height. Both
+  // read geo.availRows now (the single source), so they agree at any size.
+  function assertAgree(viewMode) {
+    sm.bootFresh();
+    sm.resize(40, 5);   // rows-1 = 4 < 6 → the floor engages
+    const layout = getInstanceSlice('layout');
+    layout.viewMode = viewMode;
+    layout.focus = 'pane-detail';
+    sm.capture(() => sm.render());
+    const pid = route.resolveViewerPaneId();
+    const b = geo.visibleBoundsFor(layout, pid, pid);
+    assert(b, `${viewMode}: onscreen bounds resolved`);
+    eq(b.h, geo.availRows(layout.dims),
+      `${viewMode}: painted pane height uses the floored availH max(6,rows-1)=${geo.availRows(layout.dims)} (saw ${b.h})`);
+    const vh = geo.getPanelViewportH(layout, pid, layout.dims, null, pid);
+    eq(vh, b.h - 2,
+      `${viewMode}: getPanelViewportH (scroll/hit-test viewport ${vh}) == painted inner height ${b.h - 2} — no ≤6-row drift`);
+  }
+  it('full view: viewport height matches painted bounds', () => assertAgree('full'));
+  it('half view: viewport height matches painted bounds', () => assertAgree('half'));
+});
+
 describe('boundsFor reports NORMAL geometry (the off-screen scroll-clamp accessor)', () => {
   it('full mode: boundsFor returns the normal column rect, not the full-screen one', () => {
     const layout = renderIn('full', 'pane-detail');

@@ -196,6 +196,16 @@ function distributeColumnHeights(panels, availH, isLastCol, minH, detailHeightPc
 // read rects via boundsFor / the calcLayout return value.
 let _currentLayout = null;
 
+// The layout's available content height: total rows minus the one footer row,
+// FLOORED at 6 so panels stay usable on a tiny terminal (content scrolls/clips
+// instead of degenerating). This is the SINGLE source of that floor — getPanelViewportH,
+// the normal-view rects (_layoutRects), the half/full bounds maps, AND paint's half/full
+// renderers all read it, so the scroll/hit-test viewport height can never drift from the
+// painted pane height. It drifted before (bounds maps + paint used raw rows-1 while
+// getPanelViewportH floored) → a ≤6-row paint↔hit-test disagreement; flooring one side
+// alone is worse than none, so all sides share this one definition.
+function availRows(dims) { return Math.max(6, ((dims && dims.rows) || 1) - 1); }
+
 /**
  * Inner viewport rows for a panel's CURRENTLY-RENDERED height, view-
  * mode aware. The on-screen panel in half/full view occupies the full
@@ -269,7 +279,7 @@ function halfProjection(layoutSlice, viewerPaneId) {
 
 function getPanelViewportH(layoutSlice, paneId, dims, layout, viewerPaneId) {
   if (!layoutSlice) return 1;
-  const availH = Math.max(6, dims.rows - 1);
+  const availH = availRows(dims);
   // Half/full view: an on-screen panel takes the full availH — beats the
   // normal-view column-share that boundsFor/_currentLayout would otherwise
   // report (e.g. lagging across the viewMode-transition tick). Half view's two slots come from the
@@ -318,7 +328,7 @@ function _layoutRects(arrange, dims) {
   // Only the footer is reserved at the bottom; panels fill everything
   // else. The yank register surfaces via the `"` popup, not an
   // always-on chrome strip (retired v0.6).
-  const availH = Math.max(6, ROWS - 1);
+  const availH = availRows(dims);
   // Minimum panel height: 3 rows (border + 1 content line)
   const minH = 3;
 
@@ -416,7 +426,7 @@ function _halfBoundsMap(layoutSlice, viewerPaneId) {
   const all = mpool.allPanesInColumns(layoutSlice.arrange);
   const focusedPanel = all.find(p => mpane.paneMatchesFocus(p, layoutSlice.focus));
   if (!focusedPanel) return _normalBoundsMap(layoutSlice);
-  const halfW = Math.floor(COLS / 2), availH = ROWS - 1;
+  const halfW = Math.floor(COLS / 2), availH = availRows(dims);
   const proj = halfProjection(layoutSlice, viewerPaneId);
   const leftPanel = (proj.left && all.find(p => p.paneId === proj.left)) || focusedPanel;
   const detailPanel = proj.right ? all.find(p => p.paneId === proj.right) || null : null;
@@ -437,7 +447,7 @@ function _fullBoundsMap(layoutSlice) {
   if (!focusedPanel) return _normalBoundsMap(layoutSlice);
   const m = {};
   if (focusedPanel.paneId) {
-    m[focusedPanel.paneId] = { x: 0, y: 0, w: dims.cols, h: dims.rows - 1 };
+    m[focusedPanel.paneId] = { x: 0, y: 0, w: dims.cols, h: availRows(dims) };
   }
   return m;
 }
@@ -490,7 +500,7 @@ function visibleBoundsFor(layoutSlice, key, viewerPaneId) {
 }
 
 module.exports = {
-  distributeColumnHeights, getPanelViewportH, calcLayout,
+  distributeColumnHeights, getPanelViewportH, calcLayout, availRows,
   getCurrentLayout, boundsFor, visibleBoundsFor, halfProjection,
   // Test seam: distributeColumnHeights is a pure function that returns
   // a { [type]: rows } map. Exposed so collapsed-honor + heightPct

@@ -266,10 +266,21 @@ function init() {
     // (`:dismiss-warnings`) or the next config reload. Each entry is
     // a plain string (the user-facing message).
     bootWarnings: [],
-    // v0.6.x hover-for-value (Phase 2, docs/STATS.md). The raw graph-hover position
-    // `{ paneId, col, row, x, y }` or null — set/cleared by the `graph_hover` arm
-    // from the input layer's all-motion (mode 1003) hover path. The value is derived
-    // at paint (stats.render → hover-region), never stored here.
+    // --- Graph-interaction transient state (hover / zoom / dragBand) ---
+    // These three live on the layout (SINGLETON UI-state) slice ON PURPOSE, keyed
+    // by paneId — NOT on a per-pane stats slice. They are CROSS-COMPONENT: `hover`
+    // is read by BOTH monitor/stats (a standalone graph pane) AND monitor/composite
+    // (a box that embeds graph widgets) — two distinct Components with no shared
+    // per-pane slice. The mouse SHELL (dispatch/control/input) that drives these
+    // gestures also lives above any one pane. So the singleton is the one home both
+    // sides can reach; moving them onto stats' slice would strand composite (for
+    // hover) and fragment one cohesive gesture family across slices (for zoom/band).
+    // (Phase-5 review flagged this as "stats' own state on the wrong slice" — it is
+    // not stats-only; the placement is deliberate. See docs/STATS.md.)
+    //
+    // hover — the raw graph-hover position `{ paneId, col, row, x, y }` or null,
+    // set/cleared by the `graph_hover` arm from the input all-motion (mode 1003)
+    // path. The VALUE is derived at paint (stats.render → hover-region), never here.
     hover: null,
     // Drag-to-zoom (docs/STATS.md §10). `zoom` maps paneId → a FROZEN snapshot
     // `{ samples, start, end, metrics, rowKey }` (the resolved series + the dragged

@@ -540,9 +540,9 @@ function renderHalf(model, arrangeOverride) {
   const layoutSlice = getInstanceSlice('layout');
   const dims = layoutSlice.dims;  // model clock (resize-as-Msg P1)
   geo.calcLayout(layoutSlice, dims, { arrangeOverride });
-  const COLS = dims.cols, ROWS = dims.rows;
+  const COLS = dims.cols;
   const halfW = Math.floor(COLS / 2);
-  const availH = ROWS - 1;
+  const availH = geo.availRows(dims);   // shared floor — matches geometry._halfBoundsMap + getPanelViewportH
   const focusedPanel = allPanels().find(p => mpane.paneMatchesFocus(p, layoutSlice.focus));
   if (!focusedPanel) return renderNormal(model, arrangeOverride);
   // v0.6.4 — the two projected panes come from the shared halfProjection
@@ -606,8 +606,8 @@ function renderFull(model, arrangeOverride) {
   const layoutSlice = getInstanceSlice('layout');
   const dims = layoutSlice.dims;  // model clock (resize-as-Msg P1)
   geo.calcLayout(layoutSlice, dims, { arrangeOverride });
-  const COLS = dims.cols, ROWS = dims.rows;
-  const availH = ROWS - 1;
+  const COLS = dims.cols;
+  const availH = geo.availRows(dims);   // shared floor — matches geometry._fullBoundsMap + getPanelViewportH
   const focusedPanel = allPanels().find(p => mpane.paneMatchesFocus(p, layoutSlice.focus));
   if (!focusedPanel) return renderNormal(model, arrangeOverride);
   // Phase A.2 — bounds derived (geometry._fullBoundsMap mirrors this);
