@@ -217,6 +217,11 @@ const VALID_EXTRACT_MODES = new Set(['regex', 'columns', 'json']);
 // publishes its per-second RATE — the topic then advertises the column as
 // `rate` to consumers. See docs/metrics-producer.md §counter.
 const VALID_COLUMN_TYPES = new Set(['number', 'percent', 'bytes', 'rate', 'counter', 'string', 'duration']);
+// The keys a metrics `schema.columns.<name>` def may carry. `type` = coercion/display
+// type; `unit` = display suffix (docs/metrics-producer.md); `meta` = scale-reference flag
+// (skipped from graphing/display). A misspelled key (`tpye`, `metaa`) would otherwise be
+// silently dropped — the display default silently masks the typo (docs/STATS.md).
+const VALID_METRICS_COLUMN_KEYS = new Set(['type', 'unit', 'meta']);
 function validateMetrics(v) {
   if (v == null) return; // bare `metrics:` key → no producers (never-brick)
   if (!isMapping(v)) throw new SchemaError("'metrics' must be a mapping (topic → producer)");
@@ -303,8 +308,12 @@ function validateMetrics(v) {
             throw new SchemaError(`'${ctx}.schema.columns.ts' uses the reserved column name 'ts' — the producer stamps a capture timestamp there (read by the stats time-axis), so it must never be a display column; rename it`);
           }
           if (!isMapping(cdef)) throw new SchemaError(`'${ctx}.schema.columns.${cname}' must be a mapping`);
+          checkUnknownKeys(cdef, VALID_METRICS_COLUMN_KEYS, `${ctx}.schema.columns.${cname}`);
           if ('type' in cdef && !VALID_COLUMN_TYPES.has(cdef.type)) {
             throw new SchemaError(`'${ctx}.schema.columns.${cname}.type' must be one of: ${[...VALID_COLUMN_TYPES].join(', ')}`);
+          }
+          if ('meta' in cdef && typeof cdef.meta !== 'boolean') {
+            throw new SchemaError(`'${ctx}.schema.columns.${cname}.meta' must be a boolean`);
           }
         }
       }

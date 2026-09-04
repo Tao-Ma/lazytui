@@ -388,6 +388,16 @@ resolved both:
   the emitted byte stream is itself a function of the model. If render
   were non-idempotent the diff cache would silently desync — the user
   sees stale pixels.
+- **Leaf-purity boundary.** `leaves/` proper are pure transforms — safe to
+  call from a reducer or render (`test-dep-layering.js` guards the *acyclicity*
+  half of that contract). Two carve-outs to know: `leaves/infra/` is the
+  STATEFUL bottom tier (the hub bus, the render-queue scheduler, the themes
+  cache — bottom-of-import-graph but NOT pure); and two otherwise-pure leaves
+  reach out in a bounded way — `painter.js` reads the `LAZYTUI_CELL_DIFF` env
+  flag ONCE at module load (a boot constant, not a per-call effect), and
+  `leaves/text/bounded-match.js` offloads a length-capped regex to a worker
+  thread for ReDoS safety (documented at its source). Neither breaks the
+  call-from-reducer/render contract.
 
 **Rule for new panel renders:** read the slice, return a string. Need a
 hub subscription? Declare it via the `subscriptions(paneDef)` hook — the

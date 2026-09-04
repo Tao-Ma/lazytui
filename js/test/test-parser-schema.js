@@ -341,6 +341,17 @@ describe('metrics producers', () => {
       x: { cmd: 'echo', extract: { mode: 'columns', fields: { cpu: 1 } }, schema: { columns: { ts: { type: 'number' } } } },
     }), 'test'));
   });
+  // A metrics schema column def carries type/unit/meta only — a misspelled key would be
+  // silently dropped and masked by the display default. Reject it (like extract keys).
+  it('unknown schema column key throws; type/unit/meta pass; non-bool meta throws', () => {
+    const col = (columns) => withMetrics({ x: { cmd: 'echo', extract: { mode: 'columns', fields: { cpu: 1 } }, schema: { columns } } });
+    // all three legal keys accepted
+    validate(col({ cpu: { type: 'percent', unit: '%', meta: false } }), 'test'); assert(true);
+    // a typo is caught, not silently ignored
+    expectThrow(/unknown key\(s\): tpye/, () => validate(col({ cpu: { tpye: 'percent' } }), 'test'));
+    // meta must be a boolean
+    expectThrow(/schema.columns.cpu.meta' must be a boolean/, () => validate(col({ cpu: { type: 'bytes', meta: 'yes' } }), 'test'));
+  });
 });
 
 report();

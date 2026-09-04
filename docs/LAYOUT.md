@@ -127,6 +127,11 @@ its own. When anchored values + reserved (detail) leave less than 3
 rows per flex panel, anchored values scale proportionally so every
 panel still meets the minimum.
 
+The config-time `height:` **cell** key is honored ONLY on a detail pane
+(`parser/index.js` gates it on `isDetailPane`); a `height:` on a NON-detail cell
+is silently IGNORED at parse — a no-op, not an error. A non-detail panel acquires
+an anchored `heightPct` at runtime via the drag UX below, not from a config `height:`.
+
 YAMLs without `heightPct` behave as before (equal-share within the
 column). The drag UX (below) materializes `heightPct` for any panel
 the user resizes — once the layout is saved via `:save-layout`, the

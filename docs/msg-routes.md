@@ -28,7 +28,7 @@
 >   `agent` / `terminal` panes (**new §7.10**), all sharing the `tvu` reducer
 >   (`leaves/text/text-view-update`) for scroll/search/select, plus the fabric
 >   `component-ports` / `fabric-wires` panes (**new §7.11**). `augmentMsg` is
->   declared by **six** Components (info/agent/text-view/docker/files/history).
+>   declared by **seven** Components (info/agent/text-view/docker/files/history/table).
 > - **§8 — added** the new framework effects (`kkp_suspend`/`resume`, `edit_file`,
 >   `select_cancel_all`, `open_doc_tab`, `agent_start`/`send`/`interrupt`,
 >   `nav_capture`/`restore`) and the fabric component effects; `destroy_pty_session`
@@ -558,8 +558,9 @@ one instance: `kind` is a Component name (primary instance) OR a paneId
 (per-pane instance); the pump resolves it through `route.getInstance` /
 `componentForPanel` / `getPrimaryByKind`, applies `comp.augmentMsg(msg, model,
 slice)` when the Component declares it (the **shell-threads-facts** seam —
-exception C; **six** Components declare one today: docker/files/history (§7.8) +
-info/agent/text-view (§7.10)), then runs `comp.update(msg, slice)`.
+exception C; **seven** Components declare one today: docker/files/history + table
+(stamp `msg.items` — the sorted/filtered rowKeys, §7.8) + info/agent/text-view
+(stamp `msg.innerH`, §7.10)), then runs `comp.update(msg, slice)`.
 Key events arrive as `{type:'key'}` only to the FOCUSED component, only when no
 modal owns input; a component claims a key by returning a `_claimed` sentinel
 effect (filtered out before `runEffects`).
@@ -638,7 +639,7 @@ reducer (they hold no domain state beyond nav).
 | **config-status** | `panel/navigator/config-status.js` | 4 +nav | see §7.8 | ✅ §7.8 |
 | **history** | `panel/navigator/history.js` | 1 +nav | see §7.8 (effect `historyReplay`) | ✅ §7.8 |
 | **actions** | `panel/navigator/actions.js` | 0 +nav | shared nav only | ✅ §7.2 |
-| **stats** | `panel/monitor/stats.js` | 0 (no-op update) | `subscriptions(paneDef,model)` (#D13) | ✅ §7.9 |
+| **stats** | `panel/monitor/stats.js` | 0 +nav (`mode:multi` cursor) | `subscriptions(paneDef,model)` (#D13) | ✅ §7.9 |
 | **table** | `panel/monitor/table.js` | nav + 2 (killable) | `key`/`item_action`→kill picker (`killable:` panes) | ✅ §7.9a |
 | **info** | `panel/info/info.js` | 1 + shared tvu | `info_show_content` | ✅ §7.10 |
 | **text-view** | `panel/text-view/text-view.js` | 5 + shared tvu | `tv_stream_start`/`tv_append`/`tv_append_lines`/`tv_set_lines`/`tv_status` | ✅ §7.10 |
@@ -982,8 +983,10 @@ degenerate case — pure projection, no own arms.
 
 ### 7.9 stats (`kind: 'stats'`) — verified
 
-`update` is a literal **no-op** (`(msg, slice) => slice`) — stats holds NO Msg
-state. It is a **pure hub-fed render + a declared subscription**:
+`update` applies **NAV Msgs only** — the `mode: multi` row cursor (`mnav.isNavMsg(msg)
+→ mnav.apply`); every other Msg (and every non-`multi` shape, whose cursor is inert)
+passes through unchanged. So the pane's ONLY runtime state is that one row cursor. It is
+otherwise a **pure hub-fed render + a declared subscription**:
 
 - `subscriptions(paneDef, model) → [{topic, window}]` — a PURE projection of the
   pane config. The framework reconciles the desired set each dispatch (#D13,
@@ -992,10 +995,10 @@ state. It is a **pure hub-fed render + a declared subscription**:
   repaint.
 - `render` reads `hub.history(topic, rowKey, window)` + another pane's cursor
   (`select_from`, via `nav-state.getSel`) — cross-pane by design. Its own slice
-  is empty.
+  holds only the `mode: multi` row cursor.
 
 stats is the cleanest example of the **`subscriptions : Model → Sub`** seam:
-no Msg, no slice, the data lives in the hub bus (docker publishes
+one small cursor, the data lives in the hub bus (docker publishes
 `docker.stats`), and the framework owns the subscribe/unsubscribe effect.
 
 **Verdict (§7.9): pure TEA** (vacuously — no reducer arms; subscription is a
