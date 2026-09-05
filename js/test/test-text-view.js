@@ -123,4 +123,43 @@ describe('[text-view] selectLines → fullLines (selection buffer)', () => {
   });
 });
 
+// The retained-buffer ring cap: text-view backs BOTH action tabs AND the
+// Transcript, and the slice rides every replay checkpoint (structuredClone). An
+// unbounded stream would grow memory + balloon checkpoints — the class A3 fixed
+// for the fabric buffer. Cap drops OLDEST; front-drop must shift stored indices.
+describe('[text-view] ring cap bounds the retained buffer', () => {
+  const tv = require('../panel/text-view/text-view');
+
+  it('caps to slice.cap, drops oldest, bottom-sticks', () => {
+    let s = tv.init('pane-x', { paneDef: { config: { cap: 10 } } });
+    eq(s.cap, 10, 'cap seeded from config');
+    s = tv.update({ type: 'tv_append_lines', lines: Array.from({ length: 25 }, (_, i) => 'L' + i) }, { ...s, innerH: 5 });
+    eq(s.lines.length, 10, 'buffer capped to 10 (not 25)');
+    eq(s.lines[0], 'L15', 'oldest 15 dropped off the front');
+    eq(s.lines[9], 'L24', 'newest kept');
+    eq(s.scroll, 5, 'bottom-stick scroll follows the tail (10 - innerH 5)');
+  });
+
+  it('defaults to DEFAULT_CAP when config omits cap (Transcript + action tabs)', () => {
+    const s = tv.init('pane-d', { paneDef: { config: {} } });
+    assert(s.cap >= 1000, `a sane default cap is seeded (got ${s.cap})`);
+  });
+
+  it('front-drop shifts statusRows / cursor / active selection back', () => {
+    let s = tv.init('pane-y', { paneDef: { config: { cap: 5 } } });
+    s = { ...s, innerH: 3 };
+    s = tv.update({ type: 'tv_append_lines', lines: ['a', 'b', 'c', 'd'] }, s);
+    s = tv.update({ type: 'tv_status', line: 'DONE' }, s);   // 5 lines; status stamp at idx 4
+    eq(s.statusRows[0], 4, 'status row recorded at the tail');
+    s = { ...s, cursor: { line: 4, col: 0 }, select: { active: true, kind: 'char', anchor: { line: 3, col: 0 }, cursor: { line: 4, col: 0 } } };
+    // [a,b,c,d,DONE] + [e,f,g] = 8 → cap 5 → drop 3 → [d,DONE,e,f,g]
+    s = tv.update({ type: 'tv_append_lines', lines: ['e', 'f', 'g'] }, s);
+    eq(s.lines.join(','), 'd,DONE,e,f,g', 'front 3 dropped, tail kept');
+    eq(s.statusRows[0], 1, 'statusRows shifted 4 → 1 (DONE now at idx 1)');
+    eq(s.cursor.line, 1, 'cursor shifted 4 → 1');
+    eq(s.select.anchor.line, 0, 'selection anchor shifted 3 → 0');
+    eq(s.select.cursor.line, 1, 'selection cursor shifted 4 → 1');
+  });
+});
+
 report();

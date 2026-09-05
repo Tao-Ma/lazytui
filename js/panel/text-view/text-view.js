@@ -24,6 +24,17 @@ const { visibleLen } = require('../../leaves/text/ansi');
 const { paneInnerH, paneInnerW } = require('../pane-viewport');
 const { getModel } = require('../../model/store');
 
+// Ring cap for the retained line buffer. text-view backs BOTH routed action tabs
+// AND the Transcript; both are retained by ref in the slice and CLONED WHOLESALE
+// into every replay checkpoint (replay.snapshotState). Unbounded, a long
+// `docker logs -f` / build grows memory and balloons checkpoints — the same
+// class A3 ring-capped for the fabric raw buffer, and the agent transcript for
+// its own. (Pre-U2e the Transcript was `viewerStreamBuffer`, capped at 1000; the
+// migration to a text-view instance silently dropped that cap — this restores
+// it.) 5000 (A3 parity) keeps action output generously "retained" while bounded;
+// a per-instance config `cap` overrides.
+const DEFAULT_CAP = 5000;
+
 function init(paneId, seed) {
   const cfg = (seed && seed.paneDef && seed.paneDef.config) || {};
   return {
@@ -31,6 +42,8 @@ function init(paneId, seed) {
     paneId: paneId || null,
     lines: Array.isArray(cfg.lines) ? cfg.lines : [],
     scroll: 0,
+    // Ring cap for the retained buffer (config override; default DEFAULT_CAP).
+    cap: (Number.isFinite(cfg.cap) && cfg.cap > 0) ? cfg.cap : DEFAULT_CAP,
     // Viewport rows, stamped by augmentMsg (mirror viewer FIX-2); 0 pre-first-
     // dispatch → the shared reducer's _innerH falls back to 1.
     innerH: 0,
@@ -52,15 +65,35 @@ function init(paneId, seed) {
 // Push streamed lines onto the buffer + bottom-stick scroll. The instance owns
 // its own scroll, so no active-tab bundle is needed (unlike the viewer): if the
 // user has scrolled up (not at bottom) new output accumulates without yanking
-// them down; at the bottom, the view follows the tail. Uncapped, like the action
-// buffer it replaces (action output is retained, not a ring like the Transcript).
+// them down; at the bottom, the view follows the tail. Ring-capped to `slice.cap`
+// (see DEFAULT_CAP) — retained but bounded, so a long stream can't grow memory /
+// balloon replay checkpoints. When the cap drops lines off the FRONT, an anchored
+// (scrolled-up) view shifts back by `dropped` to stay on the same content; a
+// bottom-stuck view re-sticks to the tail (mirrors agent.js's transcript ring).
 function _appendLines(slice, incoming) {
   const innerH = slice.innerH > 0 ? slice.innerH : 1;
   const cur = slice.lines || [];
   const wasAtBottom = (slice.scroll || 0) >= Math.max(0, cur.length - innerH);
-  const lines = cur.concat(incoming);
-  const scroll = wasAtBottom ? Math.max(0, lines.length - innerH) : (slice.scroll || 0);
-  return { ...slice, lines, scroll };
+  let lines = cur.concat(incoming);
+  const cap = slice.cap > 0 ? slice.cap : DEFAULT_CAP;
+  const dropped = Math.max(0, lines.length - cap);
+  if (dropped) lines = lines.slice(dropped);
+  const scroll = wasAtBottom
+    ? Math.max(0, lines.length - innerH)
+    : Math.max(0, (slice.scroll || 0) - dropped);
+  const next = { ...slice, lines, scroll };
+  if (dropped) {
+    // Dropping lines off the FRONT shifts every stored line index back by
+    // `dropped`: the action-status stamps (statusRows), the cursor, and an
+    // active selection's anchors. statusRows that fall off the front are gone.
+    const shift = (p) => ({ line: Math.max(0, ((p && p.line) || 0) - dropped), col: (p && p.col) || 0 });
+    next.statusRows = (slice.statusRows || []).map((i) => i - dropped).filter((i) => i >= 0);
+    next.cursor = shift(slice.cursor);
+    if (slice.select && slice.select.active) {
+      next.select = { ...slice.select, anchor: shift(slice.select.anchor), cursor: shift(slice.select.cursor) };
+    }
+  }
+  return next;
 }
 
 function update(msg, slice) {
