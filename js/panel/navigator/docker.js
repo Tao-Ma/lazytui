@@ -48,6 +48,12 @@ const {
 } = require('../api');
 const { getModel } = require('../../model/store');
 const mnav = require('../../leaves/wm/nav');
+// Config-supplied container names + compose paths splice into `sh -c` command
+// strings below; shEscape (single-quote wrap) disarms shell metacharacters. The
+// prior JSON.stringify only DOUBLE-quoted, leaving `$()`/backtick live — an
+// injection vector (B2-class) from an untrusted config. A real docker name can't
+// contain meta, so single-quoting it is a no-op for valid input.
+const { shEscape } = require('../../leaves/text/sh-escape');
 const { clampRefreshMs, stepRefreshMs, normalizeLadder, refreshControlSpec } = require('../../leaves/render/refresh-control');
 const { sortControlSpec } = require('../../leaves/render/sort-control');
 const { itemOpsBarSpec } = require('../../leaves/render/action-legend');
@@ -352,7 +358,7 @@ function _itemActionCmds(actionId, item) {
     case 'stop': case 'restart': case 'kill': {
       const verb = actionId;
       const action = {
-        script: `docker ${verb} ${JSON.stringify(item)}`,
+        script: `docker ${verb} ${shEscape(item)}`,
         type: 'run',
         label: `docker ${verb} ${item}`,
         confirm: `${verb[0].toUpperCase()}${verb.slice(1)} container "${item}"?`,
@@ -413,7 +419,7 @@ function installEffects(registerEffect) {
         if (!containers.length) { host.dispatchMsg(host.wrap('docker', { type: 'dockerResult', status: {}, stats: {} })); return; }
 
         const status = {};
-        const args = containers.map(JSON.stringify).join(' ');
+        const args = containers.map(shEscape).join(' ');
         const inspectOut = await execAsync(
           `docker inspect -f "{{.Name}}\t{{.State.Status}}" ${args} 2>/dev/null`,
           { timeout: 5000, signal },
@@ -432,7 +438,7 @@ function installEffects(registerEffect) {
         const stats = {};
         const running = containers.filter(c => status[c] === 'running');
         if (running.length) {
-          const sargs = running.map(JSON.stringify).join(' ');
+          const sargs = running.map(shEscape).join(' ');
           const statsOut = await execAsync(
             `docker stats --no-stream --format "{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}" ${sargs} 2>/dev/null`,
             { timeout: 5000, signal },
@@ -480,7 +486,7 @@ function installEffects(registerEffect) {
     // content slot to Transcript directly (regardless of where the user
     // was before). The setActiveTab(0) was a brief stop on Info en route
     // to Transcript — pure churn.
-    const q = JSON.stringify(eff.item);
+    const q = shEscape(eff.item);
     host.applyMsg({ type: 'terminal_exit' });
     if (eff.mode === 'inspect') {
       host.streamCommand(`inspect ${eff.item}`,
@@ -492,7 +498,7 @@ function installEffects(registerEffect) {
 
   registerEffect('dockerShell', (eff, host) => {
     const route = require('../../panel/route');
-    const q = JSON.stringify(eff.item);
+    const q = shEscape(eff.item);
     // bash if present, else sh. (`exec bash || exec sh` keeps the interactive
     // prompt — readline writes it to stderr, which a 2>/dev/null would mute.)
     const cmd = `docker exec -it ${q} sh -c 'command -v bash >/dev/null && exec bash || exec sh'`;
@@ -527,7 +533,7 @@ function installEffects(registerEffect) {
 function groupActions(group) {
   if (!group || !group.compose) return {};
   const f = group.compose;
-  const flag = (f === 'docker-compose.yml' || f === 'compose.yml') ? '' : ` -f ${f}`;
+  const flag = (f === 'docker-compose.yml' || f === 'compose.yml') ? '' : ` -f ${shEscape(f)}`;
   const c = `docker compose${flag}`;
   return {
     // v0.6.2 — dropped `tab: true`. `docker compose ps` is a one-shot
@@ -652,7 +658,7 @@ function copyOptions(item) {
     opts.push({ label: `CPU: ${stats.cpu}`, content: stats.cpu });
     opts.push({ label: `Memory: ${stats.mem}`, content: stats.mem });
   }
-  const q = JSON.stringify(item);
+  const q = shEscape(item);
   opts.push({
     label: 'Inspect (full JSON)',
     content: () => execAsync(`docker inspect ${q}`, { timeout: 5000 }),
@@ -678,7 +684,7 @@ function bulkContainer(verb, opts = {}) {
     run: () => {
       const names = selectedOrFocused('containers');
       if (!names.length) return;
-      const quoted = names.map(n => JSON.stringify(n)).join(' ');
+      const quoted = names.map(n => shEscape(n)).join(' ');
       // R6 — same drop as dockerExec: streamCommand's unrouted branch
       // auto-jumps the content slot to Transcript, so the pre-stream
       // setActiveTab(0) is dead.

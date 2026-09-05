@@ -65,7 +65,7 @@ describe('[2] no multi-select → focused container', () => {
     setSel('containers', 1);  // c2 is focused
     stopCmd.run([]);
     eq(calls.length, 1, 'one streamCommand call');
-    assert(calls[0].cmd === 'docker stop "c2"', `cmd is "docker stop \\"c2\\"" (got ${calls[0].cmd})`);
+    assert(calls[0].cmd === "docker stop 'c2'", `cmd is docker stop 'c2' (shEscape single-quoted, B2-class; got ${calls[0].cmd})`);
     assert(calls[0].label.includes('c2'), `label mentions c2 (got ${calls[0].label})`);
   });
 });
@@ -77,8 +77,8 @@ describe('[3] multi-select → all marked containers', () => {
     toggleMultiSel('containers', 'c3');
     stopCmd.run([]);
     eq(calls.length, 1, 'one streamCommand call');
-    assert(calls[0].cmd === 'docker stop "c1" "c3"',
-           `cmd is "docker stop \\"c1\\" \\"c3\\"" (got ${calls[0].cmd})`);
+    assert(calls[0].cmd === "docker stop 'c1' 'c3'",
+           `cmd is docker stop 'c1' 'c3' (shEscape single-quoted; got ${calls[0].cmd})`);
     assert(calls[0].label.includes('2 containers'), `label says "2 containers" (got ${calls[0].label})`);
   });
 });
@@ -89,9 +89,9 @@ describe('[4] start / restart / inspect use correct verbs', () => {
     startCmd.run([]);
     restartCmd.run([]);
     inspectCmd.run([]);
-    eq(calls[0].cmd, 'docker start "c1" "c3"', 'start verb');
-    eq(calls[1].cmd, 'docker restart "c1" "c3"', 'restart verb');
-    assert(calls[2].cmd.startsWith('docker inspect "c1" "c3"'), `inspect verb (got ${calls[2].cmd})`);
+    eq(calls[0].cmd, "docker start 'c1' 'c3'", 'start verb');
+    eq(calls[1].cmd, "docker restart 'c1' 'c3'", 'restart verb');
+    assert(calls[2].cmd.startsWith("docker inspect 'c1' 'c3'"), `inspect verb (got ${calls[2].cmd})`);
     assert(calls[2].cmd.includes('jq'), 'inspect pipes through jq fallback');
   });
 });
@@ -150,8 +150,8 @@ describe('[7] full cmdline path: type "inspect" + Enter → bulk command runs', 
     for (const ch of 'inspect') dispatch.applyMsg({ type: 'cmdline_key', seq: ch });
     dispatch.applyMsg({ type: 'cmdline_submit' });
     eq(calls.length, 1, 'cmdline dispatched the run');
-    assert(calls[0].cmd.startsWith('docker inspect "c1"'),
-           `cmd via cmdline: docker inspect "c1" ... (got ${calls[0].cmd})`);
+    assert(calls[0].cmd.startsWith("docker inspect 'c1'"),
+           `cmd via cmdline: docker inspect 'c1' ... (got ${calls[0].cmd})`);
   });
 });
 

@@ -342,10 +342,20 @@ describe('[8] groupActions: logs spawns through a mouse-capable pager', () => {
     assert(acts.logs.script.includes("less --mouse -R +F"), 'probes for less --mouse');
     assert(acts.logs.script.startsWith('p=cat;'), 'cat fallback when less is absent');
   });
-  it('compose-file flag still threads through', () => {
+  it('compose-file flag still threads through (single-quote escaped)', () => {
     const acts = docker.groupActions({ compose: 'stack.yml' });
-    assert(acts.logs.script.includes('docker compose -f stack.yml logs -f --tail=50'),
-      'custom compose file preserved inside the pager pipeline');
+    assert(acts.logs.script.includes("docker compose -f 'stack.yml' logs -f --tail=50"),
+      'custom compose file preserved (shEscape single-quoted) inside the pager pipeline');
+  });
+  it('B2-class: a malicious compose path is shell-escaped, not raw (no injection)', () => {
+    const acts = docker.groupActions({ compose: 'x; touch /tmp/pwned #' });
+    // Every generated compose action must carry the payload SINGLE-QUOTED (inert),
+    // never as a bare `-f x; touch …` that would break out of the docker command.
+    for (const key of ['status', 'up', 'down', 'build', 'restart']) {
+      const s = acts[key].script;
+      assert(s.includes("-f 'x; touch /tmp/pwned #'"), `${key}: compose path single-quoted`);
+      assert(!/-f x; touch/.test(s), `${key}: no raw unquoted splice`);
+    }
   });
 });
 

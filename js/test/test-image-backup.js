@@ -66,6 +66,16 @@ describe('[2] groupActions synthesizes save + load', () => {
     const a = ib.groupActions({ images: { list: ['x'], output_dir: 'archives' } });
     assert(a.load.script.includes('no backup dir at archives'), 'load aborts on missing dir');
   });
+  it('B2-class: malicious output_dir / image ref is escaped in the ECHO lines too (not just functional lines)', () => {
+    const evil = 'd; touch /tmp/pwned #';
+    const a = ib.groupActions({ images: { list: ['img$(id)'], output_dir: evil } });
+    // The display echoes carried raw ${out}/${img} inside double quotes before —
+    // `$()`/`;` were live. Now the whole message is single-quote wrapped (inert).
+    assert(a.save.script.includes(`'saved to ${evil}/'`), 'save "saved to" echo single-quoted');
+    assert(a.save.script.includes("'  img$(id)...'"), 'per-image echo single-quoted (img$(id) inert)');
+    assert(a.load.script.includes(`'no backup dir at ${evil}'`), 'load "no dir" echo single-quoted');
+    assert(!/echo "[^"]*touch \/tmp\/pwned/.test(a.save.script + a.load.script), 'no raw double-quoted splice remains');
+  });
 });
 
 // --- End-to-end with PATH-injected fake docker ---

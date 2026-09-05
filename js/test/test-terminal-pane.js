@@ -203,7 +203,7 @@ describe('[terminal-pane] P2.5 — docker exec mints a reused terminal pane', ()
     assert(mint, 'dispatched a mint_tab');
     eq(mint.paneType, 'terminal', 'mints a terminal pane');
     eq(mint.poolId, 'term-dockersh-my_c1', 'stable poolId per container (sanitized)');
-    assert(mint.config.cmd.includes('docker exec -it "my/c1"'), 'runs docker exec for the container');
+    assert(mint.config.cmd.includes("docker exec -it 'my/c1'"), 'runs docker exec for the container (shEscape single-quoted, B2-class)');
     eq(mint.hint.origin, 'docker-shell', 'stamps a docker-shell hint');
     assert(dispatched.some(m => m.type === 'set_active_tab' && m.tabPoolId === 'term-dockersh-my_c1'),
       're-activates the tab (reuse on re-exec)');

@@ -58,7 +58,7 @@ function saveScript(list, out) {
     const safe = safeName(img);
     const imgQ = shEscape(img);
     const outFile = shEscape(`${out}/${safe}.tar.gz`);
-    lines.push(`echo "  ${img}..."`);
+    lines.push(`echo ${shEscape(`  ${img}...`)}`);
     // pipefail in a subshell — without it, gzip succeeds on empty
     // input even when docker save fails, leaving a junk .tar.gz on
     // disk. With pipefail, the subshell rc reflects docker's failure;
@@ -71,10 +71,10 @@ function saveScript(list, out) {
     // on supported platforms.
     lines.push(
       `bash -c 'set -o pipefail; docker save "$1" 2>/dev/null | gzip > "$2"' _ ${imgQ} ${outFile} || ` +
-      `{ rm -f ${outFile}; echo "  SKIP ${img} (not found)"; }`,
+      `{ rm -f ${outFile}; echo ${shEscape(`  SKIP ${img} (not found)`)}; }`,
     );
   }
-  lines.push(`echo "saved to ${out}/"`);
+  lines.push(`echo ${shEscape(`saved to ${out}/`)}`);
   lines.push(`ls -lh ${dir}/`);
   return lines.join('\n');
 }
@@ -83,7 +83,7 @@ function loadScript(out) {
   const dir = shEscape(out);
   return [
     'set -u',
-    `[ -d ${dir} ] || { echo "no backup dir at ${out}" >&2; exit 1; }`,
+    `[ -d ${dir} ] || { echo ${shEscape(`no backup dir at ${out}`)} >&2; exit 1; }`,
     'found=0',
     `for f in ${dir}/*.tar.gz; do`,
     '    [ -f "$f" ] || continue',
@@ -91,7 +91,7 @@ function loadScript(out) {
     '    echo "  $(basename "$f")..."',
     '    gunzip -c "$f" | docker load',
     'done',
-    `[ "$found" -gt 0 ] || { echo "no .tar.gz files in ${out}" >&2; exit 1; }`,
+    `[ "$found" -gt 0 ] || { echo ${shEscape(`no .tar.gz files in ${out}`)} >&2; exit 1; }`,
     'echo "done."',
   ].join('\n');
 }
