@@ -217,7 +217,10 @@ function render(panel, w, h, slice, opts) {
   // Separator + affordance hints (Enter run · e edit → inject · w wire · x clear
   // · p pin/unpin). Pin state also shows in the title.
   const pinHint = slice && slice.pinned ? 'p unpin' : 'p pin';
-  lines.push(`  [${t.dim}]${'─'.repeat(Math.min(12, w - 4))}[/]`);
+  // Math.max(0, …): on a degenerate pane (w ≤ 3) `w - 4` is negative and
+  // `'─'.repeat(-1)` throws RangeError (the B7/8 degenerate-size class; composite.js
+  // guards the same class). Clamp so a too-narrow pane just draws no rule.
+  lines.push(`  [${t.dim}]${'─'.repeat(Math.max(0, Math.min(12, w - 4)))}[/]`);
   if (data.inputs.length) {
     lines.push(`  [${t.dim}]${esc(`↵ run · e edit · w wire · x clear · ${pinHint}`)}[/]`);
   } else {

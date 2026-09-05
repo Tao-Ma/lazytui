@@ -149,6 +149,18 @@ describe('[fabric] component-ports pane render', () => {
     assert(out.includes('records'), 'output port row (check-half)');
   });
 
+  it('B7/8-class: renders on a DEGENERATE-width pane without a RangeError', () => {
+    // The affordance separator was `'─'.repeat(Math.min(12, w-4))` — at w ≤ 3,
+    // w-4 is negative and .repeat(-1) throws. Now clamped with Math.max(0,…).
+    for (const w of [1, 2, 3, 4]) {
+      let out, threw = false;
+      try { out = pane.panelTypes['component-ports'].render(panel, w, 20, slice, { focused: true }); }
+      catch (e) { threw = true; }
+      assert(!threw, `render at w=${w} must not throw (RangeError guard)`);
+      assert(typeof out === 'string', `render at w=${w} returns a frame string`);
+    }
+  });
+
   it('follows-focus falls back to a helpful empty state with no component', () => {
     const out = pane.panelTypes['component-ports'].render(panel, 80, 20, { nav: mnav.init(), pinned: null }, { focused: false });
     assert(/no fabric component/.test(out), 'empty-state hint');
