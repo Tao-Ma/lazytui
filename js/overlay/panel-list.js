@@ -18,7 +18,7 @@
 'use strict';
 
 const { esc, visibleLen } = require('../leaves/text/ansi');
-const { renderOverlay, truncate, viewportDims } = require('../leaves/render/draw');
+const { renderOverlay, truncate, fitCell, viewportDims } = require('../leaves/render/draw');
 const { getInstanceSlice, theme } = require('../panel/api');
 const mpool = require('../leaves/wm/pool');
 
@@ -60,8 +60,8 @@ function _buildListLines(items, cursor, w) {
       lines.push('[dim] ── hidden ─────────[/]');
     }
     const it = items[i];
-    const idCol    = esc(it.id).padEnd(9);
-    const typeCol  = esc(it.type).padEnd(8);
+    const idCol    = fitCell(esc(it.id), 9);
+    const typeCol  = fitCell(esc(it.type), 8);
     const titleCol = esc(it.title);
     // The marker's COLOR comes from a `[/]` that — for the cursor row
     // — would also close the outer `[reverse]` early (richToAnsi's

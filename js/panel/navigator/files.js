@@ -60,6 +60,7 @@ const path = require('path');
 const { getModel } = require('../../model/store');
 const mnav = require('../../leaves/wm/nav');
 const route = require('../../panel/route');
+const { truncate } = require('../../leaves/render/draw');   // visible-width filename truncate (B4-class)
 const {
   esc, visibleLen, theme, renderPanel,
   getSel, getScroll, getFilter, isMultiSel,
@@ -371,9 +372,11 @@ function _renderFor(panel, w, h, slice, panelType, hardcoded, opts) {
     const sizeStr = (it.kind === 'file' || it.kind === 'symlink') ? _formatSize(it.size || 0) : '';
     const ms = it.kind === 'loading' ? ' ' : (isMultiSel(panel.paneId, it.path) ? '*' : ' ');
     const nameMax = Math.max(4, innerW - marker.length - sizeStr.length - 4);
-    let name = it.name;
-    if (name.length > nameMax) name = name.slice(0, nameMax - 1) + '…';
-    const left = `${ms} ${marker}${esc(name)}`;
+    // esc FIRST (a filename can hold a literal `[` + wide chars), THEN
+    // visible-width truncate — a char-slice left wide names un-shortened / split.
+    let name = esc(it.name);
+    if (visibleLen(name) > nameMax) name = truncate(name, nameMax);
+    const left = `${ms} ${marker}${name}`;
     const pad = Math.max(1, innerW - visibleLen(left) - sizeStr.length - 1);
     const row = `${left}${' '.repeat(pad)}${sizeStr} `;
     if (isSel) return `[${t.selected}]${row}`;

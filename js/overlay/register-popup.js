@@ -31,7 +31,7 @@
 
 const { getModel } = require('../model/store');
 const { esc, visibleLen } = require('../leaves/text/ansi');
-const { renderOverlay, viewportDims } = require('../leaves/render/draw');
+const { renderOverlay, viewportDims, truncate } = require('../leaves/render/draw');
 const register = require('../leaves/register');
 
 const VIEWPORT = 12;
@@ -70,9 +70,12 @@ function render() {
       const preview = _previewOf(register.at(getModel().register, i));
       // Budget = overlayMaxW - borders(2) - gutter for index + 2 spaces
       const budget = Math.max(8, overlayMaxW - 2 - idxWidth - 3);
-      let text = preview;
-      if (visibleLen(text) > budget) text = text.slice(0, budget - 1) + '…';
-      const row = `  ${indexStr}  ${esc(text)}`;
+      // esc FIRST (the preview is raw yanked content — a literal `[` must stay a
+      // 1-col literal), THEN visible-width truncate; a char-slice split SGR/wide
+      // chars and mis-shortened the preview.
+      let text = esc(preview);
+      if (visibleLen(text) > budget) text = truncate(text, budget);
+      const row = `  ${indexStr}  ${text}`;
       if (i === _idx) lines.push(`[${require('../leaves/infra/themes').theme().selected}]${row}`);
       else            lines.push(row);
     }

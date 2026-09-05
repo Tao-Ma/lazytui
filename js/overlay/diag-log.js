@@ -27,7 +27,7 @@
 'use strict';
 
 const { esc } = require('../leaves/text/ansi');
-const { renderOverlay, viewportDims } = require('../leaves/render/draw');
+const { renderOverlay, viewportDims, truncate, fitCell } = require('../leaves/render/draw');
 const { getModel } = require('../model/store');
 
 const MAX_W = 90;
@@ -52,7 +52,7 @@ function _fmtAge(t, now) {
 }
 
 function _msg(text, w) {
-  return esc(text).replace(/\n/g, '↵').replace(/\t/g, ' ').slice(0, w);
+  return truncate(esc(text).replace(/\n/g, '↵').replace(/\t/g, ' '), w);   // visible-width cut (esc'd → \[ safe)
 }
 
 /** Visible body rows (used by the dispatch diag_log_nav clamp).
@@ -99,7 +99,7 @@ function renderDiagLog(now) {
       const t = require('../leaves/infra/themes').theme();
       const color = t[LEVEL_SLOT[ev.level] || 'warning'];
       const age = _fmtAge(ev.t, now).padStart(TIME_W);
-      const code = esc(ev.code).slice(0, CODE_W).padEnd(CODE_W);
+      const code = fitCell(esc(ev.code), CODE_W);
       const message = _msg(ev.message, msgW);
       lines.push(idx === cursor
         ? `[${t.selected}]${glyph} ${age} ${code} ${message}[/]`

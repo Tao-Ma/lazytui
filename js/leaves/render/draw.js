@@ -102,6 +102,21 @@ function truncate(text, maxWidth) {
 }
 
 /**
+ * Fit a markup/SGR string to EXACTLY `width` visible columns: SGR/wide-char-aware
+ * truncate (adds `…`) when over, pad-right with spaces when under. THE shared
+ * fixed-width cell helper — use it instead of `.slice()`/`.padEnd()` on CHARACTER
+ * counts, which miscount SGR runs, `\[` escapes, and wide (CJK/emoji) chars and so
+ * break column alignment (or leave a stray `\`). For a PLAIN string that may hold a
+ * literal `[`, esc() it first so the bracket is a 1-col literal, not a tag start.
+ */
+function fitCell(s, width) {
+  const str = s == null ? '' : String(s);
+  if (width <= 0) return '';
+  const vis = visibleLen(str);
+  return vis > width ? truncate(str, width) : str + ' '.repeat(width - vis);
+}
+
+/**
  * Render a bordered panel as Rich markup.
  *
  * @param {object} opts
@@ -504,7 +519,7 @@ function renderOverlay({ lines, title, count = null, maxWidth = 44, anchor = nul
 }
 
 module.exports = {
-  renderPanel, renderOverlay, overlayBox, truncate, viewportDims, setDimsProvider,
+  renderPanel, renderOverlay, overlayBox, truncate, fitCell, viewportDims, setDimsProvider,
   setWriter, setChromeSink, writeOut,
   chromeFor, leftBorderPrefix, _collapseGlyphMarkup, _closeGlyphMarkup,
 };

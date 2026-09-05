@@ -17,7 +17,7 @@
 'use strict';
 
 const { esc } = require('../leaves/text/ansi');
-const { renderOverlay, viewportDims } = require('../leaves/render/draw');
+const { renderOverlay, viewportDims, fitCell } = require('../leaves/render/draw');
 const { getModel } = require('../model/store');
 
 const MAX_W = 80;
@@ -69,7 +69,7 @@ function _statusColor(j) {
 function _rowCells(j, labelW, now) {
   return {
     glyph:  KIND_GLYPH[j.kind] || '?',
-    label:  esc(j.label).slice(0, labelW).padEnd(labelW),
+    label:  fitCell(esc(j.label), labelW),   // visible-width fit — esc'd label may carry \[ / wide chars
     status: _statusText(j).padEnd(STATUS_W),
     color:  _statusColor(j),
     age:    _fmtAge(j.startedAt, j.endedAt, now).padEnd(AGE_W),

@@ -12,8 +12,8 @@
 'use strict';
 
 const { describe, it, eq, assert, report } = require('./test-runner');
-const { truncate } = require('../leaves/render/draw');
-const { visibleLen } = require('../leaves/text/ansi');
+const { truncate, fitCell } = require('../leaves/render/draw');
+const { visibleLen, esc } = require('../leaves/text/ansi');
 
 describe('[truncate] preserves INNER markup through truncation', () => {
   it('keeps a mid-line [/]…[reverse] XOR break (selection over a reversed row)', () => {
@@ -110,6 +110,38 @@ describe('[truncate] SGR content — color survives, width counts SGR as 0 (B4)'
     const out = truncate(colored, 5);
     assert(visibleLen(out) <= 5, `within width: ${JSON.stringify(out)} (${visibleLen(out)})`);
     assert(out.includes('[34m'), 'the SGR color survives the cut');
+  });
+});
+
+// fitCell — the shared fixed-width cell helper (B4 class). Guards the exact
+// failure modes the sweep demonstrated: char-count `.slice()/.padEnd()` mis-fit
+// SGR, `\[` escapes, and wide chars → misalignment / a stray trailing `\`.
+describe('[fitCell] fits to EXACTLY N visible columns (SGR / \\[ / wide aware)', () => {
+  it('pads a short plain string to the width', () => {
+    const out = fitCell('ab', 6);
+    eq(visibleLen(out), 6, 'visible width is exactly 6');
+    eq(out, 'ab    ', 'right-padded with spaces');
+  });
+  it('an esc\'d bracketed label fits without a stray backslash (the jobs.js bug)', () => {
+    // esc('grep [0-9]') = 'grep \\[0-9]' — char .slice would cut mid-\\[ leaving a
+    // lone '\\'. fitCell measures \[ as ONE visible col.
+    const out = fitCell(esc('grep [0-9] file'), 12);
+    eq(visibleLen(out), 12, 'exactly 12 visible cols (not char count)');
+    assert(!/\\$/.test(out), 'no stray trailing backslash from a split \\[');
+  });
+  it('a wide (CJK) label is not over-counted (the overflow bug)', () => {
+    // '你好' = 2 chars but 4 columns. A char-based padEnd(12) would make a 12-CHAR
+    // (14-col) cell → overflow. fitCell caps VISIBLE width at 12.
+    const out = fitCell('你好 top', 12);
+    eq(visibleLen(out), 12, 'wide chars counted as 2 cols each → exact 12');
+  });
+  it('truncates (with …) when over width; visible width stays ≤ N', () => {
+    const out = fitCell('abcdefghijklmnop', 8);
+    assert(visibleLen(out) <= 8, `within 8: ${JSON.stringify(out)} (${visibleLen(out)})`);
+    assert(out.endsWith('…'), 'ellipsis on truncation');
+  });
+  it('width ≤ 0 → empty (degenerate cell)', () => {
+    eq(fitCell('anything', 0), '');
   });
 });
 

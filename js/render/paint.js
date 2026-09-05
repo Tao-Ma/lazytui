@@ -26,7 +26,7 @@
  */
 'use strict';
 
-const { RESET, richToAnsi, esc, visibleLen, wrapColor } = require('../leaves/text/ansi');
+const { RESET, richToAnsi, esc, visibleLen, charWidth, wrapColor } = require('../leaves/text/ansi');
 const { cols, rows, stdout, showCursor, hideCursor } = require('../io/term');
 const { allPanels } = require('../panel/nav-state');
 const geo = require('../leaves/wm/geometry');
@@ -716,7 +716,11 @@ function renderTerminalOverlay(model, arrangeOverride, forceAll) {
     // overwrite prior content within the changed row.
     for (let row = 0; row < innerH; row++) {
       let text = rows[row] || '';
-      if (text.length < innerW) text += ' '.repeat(innerW - text.length);
+      // PTY rows are PLAIN emulator-flattened text — a literal `[` stays literal,
+      // so visibleLen's markup-strip would miscount. Pad by the true COLUMN width
+      // (charWidth sum) so wide (CJK/emoji) chars don't over-pad past the border.
+      const cols = [...text].reduce((a, ch) => a + charWidth(ch.codePointAt(0)), 0);
+      if (cols < innerW) text += ' '.repeat(innerW - cols);
       if (!force && session.prevFrame[row] === text) continue;
       out += `\x1b[${bounds.y + row + 2};${bounds.x + 2}H${text}${RESET}`;
       session.prevFrame[row] = text;
