@@ -171,6 +171,16 @@ function dispatchMsg(msg) {
 // Stable lane-terminal for the Component fan-out path.
 function _termComp(entry) { _dispatchMsgInner(entry.msg); }
 
+// Async RESULT Msgs that must pass the free-config freeze gate below. Each is a
+// wrapped Component Msg dispatched off-tick to CLEAR A LATCH; dropping it wedges a
+// modeled slice (a stuck inFlight/computing/loading), and the fold touches only
+// that Component's content — no pane moves — which is all the gate protects. So
+// they're exempt. (B5 + its class sweep: agent_event → transcript/status;
+// dockerResult → docker inFlight; cfgStatusResult → config-status `computing`, a
+// PERMANENT wedge; dirLoaded → files `loading`. Any future latch-clearing async
+// result belongs here too.)
+const FREE_CONFIG_EXEMPT_RESULTS = new Set(['agent_event', 'dockerResult', 'cfgStatusResult', 'dirLoaded']);
+
 function _dispatchMsgInner(msg) {
   const components = _reg();
   // Free-config freeze gate. While free-config mode is active, only layout-
@@ -184,22 +194,15 @@ function _dispatchMsgInner(msg) {
     // content-tab drag: content is position-tabs, reordered via the position-tab
     // drag path, not a viewer_reorder_content_tab dispatch through this gate.)
     //
-    // Live-agent exemption: a backend's async `agent_event` stream must keep
-    // folding under free-config — the events are not re-derivable (a dropped
-    // assistant-message is transcript loss; a dropped exit/settled wedges the
-    // modeled status machine). The fold touches only the agent slice — no
-    // pane moves — which is all this gate protects. User-gesture agent Msgs
-    // (agent_input/agent_activate) can't fire in free-config (its mode owns
-    // the keys), so only the event lane needs the pass.
-    const isAgentEvent = msg && msg.msg && msg.msg.type === 'agent_event' && msg.type === undefined;
-    // Same class as agent_event: docker's fetch effect ALWAYS dispatches a `dockerResult`
-    // to clear its `inFlight` latch (every settle path — success / no-containers / unfocused /
-    // aborted `dropStale`). Dropping it here wedges the latch permanently (`_maybeFetch`
-    // refuses a new fetch while inFlight), so docker status/stats freeze for the rest of the
-    // session if the user enters free-config mid-fetch. The fold touches only the docker
-    // content slice — no pane moves — which is all this gate protects.
-    const isDockerResult = msg && msg.msg && msg.msg.type === 'dockerResult' && msg.type === undefined;
-    if (!isLayoutWrap && !isAgentEvent && !isDockerResult) return;
+    // Async latch-clearing results (FREE_CONFIG_EXEMPT_RESULTS, above) keep folding
+    // under free-config — dropping one wedges a modeled slice (agent status, docker
+    // inFlight, config-status `computing` [permanent], files `loading`) and the fold
+    // touches only that Component's content, never a pane. User-gesture Msgs can't
+    // fire in free-config (its mode owns the keys), so only these off-tick result
+    // lanes need the pass.
+    const isExemptResult = msg && msg.msg && msg.type === undefined
+      && FREE_CONFIG_EXEMPT_RESULTS.has(msg.msg.type);
+    if (!isLayoutWrap && !isExemptResult) return;
   }
   // Wrapped-Msg path. Routes to exactly one Component instance. Discriminator:
   // `{ kind: string, msg: any }` AND no top-level `type`.

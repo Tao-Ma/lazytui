@@ -77,6 +77,25 @@ describe('[gate on] dispatchMsg drops non-layout traffic while free-config is ac
   });
   // (#D17 removed the `hub` broadcast Msg; free-config broadcast suppression
   // is covered by the `refresh` case above — the remaining broadcast types.)
+  // Async latch-clearing RESULT Msgs (B5 + its class sweep) must PASS the gate —
+  // dropping one wedges a modeled slice. The gate keys on `msg.msg.type`, so a
+  // recorder stands in for the real component; the point is the type passes.
+  for (const type of ['dockerResult', 'agent_event', 'cfgStatusResult', 'dirLoaded']) {
+    it(`exempt result '${type}' still folds under free-config (not dropped)`, () => {
+      setFreeConfig(true);
+      const before = api.getInstanceSlice('frz-A').count;
+      api.dispatchMsg(api.wrap('frz-A', { type }));
+      eq(api.getInstanceSlice('frz-A').count, before + 1, `${type} reached the component`);
+      setFreeConfig(false);
+    });
+  }
+  it('a NON-exempt result type is still dropped (gate remains active)', () => {
+    setFreeConfig(true);
+    const before = api.getInstanceSlice('frz-A').count;
+    api.dispatchMsg(api.wrap('frz-A', { type: 'someOtherResult' }));
+    eq(api.getInstanceSlice('frz-A').count, before, 'non-exempt result dropped');
+    setFreeConfig(false);
+  });
   it('layout-wrapped Msg still flows (mode-internal)', () => {
     // The layout Component must receive its own Msgs while in
     // free-config — that's how drag, hide, show, focus_set work.
