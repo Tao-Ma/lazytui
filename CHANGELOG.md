@@ -23,6 +23,56 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
     sample-mirror Msg so it records and replays identically. `ts` is a reserved field — it
     never graphs as a metric or shows in the row-detail card (both read schema columns).
 
+### Security
+
+- **Config values are shell-escaped everywhere they reach a shell.** A project config
+  (which can be pulled from a remote branch via `config_branch`) had several fields
+  spliced into shell commands without escaping — `group.compose`, container names under
+  `group.containers`, and the image-backup display lines — so shell metacharacters in an
+  untrusted config could execute (one auto-fired via the docker status poll). Every
+  config→shell **data** splice now goes through POSIX single-quote escaping; a real docker
+  name / compose path is unaffected. Extends the earlier `config_branch` / `files` path
+  guards to the whole class.
+
+### Changed
+
+- **"Never mutate a published sample" is now enforced, not just documented.** Metrics and
+  `docker.stats` samples (and the memoized fabric parse records) are frozen at their
+  source, so a stray mutation throws instead of silently corrupting every reader's copy
+  (and the replay). The command-history record is a deliberate, documented exception.
+- **Retained output buffers are bounded.** Routed action / Transcript text buffers (the
+  Transcript had silently lost its ring in an earlier refactor) and a fabric producer's
+  raw-output buffer are ring-capped, so a long-running stream can't grow memory or bloat
+  replay checkpoints without bound.
+- **Metrics `schema.columns` rejects unknown keys and a reserved `ts` column**, catching a
+  typo (`tpye:`) that used to be silently dropped.
+- **Layer acyclicity is now enforced in CI** (a dependency-graph gate) rather than held by
+  convention; the lone dispatch→app back-edge was cut via an injected seam.
+
+### Fixed
+
+- **Config-status / files panes no longer freeze if you enter free-config mode while they
+  are loading.** An async result dispatched during free-config was dropped, wedging the
+  pane's loading latch (config-status stayed frozen for the rest of the session). The same
+  class as the docker in-flight wedge, now fixed for all such results.
+- **Graphs, the scroll viewport, and click hit-tests agree on ≤6-row terminals.** The
+  content-height floor is single-sourced, so half/full-view painting no longer disagrees
+  with scroll/hit-test math on a very short terminal.
+- **Wide (CJK/emoji) content no longer overruns a pane's border.** PTY rows and several
+  overlays (jobs list, register preview, diagnostics, panel list, long filenames) measured
+  width by character count, so wide chars over-padded past the border and a bracketed label
+  could leave a stray `\`. All now measure by visible column width.
+- **A `stats` graph under `mode: 'max'` on a very large topic no longer crashes** (a
+  RangeError from an argument-spread max); a `≤3`-column component-ports pane no longer
+  errors (a negative repeat count).
+- **Leader / which-key mode can't crash a replay checkpoint** — the pending chord is stored
+  as a serializable token path instead of a live closure.
+- **Hard-review batch (B1–B9):** graph time-axis labels the drawn window (not the full
+  retention); docker no longer wedges its in-flight latch in free-config; runtime fabric
+  inject/wire values no longer bleed across groups; SGR runs aren't counted as visible
+  width; column widths fall back to an even split on a too-narrow terminal; detail-pane
+  height can't go NaN / overflow; the config parser guards merge targets before validating.
+
 ## [0.6.25] — 2026-08-28
 
 ### Added
