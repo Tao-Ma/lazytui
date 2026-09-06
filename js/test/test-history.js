@@ -168,4 +168,37 @@ describe('[12] history_synced arm lands the snapshot on model.history + render C
   });
 });
 
+// The replay contract for streaming output (the one documented history divergence).
+// appendOutput mutates the SHARED model.history entry ref IN PLACE without a per-line
+// _notify (a `docker logs -f` would flood the loop). So the detail card shows output
+// growing LIVE, but a from-snapshot replay only re-mirrors at start + end — the
+// during-streaming growth is live-only. This is ACCEPTED (the transcript records the
+// output faithfully via per-line tv_append; the history card is a bounded summary).
+// What MUST hold — and what these pin — is that the FINAL state converges: at endEntry
+// the mirrored snapshot carries the complete output, so replay reconstructs a finished
+// entry correctly.
+describe('[replay contract] streaming output is off-Msg (live-only); final state converges', () => {
+  const h = freshHistory();
+  it('per-line appendOutput does NOT re-mirror; start + end DO', () => {
+    let notifies = 0;
+    h.setOnChange(() => { notifies += 1; });
+    const r = h.start('stream', 'tail -f log');
+    eq(notifies, 1, 'start re-mirrors (entry added)');
+    r.append('line 1'); r.append('line 2'); r.append('line 3');
+    eq(notifies, 1, 'per-line appendOutput does NOT re-mirror (off-Msg by design)');
+    r.end(0);
+    eq(notifies, 2, 'endEntry re-mirrors the finalized record');
+    h.setOnChange(null);
+  });
+  it('the mirrored snapshot carries the FULL output at completion → replay converges', () => {
+    const r = h.start('build', 'make');
+    r.append('compiling…'); r.append('done');
+    r.end(0);
+    const newest = h.snapshot()[0];   // snapshot() is what the store-mirror records → WAL
+    eq(newest.cmd, 'make', 'newest entry is the just-finished one');
+    eq(newest.output.join('\n'), 'compiling…\ndone', 'full output present in the mirrored snapshot');
+    eq(newest.exitCode, 0, 'terminal state stamped');
+  });
+});
+
 report();
