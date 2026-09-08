@@ -426,12 +426,25 @@ function mergePluginInto(main, plugin) {
     const existing = main.groups[gname];
     if (existing === undefined) {
       main.groups[gname] = gdata;
-    } else {
+    } else if (existing && typeof existing === 'object' && !Array.isArray(existing)) {
+      // B9 (class sweep): the merge-into-existing branch assumes `existing` is a
+      // plain object — `sub in existing` / `existing[sub][k]=v` / `f in existing`
+      // all throw a raw TypeError when a main-config group value is mistyped (a
+      // string/number/array). Merge runs BEFORE validate(), so guard here and leave
+      // a wrong-typed group intact for validate() to reject with the same clean
+      // SchemaError ("group '<g>': must be a mapping") the no-plugin input produces.
       for (const sub of ['actions', 'terminals', 'children']) {
         if (sub in gdata && gdata[sub] && typeof gdata[sub] === 'object' && !Array.isArray(gdata[sub])) {
           if (!(sub in existing)) existing[sub] = {};
-          for (const [k, v] of Object.entries(gdata[sub])) {
-            if (!(k in existing[sub])) existing[sub][k] = v;
+          // B9 (class sweep): the merge TARGET here is the MAIN config's
+          // actions/terminals/children, which may be mistyped (a string/array).
+          // `k in existing[sub]` / the assignment would throw a raw TypeError —
+          // guard so a wrong-typed sub is left for validate() to reject cleanly.
+          const tgt = existing[sub];
+          if (tgt && typeof tgt === 'object' && !Array.isArray(tgt)) {
+            for (const [k, v] of Object.entries(gdata[sub])) {
+              if (!(k in tgt)) tgt[k] = v;
+            }
           }
         }
       }

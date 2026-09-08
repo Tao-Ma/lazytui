@@ -506,6 +506,25 @@ describe('error propagation', () => {
     // field intact so validate() rejects it cleanly, rather than crashing on `.push`.
     expectThrow(/'files' must be a list/, () => parseFixture('b9_files_mapping_with_plugin.yml'), SchemaError);
   });
+  it('mistyped GROUP value (a string) + a plugin split touching that group → clean SchemaError (B9 class sweep)', () => {
+    // The per-group merge-into-existing branch assumed `existing` (the main config's group
+    // value) was an object; a mistyped group + a plugin contributing to the SAME group name
+    // threw a raw `TypeError: Cannot use 'in' operator ...` before the guard. Must match the
+    // no-plugin SchemaError.
+    const LAYOUT = 'panels:\n  g: {type: groups}\nlayout:\n  columns:\n    - panels: [g]\n';
+    tmpYaml('groups:\n  foo:\n    actions:\n      build: {cmd: "make"}\n', 'b9plug-group.yml');
+    const p = tmpYaml(LAYOUT + 'plugins:\n  p: {path: b9plug-group.yml}\ngroups:\n  foo: "not a mapping"\n', 'b9-group-str.yml');
+    expectThrow(/group 'foo': must be a mapping/, () => parse(p), SchemaError);
+  });
+  it('mistyped GROUP.actions (a string) + a plugin split touching that group → clean SchemaError (B9 class sweep)', () => {
+    // The nested merge target (main config's actions/terminals/children sub-object) had the
+    // same unguarded assumption — a mistyped `actions:` + a plugin contributing actions to the
+    // same group threw a raw TypeError.
+    const LAYOUT = 'panels:\n  g: {type: groups}\nlayout:\n  columns:\n    - panels: [g]\n';
+    tmpYaml('groups:\n  foo:\n    actions:\n      build: {cmd: "make"}\n', 'b9plug-actions.yml');
+    const p = tmpYaml(LAYOUT + 'plugins:\n  p: {path: b9plug-actions.yml}\ngroups:\n  foo:\n    label: Foo\n    actions: "not a mapping"\n', 'b9-actions-str.yml');
+    expectThrow(/'actions' must be a non-empty mapping/, () => parse(p), SchemaError);
+  });
   it('config_branch.branch with shell metacharacters → SchemaError (B2, injection)', () => {
     // Interpolated into a synthesized sh -c script; a quote/`$(…)`/`;` must be rejected at
     // parse, not executed at save/load.
