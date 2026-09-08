@@ -72,6 +72,14 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   inject/wire values no longer bleed across groups; SGR runs aren't counted as visible
   width; column widths fall back to an even split on a too-narrow terminal; detail-pane
   height can't go NaN / overflow; the config parser guards merge targets before validating.
+- **A command killed mid-line keeps its last output line in history.** The kill path
+  closed the history record before flushing the output decoder's tail, so a killed
+  command's final unterminated line reached only the live display — not the recorded (and
+  replayed) history output. It's now flushed into the record first.
+- **The parser's merge-before-validate guard now covers mistyped groups too.** A deeper
+  sweep of the B9 class found two more crash sites: a mistyped group value, or a mistyped
+  `actions`/`terminals`/`children` block, combined with a `plugins:` split threw a raw
+  TypeError instead of the clean "must be a mapping" error. Both are now guarded.
 
 ## [0.6.25] — 2026-08-28
 
