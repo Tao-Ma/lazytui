@@ -6,6 +6,8 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.26] — 2026-09-08
+
 ### Added
 
 - **Time-axis labels on graphs (`x_axis: auto | off | always`).** A `stats` graph can
@@ -3458,7 +3460,8 @@ release tarballs. Full pre-squash development history is preserved
 on the internal gitea mirror under the `backup/main-history` branch
 and the `v0.1.0-pre-squash` tag.
 
-[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.25...HEAD
+[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.26...HEAD
+[0.6.26]: https://github.com/Tao-Ma/lazytui/compare/v0.6.25...v0.6.26
 [0.6.25]: https://github.com/Tao-Ma/lazytui/compare/v0.6.24...v0.6.25
 [0.6.24]: https://github.com/Tao-Ma/lazytui/compare/v0.6.23...v0.6.24
 [0.6.23]: https://github.com/Tao-Ma/lazytui/compare/v0.6.22...v0.6.23
