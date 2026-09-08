@@ -112,8 +112,8 @@ function rowText(grid, row, fromCol, toCol) {
 
 function setupTwoContentTabs() {
   sm.bootFresh();
-  contentTab.addContentTab('g1', 'doc-A', 'A', ['A1', 'A2']);
-  contentTab.addContentTab('g1', 'doc-B', 'B', ['B1', 'B2']);
+  contentTab.addContentTab('doc-A', 'A', ['A1', 'A2']);
+  contentTab.addContentTab('doc-B', 'B', ['B1', 'B2']);
   // Park focus on the content slot so its tab-strip paints prominently.
   api.getInstanceSlice('layout').focus = 'pane-detail';
 }
@@ -272,7 +272,7 @@ describe('[5] a truncated slot strip does not report its clipped tail tabs click
     sm.resize(100, 40);
     // Enough long-labelled content tabs that the strip far overflows the pane.
     for (const n of ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot', 'Golf', 'Hotel']) {
-      contentTab.addContentTab('g1', 'doc-' + n, n + '-tab', [n]);
+      contentTab.addContentTab('doc-' + n, n + '-tab', [n]);
     }
     api.getInstanceSlice('layout').focus = 'pane-detail';
     sm.capture(() => sm.render());

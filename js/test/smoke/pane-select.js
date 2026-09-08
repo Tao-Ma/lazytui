@@ -162,7 +162,7 @@ describe('[6] group switch clears EVERY active selection', () => {
     dispatchMsg(route.wrap(target, { type: 'select_begin', line: 0, col: 0, kind: 'char' }));
     dispatchMsg(route.wrap(target, { type: 'select_extend', line: 0, col: 4 }));
     require('../../panel/content-tab').addContentTab(
-      getModel().currentGroup, 'doc-hidden-sweep', 'Doc', ['other line']);
+      'doc-hidden-sweep', 'Doc', ['other line']);
     assert(route.resolveTarget('viewer') !== target, 'the seeded instance is hidden now');
     assert(api.getInstanceSlice(target).select?.active, 'hidden tab holds a persisted selection');
     require('../../dispatch/control/dispatch').applyMsg({ type: 'reset_group_context', owners: {} });
@@ -235,7 +235,7 @@ describe('[7] per-tab persistence — a content tab keeps its selection across a
 
     // Mint a second content tab — it becomes the pane's active tab.
     require('../../panel/content-tab').addContentTab(
-      getModel().currentGroup, 'doc-x', 'Doc X', ['doc line 1']);
+      'doc-x', 'Doc X', ['doc line 1']);
     assert(route.resolveTarget('viewer') !== target, 'the minted doc tab is active now');
     assert(api.getInstanceSlice(target).select?.active, 'hidden tab keeps its selection on its slice');
     assert(!selView.activeSelection(), 'but the hidden tab does NOT own the app-wide selection');

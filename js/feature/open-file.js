@@ -41,19 +41,18 @@ function openHostFileAsTab(filepath, opts = {}) {
   const absPath = path.isAbsolute(filepath) ? filepath : path.resolve(base, filepath);
   const key = `file:${absPath}`;
   const label = opts.label || path.basename(absPath);
-  const originGroup = getModel().currentGroup;
   const loadingLabel = `[dim]Loading ${esc(absPath)}…[/]`;
-  addContentTab(originGroup, key, label, [loadingLabel]);
+  addContentTab(key, label, [loadingLabel]);
 
   const loadOpts = {
     maxBytes: opts.maxBytes || DEFAULT_MAX_BYTES,
     hexAfter: opts.hexAfter || DEFAULT_HEX_AFTER,
   };
   loadFile(absPath, loadOpts).then(result => {
-    updateContentTabLines(originGroup, key, result.lines);
+    updateContentTabLines(key, result.lines);
     require('../leaves/infra/render-queue').scheduleRender();
   }).catch(err => {
-    updateContentTabLines(originGroup, key, [
+    updateContentTabLines(key, [
       `[${theme().error}]Failed to load:[/]`, '', `[dim]${esc(err.message)}[/]`,
     ]);
     require('../leaves/infra/render-queue').scheduleRender();
@@ -70,7 +69,7 @@ function refreshHostFileTab(absPath) {
   const key = `file:${absPath}`;
   loadFile(absPath, { maxBytes: DEFAULT_MAX_BYTES, hexAfter: DEFAULT_HEX_AFTER })
     .then((result) => {
-      updateContentTabLines(getModel().currentGroup, key, result.lines);
+      updateContentTabLines(key, result.lines);
       require('../leaves/infra/render-queue').scheduleRender();
     })
     .catch(() => { /* file unreadable post-edit — the stale tab stays */ });

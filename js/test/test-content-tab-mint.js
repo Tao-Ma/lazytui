@@ -62,7 +62,7 @@ describe('[mint] open-file → text-view position-tab', () => {
     eq(poolId, 'content-file-tmp-mint-probe.txt', 'poolId derives from the sanitized key');
     const instId = mpane.newPaneId(poolId);
 
-    cfeat.addContentTab('g', key, 'mint-probe.txt', ['line 1', 'line 2']);
+    cfeat.addContentTab(key, 'mint-probe.txt', ['line 1', 'line 2']);
 
     assert(route.hasInstance(instId), 'the text-view instance was minted');
     eq(route.instanceKind(instId), 'text-view', 'minted tab is kind text-view');
@@ -86,9 +86,9 @@ describe('[mint] open-file → text-view position-tab', () => {
     const key = 'file:/tmp/mint-reuse.txt';
     const poolId = cfeat._poolId(key);
     const instId = mpane.newPaneId(poolId);
-    cfeat.addContentTab('g', key, 'reuse', ['v1']);
+    cfeat.addContentTab(key, 'reuse', ['v1']);
     eq(getInstanceSlice(instId).lines.join('\n'), 'v1');
-    cfeat.addContentTab('g', key, 'reuse', ['v2', 'v2b']);
+    cfeat.addContentTab(key, 'reuse', ['v2', 'v2b']);
     // mint_tab no-ops on a poolId collision; tv_set_lines replaces the buffer.
     eq(getInstanceSlice(instId).lines.join('\n'), 'v2\nv2b', 'buffer replaced, tab reused');
     const slotPaneId = route.resolveViewerPaneId();
@@ -101,7 +101,7 @@ describe('[mint] open-file → text-view position-tab', () => {
   it('updateContentTabLines on a closed tab is a silent no-op', () => {
     boot();
     // No tab minted for this key → the async-resolve path must drop silently.
-    cfeat.updateContentTabLines('g', 'file:/tmp/never-opened.txt', ['ignored']);
+    cfeat.updateContentTabLines('file:/tmp/never-opened.txt', ['ignored']);
     const instId = mpane.newPaneId(cfeat._poolId('file:/tmp/never-opened.txt'));
     assert(!route.hasInstance(instId), 'no instance created by a stray update');
   });
@@ -113,7 +113,7 @@ describe('[mint] closing a content tab', () => {
     const key = 'file:/tmp/mint-close.txt';
     const poolId = cfeat._poolId(key);
     const instId = mpane.newPaneId(poolId);
-    cfeat.addContentTab('g', key, 'close-me', ['x']);
+    cfeat.addContentTab(key, 'close-me', ['x']);
     assert(route.hasInstance(instId), 'minted');
 
     const slotPaneId = route.resolveViewerPaneId();

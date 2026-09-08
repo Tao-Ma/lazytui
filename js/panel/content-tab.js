@@ -15,10 +15,10 @@
  *
  * Behaviour note: unlike the old per-group `contentTabs[group]`, a text-view tab is
  * a slot position-tab — it PERSISTS across group switches, exactly like a terminal
- * pane (U2d). This is the arc's full-dissolution direction (one tab system); the
- * `groupName` arg is retained for signature compatibility but no longer scopes the
- * tab. Content lands via `tv_set_lines` (replace), so the async loading→resolved
- * swap is one clean buffer replacement.
+ * pane (U2d). This is the arc's full-dissolution direction (one tab system) — there
+ * is no group scoping, so these entry points take no group argument (the tab is
+ * identified solely by its content `key`). Content lands via `tv_set_lines`
+ * (replace), so the async loading→resolved swap is one clean buffer replacement.
  */
 'use strict';
 
@@ -34,7 +34,7 @@ function _dispatch(msg) {
   require('../hosts/panel-host').dispatchMsg(msg);
 }
 
-function addContentTab(groupName, key, label, lines) {
+function addContentTab(key, label, lines) {
   const slotPaneId = route.resolveViewerPaneId();
   if (!slotPaneId) return;   // no content slot placed → nowhere to open
   const poolId = _poolId(key);
@@ -57,10 +57,10 @@ function addContentTab(groupName, key, label, lines) {
     // (session-only) content tab doesn't mark the layout dirty.
     type: 'set_active_tab', paneId: slotPaneId, tabPoolId: poolId,
   }));
-  updateContentTabLines(groupName, key, seedLines);
+  updateContentTabLines(key, seedLines);
 }
 
-function updateContentTabLines(groupName, key, lines) {
+function updateContentTabLines(key, lines) {
   const tabInstId = mpane.newPaneId(_poolId(key));
   // The tab may be gone (closed) by the time an async load resolves — drop silently.
   if (!route.getInstance(tabInstId)) return;

@@ -68,7 +68,7 @@ function closeTab(poolId) {
   api.dispatchMsg(api.wrap('layout', { type: 'remove_tab', paneId: slotPaneId(), tabPoolId: poolId }));
 }
 // Open content into the slot (mints a text-view position-tab + loads it).
-function open(key, label, lines) { feature.addContentTab('g1', key, label, lines); }
+function open(key, label, lines) { feature.addContentTab(key, label, lines); }
 // The pool id of whatever tab is CURRENTLY active on the slot.
 function activePoolId() { return mpane.poolIdOf(route.activeInstanceOf(slotPaneId())); }
 

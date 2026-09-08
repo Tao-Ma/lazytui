@@ -230,7 +230,7 @@ describe('[6] opening content into the focused viewer keeps focus there', () => 
   it('add-content-tab on the focused (second) viewer does NOT steal focus to the primary', () => {
     focus(B);
     getModel().currentGroup = getModel().currentGroup || 'browse';
-    feature.addContentTab(getModel().currentGroup, 'file:/x', 'x', ['hi']);
+    feature.addContentTab('file:/x', 'x', ['hi']);
     eq(route.getFocus(), B, 'focus stayed on B (was stolen to the primary pre-fix)');
     // The content tab landed as a position-tab in B's slot, not the primary A.
     const poolId = feature._poolId('file:/x');

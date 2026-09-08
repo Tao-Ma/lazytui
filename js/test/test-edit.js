@@ -209,7 +209,7 @@ delete process.env.TMUX;
 const target = path.join(TMP, 'doc.txt');
 fs.writeFileSync(target, 'fresh content after edit\n');
 // An open doc tab showing the file (keyed file:<abs> — the refresh gate).
-require('../panel/content-tab').addContentTab(getModel().currentGroup, `file:${target}`, 'doc.txt', ['old content']);
+require('../panel/content-tab').addContentTab(`file:${target}`, 'doc.txt', ['old content']);
 const docInstId = mpane.newPaneId(require('../panel/content-tab')._poolId(`file:${target}`));
 getModel().config.editor = 'true';        // exits 0 immediately
 edit.editFile(target, { isConfig: true }); // force the hint too

@@ -178,7 +178,7 @@ function setViewerContent(text, opts) {
   opts = opts || {};
   const lines = text ? text.split('\n') : [];
   require('./content-tab').addContentTab(
-    getModel().currentGroup, opts.key || 'viewer-doc', opts.label || 'Doc', lines);
+    opts.key || 'viewer-doc', opts.label || 'Doc', lines);
 }
 
 /**

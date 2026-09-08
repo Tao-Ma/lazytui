@@ -298,7 +298,7 @@ function installBuiltins() {
   registerEffect('open_doc_tab', (eff) => {
     try {
       require('../../panel/content-tab').addContentTab(
-        getModel().currentGroup, eff.key, eff.label, eff.lines || []);
+        eff.key, eff.label, eff.lines || []);
     } catch (_) { /* no content slot / no renderer (test) */ }
   });
   // diag_clear / diag_save: the diagnostics window's `c` / `s` keys.

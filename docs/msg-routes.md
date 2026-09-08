@@ -1203,7 +1203,7 @@ handlers are tier-`fx` (impure by design).**
 | `render` | `renderQueue.scheduleRender()` (50ms debounce) | no |
 | `force_full_repaint` | `renderQueue.forceFullRepaint()` | no |
 | `show_selected_info` | `dispatch.showSelectedInfo(eff.paneId?)` → resolves focused info lines → the content slot's info pane | yes (→ `info_show_content`) |
-| `open_doc_tab{key,label,lines}` | `content-tab.addContentTab(currentGroup, …)` — mint a text-view content tab (the jobs job-info card's reducer-side entry, ex-`viewer_set_content`) | via mint |
+| `open_doc_tab{key,label,lines}` | `content-tab.addContentTab(key, label, lines)` — mint a text-view content tab (the jobs job-info card's reducer-side entry, ex-`viewer_set_content`); content tabs are slot position-tabs, NOT group-scoped | via mint |
 | `_claimed` | no-op (sentinel consumed earlier in `dispatchKeyToFocused`) | no |
 | `kkp_suspend` / `kkp_resume` | `io/term.suspendKKP()` / `.resumeKKP()` — drop to legacy key encoding while an embedded child owns the terminal, restore on exit | no |
 | `edit_file{path,isConfig}` | `edit.editFile(…)` — open the file in the user's editor (files pane `e`); synchronously re-enters (mint/focus/view/mode Msgs) | yes (T28 cap) |

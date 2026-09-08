@@ -37,7 +37,6 @@ const { addContentTab, updateContentTabLines, refireCmdlineRebuild } = require('
 const { loadFile, DEFAULT_MAX_BYTES, DEFAULT_HEX_AFTER } = require('../io/file-loader');
 const { esc } = require('../leaves/text/ansi');
 const { theme } = require('../leaves/infra/themes');
-const { getModel } = require('../model/store');
 const openTarget = require('./open-target');
 
 const DOCKER_PREFIX = /^docker:\/\/(.*)$/;
@@ -221,9 +220,8 @@ function _completePath(container, fullPath) {
 function dockerOpenFileAsTab(container, absPath, opts = {}) {
   const key = `docker:${container}:${absPath}`;
   const label = opts.label || path.posix.basename(absPath) || absPath;
-  const originGroup = getModel().currentGroup;
   const loadingLabel = `[dim]Loading ${esc(container)}:${esc(absPath)}…[/]`;
-  addContentTab(originGroup, key, label, [loadingLabel]);
+  addContentTab(key, label, [loadingLabel]);
 
   const loadOpts = {
     maxBytes: opts.maxBytes || DEFAULT_MAX_BYTES,
@@ -231,10 +229,10 @@ function dockerOpenFileAsTab(container, absPath, opts = {}) {
     readBytes: (p, n) => dockerReadBytes(container, p, n),
   };
   loadFile(absPath, loadOpts).then(result => {
-    updateContentTabLines(originGroup, key, result.lines);
+    updateContentTabLines(key, result.lines);
     require('../leaves/infra/render-queue').scheduleRender();
   }).catch(err => {
-    updateContentTabLines(originGroup, key, [
+    updateContentTabLines(key, [
       `[${theme().error}]Failed to load:[/]`, '', `[dim]${esc(err.message)}[/]`,
     ]);
     require('../leaves/infra/render-queue').scheduleRender();
