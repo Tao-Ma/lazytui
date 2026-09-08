@@ -139,7 +139,14 @@ function bundle(id) {
 // Returns `{ <panelType>: <ownerComponentName> | undefined }` — undefined
 // owner (Component unregistered, e.g. a partial test boot) makes the reducer
 // skip that panel, preserving the old `if (compName)` gate.
-const RESET_GROUP_PANELS = ['actions', 'containers'];
+// The group-scoped navigable panels whose cursor/filter/multi-sel reset on a
+// group switch. `actions`/`containers` are per-group by construction; the two
+// fabric panes are group-scoped too — `fabric-wires` renders listWires() (the
+// group-bound model.fabric.wires[group], B3) and `component-ports` follows the
+// now-refocused pane's selection + this group's injects — so a stale cursor
+// would land on an unrelated row after the switch. componentForPanel() returns
+// undefined for a layout without a given pane, which resetGroupOwners drops.
+const RESET_GROUP_PANELS = ['actions', 'containers', 'component-ports', 'fabric-wires'];
 function resetGroupOwners() {
   const out = {};
   for (const p of RESET_GROUP_PANELS) out[p] = componentForPanel(p);

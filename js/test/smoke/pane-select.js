@@ -175,6 +175,24 @@ describe('[6] group switch clears EVERY active selection', () => {
     const back = (pane.tabs || []).find((t) => t.type === 'info') || (pane.tabs || [])[0];
     dispatchMsg(route.wrap('layout', { type: 'set_active_tab', paneId: viewerPane, tabPoolId: back.poolId }));
   });
+  it('the group-switch cursor sweep reaches the fabric panes (ports/wires)', () => {
+    // Regression: `component-ports`/`fabric-wires` were absent from
+    // RESET_GROUP_PANELS, so their nav cursor persisted across a group switch —
+    // both panes are group-scoped (wires = model.fabric.wires[group]; ports
+    // follows the refocused pane + this group's injects), so a stale cursor would
+    // land on an unrelated row. resetGroupOwners must resolve both to their owners
+    // and the reset_group_context sweep must send their cursors back to row 0.
+    const owners = route.resetGroupOwners();
+    eq(owners['component-ports'], 'component-ports', 'ports pane is in the group-reset set');
+    eq(owners['fabric-wires'], 'fabric-wires', 'wire-list pane is in the group-reset set');
+    navState.setSel(PORTS, 1);
+    navState.setSel(WIRES, 1);
+    eq(navState.getSel(PORTS), 1, 'ports cursor seeded off row 0');
+    eq(navState.getSel(WIRES), 1, 'wires cursor seeded off row 0');
+    require('../../dispatch/control/dispatch').applyMsg({ type: 'reset_group_context', owners });
+    eq(navState.getSel(PORTS), 0, 'ports cursor reset to 0 on group switch');
+    eq(navState.getSel(WIRES), 0, 'wires cursor reset to 0 on group switch');
+  });
 });
 
 describe('[4] the config gate disables selection', () => {
