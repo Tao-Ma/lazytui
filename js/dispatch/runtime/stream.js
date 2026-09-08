@@ -158,17 +158,23 @@ function killJob(jobId, opts = {}) {
   try { ctx.proc.stdout.removeAllListeners('data'); } catch {}
   try { ctx.proc.stderr.removeAllListeners('data'); } catch {}
   try { ctx.proc.kill('SIGTERM'); } catch {}
-  // Close the history record first so the status chip below reads its stamped
-  // endedAt (the duration/time segments).
+  // Flush the decoder tail (the last partial line, if any) into the history record
+  // BEFORE closing it — otherwise a killed command's final line reaches only the
+  // display (appendDetailLines below), never history.output. flushTail() is
+  // single-shot (decoder.end() + buffer clear), so capture once here and reuse for
+  // the display footer. Mirrors the normal close path (rec.append(buffer) precedes
+  // rec.end()); appending before .kill() means endEntry's mirror snapshot carries
+  // the full output, so a from-snapshot replay reconstructs the finished entry.
+  const tail = ctx.flushTail ? ctx.flushTail() : '';
+  if (tail && ctx.record) ctx.record.append(tail);
+  // Close the history record (the status chip below reads its stamped endedAt —
+  // the duration/time segments).
   if (ctx.record) ctx.record.kill();
   if (!opts.silent) {
     // Semantic theme tokens ([warning]/[error]) — NOT resolved colors — so these
     // stored footers re-color on a :theme change (ansi._expandThemeKeys, paint).
     const batch = [];
-    if (ctx.flushTail) {
-      const tail = ctx.flushTail();
-      if (tail) batch.push(esc(tail));
-    }
+    if (tail) batch.push(esc(tail));
     if (opts.userCancel) {
       // The user clicked the chip's ✗ cancel — not a preempt, so the "next run"
       // / "previous" wording reads wrong. One neutral footer, routed to the job's
