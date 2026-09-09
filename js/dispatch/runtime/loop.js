@@ -143,7 +143,19 @@ function applyMsg(msg) {
 // link may transform it. NOT depth-counted, does NOT finalize (root Msgs don't
 // move panes).
 function _termRoot(entry) {
-  const [next, cmds] = runtime.update(getModel(), entry.msg);
+  let next, cmds;
+  try {
+    [next, cmds] = runtime.update(getModel(), entry.msg);
+  } catch (e) {
+    // Error isolation, mirroring the Component paths (_termComp / _termKey): a throw
+    // in a root-reducer arm is RECORDED and swallowed rather than propagating out of
+    // applyMsg and tearing down the input loop (which would wedge the whole TUI). The
+    // model is left unchanged, so the offending Msg becomes a no-op. Root arms SHOULD
+    // be total; this is a backstop, and the recorded error keeps a real bug visible.
+    _recordError({ where: 'root_update', msgType: entry.msg && entry.msg.type,
+                   error: e && e.message, stack: e && e.stack });
+    return;
+  }
   setModel(next);
   runEffects(cmds);
 }
