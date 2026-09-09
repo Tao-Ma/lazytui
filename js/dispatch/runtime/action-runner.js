@@ -135,8 +135,12 @@ function doRun(actionKey, action, args = []) {
     // with a space (`cd /home/me/My Project`) passes `cd` two args and fails. `cmd`
     // is the user's own shell body (left as-is, by design); only the path is quoted.
     const body = `#!/bin/sh\nrm -- "$0"\ncd ${shQuote(getModel().projectDir)} && ${cmd}\n`;
-    fs.writeFileSync(tmp, body, { mode: 0o700 });
+    // Write the self-deleting script only at the site that RUNS it — a bare-spawn with
+    // no placeable slot (container null, below) would otherwise orphan it in /tmp
+    // (nothing runs the `rm -- "$0"`).
+    const writeScript = () => fs.writeFileSync(tmp, body, { mode: 0o700 });
     if (_spawnUsesTmux()) {
+      writeScript();
       appendViewerLines(`[dim]$ ${esc(actionKey)}[/]\n[warning]Spawned in new tmux window.[/]`);
       const argStr = args.length ? ' ' + args.map(shQuote).join(' ') : '';
       spawn('tmux', ['new-window', '-n', actionKey, `${tmp}${argStr}; read`], { detached: true, stdio: 'ignore' });
@@ -175,6 +179,7 @@ function doRun(actionKey, action, args = []) {
       // the focused slot when no viewer is placed.
       const container = route.resolveViewerPaneId() || getInstanceSlice('layout').focus;
       if (container) {
+        writeScript();   // only now — a slot exists to run it (see writeScript note)
         // Reducer-derived poolId (idPrefix `term`, NO Date.now()) → replay-
         // deterministic AND fresh per run, so two spawns of one action open two
         // distinct terminals. The hint tags origin for later tab-groups clustering;
