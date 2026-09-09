@@ -6,6 +6,29 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security
+
+- **Config-status diff viewer no longer allows command injection.** Viewing the diff of a
+  changed file built a `sh -c "git show '<branch>:<path>' …"` with the branch (a pane's
+  `branch:` config) and the file path (a real on-disk filename from a tracked directory)
+  interpolated unescaped — so a `'`/`;`/`$()` in either broke out of the quoting and
+  executed (a hostile filename in a tracked directory was RCE-on-Enter). This site was
+  missed by the earlier config→shell escaping sweep; it now uses argv `git show` + a JS
+  file write, with no shell.
+
+### Fixed
+
+- **A stream that errors mid-line keeps its last output line in history.** The error
+  termination path (e.g. a broken pipe) closed the history record without flushing the
+  output decoder's tail — the last seam that didn't, after the close/kill paths were
+  fixed. Now all three flush uniformly.
+- **A falsy-but-present mistyped config section is no longer masked by a `plugins:` split.**
+  The plugin-merge auto-created an absent section, but the check also fired for a falsy
+  value (`groups: 0`, `files: 0`), silently overwriting the typo so a plugin split hid it
+  instead of surfacing the schema error. It now auto-creates only a truly absent/empty
+  section, so a falsy typo is rejected exactly as it is without a plugin (an empty
+  `groups:` filled by a plugin — the umbrella pattern — still works).
+
 ## [0.6.26] — 2026-09-08
 
 ### Added
