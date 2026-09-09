@@ -28,6 +28,18 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   instead of surfacing the schema error. It now auto-creates only a truly absent/empty
   section, so a falsy typo is rejected exactly as it is without a plugin (an empty
   `groups:` filled by a plugin — the umbrella pattern — still works).
+- **Fixed-width cells no longer misalign under a wide (CJK/emoji) label.** The shared
+  cell fitter truncated a wide-glyph boundary to one column short of the target width (it
+  won't split a 2-col glyph) without re-padding, so a column after a truncated CJK/emoji
+  label — e.g. in the jobs overlay — drifted by a column. It now re-pads to the exact width.
+- **The events watcher recovers if its binary was missing when it started.** A
+  long-lived `process-stream` subscription (the docker events watcher) wired its
+  reconnect to the child's `exit` event, but a spawn failure (missing/non-executable
+  binary) emits `error`+`close` and never `exit` — so it stayed permanently dead. It now
+  reconnects on `close`, so it retries and recovers once the binary is available.
+- **A `spawn` action works when the project path contains a space.** The self-deleting
+  temp script did `cd <project_dir>` unquoted, so a path with a space broke the `cd`. The
+  path is now shell-quoted.
 
 ## [0.6.26] — 2026-09-08
 
