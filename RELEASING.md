@@ -10,16 +10,20 @@ things in patch bumps. After v1.0.0, strict semver applies.
 
 ## Artifacts produced by a release
 
-Every release builds **two tarballs**, both attached to the GitHub Release:
+Every release attaches **five assets** to the GitHub Release — two tarballs plus
+three native binaries:
 
 | Artifact | Contents | Use case |
 |---|---|---|
 | `lazytui-X.Y.Z.tgz` | npm-style package. Runtime + parser + docs only (no tests, no demos, no `.github/`). ~225 files / ~980 kB as of v0.6.8. | `npm install` from URL; future `npm install -g lazytui` once we publish. |
 | `lazytui-X.Y.Z-source.tar.gz` | Full source archive of the tagged commit (`git archive HEAD`). Includes tests, demos, CI configs — everything that's in git. | Read-only mirror of the tag for users who can't or don't want to `git clone`. |
+| `lazytui-X.Y.Z-{linux-x64,linux-arm64,darwin-arm64}` | Standalone native `lazytui` CLI per platform (Bun `--compile`), no Node/Bun runtime needed. Bun cross-compiles all three from the single Linux runner. (darwin-x64 / windows-x64 are dropped — low demand for a terminal app.) | `curl` the one binary for your platform and run it; no `npm install`. |
 
-The split exists because the npm tarball is the runtime form (lean,
-publishable) while the source tarball is the developer/auditor form
-(complete, browsable).
+The two tarballs split the runtime form (lean, publishable npm package) from the
+developer/auditor form (complete, browsable source); the native binaries
+(added by the bun/native-binary arc, v0.6.23) are the zero-dependency form for
+users who just want to run the CLI. Each native target compiles independently —
+a failed target logs a warning without failing the release.
 
 ## Release flow
 
@@ -42,9 +46,10 @@ publishable) while the source tarball is the developer/auditor form
    ```
 6. The `.github/workflows/release.yml` workflow triggers automatically:
    - Runs the JS test suite against the tagged commit.
-   - Builds the two tarballs above.
+   - Builds the two tarballs and the three native binaries above (and
+     smoke-runs the linux-x64 binary on the runner).
    - Creates a GitHub Release with auto-generated release notes
-     (commits since the previous tag) and both tarballs attached.
+     (commits since the previous tag) and all five assets attached.
    - Marks the release as **pre-release** if the version has a
      hyphen (e.g. `v0.2.0-rc1`).
 
@@ -84,7 +89,7 @@ download; the publish step simply **skips**, it does not fail.
 
 Without `NPM_TOKEN`, the publish step is **skipped** (the
 `HAS_NPM_TOKEN` guard) — the workflow stays green and the GitHub
-Release is still created with both tarballs; the package just isn't
+Release is still created with all five assets; the package just isn't
 pushed to npm. (This is what happened for v0.6.5: shipped to GitHub,
 not to npm.) To publish a release that went out without npm: add the
 secret, then delete and re-push the tag (see "If the release workflow
