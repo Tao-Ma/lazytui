@@ -508,13 +508,18 @@ function _axisFor(type, innerW, graphH, mode) {
 
 // The ONE axis entry point — { show, gutterW } for a spec at a given inner size. Handles
 // overlay (one grid, N series, 1 legend row) vs sectioned geometry; multi has none. Reads
-// only the schema + configured metrics (no sample resolve), so it's a cheap pure decision
-// every caller — renderBody, valueAt, freezeRange, the drag-band — computes identically.
+// the schema + the EFFECTIVE metric set (no sample resolve), so it's a cheap decision every
+// caller — renderBody, valueAt, freezeRange, the drag-band — computes identically. A FROZEN
+// (drag-zoomed) pane uses its snapshot's `frozen.metrics`, matching what renderBody paints
+// with; without this the resample width and the drawn gutter could diverge if spec.metrics
+// changed after the freeze (a mid-zoom reconfigure).
 function _axisForSpec(spec, innerW, innerH) {
   if (!spec || !spec.topic || spec.mode === 'multi') return { show: false, gutterW: 0 };
   const metricObj = getModel().metrics[spec.topic];
   const schema = (metricObj && metricObj.schema) || { columns: {} };
-  const metrics = spec.metrics || _defaultMetrics(schema);
+  const frozen = _zoomFrozen(spec);
+  const metrics = (frozen && frozen.metrics && frozen.metrics.length)
+    ? frozen.metrics : (spec.metrics || _defaultMetrics(schema));
   if (!metrics.length) return { show: false, gutterW: 0 };
   const graphH = spec.overlay ? (innerH - 1) : _sectionPerMetric(metrics, schema, innerH);
   return _axisFor(_paneAxisType(metrics, schema), innerW, graphH, spec.y_axis);
