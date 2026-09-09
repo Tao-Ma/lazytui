@@ -418,10 +418,14 @@ function parseLayout(layoutData, _hasContainers, _hasFiles, userPool) {
 function mergePluginInto(main, plugin) {
   for (const [gname, gdata] of Object.entries(plugin.groups || {})) {
     if (!gdata || typeof gdata !== 'object' || Array.isArray(gdata)) continue;
-    if (!main.groups) main.groups = {};
-    // B9: merge runs BEFORE validate(), so a wrong-typed merge target must be left intact
-    // (not written into) — validate() then rejects it with a clean SchemaError instead of a
-    // raw TypeError thrown here. (Same guard on containers/vars/helpers/files below.)
+    // B9: auto-create groups ONLY when absent — `== null` covers a missing key OR an
+    // empty `groups:` (→ null), the umbrella pattern where a plugin supplies all groups.
+    // A falsy-but-PRESENT typo (0/''/false) or a wrong type (string/array) is left intact
+    // for validate() to reject with the same clean SchemaError the no-plugin input produces:
+    // merge runs BEFORE validate(), so `if (!main.groups)` would silently overwrite the typo
+    // (masking it), and writing into a truthy wrong type would throw a raw TypeError.
+    // (Same pattern on containers/vars/helpers/files below.)
+    if (main.groups == null) main.groups = {};
     if (typeof main.groups !== 'object' || Array.isArray(main.groups)) continue;
     const existing = main.groups[gname];
     if (existing === undefined) {
@@ -458,18 +462,19 @@ function mergePluginInto(main, plugin) {
     }
   }
   for (const [k, v] of Object.entries(plugin.vars || {})) {
-    if (!main.vars) main.vars = {};
-    // B9: only merge into a plain-object target (a wrong-typed vars/helpers — e.g. a string —
-    // would throw on property assignment under strict mode; leave it for validate()).
+    if (main.vars == null) main.vars = {};   // B9: create only when absent/empty (see groups)
+    // B9: only merge into a plain-object target (a falsy-but-present or wrong-typed vars —
+    // e.g. 0 / a string — is left for validate(); the `typeof === object` gate also dodges a
+    // `k in <primitive>` / strict-mode assignment throw).
     if (typeof main.vars === 'object' && !Array.isArray(main.vars) && !(k in main.vars)) main.vars[k] = v;
   }
   for (const [k, v] of Object.entries(plugin.helpers || {})) {
-    if (!main.helpers) main.helpers = {};
+    if (main.helpers == null) main.helpers = {};   // B9
     if (typeof main.helpers === 'object' && !Array.isArray(main.helpers) && !(k in main.helpers)) main.helpers[k] = v;
   }
   if (Array.isArray(plugin.files)) {
-    if (!main.files) main.files = [];
-    if (Array.isArray(main.files)) main.files.push(...plugin.files);   // B9
+    if (main.files == null) main.files = [];   // B9: create only when absent/empty
+    if (Array.isArray(main.files)) main.files.push(...plugin.files);   // B9: falsy/wrong-typed → leave for validate
   }
 }
 
@@ -520,9 +525,10 @@ function mergeYamlPlugins(data, baseDir) {
       throw new ParseError(`plugin '${name}' must be a YAML mapping`);
     }
     mergePluginInto(data, pdata);
-    if (!data.files) data.files = [];
-    // B9: a wrong-typed data.files is left intact for validate() to reject with a clean
-    // SchemaError instead of the raw TypeError a .push on a non-array would throw here.
+    if (data.files == null) data.files = [];   // B9: create only when absent/empty (== null)
+    // B9: a falsy-but-present (0/'') or wrong-typed data.files is left intact for validate()
+    // to reject cleanly, instead of being silently overwritten (masking the typo) or throwing
+    // a raw TypeError on a .push into a non-array.
     if (Array.isArray(data.files)) data.files.push({ path: pluginPath, desc: `TUI plugin: ${name}` });
   }
 }

@@ -525,6 +525,29 @@ describe('error propagation', () => {
     const p = tmpYaml(LAYOUT + 'plugins:\n  p: {path: b9plug-actions.yml}\ngroups:\n  foo:\n    label: Foo\n    actions: "not a mapping"\n', 'b9-actions-str.yml');
     expectThrow(/'actions' must be a non-empty mapping/, () => parse(p), SchemaError);
   });
+  it('FALSY-but-present mistyped section (groups: 0) + a plugin split → clean SchemaError, not masked (B9 class sweep)', () => {
+    // The merge auto-created a section with `if (!main.groups)`, which ALSO fires for a falsy
+    // value (0/''/false), silently overwriting the typo so the plugin split masked it (parsed
+    // OK instead of erroring). `== null` now auto-creates ONLY an absent/empty section, so a
+    // falsy typo is left for validate() — matching the no-plugin SchemaError.
+    const LAYOUT = 'panels:\n  g: {type: groups}\n  d: {type: detail}\nlayout:\n  columns:\n    - panels: [g]\n    - panels: [d]\n';
+    tmpYaml('groups:\n  foo:\n    label: Foo\n    actions:\n      b: {cmd: make, label: B}\n', 'b9plug-falsy.yml');
+    const p = tmpYaml(LAYOUT + 'plugins:\n  p: {path: b9plug-falsy.yml}\ngroups: 0\n', 'b9-groups-zero.yml');
+    expectThrow(/'groups' must be a non-empty mapping/, () => parse(p), SchemaError);
+    // files: 0 is masked the same way (the plugin-path marker push overwrote it) — also fixed.
+    const base = 'groups:\n  g2: {label: G, actions: {a: {cmd: x, label: A}}}\n';
+    const pf = tmpYaml(LAYOUT + base + 'plugins:\n  p: {path: b9plug-falsy.yml}\nfiles: 0\n', 'b9-files-zero.yml');
+    expectThrow(/'files' must be a list/, () => parse(pf), SchemaError);
+  });
+  it('EMPTY (null) section + a plugin split still fills it — the umbrella pattern is preserved (B9 class sweep)', () => {
+    // `== null` (not just `=== undefined`) keeps the case where a bare `groups:` (→ null) or a
+    // missing key lets a plugin supply the section. Only a falsy-but-PRESENT typo is rejected.
+    const LAYOUT = 'panels:\n  g: {type: groups}\n  d: {type: detail}\nlayout:\n  columns:\n    - panels: [g]\n    - panels: [d]\n';
+    tmpYaml('groups:\n  foo:\n    label: Foo\n    actions:\n      b: {cmd: make, label: B}\n', 'b9plug-umbrella.yml');
+    const p = tmpYaml(LAYOUT + 'plugins:\n  p: {path: b9plug-umbrella.yml}\ngroups:\n', 'b9-groups-empty.yml');
+    const cfg = parse(p);
+    assert(cfg.groups && cfg.groups.foo, 'an empty groups: is filled by the plugin split (umbrella)');
+  });
   it('config_branch.branch with shell metacharacters → SchemaError (B2, injection)', () => {
     // Interpolated into a synthesized sh -c script; a quote/`$(…)`/`;` must be rejected at
     // parse, not executed at save/load.
