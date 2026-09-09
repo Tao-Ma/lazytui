@@ -140,6 +140,17 @@ describe('[fitCell] fits to EXACTLY N visible columns (SGR / \\[ / wide aware)',
     assert(visibleLen(out) <= 8, `within 8: ${JSON.stringify(out)} (${visibleLen(out)})`);
     assert(out.endsWith('…'), 'ellipsis on truncation');
   });
+  it('EXACTLY N cols when truncating on a wide-char boundary (no under-pad by 1)', () => {
+    // truncate() never splits a 2-col glyph, so at an even width where the last
+    // fitting glyph is wide it can stop 1 col short; fitCell must re-pad the
+    // shortfall or the cell renders N-1 cols and the columns after it misalign
+    // (jobs overlay under a CJK/emoji label). Regression for the B4-class gap —
+    // the `<= N` assertion above did not catch this.
+    for (const w of [4, 6, 8, 10]) {
+      const out = fitCell('你好你好你好你好', w);
+      eq(visibleLen(out), w, `CJK truncation to ${w} cols is EXACT (not ${w - 1})`);
+    }
+  });
   it('width ≤ 0 → empty (degenerate cell)', () => {
     eq(fitCell('anything', 0), '');
   });

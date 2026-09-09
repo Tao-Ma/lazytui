@@ -113,7 +113,15 @@ function fitCell(s, width) {
   const str = s == null ? '' : String(s);
   if (width <= 0) return '';
   const vis = visibleLen(str);
-  return vis > width ? truncate(str, width) : str + ' '.repeat(width - vis);
+  if (vis <= width) return str + ' '.repeat(width - vis);
+  // Over width: truncate (adds `…`), then RE-PAD the shortfall. truncate() never
+  // splits a wide (2-col) glyph, so when the last glyph that fits is wide it can
+  // stop 1 column short of `width`; without the re-pad the cell renders width-1
+  // cols and every column after it misaligns (the exact class fitCell exists to
+  // prevent). Mirrors table.js's inline fitter.
+  const cut = truncate(str, width);
+  const cvis = visibleLen(cut);
+  return cvis < width ? cut + ' '.repeat(width - cvis) : cut;
 }
 
 /**
