@@ -6,6 +6,16 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Internal hardening from a follow-up review pass.** A throw in a root-reducer arm is
+  now recorded and isolated so it can't wedge the input loop (matching the Component
+  paths); the drag-zoom graph's y-axis gutter is single-sourced with what it paints (no
+  drift if metrics are reconfigured mid-zoom); the fabric ports/wire-list columns measure
+  by visible width (wide-char-safe); a `spawn` action no longer leaves an unused temp
+  script in `/tmp` when no pane slot is available; and a counted panel border degrades
+  cleanly at sub-2-column widths.
+
 ## [0.6.27] — 2026-09-09
 
 ### Security
