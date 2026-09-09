@@ -387,8 +387,15 @@ function diffFor(item, branch, projectDir) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'config-status-diff-'));
   const branchFile = path.join(tmp, 'branch');
   try {
-    const sh = spawnSync('sh', ['-c', `git show '${branch}:${item.path}' > '${branchFile}'`], { cwd: projectDir, encoding: 'utf8' });
-    if (sh.status !== 0) return [...header, `[${t.error}](git show failed)[/]`, ...(sh.stderr || '').split('\n').map(esc)];
+    // NO shell — `branch` (the pane's `branch:` config) and `item.path` (a real
+    // on-disk filename from walkRecursive) are untrusted; a `sh -c` with them
+    // interpolated let a `'`/`;`/`$()` break out of the quoting and execute
+    // (command injection — the same class as B2; a hostile filename in a tracked
+    // directory was RCE-on-Enter). argv git show + an explicit JS file write is
+    // injection-proof and mirrors the STATUS_BRANCH_ONLY path above.
+    const r = spawnSync('git', ['show', `${branch}:${item.path}`], { cwd: projectDir, encoding: 'utf8' });
+    if (r.status !== 0) return [...header, `[${t.error}](git show failed)[/]`, ...(r.stderr || '').split('\n').map(esc)];
+    fs.writeFileSync(branchFile, r.stdout);
     const d = spawnSync('git', ['diff', '--no-index', '--', branchFile, localAbs], { encoding: 'utf8' });
     const out = (d.stdout || '').split('\n').map(esc);
     return [...header, `[bold]${item.status} differs — branch vs local[/]`, '', ...out];

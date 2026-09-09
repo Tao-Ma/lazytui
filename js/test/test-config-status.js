@@ -475,6 +475,36 @@ describe('[8] diffFor — preview shape per status', () => {
     assert(out.join('\n').includes('absent on both sides'));
   });
 
+  it('* differs on a shell-metachar filename runs NO injected command (RCE regression)', () => {
+    // A tracked directory's real on-disk filenames flow into diffFor as item.path.
+    // A DIFFERS diff used to build `sh -c "git show '<branch>:<path>' > file"`, so a
+    // filename containing `'` + `;` broke out of the quoting and executed (the B2
+    // class, missed at this site). The fix uses argv git show + fs.writeFileSync —
+    // no shell — so the payload below must be treated as a literal path, never run.
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-inj-'));
+    try {
+      const g = (...a) => { const r = spawnSync('git', a, { cwd: repo, encoding: 'utf8' });
+                            if (r.status !== 0) throw new Error(`git ${a.join(' ')}: ${r.stderr}`); };
+      g('init', '--quiet', '--initial-branch=main');
+      g('config', 'user.email', 't@e.com'); g('config', 'user.name', 'T');
+      fs.writeFileSync(path.join(repo, 'seed'), 'x\n'); g('add', 'seed'); g('commit', '-m', 'i', '--quiet');
+      // The hostile filename: a `'` closes git-show's quote, `; touch INJECTED ;` runs.
+      const evil = "evil'; touch INJECTED; '.conf";
+      g('checkout', '--quiet', '-b', 'config');
+      fs.writeFileSync(path.join(repo, evil), 'branch-version\n');
+      g('add', '--', evil); g('commit', '-m', 'evil', '--quiet');
+      g('checkout', '--quiet', 'main');
+      // A DIFFERING working-tree copy so status is DIFFERS (the sh -c path).
+      fs.writeFileSync(path.join(repo, evil), 'local-version-differs\n');
+      const marker = path.join(repo, 'INJECTED');
+      const out = cs._diffFor({ kind: 'file', path: evil, status: STATUS.DIFFERS }, 'config', repo);
+      assert(!fs.existsSync(marker), 'no injected command executed (INJECTED marker absent)');
+      assert(Array.isArray(out) && out.join('\n').includes('differs'), 'diff still produced for the odd filename');
+    } finally {
+      try { fs.rmSync(repo, { recursive: true, force: true }); } catch (_) { /* best effort */ }
+    }
+  });
+
   it('Enter on a file row runs cfgStatusDiff → emits the diff effect', () => {
     effects.installBuiltins();  // focus/render/apply_msg/...
     baseline();
