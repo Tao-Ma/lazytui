@@ -127,4 +127,30 @@ describe('[3] two spawns of one action → two DISTINCT terminal panes', () => {
   cleanupTerminals();
 });
 
+describe('[4] the spawn temp-script shQuotes projectDir (a path with a space still cd\'s)', () => {
+  // #4: the temp script (run by the PTY / tmux window) did `cd ${projectDir}`
+  // unquoted, so a projectDir with a space passed `cd` two args and failed. Capture
+  // the written body and assert the path is single-quoted.
+  sm.bootFresh();
+  delete process.env.TMUX;
+  const fsmod = require('fs');
+  const realWrite = fsmod.writeFileSync;
+  let body = null;
+  fsmod.writeFileSync = (p, data, opts) => {
+    if (String(p).includes('/tui-')) body = String(data);   // capture, then still write
+    return realWrite(p, data, opts);
+  };
+  getModel().projectDir = '/tmp/has a space';
+  try { runAction('a:q', { type: 'spawn', script: 'echo hi' }, []); }
+  finally { fsmod.writeFileSync = realWrite; }
+
+  it('interpolates cd with a single-quoted projectDir', () => {
+    assert(body, 'the temp-script body was written');
+    assert(body.includes("cd '/tmp/has a space'"),
+      `projectDir is shQuoted in the cd (body: ${JSON.stringify(body)})`);
+    assert(!/cd \/tmp\/has a space/.test(body), 'not the old unquoted form');
+  });
+  cleanupTerminals();
+});
+
 report();

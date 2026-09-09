@@ -131,7 +131,10 @@ function doRun(actionKey, action, args = []) {
     // as positional params: bare-spawn passes them via argv, tmux path
     // shell-escapes them into the new-window command string.
     const tmp = `/tmp/tui-${process.pid}-${Date.now()}.sh`;
-    const body = `#!/bin/sh\nrm -- "$0"\ncd ${getModel().projectDir} && ${cmd}\n`;
+    // shQuote projectDir — it's interpolated into the script, so an unquoted path
+    // with a space (`cd /home/me/My Project`) passes `cd` two args and fails. `cmd`
+    // is the user's own shell body (left as-is, by design); only the path is quoted.
+    const body = `#!/bin/sh\nrm -- "$0"\ncd ${shQuote(getModel().projectDir)} && ${cmd}\n`;
     fs.writeFileSync(tmp, body, { mode: 0o700 });
     if (_spawnUsesTmux()) {
       appendViewerLines(`[dim]$ ${esc(actionKey)}[/]\n[warning]Spawned in new tmux window.[/]`);
