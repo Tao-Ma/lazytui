@@ -110,7 +110,10 @@ function getItems(slice) {
 // ── Rendering ────────────────────────────────────────────────────────────────
 const PLACEHOLDER = '▏';
 
-function _pad(s, n) { const len = s.length; return len >= n ? s : s + ' '.repeat(n - len); }
+// Pad to `n` VISIBLE columns (not char count) so a wide (CJK) port name/type or a
+// bracketed literal doesn't over/under-pad and misalign the column (B4 class). Pads
+// short, leaves long as-is (renderPanel truncates the whole row by visible width).
+function _pad(s, n) { const len = visibleLen(s); return len >= n ? s : s + ' '.repeat(n - len); }
 
 // The component's dataflow ROLE, from its port surface: only outputs = a
 // producer (a source), only inputs = a consumer (a sink), both = a transform
@@ -166,8 +169,8 @@ function render(panel, w, h, slice, opts) {
   // Column widths for the input/output tables (bounded so a long value doesn't
   // shove the annotation off-screen — renderPanel truncates the row anyway).
   const allPorts = [...data.inputs, ...data.outputs];
-  const portW = Math.min(16, Math.max(4, ...allPorts.map((r) => r.port.length)));
-  const typeW = Math.min(14, Math.max(4, ...allPorts.map((r) => (r.type || '').length)));
+  const portW = Math.min(16, Math.max(4, ...allPorts.map((r) => visibleLen(r.port))));
+  const typeW = Math.min(14, Math.max(4, ...allPorts.map((r) => visibleLen(r.type || ''))));
 
   const lines = [];
   // Header: component name + readiness badge (right-aligned).

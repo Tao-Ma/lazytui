@@ -324,7 +324,10 @@ function renderPanel({
     } else if (bfill === 1) {
       bottom = `[${fc}]${b.bl}${countText}${b.h}${b.br}[/]`;
     } else {
-      bottom = `[${fc}]${b.bl}${countText.slice(0, innerW)}${b.br}[/]`;
+      // Math.max(0,…): on a degenerate box (innerW < 0, e.g. full-view on a ~1-col
+      // terminal) slice(0, <negative>) counts from the END and would keep a trailing
+      // fragment of the count text; clamp to 0 so it degrades to an empty middle.
+      bottom = `[${fc}]${b.bl}${countText.slice(0, Math.max(0, innerW))}${b.br}[/]`;
     }
   } else {
     // clamp: a sub-2-col pane (innerW < 0, e.g. a full-viewed box on a 1-col

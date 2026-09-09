@@ -15,7 +15,7 @@
 
 const mnav = require('../../leaves/wm/nav');
 const {
-  esc, theme, renderPanel, getSel, getScroll,
+  esc, theme, renderPanel, getSel, getScroll, visibleLen,
 } = require('../api');
 const route = require('../route');
 const { listWires, portValue } = require('../../fabric/ports');
@@ -43,7 +43,7 @@ function render(panel, w, h, _slice, opts) {
   }
 
   const sel = getSel(panel.paneId);
-  const edgeW = Math.min(48, Math.max(8, ...rows.map((r) => (`${r.from} → ${r.to}`).length)));
+  const edgeW = Math.min(48, Math.max(8, ...rows.map((r) => visibleLen(`${r.from} → ${r.to}`))));
   const lines = rows.map((r, i) => {
     const edge = `${r.from} → ${r.to}`;
     const val = fmtValue(r.value);
@@ -67,7 +67,8 @@ function render(panel, w, h, _slice, opts) {
   });
 }
 
-function _pad(s, n) { return s.length >= n ? s : s + ' '.repeat(n - s.length); }
+// Visible-width pad (not char count), so a wide-char edge label aligns (B4 class).
+function _pad(s, n) { const len = visibleLen(s); return len >= n ? s : s + ' '.repeat(n - len); }
 
 // d/x on a wire → delete it (runtime only; a config wire lives in the YAML). The
 // row address needs model access, so a fabric_wire_delete effect resolves it.
