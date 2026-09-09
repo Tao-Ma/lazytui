@@ -215,13 +215,20 @@ function main() {
 
   if (execPath !== null) {
     const { runCli } = require('./cli');
-    runCli(configArgs[0], execPath, execArgs).then((rc) => process.exit(rc));
+    // .catch: runCli guards config-load itself, but a later rejection would otherwise
+    // be an unhandled promise rejection (ugly warning + non-deterministic exit). Surface
+    // it and exit non-zero, matching runCli's own `tui --exec: <msg>` error format.
+    runCli(configArgs[0], execPath, execArgs)
+      .then((rc) => process.exit(rc))
+      .catch((e) => { process.stderr.write(`tui --exec: ${e && e.message}\n`); process.exit(1); });
     return;
   }
 
   if (listMode) {
     const { runList } = require('./cli');
-    runList(configArgs[0], listFilter).then((rc) => process.exit(rc));
+    runList(configArgs[0], listFilter)
+      .then((rc) => process.exit(rc))
+      .catch((e) => { process.stderr.write(`tui --list: ${e && e.message}\n`); process.exit(1); });
     return;
   }
 

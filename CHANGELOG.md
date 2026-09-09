@@ -13,8 +13,9 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   paths); the drag-zoom graph's y-axis gutter is single-sourced with what it paints (no
   drift if metrics are reconfigured mid-zoom); the fabric ports/wire-list columns measure
   by visible width (wide-char-safe); a `spawn` action no longer leaves an unused temp
-  script in `/tmp` when no pane slot is available; and a counted panel border degrades
-  cleanly at sub-2-column widths.
+  script in `/tmp` when no pane slot is available; a counted panel border degrades
+  cleanly at sub-2-column widths; and a `--exec` / `--list` CLI failure prints a clean
+  error instead of an unhandled-promise-rejection warning.
 
 ## [0.6.27] — 2026-09-09
 

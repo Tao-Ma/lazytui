@@ -437,7 +437,12 @@ function update(model, msg) {
       // the reducer reads no ownership registry. The map's KEYS are WHICH
       // panels reset (route.resetGroupOwners is the single source); null owner
       // skips that panel. Routing by Component NAME so the fanout resolves to
-      // the kind's primary instance (containers → docker).
+      // the kind's primary instance (containers → docker). NOTE: a Component-name
+      // wrap reaches only the PRIMARY instance (loop.js getPrimaryByKind), so if a
+      // layout ever placed TWO panes of the same reset kind, the non-primary one
+      // would keep its cursor/filter across a group switch. These panels are
+      // singleton-by-design today, so that case isn't reached — revisit here (route
+      // per-paneId, not per-kind) if a second same-kind instance becomes real.
       const cmds = [{ type: 'select_cancel_all' }];
       for (const [panel, compName] of Object.entries(msg.owners || {})) {
         if (!compName) continue;
