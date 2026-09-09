@@ -424,6 +424,13 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
     jobs.close(jobId, { status: 'killed' });
     procs.delete(jobId);
     if (slotIndex.get(slotKey) === jobId) slotIndex.delete(slotKey);
+    // Flush the decoder tail (the last partial line, if any) into the record +
+    // display BEFORE the Error footer — otherwise a producer that streamed a
+    // partial line then errored (e.g. EPIPE) loses it from history.output. Mirrors
+    // the close/kill seams so all three termination paths flush the tail uniformly.
+    const tail = decoder.end();
+    if (tail) buffer += tail;
+    if (buffer) { appendDetailLine(esc(buffer), tabInstId); rec.append(buffer); if (fab) pushRaw(buffer); buffer = ''; }
     rec.append(`Error: ${err.message}`);
     rec.end('error');   // stamp endedAt so the chip's duration/time resolve
     appendDetailLine(`[error]Error: ${esc(err.message)}[/]`, tabInstId);
