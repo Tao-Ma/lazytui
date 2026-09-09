@@ -174,7 +174,13 @@ const _subKinds = {
             if (line) { try { d.onLine(line, ctx); } catch (e) { console.error(`[sub:process:${d.id}] onLine: ${e && e.message}`); } }
           }
         });
-        proc.on('exit', () => { if (token.proc === proc) token.proc = null; if (!proc.killed && !token.stopped) reconnect(); });
+        // Reconnect on 'close', NOT 'exit': an async spawn failure (ENOENT/EACCES —
+        // a missing/non-executable binary) emits 'error'+'close' and NEVER 'exit', so
+        // wiring reconnect to 'exit' left such a sub permanently dead (contradicting
+        // this descriptor's "auto-reconnects on spawn failure" contract). 'close' fires
+        // after both a normal death and a spawn failure → the retry is always scheduled.
+        // 'error' only logs (the token.reconnectTimer guard makes a double-fire a no-op).
+        proc.on('close', () => { if (token.proc === proc) token.proc = null; if (!proc.killed && !token.stopped) reconnect(); });
         proc.on('error', (e) => console.error(`[sub:process:${d.id}] stream error: ${e && e.message}`));
       };
       launch();
@@ -1049,6 +1055,10 @@ module.exports = {
   // `clock` sub actually arms/tears down as a stream job starts/ends (the
   // reconcile-gate coverage for the live action-status line).
   _liveSubKeys: () => [..._liveSubs.keys()],
+  // Test-only: the Sub-kind registry, so a test can drive a descriptor's real
+  // start()/stop() (e.g. the process-stream reconnect-on-spawn-failure path, which
+  // the descriptor-level tests don't exercise).
+  _subKinds,
   // Test-only: one live sub entry `{ kind, token, desc }` (or undefined) — lets a
   // test assert the metrics-mirror restart-on-window-grow (desc grew + token
   // identity changed = a real restart) and the no-spurious-restart non-regression.
