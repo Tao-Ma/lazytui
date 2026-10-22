@@ -6,6 +6,20 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.29] — 2026-10-22
+
+### Fixed
+
+- **The TUI Actions pane now shows the actions a feature plugin synthesizes for a group.**
+  A `config_branch` group's `save`/`load`/`check-stale`, an `archive` group's
+  `archive`/`verify`, and an image-backup group's actions now appear in the TUI — matching
+  what the CLI `--list` already showed. The feature modules (`archive`, `config-branch`,
+  `image-backup`) export only `groupActions` and aren't Components, so they were merged for
+  CLI action resolution but omitted from the TUI's resolution path; a group whose real
+  operations come from a plugin looked empty (only its declared `actions:` showed). The
+  feature-plugin list is now single-sourced and consumed by both the CLI and the TUI, so the
+  two can't drift again.
+
 ## [0.6.28] — 2026-10-22
 
 ### Changed
@@ -3514,7 +3528,8 @@ release tarballs. Full pre-squash development history is preserved
 on the internal gitea mirror under the `backup/main-history` branch
 and the `v0.1.0-pre-squash` tag.
 
-[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.28...HEAD
+[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.29...HEAD
+[0.6.29]: https://github.com/Tao-Ma/lazytui/compare/v0.6.28...v0.6.29
 [0.6.28]: https://github.com/Tao-Ma/lazytui/compare/v0.6.27...v0.6.28
 [0.6.27]: https://github.com/Tao-Ma/lazytui/compare/v0.6.26...v0.6.27
 [0.6.26]: https://github.com/Tao-Ma/lazytui/compare/v0.6.25...v0.6.26
