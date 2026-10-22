@@ -129,6 +129,7 @@ const { scheduleRender } = require('../leaves/infra/render-queue');
 // Render functions receive the slice — Components that read app-global
 // state import it explicitly via getModel(). See docs/PRINCIPLES.md §12.
 const components = {};              // name -> component spec (functions, not state)
+const groupActionPlugins = [];      // groupActions-only feature plugins (NOT Components — no init/update)
 const statusProviders = [];         // Components that expose statusFor(name)
 
 // Slice storage + panel→Component ownership map live in `./route` (a
@@ -605,7 +606,12 @@ function getGroupActions(group, groupName) {
   const m = getModel();
   const result = {};
   const guard = require('./plugin-guard');
-  for (const comp of Object.values(components)) {
+  // Both registered Components AND the groupActions-only feature plugins
+  // (archive / config-branch / image-backup — registered via
+  // registerGroupActionPlugin at boot) contribute. Keeping the feature plugins
+  // in the same resolution path is what stops the CLI/TUI drift: the CLI merges
+  // the same list in cli._mergeForGroup, both reading feature/plugins.js.
+  for (const comp of [...Object.values(components), ...groupActionPlugins]) {
     if (typeof comp.groupActions !== 'function') continue;
     try {
       // Always routed through the purity guard: read-only-wraps + times every
@@ -617,6 +623,22 @@ function getGroupActions(group, groupName) {
     }
   }
   return result;
+}
+
+/**
+ * Register a groupActions-only feature plugin (archive / config-branch /
+ * image-backup). These export `{ name, groupActions }` and are NOT Components
+ * (no init/update/panelTypes), so they can't go through registerComponent; they
+ * mint no slice, pane, or subscription — getGroupActions just also consults
+ * them. Idempotent by name. Single source: feature/plugins.js (see that file).
+ */
+function registerGroupActionPlugin(plugin) {
+  if (!plugin || typeof plugin.name !== 'string' || typeof plugin.groupActions !== 'function') {
+    console.error('[group-action-plugin] missing name or groupActions(); skipping');
+    return;
+  }
+  if (groupActionPlugins.some((p) => p.name === plugin.name)) return;  // idempotent (re-boot / replay)
+  groupActionPlugins.push(plugin);
 }
 
 /**
@@ -706,7 +728,7 @@ module.exports = {
   // --- Component registry / lifecycle ---
   // dispatchMsg / dispatchKeyToFocused / setInstanceReconciler relocated to
   // dispatch/runtime/loop.js (B/S6 — the runtime lives in the dispatch layer now).
-  registerComponent, registerEffect, wrap,
+  registerComponent, registerGroupActionPlugin, registerEffect, wrap,
   _components: _componentsMap,  // v0.6.3 Phase B — internal use by initState + fanout
   getComponent, getComponentOwningPanel, getFocus,
   borderControlsFor, paneTypeHasBottomBar,

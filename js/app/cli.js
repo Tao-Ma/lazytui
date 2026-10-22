@@ -51,12 +51,14 @@ const { getModel } = require('../model/store');
 // contract is now "the transitive closure of these modules must not
 // have load-time side effects" — if a future commit adds one, CLI
 // mode breaks silently.
-const BUILT_IN_PLUGINS = [
-  '../panel/navigator/docker',
-  '../feature/archive',
-  '../feature/config-branch',
-  '../feature/image-backup',
-];
+// The feature plugins (archive / config-branch / image-backup) come from the
+// SINGLE source shared with the TUI (feature/plugins.js; the TUI registers the
+// same list via api.registerGroupActionPlugin) — so the CLI and TUI can't drift
+// over which groups get synthesized actions. docker is NOT in that list: it is a
+// real Component whose groupActions ride the Component registry in the TUI, but
+// Components aren't booted in CLI mode, so we merge its groupActions here too.
+const FEATURE_PLUGINS = require('../feature/plugins');
+const BUILT_IN_PLUGINS = [require('../panel/navigator/docker'), ...FEATURE_PLUGINS];
 
 /**
  * Compute the merged `{ ...plugin, ...YAML }` action set for one group.
@@ -68,10 +70,8 @@ const BUILT_IN_PLUGINS = [
  */
 function _mergeForGroup(group, groupPath, config) {
   const result = {};
-  for (const pluginPath of BUILT_IN_PLUGINS) {
-    let plugin;
-    try { plugin = require(pluginPath); } catch (_) { continue; }
-    if (typeof plugin.groupActions !== 'function') continue;
+  for (const plugin of BUILT_IN_PLUGINS) {
+    if (!plugin || typeof plugin.groupActions !== 'function') continue;
     let synth;
     try { synth = plugin.groupActions(group, groupPath, config) || {}; } catch (_) { continue; }
     Object.assign(result, synth);
@@ -238,4 +238,5 @@ function runList(configPath, filter) {
 
 module.exports = {
   runCli, runList,
+  FEATURE_PLUGINS,   // the shared feature-plugin list (also registered in the TUI) — for the drift guard
 };

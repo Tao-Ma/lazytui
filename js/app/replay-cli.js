@@ -23,8 +23,11 @@ function _installRuntime() {
   require('../panel/nav-state').setNavDispatch(effectHost());
   require('../panel/commands').setCommandsDispatch(effectHost());
   installBuiltins();
-  const { registerComponent } = require('../panel/api');
+  const { registerComponent, registerGroupActionPlugin } = require('../panel/api');
   for (const comp of require('./components').BUILTIN_COMPONENTS) registerComponent(comp);
+  // Feature plugins (groupActions-only — not Components); same single source the
+  // live boot + CLI use, so replay resolves the same group actions.
+  for (const p of require('../feature/plugins')) registerGroupActionPlugin(p);
   require('../panel/content/pty-lifecycle').install(effectHost());
   // Wire the reconcilers the finalizer needs so a replayed `set_arrange` mints
   // the per-pane slices (the sub-reconcile is skipped under replay, but wire it

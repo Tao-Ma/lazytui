@@ -271,7 +271,7 @@ function bootInteractive(opts) {
   // v0.6.4 Phase F — redraw (dispatch-then-paint) lives in the dispatch
   // layer now; paint.js is a pure view. tui orchestrates both.
   const { redraw } = require('../dispatch/control/dispatch');
-  const { registerComponent, refreshAll } = require('../panel/api');
+  const { registerComponent, registerGroupActionPlugin, refreshAll } = require('../panel/api');
   const { setupKeyListener } = require('../dispatch/control/input');
   const { getModel } = require('../model/store');
   const { installSuspendHandlers } = require('./suspend');
@@ -411,6 +411,10 @@ function bootInteractive(opts) {
   // single-sourced in app/components.js so the replay harness registers the
   // identical set. See that file + docs/v0.5-layering.md.
   for (const comp of require('./components').BUILTIN_COMPONENTS) registerComponent(comp);
+  // Feature plugins (archive / config-branch / image-backup) are groupActions-only
+  // — NOT Components — so they register through a separate hook. Same single source
+  // (feature/plugins.js) the CLI merges, so the TUI Actions pane and `--list` agree.
+  for (const p of require('../feature/plugins')) registerGroupActionPlugin(p);
 
   // Consumer Components passed directly to `run({ components })` — a compiled
   // app statically requires them and hands them in (the binary can't do the
