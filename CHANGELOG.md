@@ -6,6 +6,8 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.28] — 2026-10-22
+
 ### Changed
 
 - **Internal hardening from a follow-up review pass.** A throw in a root-reducer arm is
@@ -16,6 +18,10 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   script in `/tmp` when no pane slot is available; a counted panel border degrades
   cleanly at sub-2-column widths; and a `--exec` / `--list` CLI failure prints a clean
   error instead of an unhandled-promise-rejection warning.
+- **Regression coverage for group-row clicks.** Added a test pinning that a single mouse
+  click on a group row selects it (sets `currentGroup`, so the Actions pane and other
+  group-scoped panes follow), matching keyboard Enter — exercised end-to-end through the
+  real render + hit-test geometry. The groups-click → `nav_select` path had no test.
 
 ## [0.6.27] — 2026-09-09
 
@@ -3508,7 +3514,8 @@ release tarballs. Full pre-squash development history is preserved
 on the internal gitea mirror under the `backup/main-history` branch
 and the `v0.1.0-pre-squash` tag.
 
-[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.27...HEAD
+[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.28...HEAD
+[0.6.28]: https://github.com/Tao-Ma/lazytui/compare/v0.6.27...v0.6.28
 [0.6.27]: https://github.com/Tao-Ma/lazytui/compare/v0.6.26...v0.6.27
 [0.6.26]: https://github.com/Tao-Ma/lazytui/compare/v0.6.25...v0.6.26
 [0.6.25]: https://github.com/Tao-Ma/lazytui/compare/v0.6.24...v0.6.25
