@@ -6,6 +6,25 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.33] — 2026-10-23
+
+### Fixed
+
+- **The invoke-time popup now actually disappears when you cancel it, and its text
+  no longer spills past the box.** `fabricFieldMode` was marked `overlay: false` in
+  the mode registry (back when the only renderer was the ports-pane in-grid editor).
+  The v0.6.30 args→ports P2 wired a real centered overlay to the same mode; v0.6.32
+  gave it a renderer. But because the registry still said "not an overlay", paint.js
+  skipped its `forceFull` repaint on close — the overlay was painted via direct
+  absolute-cursor writes that bypass the cell-diff cache, and nothing told the panel
+  grid underneath to refresh. The two user-reported symptoms were two faces of the
+  same residue: the whole box lingering ("popup won't close") and the box's wider
+  rows showing past the narrow panel underneath after Esc ("text out of popup"). The
+  mode is now `overlay: true` so paint.js's close-transition detector picks it up
+  and the next frame is a clean full repaint. Both the invoke-time popup and the
+  in-grid ports-pane edit share the fix; the in-grid path pays only a cosmetic
+  one-frame full repaint on close.
+
 ## [0.6.32] — 2026-10-23
 
 ### Fixed
