@@ -607,8 +607,6 @@ function walkGroups(rawGroups, varsBlock, helpersBlock, source, parent, depth, o
           label: adata.label,
           type: adata.type || 'run',
           confirm:     adata.confirm     !== undefined ? adata.confirm     : null,
-          args:        adata.args        !== undefined ? adata.args        : null,
-          default_cmd: adata.default_cmd !== undefined ? adata.default_cmd : null,
           desc:        adata.desc        !== undefined ? adata.desc        : null,
           tab: adata.tab === true,
           // Dataflow fabric declarations (docs/ports-and-wires.md). Validated in

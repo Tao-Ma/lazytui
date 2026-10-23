@@ -43,7 +43,6 @@
 // deliberately let chrome clicks through.
 const MODES = [
   { flag: 'confirmMode',             chain: true,  overlay: true,  modal: false, reset: true, suppressChrome: true  },
-  { flag: 'promptMode',              chain: true,  overlay: true,  modal: false, reset: true, suppressChrome: true  },
   { flag: 'freeConfigTitleEditMode', chain: true,  overlay: false, modal: true,  reset: true, suppressChrome: true  },
   { flag: 'freeConfigMode',          chain: true,  overlay: true,  modal: true,  reset: true, suppressChrome: false },
   { flag: 'menuOpen',                chain: true,  overlay: true,  modal: true,  reset: true, suppressChrome: true  },

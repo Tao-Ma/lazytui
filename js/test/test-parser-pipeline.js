@@ -559,62 +559,9 @@ describe('error propagation', () => {
   });
 });
 
-describe('args / default_cmd round-trip', () => {
-  it('args present', () => {
-    const p = tmpYaml(
-      `groups:
-  g:
-    label: G
-    containers: []
-    actions:
-      gen:
-        label: Generate
-        args: client-name
-        script: |
-          echo $1
-`);
-    eq(parse(p).groups.g.actions.gen.args, 'client-name');
-  });
-  it('args absent → null', () => {
-    const p = tmpYaml(
-      `groups:
-  g:
-    label: G
-    containers: []
-    actions:
-      up: { cmd: echo up, label: Up }
-`);
-    eq(parse(p).groups.g.actions.up.args, null);
-  });
-  it('default_cmd carried alongside args', () => {
-    const p = tmpYaml(
-      `groups:
-  g:
-    label: G
-    containers: []
-    actions:
-      ping:
-        label: Ping
-        args: '[host]'
-        default_cmd: 'echo example.com'
-        script: 'echo $1'
-`);
-    const a = parse(p).groups.g.actions.ping;
-    eq(a.default_cmd, 'echo example.com');
-    eq(a.args, '[host]');
-  });
-  it('default_cmd absent → null', () => {
-    const p = tmpYaml(
-      `groups:
-  g:
-    label: G
-    containers: []
-    actions:
-      up: { cmd: echo up, label: Up }
-`);
-    eq(parse(p).groups.g.actions.up.default_cmd, null);
-  });
-});
+// P3 — the legacy `args:` / `default_cmd:` round-trip was retired alongside
+// the prompt-popup modal; both fields are now rejected as unknown keys
+// (test-parser-schema.js pins that). The parser carries ports.in instead.
 
 describe('extensible group keys pass through to the parsed group (T6)', () => {
   it('a plugin-introduced group key lands verbatim on the parsed group', () => {

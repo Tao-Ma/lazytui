@@ -150,11 +150,6 @@ function init() {
       // The pending confirm: just the display message now — the Cmd to emit on
       // `y` lives on `continuation` (E14).
       confirm: { message: '' },
-      // The args prompt: label/spec (display), text (typed), ghost
-      // (autosuggest, seeded by the caller from the yank register). The base
-      // Cmd descriptor lives on `continuation` (E14); submit parses args from
-      // text + merges them into it.
-      prompt: { label: '', spec: '', text: '', ghost: '' },
       // Copy menu: only the render-safe {label, cancel} options + idx. The
       // actual content thunks (plugin closures) stay module-held in copy.js;
       // copy_commit invokes the selected one by index.

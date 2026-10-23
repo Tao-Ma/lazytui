@@ -75,7 +75,6 @@ const modes = require('../leaves/input/modes');
 const { getModel } = require('../model/store');
 const { renderCmdline } = require('../overlay/cmdline');
 const { renderConfirmOverlay } = require('../overlay/confirm');
-const { renderPromptOverlay } = require('../overlay/prompt');
 const { renderPanelListOverlay } = require('../overlay/panel-list');
 const { renderJobsOverlay } = require('../overlay/jobs');
 // v0.6.4 Theme B — the footer row (~180 LOC) lives in its own module;
@@ -954,7 +953,6 @@ function render(model) {
   if (md.freeConfigMode)  { renderPanelListOverlay(); }
   if (md.cmdMode)     renderCmdline();
   if (md.confirmMode) renderConfirmOverlay();
-  if (md.promptMode)  renderPromptOverlay();
   if (md.registerPopupMode) renderRegisterPopup();
   if (md.prefixMode)  renderWhichKey();
   // Tab list overlay (only when active). The `[≡]` trigger glyph is
@@ -983,11 +981,10 @@ function render(model) {
 
   // Cursor visibility — derived from mode state, single emission site.
   // Cursor *position* is set inline by renderTerminalOverlay (when in
-  // terminal mode), renderCmdline (cursor at typed-text end), and
-  // renderPromptOverlay (cursor inside the prompt's input row); here
-  // we only flip whether it's visible. Eliminates the bug class where
-  // a mode forgets to call hideCursor() / showCursor() on exit.
-  if (md.terminalMode || md.cmdMode || md.promptMode) showCursor();
+  // terminal mode) and renderCmdline (cursor at typed-text end); here we
+  // only flip whether it's visible. Eliminates the bug class where a mode
+  // forgets to call hideCursor() / showCursor() on exit.
+  if (md.terminalMode || md.cmdMode) showCursor();
   else hideCursor();
 }
 

@@ -160,38 +160,19 @@ describe('vars / helpers shapes', () => {
   });
 });
 
-describe('args / default_cmd', () => {
-  it('args string accepted', () => {
-    validate({ groups: { g: { label: 'G', containers: [], actions: { a: { cmd: 'echo $1', label: 'A', args: 'name' } } } } }, 'test');
-    assert(true);
-  });
-  it('args optional', () => {
-    validate({ groups: { g: { label: 'G', containers: [], actions: { a: { cmd: 'echo', label: 'A' } } } } }, 'test');
-    assert(true);
-  });
-  it('args non-string rejected', () => {
-    expectThrow(/'args' must be a string/, () => validate({
-      groups: { g: { label: 'G', containers: [], actions: { a: { cmd: 'echo', label: 'A', args: 123 } } } },
+describe('legacy args / default_cmd — retired in P3', () => {
+  // The `args: '<string>'` prompt-hint field and its `default_cmd:` seed were
+  // retired together with the prompt-popup modal. Invoke-time args collection
+  // now goes through ports.in + fabric-field (P2); CLI positional still works
+  // via `--exec … arg1 arg2`. Parser rejects both legacy fields as unknown.
+  it('legacy args: field is rejected (unknown key)', () => {
+    expectThrow(/unknown key\(s\): args/, () => validate({
+      groups: { g: { label: 'G', containers: [], actions: { a: { cmd: 'echo $1', label: 'A', args: 'name' } } } },
     }, 'test'));
   });
-  it('default_cmd accepted alongside args', () => {
-    validate({ groups: { g: { label: 'G', containers: [], actions: { a: {
-      cmd: 'echo $1', label: 'A', args: '[host]', default_cmd: 'echo example.com',
-    } } } } }, 'test');
-    assert(true);
-  });
-  it('default_cmd non-string rejected', () => {
-    expectThrow(/'default_cmd' must be a string/, () => validate({
-      groups: { g: { label: 'G', containers: [], actions: { a: {
-        cmd: 'echo', label: 'A', args: '[h]', default_cmd: 42,
-      } } } },
-    }, 'test'));
-  });
-  it("default_cmd without args rejected", () => {
-    expectThrow(/'default_cmd' requires 'args'/, () => validate({
-      groups: { g: { label: 'G', containers: [], actions: { a: {
-        cmd: 'echo', label: 'A', default_cmd: 'echo x',
-      } } } },
+  it('legacy default_cmd: field is rejected (unknown key)', () => {
+    expectThrow(/unknown key\(s\): default_cmd/, () => validate({
+      groups: { g: { label: 'G', containers: [], actions: { a: { cmd: 'echo', label: 'A', default_cmd: 'echo x' } } } },
     }, 'test'));
   });
 });

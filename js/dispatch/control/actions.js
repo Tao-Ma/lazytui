@@ -30,7 +30,6 @@ const { getPanelDef, getItems, getMergedActions, getInstanceSlice,
 const { dispatchMsg } = require('../runtime/loop');
 const { focusedTerminalId } = require('../../panel/terminal-surfaces');
 const { isSessionDead, restartSession } = require('../../io/terminal');
-const { execSync } = require('child_process');
 const { getModel } = require('../../model/store');
 const route = require('../../panel/route');
 const { killAction: _killAction } = require('../../leaves/proc/kill-signals');
@@ -62,30 +61,6 @@ function _viewerTabBundle() {
 // cached module — Node caches require, so this is essentially free.
 // Stable shape lets handleAction arms read like the original.
 function applyMsg(msg) { return require('./dispatch').applyMsg(msg); }
-
-/**
- * Synchronously evaluate an action's `default_cmd` to pre-fill its
- * prompt input. Bounded by a short timeout so a misbehaving snippet
- * can't freeze the UI; a failure (non-zero rc, timeout, missing file)
- * silently falls back to empty — the prompt opens as it would have
- * without `default_cmd:`. Stderr is dropped; we don't want grep noise
- * spilling onto the screen between frames.
- */
-function resolvePromptDefault(act) {
-  if (!act || !act.default_cmd) return '';
-  try {
-    const out = execSync(act.default_cmd, {
-      shell: '/bin/sh',
-      cwd: getModel().projectDir,
-      timeout: 1000,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    });
-    return (out || '').trim();
-  } catch {
-    return '';
-  }
-}
 
 // --- Selection / focus helpers ---
 
@@ -170,23 +145,12 @@ function activateTerminal() {
  *  the panel, the leader bindings, and any future caller can't drift on
  *  how `args:` / `confirm:` are handled. */
 function _runResolvedAction(key, act) {
-  if (act.args) {
-    const initial = resolvePromptDefault(act);
-    // Seed the autosuggest ghost from the yank register's top (first line).
-    const top = require('../../leaves/register').top(getModel().register);
-    const ghost = String(top || '').split('\n')[0];
-    // Stage the prompt through update with a base run_action Cmd — submit
-    // parses args + re-enters runAction (so an action that's ALSO confirm:
-    // still confirms after the prompt). The Cmd carries data, not a closure.
-    applyMsg({
-      type: 'prompt_enter',
-      label: `Run: ${act.label}`, spec: act.args, text: initial,
-      ghost: ghost && ghost !== initial ? ghost : '',
-      cmd: { type: 'run_action', actionKey: key, action: act },
-    });
-  } else {
-    runAction(key, act);
-  }
+  // P3 — the legacy `args: '<string>'` + prompt-popup surface was retired.
+  // Invoke-time args collection now routes through the fabric-field modal via
+  // the action-runner's _promptMissing (P2), which opens over the first missing
+  // required port when the action has ports.in declared. An action with no
+  // ports.in just runs; no args collection in that path.
+  runAction(key, act);
 }
 
 /** Run a declared action by its key, searching every group. Resolves

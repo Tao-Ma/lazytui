@@ -56,23 +56,9 @@ describe('[E14] confirm — opener-staged continuation', () => {
   });
 });
 
-describe('[E14] prompt — opener-staged continuation + arg injection', () => {
-  it('submit emits the staged Cmd with parsed args patched in', () => {
-    const base = { type: 'run_action', actionKey: 'a', action: {} };
-    const [m1] = step(fresh(), { type: 'prompt_enter', label: 'Args', text: 'foo bar', cmd: base });
-    eq(m1.modal.continuation, base, 'continuation = base Cmd');
-    const [m2, cmds] = step(m1, { type: 'prompt_submit' });
-    eq(m2.modes.promptMode, false, 'mode cleared');
-    eq(m2.modal.continuation, null, 'continuation cleared');
-    eq(cmds, [{ ...base, args: ['foo', 'bar'] }], 'emits base Cmd + parsed args');
-  });
-  it('cancel emits nothing and clears the continuation', () => {
-    const [m1] = step(fresh(), { type: 'prompt_enter', label: 'X', cmd: { type: 'run_action' } });
-    const [m2, cmds] = step(m1, { type: 'prompt_cancel' });
-    eq(cmds, [], 'cancel emits no Cmd');
-    eq(m2.modal.continuation, null, 'continuation cleared');
-  });
-});
+// P3 — the legacy args-prompt modal (`prompt_enter`/`prompt_submit`) was retired
+// along with its continuation path; invoke-time args collection now rides the
+// fabric-field modal with a `pendingAction` (see test-shell-action-prompt.js).
 
 describe('[E14] copy — fixed base, patched with the chosen idx/label', () => {
   it('enter stages {copy_commit}; select patches idx+label; clears', () => {
@@ -172,36 +158,16 @@ describe('[menu-back] restore the previous menu (Backspace / "← Back" row)', (
   });
 });
 
-describe('[E14] flat-modal guard — async confirm_enter must not stomp an open modal', () => {
-  it('a confirm_enter while a prompt is open is dropped; the prompt continuation survives', () => {
-    const base = { type: 'run_action', actionKey: 'deploy', action: {} };
-    const [m1] = step(fresh(), { type: 'prompt_enter', label: 'Args', text: 'foo', cmd: base });
-    eq(m1.modes.promptMode, true, 'prompt open');
-    eq(m1.modal.continuation, base, 'prompt staged its continuation');
-    // An async confirm_enter (e.g. an unrouted-stream preempt, stream.js) collides
-    // while the prompt owns the screen. The flat-modal guard drops it rather than
-    // opening a second modal that would clobber the shared continuation slot.
-    const [m2, cmds] = step(m1, { type: 'confirm_enter', message: 'Kill?', cmd: { type: 'unrouted_preempt_and_run' } });
-    eq(m2.modes.confirmMode, false, 'confirm did NOT open over the prompt');
-    eq(cmds, [], 'the dropped confirm emits nothing');
-    eq(m2.modal.continuation, base, 'the prompt continuation was NOT clobbered');
-    // The prompt still submits its own staged Cmd.
-    const [m3, scmds] = step(m2, { type: 'prompt_submit' });
-    eq(scmds, [{ ...base, args: ['foo'] }], 'prompt_submit still emits its staged Cmd + parsed args');
-    eq(m3.modal.continuation, null, 'continuation cleared after submit');
-  });
-
-  it('prompt_enter and copy_enter are ALSO dropped over a live modal (guard is not confirm-only)', () => {
-    // Open a confirm with a staged continuation, then try to open prompt/copy
-    // over it — both must be no-ops that leave the confirm + its continuation.
+describe('[E14] flat-modal guard — async *_enter must not stomp an open modal', () => {
+  it('copy_enter over a live confirm is dropped; the confirm continuation survives', () => {
+    // Open a confirm with a staged continuation, then try to open copy over it —
+    // a no-op that leaves the confirm + its continuation intact. (The guard is
+    // generic; the retired prompt arm used to assert this too, retired in P3.)
     const cc = { type: 'do_run', actionKey: 'deploy' };
     const [c1] = step(fresh(), { type: 'confirm_enter', message: 'Sure?', cmd: cc });
-    const [c2] = step(c1, { type: 'prompt_enter', label: 'Args', cmd: { type: 'run_action' } });
-    eq(c2.modes.promptMode, false, 'prompt did NOT open over the confirm');
-    eq(c2.modal.continuation, cc, 'confirm continuation intact after the dropped prompt');
-    const [c3] = step(c2, { type: 'copy_enter', options: [{ label: 'sha' }] });
-    eq(c3.modes.copyMode, false, 'copy did NOT open over the confirm');
-    eq(c3.modal.continuation, cc, 'confirm continuation intact after the dropped copy');
+    const [c2] = step(c1, { type: 'copy_enter', options: [{ label: 'sha' }] });
+    eq(c2.modes.copyMode, false, 'copy did NOT open over the confirm');
+    eq(c2.modal.continuation, cc, 'confirm continuation intact after the dropped copy');
   });
 });
 

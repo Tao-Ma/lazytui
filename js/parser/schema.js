@@ -64,7 +64,7 @@ const VALID_ARCHIVE_KEYS = new Set(['target', 'output_dir', 'name']);
 const VALID_CONFIG_BRANCH_KEYS = new Set(['branch', 'paths', 'excludes', 'source', 'categories']);
 const VALID_IMAGES_KEYS = new Set(['list', 'output_dir']);
 const VALID_TERMINAL_KEYS = new Set(['cmd', 'label']);
-const VALID_ACTION_KEYS = new Set(['cmd', 'script', 'label', 'type', 'confirm', 'args', 'default_cmd', 'desc', 'tab', 'output', 'parse', 'ports', 'run']);
+const VALID_ACTION_KEYS = new Set(['cmd', 'script', 'label', 'type', 'confirm', 'desc', 'tab', 'output', 'parse', 'ports', 'run']);
 
 function isMapping(v) {
   return v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -1001,16 +1001,6 @@ function validateAction(groupPath, aname, adata) {
   }
   if ('confirm' in adata && typeof adata.confirm !== 'string') throw new SchemaError("'confirm' must be a string", { context: ctx });
   if ('desc'    in adata && typeof adata.desc    !== 'string') throw new SchemaError("'desc' must be a string",    { context: ctx });
-  if ('args'    in adata && typeof adata.args    !== 'string') throw new SchemaError("'args' must be a string",    { context: ctx });
-
-  if ('default_cmd' in adata) {
-    if (typeof adata.default_cmd !== 'string') {
-      throw new SchemaError("'default_cmd' must be a string", { context: ctx });
-    }
-    if (!('args' in adata)) {
-      throw new SchemaError("'default_cmd' requires 'args' to be set (default fills the prompt)", { context: ctx });
-    }
-  }
   if ('tab' in adata && typeof adata.tab !== 'boolean') {
     throw new SchemaError("'tab' must be a boolean", { context: ctx });
   }

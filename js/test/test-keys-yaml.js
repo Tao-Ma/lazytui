@@ -179,30 +179,12 @@ describe('[4] runCommandString exact match', () => {
   });
 });
 
-// ---- [5] action binding with args: routes through the prompt ------
+// ---- [5] (retired in P3) legacy `args:` + prompt-popup path ----
+// The legacy `args: '<string>'` prompt-popup surface was deleted in P3; the
+// prior "leader-resolves-to-action-opens-prompt" test lost its mechanism.
+// Component-synthesized action resolution is still covered by test [6] below.
 
 const dispatch2 = require('../dispatch/control/dispatch');
-
-describe('[5] action binding honors args:', () => {
-  it('an action with args: opens the prompt instead of running argless', () => {
-    kb.clearBindings();
-    getModel().config = {
-      groups: { g: { actions: {
-        deploy: { key: 'deploy', label: 'Deploy', script: 'echo', containers: [], type: 'run', args: ['env'] },
-      } } },
-      keys: { '<leader>d': { action: 'deploy' } },
-    };
-    // Reset prompt/confirm so we can observe the prompt opening.
-    getModel().modes.promptMode = false; getModel().modes.confirmMode = false;
-    dispatch2.loadKeyBindings(getModel().config);
-    const leaf = kb.resolve(kb.rootNode(), 'd');
-    assert(leaf && typeof leaf.run === 'function', 'binding registered');
-    leaf.run();
-    assert(getModel().modes.promptMode === true, 'args: action opened the prompt rather than running with empty args');
-    // Clean up prompt mode so we don't leak into other files.
-    getModel().modes.promptMode = false;
-  });
-});
 
 // ---- [6] leader resolves COMPONENT-synthesized actions (not just YAML) ----
 
@@ -216,7 +198,7 @@ describe('[6] action binding finds component-synthesized actions', () => {
       init: () => ({}),
       update: (msg, slice) => slice,
       groupActions: (group, groupName) => groupName === 'g'
-        ? { deploy: { key: 'deploy', label: 'Deploy', script: 'echo', containers: [], type: 'run', args: ['env'] } }
+        ? { deploy: { key: 'deploy', label: 'Deploy', script: 'echo', containers: [], type: 'run' } }
         : {},
     });
     kb.clearBindings();
@@ -224,13 +206,14 @@ describe('[6] action binding finds component-synthesized actions', () => {
       groups: { g: { label: 'G' } },          // no `actions:` here — only the plugin's
       keys: { '<leader>x': { action: 'deploy' } },
     };
-    getModel().modes.promptMode = false; getModel().modes.confirmMode = false;
     dispatch2.loadKeyBindings(getModel().config);
     const leaf = kb.resolve(kb.rootNode(), 'x');
     assert(leaf && typeof leaf.run === 'function', 'binding registered');
+    // The P3 path: resolving the action and invoking its run closure should
+    // just dispatch runAction without throwing. (No prompt-mode assertion;
+    // the args-popup surface is retired.)
     leaf.run();
-    assert(getModel().modes.promptMode === true, 'component-synthesized action resolved + opened its args prompt');
-    getModel().modes.promptMode = false;
+    assert(true, 'component-synthesized action resolved + ran without throwing');
   });
 });
 

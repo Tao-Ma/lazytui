@@ -85,14 +85,13 @@ groups:
                 label: Tail
                 actions:
                   tail:
-                    # Args plumbing demo — :tail tails 20 lines (default), :tail 100
-                    # tails 100. cmdline splits the buffer at the first whitespace;
-                    # the rest is passed to sh as positional params ($1, "$@", ...).
+                    # P3 — the legacy single-string `args:` hint retired. :tail
+                    # passes positional via the CLI/cmdline `$@` path; a config
+                    # that wants an interactive popup declares `ports.in`.
                     script: docker logs --tail "${1:-20}" tui-test-running 2>&1
                     type: run
                     label: Tail logs
                     desc: Tail last N log lines from tui-test-running (default 20)
-                    args: "[lines]"
                     tab: true
       run:
         label: Run
@@ -105,16 +104,14 @@ groups:
                 actions:
                   exec:
                     # Mirrors dev9.yml's "Run via VPN" pattern: $# guard + exec "$@".
-                    # Use to verify what an args-required action does WITHOUT args
-                    # (Enter from actions panel today: usage error, no prompt) vs.
-                    # WITH args (`:exec date` / `:exec ls /tmp` etc).
+                    # Positional args come from the CLI (`--exec … date`) or the
+                    # cmdline (`:exec date`); the legacy popup args hint retired in P3.
                     script: |
                       [ $# -gt 0 ] || { echo "Usage: <command> [args...]"; exit 1; }
                       exec "$@"
                     type: run
                     label: Exec
                     desc: Run an arbitrary command and stream output to detail
-                    args: "command [args...]"
 
   # detail: sandbox group for exercising the detail panel's tab UI
   # without touching docker. Every action is `tab: true`, so running

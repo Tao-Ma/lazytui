@@ -994,11 +994,6 @@ const _modeHandlers = {
     if (key === 'escape' || seq === 'n' || seq === 'N') applyMsg({ type: 'confirm_reject' });
     else if (seq === 'y' || seq === 'Y' || key === 'return') applyMsg({ type: 'confirm_accept' });
   },
-  promptMode:          (key, seq) => {
-    if (key === 'escape') applyMsg({ type: 'prompt_cancel' });
-    else if (key === 'return') applyMsg({ type: 'prompt_submit' });
-    else applyMsg({ type: 'prompt_key', key, seq });
-  },
   freeConfigTitleEditMode: (key, seq) => handleFreeConfigTitleEditKey(key, seq),
   freeConfigMode:          (key, seq) => handleFreeConfigKey(key, seq),
   menuOpen:            (key, seq) => handleMenuKey(key, seq),

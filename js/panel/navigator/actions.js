@@ -46,7 +46,6 @@ function getInfo(item) {
   if (action.desc) lines.push('', esc(action.desc), '');
   else lines.push('');
   lines.push(`[dim]type:[/] ${action.type || 'run'}`);
-  if (action.args) lines.push(`[dim]args:[/] <${esc(action.args)}>`);
   if (action.confirm) lines.push(`[dim]confirm:[/] ${esc(action.confirm)}`);
   const scriptLines = (action.script || '').trim().split('\n').slice(0, 8);
   lines.push('');
@@ -58,7 +57,7 @@ function getInfo(item) {
 /**
  * Format one action row. Selected rows are plain text in [reverse] (no
  * inner markup — see PRINCIPLES §8); unselected rows use [dim] for the
- * confirm/args annotations.
+ * confirm annotation.
  */
 function actionRow([key, action], i, paneId, isFocused) {
   const tag = { spawn: ' ⧉', background: ' ⇱' }[action.type] || '';
@@ -71,13 +70,11 @@ function actionRow([key, action], i, paneId, isFocused) {
   // along with the lastRunAction field itself (no readers left).
   const mark = isMs ? '*' : ' ';
   const confirmStr = action.confirm ? ' \\[confirm]' : '';
-  const argsStr = action.args ? ` <${esc(action.args)}>` : '';
   if (isSel && isFocused) {
-    return `[${theme().selected}]${mark} ${esc(action.label)}${tag}${confirmStr}${argsStr}`;
+    return `[${theme().selected}]${mark} ${esc(action.label)}${tag}${confirmStr}`;
   }
   const confirmDim = action.confirm ? ` [dim]${esc('[confirm]')}[/]` : '';
-  const argsDim = action.args ? ` [dim]<${esc(action.args)}>[/]` : '';
-  return `${mark} ${esc(action.label)}${tag}${confirmDim}${argsDim}`;
+  return `${mark} ${esc(action.label)}${tag}${confirmDim}`;
 }
 
 function render(panel, w, h, _slice, opts) {

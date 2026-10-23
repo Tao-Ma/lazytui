@@ -138,68 +138,9 @@ describe('[immutable] root reducer — confirm modal', () => {
   });
 });
 
-describe('[immutable] root reducer — prompt modal', () => {
-  it('prompt_enter sets the editing buffer', () => {
-    const m = freshModel();
-    const [next] = expectNoMutation(
-      'prompt_enter leaves input frozen',
-      () => runtime.update(m, { type: 'prompt_enter', label: 'Args', text: 'ls', ghost: 'ls -la', cmd: { type: 'do_run' } }),
-      m,
-    );
-    eq(next.modes.promptMode, true);
-    eq(next.modal.prompt.text, 'ls');
-    eq(next.modal.prompt.ghost, 'ls -la');
-  });
-
-  it('prompt_key appends a printable char', () => {
-    const armed = { ...freshModel(),
-      modes: { ...freshModel().modes, promptMode: true },
-      modal: { ...freshModel().modal, prompt: { label: '', spec: '', text: 'ls', ghost: '' } },
-    };
-    const [next] = expectNoMutation(
-      'prompt_key leaves input frozen',
-      () => runtime.update(armed, { type: 'prompt_key', seq: ' ' }),
-      armed,
-    );
-    eq(next.modal.prompt.text, 'ls ');
-    eq(armed.modal.prompt.text, 'ls', 'original buffer untouched');
-  });
-
-  it('T26 — paste support: bracketed-paste content appends to prompt', () => {
-    const armed = { ...freshModel(),
-      modes: { ...freshModel().modes, promptMode: true },
-      modal: { ...freshModel().modal, prompt: { label: '', spec: '', text: 'ls ', ghost: '' } },
-    };
-    const [next] = expectNoMutation(
-      'prompt_key paste leaves input frozen',
-      () => runtime.update(armed, { type: 'prompt_key', key: 'paste', seq: '/tmp/foo' }),
-      armed,
-    );
-    eq(next.modal.prompt.text, 'ls /tmp/foo', 'paste content appended');
-  });
-  it('T26 — paste collapses newlines in single-line prompt', () => {
-    const armed = { ...freshModel(),
-      modes: { ...freshModel().modes, promptMode: true },
-      modal: { ...freshModel().modal, prompt: { label: '', spec: '', text: '', ghost: '' } },
-    };
-    const [next] = runtime.update(armed, { type: 'prompt_key', key: 'paste', seq: 'line1\nline2\r\nline3' });
-    eq(next.modal.prompt.text, 'line1 line2 line3', 'newlines collapsed to spaces');
-  });
-
-  it('prompt_submit emits the Cmd with parsed args', () => {
-    const armed = { ...freshModel(),
-      modes: { ...freshModel().modes, promptMode: true },
-      modal: { ...freshModel().modal, prompt: { label: '', spec: '', text: 'foo bar baz', ghost: '' }, continuation: { type: 'do_run' } },
-    };
-    const [next, cmds] = expectNoMutation(
-      'prompt_submit leaves input frozen',
-      () => runtime.update(armed, { type: 'prompt_submit' }),
-      armed,
-    );
-    eq(next.modes.promptMode, false);
-    eq(cmds[0].args.join(','), 'foo,bar,baz');
-  });
-});
+// P3 — the legacy prompt modal (`prompt_enter`/`prompt_key`/`prompt_submit`)
+// was retired; its immutable-reducer tests go with it. Invoke-time args ride
+// the fabric-field modal now (test-shell-action-prompt.js pins its purity).
 
 describe('[immutable] root reducer — copy / menu / cmdline', () => {
   it('copy_nav wraps the cursor on a fresh modal', () => {
@@ -514,16 +455,15 @@ describe('[immutable] root reducer — menu_* modal', () => {
 
 // ---- T16 regression: accept arms identity-preserve when flag is off ----
 //
-// Pre-T16, confirm_accept / prompt_submit / copy_select / copy_cancel /
-// menu_activate / cmdline_submit / cmdline_cancel / register_popup_commit
-// / register_popup_drop would proceed and emit their side-effecting Cmd
-// even when the mode flag was already false (e.g. a stale double-fire).
-// Symmetric with the reject/cancel arms.
+// Pre-T16, confirm_accept / copy_select / copy_cancel / menu_activate /
+// cmdline_submit / cmdline_cancel / register_popup_commit / register_popup_drop
+// would proceed and emit their side-effecting Cmd even when the mode flag was
+// already false (e.g. a stale double-fire). Symmetric with the reject/cancel
+// arms. (prompt_submit was retired in P3 with the rest of the prompt modal.)
 
 describe('[immutable] root reducer — T16 accept-arm guards', () => {
   const cases = [
     ['confirm_accept',        {}],
-    ['prompt_submit',         {}],
     ['copy_select',           {}],
     ['copy_cancel',           {}],
     ['menu_activate',         {}],

@@ -20,10 +20,10 @@ describe('[1] registry derivations', () => {
   it('CHAIN_MODES is the modeChain precedence order', () => {
     // agentMode (live-agent A4) is LAST — every popup above wins while open.
     eq(modes.CHAIN_MODES.join(','),
-       'confirmMode,promptMode,freeConfigTitleEditMode,freeConfigMode,menuOpen,filterMode,copyMode,detailSearchMode,registerPopupMode,prefixMode,cmdMode,fabricFieldMode,paneMenuMode,jobsMode,diagLogMode,agentMode');
+       'confirmMode,freeConfigTitleEditMode,freeConfigMode,menuOpen,filterMode,copyMode,detailSearchMode,registerPopupMode,prefixMode,cmdMode,fabricFieldMode,paneMenuMode,jobsMode,diagLogMode,agentMode');
   });
   it('isOverlayActive matches the pre-registry hardcoded list', () => {
-    const overlay = ['copyMode','menuOpen','freeConfigMode','cmdMode','confirmMode','promptMode','registerPopupMode','prefixMode','paneMenuMode','jobsMode','diagLogMode'];
+    const overlay = ['copyMode','menuOpen','freeConfigMode','cmdMode','confirmMode','registerPopupMode','prefixMode','paneMenuMode','jobsMode','diagLogMode'];
     for (const f of modes.MODES.map(m => m.flag)) {
       const s = {}; s[f] = true;
       eq(modes.isOverlayActive(s), overlay.includes(f), `${f} overlay`);
@@ -40,7 +40,7 @@ describe('[1] registry derivations', () => {
     // v0.6.4 Theme D — folded input.js#_suppressesChromeClicks into the
     // MODES `suppressChrome` column; this pins behavior-equivalence with
     // the 8-mode list it replaced.
-    const suppress = ['cmdMode','menuOpen','copyMode','confirmMode','promptMode',
+    const suppress = ['cmdMode','menuOpen','copyMode','confirmMode',
                       'registerPopupMode','freeConfigTitleEditMode','terminalMode','diagLogMode','fabricFieldMode'];
     for (const f of modes.MODES.map(m => m.flag)) {
       const s = {}; s[f] = true;
@@ -64,7 +64,7 @@ describe('[2] resetModes', () => {
     modes.resetModes(s);
     for (const m of modes.MODES) eq(s[m.flag], false, `${m.flag} reset`);
     // Specifically the three that initState used to miss:
-    assert(s.confirmMode === false && s.promptMode === false && s.freeConfigTitleEditMode === false);
+    assert(s.confirmMode === false && s.freeConfigTitleEditMode === false);
   });
 });
 

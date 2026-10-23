@@ -66,7 +66,6 @@ const navHist = require('../../leaves/wm/nav-history');
 // (docs/ports-and-wires.md) — not a modal, but it delegates by the same
 // mechanism and writes its own root-model slice (model.fabric.injects).
 const confirm = require('./modal/confirm');
-const prompt = require('./modal/prompt');
 const copy = require('./modal/copy');
 const registerPopup = require('./modal/register-popup');
 const cmdline = require('./modal/cmdline');
@@ -80,7 +79,7 @@ const fabricField = require('./modal/fabric-field');
 // Build the Msg-type → sub-reducer routing table once. The root `update`
 // checks it first; a hit delegates the whole arm to that sub-reducer's `update`.
 const _SUBREDUCER_BY_TYPE = new Map();
-for (const m of [confirm, prompt, copy, registerPopup, cmdline, jobs, diagLog, menu, filter, fabric, fabricField]) {
+for (const m of [confirm, copy, registerPopup, cmdline, jobs, diagLog, menu, filter, fabric, fabricField]) {
   for (const t of m.TYPES) _SUBREDUCER_BY_TYPE.set(t, m);
 }
 
