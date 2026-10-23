@@ -61,6 +61,12 @@ const MODES = [
   // (the user-reported "popup won't disappear" + "text out of popup" residue).
   // The in-grid path pays only a trivial full repaint on close — cosmetic, no leak.
   { flag: 'fabricFieldMode',         chain: true,  overlay: true,  modal: true,  reset: true, suppressChrome: true  },
+  // Fabric multi-field FORM (args→ports slice 1) — the invoke-time popup for an
+  // action with 2+ declared `ports.in`. Opens N named/typed inputs at once with
+  // required-first grouping + per-field chips/defaults; submits atomically. The
+  // 1-port invoke-time path stays on `fabricFieldMode` (single-line fabric-field
+  // overlay); the ports-pane in-grid edit also stays on it (unchanged).
+  { flag: 'fabricFormMode',          chain: true,  overlay: true,  modal: true,  reset: true, suppressChrome: true  },
   // v0.6.4 #1 Step 2 — the one `[≡]` pane-menu (unioned the former
   // tabListMode + paneSelectMode; same column profile).
   { flag: 'paneMenuMode',            chain: true,  overlay: true,  modal: false, reset: true, suppressChrome: false },

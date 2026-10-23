@@ -75,11 +75,12 @@ const menu = require('./modal/menu');
 const filter = require('./modal/filter');
 const fabric = require('./fabric');
 const fabricField = require('./modal/fabric-field');
+const fabricForm = require('./modal/fabric-form');
 
 // Build the Msg-type → sub-reducer routing table once. The root `update`
 // checks it first; a hit delegates the whole arm to that sub-reducer's `update`.
 const _SUBREDUCER_BY_TYPE = new Map();
-for (const m of [confirm, copy, registerPopup, cmdline, jobs, diagLog, menu, filter, fabric, fabricField]) {
+for (const m of [confirm, copy, registerPopup, cmdline, jobs, diagLog, menu, filter, fabric, fabricField, fabricForm]) {
   for (const t of m.TYPES) _SUBREDUCER_BY_TYPE.set(t, m);
 }
 

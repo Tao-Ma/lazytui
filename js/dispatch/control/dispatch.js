@@ -1012,6 +1012,22 @@ const _modeHandlers = {
     else if (key === 'return') applyMsg({ type: 'fabric_field_submit' });
     else applyMsg({ type: 'fabric_field_key', key, seq });
   },
+  // Fabric multi-field FORM (args→ports slice 1). Tab / Shift-Tab move focus
+  // between the N port fields; printable keys (incl. backspace / Ctrl+U which
+  // clears the focused field) edit only the focused field; Enter submits all
+  // fields atomically; Esc discards the whole form. Reset-to-default and
+  // clear-to-empty on named hotkeys would steal letters from typing, so they
+  // are intentionally NOT bound in this slice — Ctrl+U already covers
+  // clear-to-empty via fabric_form_key; a dedicated hotkey using an unambiguous
+  // leader is a follow-up slice.
+  fabricFormMode:      (key, seq) => {
+    if      (key === 'escape')             applyMsg({ type: 'fabric_form_cancel' });
+    else if (key === 'return')             applyMsg({ type: 'fabric_form_submit' });
+    else if (key === 'tab')                applyMsg({ type: 'fabric_form_focus_next' });
+    else if (key === 'backtab'
+          || key === 'shift+tab')          applyMsg({ type: 'fabric_form_focus_prev' });
+    else                                   applyMsg({ type: 'fabric_form_key', key, seq });
+  },
   paneMenuMode:        (key, seq) => handlePaneMenuKey(key, seq),
   jobsMode:            (key, seq) => handleJobsKey(key, seq),
   diagLogMode:         (key, seq) => handleDiagLogKey(key, seq),

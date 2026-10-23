@@ -1,0 +1,294 @@
+/**
+ * Fabric multi-field FORM (args→ports slice 1) — reducer-level tests for the
+ * new invoke-time overlay that opens over an action with 2+ declared ports.in.
+ *
+ * The overlay / render-capture tests land with commit 2 (per
+ * [[feedback_render_test_new_overlays]]); this file pins the reducer contract:
+ * field materialization + sort order, chip semantics, focus wrap, atomic
+ * submit, cancel-is-atomic, and the standard flat-modal / outside-mode guards.
+ *
+ * Run: node js/test/test-fabric-form.js
+ */
+'use strict';
+
+const { describe, it, eq, assert, expectNoMutation, report } = require('./test-runner');
+const runtime = require('../app/runtime');
+
+function freshModel() {
+  const m = runtime.init();
+  m.currentGroup = 'g';
+  m.register = { history: [], cap: 10 };
+  return m;
+}
+
+const ACTION = {
+  label: 'Provision node',
+  type: 'run',
+  script: 'provision "$host" --role "$role" --port "$port"',
+  ports: {
+    in: {
+      host: { type: 'string', required: true, desc: 'target hostname' },
+      role: { type: 'string', required: true, desc: 'node role', default: 'worker' },
+      port: { type: 'string', required: false, default: '22', desc: 'SSH port' },
+      tags: { type: 'string', required: false, desc: 'comma-separated tags' },
+    },
+  },
+};
+
+// What the caller (action-runner, commit 3) passes on fabric_form_enter —
+// pre-resolved field snapshots. Order matches declaration here; the reducer
+// re-sorts by required-first.
+function fieldsFor(actionKey = 'provision') {
+  return [
+    { port: 'host', text: '',       required: true,  default: null, desc: 'target hostname' },
+    { port: 'role', text: 'worker', required: true,  default: 'worker', desc: 'node role' },
+    { port: 'port', text: '22',     required: false, default: '22', desc: 'SSH port' },
+    { port: 'tags', text: '',       required: false, default: null, desc: 'comma-separated tags' },
+  ];
+}
+const PENDING = { actionKey: 'provision', action: ACTION };
+
+const inj = (m) => (m.fabric.injects[m.currentGroup] || {});
+
+// ---- [1] enter + materialization ------------------------------------
+
+describe('[fabric-form] enter + field materialization', () => {
+  it('opens the mode + materializes fields in required-first order (frozen input)', () => {
+    const m = freshModel();
+    const [next] = expectNoMutation(
+      'fabric_form_enter leaves the input Msg + fields untouched',
+      () => runtime.update(m, { type: 'fabric_form_enter', fields: fieldsFor(), pendingAction: PENDING }),
+      m,
+    );
+    assert(next.modes.fabricFormMode, 'mode on');
+    const f = next.modal.fabricForm;
+    eq(f.focusIdx, 0, 'focus starts at the first field');
+    eq(f.pendingAction.actionKey, 'provision');
+    const order = f.fields.map((x) => x.port);
+    eq(order.join(','), 'host,role,port,tags', 'required (host,role) sorted ahead of optional (port,tags), each in declaration order');
+    // chip flags computed from (text, default): host is empty+no-default → neither chip,
+    // role equals its default → isDefault, port equals its default → isDefault, tags blank → neither.
+    const map = Object.fromEntries(f.fields.map((x) => [x.port, x]));
+    assert(!map.host.isDefault && !map.host.isModified, 'host: unset');
+    assert( map.role.isDefault && !map.role.isModified, 'role: default');
+    assert( map.port.isDefault && !map.port.isModified, 'port: default');
+    assert(!map.tags.isDefault && !map.tags.isModified, 'tags: unset');
+  });
+
+  it('a text differing from its default enters as isModified=true', () => {
+    const m = freshModel();
+    const fields = [
+      { port: 'host', text: 'node-7.lan', required: true,  default: null },
+      { port: 'role', text: 'control',    required: true,  default: 'worker' },
+    ];
+    const [next] = runtime.update(m, { type: 'fabric_form_enter', fields, pendingAction: PENDING });
+    const map = Object.fromEntries(next.modal.fabricForm.fields.map((x) => [x.port, x]));
+    assert( map.host.isModified && !map.host.isDefault, 'host: typed');
+    assert( map.role.isModified && !map.role.isDefault, 'role: overridden default');
+  });
+
+  it('is refused over a live modal (flat-modal guard)', () => {
+    const m = freshModel();
+    m.modes.cmdMode = true;
+    const [same] = runtime.update(m, { type: 'fabric_form_enter', fields: fieldsFor(), pendingAction: PENDING });
+    assert(!same.modes.fabricFormMode, 'did not open over cmdline');
+  });
+
+  it('refuses an empty or missing field list', () => {
+    const m = freshModel();
+    const [a] = runtime.update(m, { type: 'fabric_form_enter', fields: [], pendingAction: PENDING });
+    assert(!a.modes.fabricFormMode, 'empty fields → no-op');
+    const [b] = runtime.update(m, { type: 'fabric_form_enter', pendingAction: PENDING });
+    assert(!b.modes.fabricFormMode, 'missing fields → no-op');
+  });
+});
+
+// ---- [2] key editing (focused field only) ---------------------------
+
+describe('[fabric-form] key editing', () => {
+  function open() {
+    let m = freshModel();
+    [m] = runtime.update(m, { type: 'fabric_form_enter', fields: fieldsFor(), pendingAction: PENDING });
+    return m;
+  }
+
+  it('printable chars append to the FOCUSED field only; sibling fields unchanged', () => {
+    let m = open();
+    for (const c of 'node-7.lan') {
+      [m] = runtime.update(m, { type: 'fabric_form_key', key: c, seq: c });
+    }
+    const map = Object.fromEntries(m.modal.fabricForm.fields.map((x) => [x.port, x]));
+    eq(map.host.text, 'node-7.lan', 'focused field received the text');
+    assert(map.host.isModified && !map.host.isDefault, 'host flipped to modified');
+    eq(map.role.text, 'worker', 'sibling untouched');
+    assert(map.role.isDefault && !map.role.isModified, 'sibling chip unchanged');
+  });
+
+  it('backspace trims the focused field; Ctrl+U clears it', () => {
+    let m = open();
+    for (const c of 'abc') [m] = runtime.update(m, { type: 'fabric_form_key', key: c, seq: c });
+    [m] = runtime.update(m, { type: 'fabric_form_key', seq: '\x7f' });
+    eq(m.modal.fabricForm.fields[0].text, 'ab');
+    [m] = runtime.update(m, { type: 'fabric_form_key', seq: '\x15' });
+    eq(m.modal.fabricForm.fields[0].text, '');
+    assert(!m.modal.fabricForm.fields[0].isModified, 'empty + no default → not modified');
+  });
+
+  it('typing on a defaulted field flips isDefault → isModified; typing the default back restores isDefault', () => {
+    let m = open();
+    // focus is on `host` (required-first order). Move to `role` (index 1).
+    [m] = runtime.update(m, { type: 'fabric_form_focus_next' });
+    // Append an 's' to make it 'workers'.
+    [m] = runtime.update(m, { type: 'fabric_form_key', key: 's', seq: 's' });
+    let role = m.modal.fabricForm.fields[1];
+    eq(role.text, 'workers');
+    assert(role.isModified && !role.isDefault);
+    // Backspace it back to 'worker'.
+    [m] = runtime.update(m, { type: 'fabric_form_key', seq: '\x7f' });
+    role = m.modal.fabricForm.fields[1];
+    eq(role.text, 'worker');
+    assert(role.isDefault && !role.isModified, 'back to default → chip restored');
+  });
+
+  it('ignores non-printable keys the editor does not handle', () => {
+    let m = open();
+    const [same] = runtime.update(m, { type: 'fabric_form_key', key: 'f7' });
+    assert(same === m, 'no-op → identity preserved');
+  });
+});
+
+// ---- [3] focus wrap -------------------------------------------------
+
+describe('[fabric-form] focus wrap', () => {
+  function open() {
+    let m = freshModel();
+    [m] = runtime.update(m, { type: 'fabric_form_enter', fields: fieldsFor(), pendingAction: PENDING });
+    return m;
+  }
+
+  it('focus_next advances; wraps from last → first', () => {
+    let m = open();
+    for (let i = 0; i < 3; i++) [m] = runtime.update(m, { type: 'fabric_form_focus_next' });
+    eq(m.modal.fabricForm.focusIdx, 3, 'at the last field');
+    [m] = runtime.update(m, { type: 'fabric_form_focus_next' });
+    eq(m.modal.fabricForm.focusIdx, 0, 'wrapped to first');
+  });
+
+  it('focus_prev retreats; wraps from first → last', () => {
+    let m = open();
+    [m] = runtime.update(m, { type: 'fabric_form_focus_prev' });
+    eq(m.modal.fabricForm.focusIdx, 3, 'wrapped to last');
+  });
+});
+
+// ---- [4] reset_default / clear --------------------------------------
+
+describe('[fabric-form] reset / clear', () => {
+  function open() {
+    let m = freshModel();
+    [m] = runtime.update(m, { type: 'fabric_form_enter', fields: fieldsFor(), pendingAction: PENDING });
+    // Move focus to `role` (has a default).
+    [m] = runtime.update(m, { type: 'fabric_form_focus_next' });
+    // Edit it to a non-default value.
+    for (const c of 'control') [m] = runtime.update(m, { type: 'fabric_form_key', seq: '\x7f' });
+    for (const c of 'control') [m] = runtime.update(m, { type: 'fabric_form_key', key: c, seq: c });
+    return m;
+  }
+
+  it('reset_default restores a defaulted field to its default value', () => {
+    let m = open();
+    [m] = runtime.update(m, { type: 'fabric_form_reset_default' });
+    const role = m.modal.fabricForm.fields[1];
+    eq(role.text, 'worker');
+    assert(role.isDefault && !role.isModified, 'back to default chip');
+  });
+
+  it('reset_default on a defaultless field clears it to empty', () => {
+    let m = freshModel();
+    [m] = runtime.update(m, { type: 'fabric_form_enter', fields: fieldsFor(), pendingAction: PENDING });
+    // Focus host (no default); type a value.
+    for (const c of 'xyz') [m] = runtime.update(m, { type: 'fabric_form_key', key: c, seq: c });
+    [m] = runtime.update(m, { type: 'fabric_form_reset_default' });
+    const host = m.modal.fabricForm.fields[0];
+    eq(host.text, '');
+    assert(!host.isDefault && !host.isModified, 'empty + no default → neither chip');
+  });
+
+  it('clear always empties the focused field', () => {
+    let m = open();
+    [m] = runtime.update(m, { type: 'fabric_form_clear' });
+    const role = m.modal.fabricForm.fields[1];
+    eq(role.text, '');
+    // role has default='worker', so empty-and-not-default = isModified
+    assert(role.isModified && !role.isDefault, 'clear-with-default → modified (explicit blank)');
+  });
+});
+
+// ---- [5] submit (atomic + modified-only injects) --------------------
+
+describe('[fabric-form] submit', () => {
+  it('writes a one-shot inject for every MODIFIED field; nothing for defaulted/unset fields; emits do_run', () => {
+    let m = freshModel();
+    m.now = 1234;
+    [m] = runtime.update(m, { type: 'fabric_form_enter', fields: fieldsFor(), pendingAction: PENDING });
+    // Type a host (modified from unset); leave role at its default; override port to '2222'; leave tags blank.
+    for (const c of 'node-7.lan') [m] = runtime.update(m, { type: 'fabric_form_key', key: c, seq: c });
+    [m] = runtime.update(m, { type: 'fabric_form_focus_next' });  // role
+    [m] = runtime.update(m, { type: 'fabric_form_focus_next' });  // port
+    for (const c of 'port') [m] = runtime.update(m, { type: 'fabric_form_key', seq: '\x7f' });  // backspace '22' (2 chars → leaves '')
+    // Actually '22' is 2 chars; let me explicitly empty + retype.
+    [m] = runtime.update(m, { type: 'fabric_form_key', seq: '\x15' });  // Ctrl+U
+    for (const c of '2222') [m] = runtime.update(m, { type: 'fabric_form_key', key: c, seq: c });
+    const [next, cmds] = runtime.update(m, { type: 'fabric_form_submit' });
+    const injects = inj(next);
+    eq(injects['provision.host'].value, 'node-7.lan', 'host written');
+    assert(injects['provision.host'].oneShot === true, 'host is one-shot');
+    eq(injects['provision.port'].value, '2222', 'port written');
+    assert(!('provision.role' in injects), 'role at default → no inject');
+    assert(!('provision.tags' in injects), 'tags unset → no inject');
+    assert(!next.modes.fabricFormMode, 'form closed');
+    eq(next.modal.fabricForm.fields.length, 0, 'buffer cleared');
+    eq(cmds.length, 1, 'exactly one cmd');
+    eq(cmds[0].type, 'do_run');
+    eq(cmds[0].actionKey, 'provision');
+  });
+
+  it('submit without a pendingAction just closes (degenerate state, no cmd emitted)', () => {
+    let m = freshModel();
+    [m] = runtime.update(m, { type: 'fabric_form_enter', fields: fieldsFor(), pendingAction: null });
+    const [next, cmds] = runtime.update(m, { type: 'fabric_form_submit' });
+    assert(!next.modes.fabricFormMode, 'closed');
+    eq(cmds.length, 0, 'no cmd');
+    eq(Object.keys(inj(next)).length, 0, 'no injects written');
+  });
+});
+
+// ---- [6] cancel is atomic ------------------------------------------
+
+describe('[fabric-form] cancel', () => {
+  it('cancel closes WITHOUT writing any injects — the form is atomic by construction', () => {
+    let m = freshModel();
+    [m] = runtime.update(m, { type: 'fabric_form_enter', fields: fieldsFor(), pendingAction: PENDING });
+    for (const c of 'typed-stuff') [m] = runtime.update(m, { type: 'fabric_form_key', key: c, seq: c });
+    const [next, cmds] = runtime.update(m, { type: 'fabric_form_cancel' });
+    assert(!next.modes.fabricFormMode);
+    eq(Object.keys(inj(next)).length, 0, 'nothing in injects');
+    eq(cmds.length, 0, 'no cmd on cancel');
+  });
+});
+
+// ---- [7] outside-mode no-ops ----------------------------------------
+
+describe('[fabric-form] outside the mode', () => {
+  it('key / focus / reset / clear / submit / cancel are no-ops when fabricFormMode is off', () => {
+    const m = freshModel();
+    for (const type of ['fabric_form_key', 'fabric_form_focus_next', 'fabric_form_focus_prev',
+                        'fabric_form_reset_default', 'fabric_form_clear',
+                        'fabric_form_submit', 'fabric_form_cancel']) {
+      const [same] = runtime.update(m, { type, seq: 'x' });
+      assert(same === m, `${type} returns identity`);
+    }
+  });
+});
+
+report();

@@ -183,6 +183,13 @@ function init() {
       // the typed text. Committed as a sticky inject on submit (→
       // model.fabric.injects), discarded on cancel. Transient UI, replayable.
       fabricField: { paneId: null, addr: null, text: '' },
+      // Fabric multi-field FORM (args→ports slice 1) — the invoke-time popup for an
+      // action with 2+ `ports.in`. `fields` holds the materialized per-port rows
+      // (required-first order; each row = {port, text, isDefault, isModified,
+      // required, default, desc}); `focusIdx` points at the active field; submit
+      // writes one-shot injects for each modified field + re-dispatches the pending
+      // run. Transient UI, WAL-replayable.
+      fabricForm: { fields: [], focusIdx: 0, pendingAction: null },
     },
     // Framework-level state: parsed config, paths, leader-mode buffers,
     // misc flags. The layout struct + freeConfig state + viewMode + focus
