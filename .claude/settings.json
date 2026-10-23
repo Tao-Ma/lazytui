@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node js/test/*.js)",
+      "Bash(node js/scripts/run-tests.js*)",
+      "Bash(node js/scripts/run-smoke.js*)"
+    ]
+  }
+}
