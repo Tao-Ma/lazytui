@@ -6,6 +6,37 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.30] — 2026-10-23
+
+### Changed
+
+- **One parameter model for every action — `ports.in` replaces `args:`.** A `type: run`
+  action (shell `script:` or argv `run:`) declares its interactive inputs as named typed
+  input ports — `ports.in: { name: { type, required, desc, default? } }`. Resolution
+  runs through the fabric's `inject > wire > default > error` precedence. For an argv
+  action the resolved values fill `{{name}}` holes (no shell parse); for a shell action
+  they bind as the child's environment variables, so the script references `$name` and
+  the kernel delivers each value as a literal env entry regardless of its bytes. The CLI
+  (`--exec group:action arg1 arg2 …`) maps positional args to port names in declaration
+  order and errors with a usage hint when a required port is unset; actions without
+  `ports.in` keep the POSIX `$@` behavior unchanged.
+- **Invoke-time prompt rides the fabric-field modal.** Invoking an action whose required
+  `ports.in` isn't resolved (no wire, no inject, no default) now opens the same
+  single-line modal the component-ports pane uses for manual edits, carrying a
+  `pendingAction` context. Submit writes a one-shot inject and re-dispatches the action;
+  if another required port is still missing the next prompt opens, otherwise the action
+  runs and the one-shot entries are consumed. Cancel drops the pending action cleanly.
+- **Legacy args prompt surface retired.** The single-string `args: '<hint>'` schema
+  field and its paired `default_cmd:` seed are now rejected as unknown keys. The
+  `prompt.js` reducer + overlay + `promptMode` state are deleted. Any action that
+  wants an interactive popup declares `ports.in`; `archive.verify` has been migrated
+  as the first (and only remaining in-tree) user — it now reads `$file` from a
+  declared `file: { type: string, required: true }` port.
+
+See `docs/ports-and-wires.md` ("Invoke-time prompt — args→ports convergence") for the
+full design + reducer/action-runner wiring, and `docs/msg-routes.md` §5.10 for the
+fabric-field modal's two paths (ports-pane manual edit vs invoke-time prompt).
+
 ## [0.6.29] — 2026-10-22
 
 ### Fixed
@@ -3528,7 +3559,8 @@ release tarballs. Full pre-squash development history is preserved
 on the internal gitea mirror under the `backup/main-history` branch
 and the `v0.1.0-pre-squash` tag.
 
-[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.29...HEAD
+[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.30...HEAD
+[0.6.30]: https://github.com/Tao-Ma/lazytui/compare/v0.6.29...v0.6.30
 [0.6.29]: https://github.com/Tao-Ma/lazytui/compare/v0.6.28...v0.6.29
 [0.6.28]: https://github.com/Tao-Ma/lazytui/compare/v0.6.27...v0.6.28
 [0.6.27]: https://github.com/Tao-Ma/lazytui/compare/v0.6.26...v0.6.27
