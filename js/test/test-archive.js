@@ -45,7 +45,9 @@ describe('[2] groupActions synthesizes archive + verify', () => {
     eq(keys.join(','), 'archive,verify', 'two actions only');
     eq(a.archive.type, 'run', 'archive type');
     eq(a.verify.type, 'run', 'verify type');
-    eq(a.verify.args, '<archive-file>', 'verify documents its arg');
+    eq(a.verify.ports.in.file.type, 'string', 'verify declares a `file` input port (ports/wires migration)');
+    assert(a.verify.ports.in.file.required === true, 'verify.file is required');
+    assert(a.verify.args === undefined, 'legacy `args:` field is retired on verify');
   });
   // Post-v0.6 shell-injection guard: config values are single-quote
   // escaped via shEscape before embedding. `archives` → `'archives'`

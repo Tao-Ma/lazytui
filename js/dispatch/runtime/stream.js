@@ -332,10 +332,14 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
   // Fabric no-shell path (docs/ports-and-wires.md): opts.argv is a fully-resolved
   // argv vector run via execve — spawn(prog, rest, {shell:false}) so a bound
   // value never touches a shell parser. Otherwise the legacy shell path: `-- `
-  // delimiter so $0 = "--", $1 = first arg, $@ = arg list (POSIX).
+  // delimiter so $0 = "--", $1 = first arg, $@ = arg list (POSIX). opts.env (set
+  // by action-runner when a shell action resolves `ports.in` to env values —
+  // docs/ports-and-wires.md P1) overrides the default inherit; absent → the
+  // child inherits parent env as before.
+  const spawnOpts = { cwd: getModel().projectDir, ...(opts.env ? { env: opts.env } : {}) };
   const proc = Array.isArray(opts.argv) && opts.argv.length
-    ? spawn(opts.argv[0], opts.argv.slice(1), { cwd: getModel().projectDir, shell: false })
-    : spawn('sh', ['-c', cmd, '--', ...args], { cwd: getModel().projectDir });
+    ? spawn(opts.argv[0], opts.argv.slice(1), { ...spawnOpts, shell: false })
+    : spawn('sh', ['-c', cmd, '--', ...args], spawnOpts);
   const jobId = jobs.register({
     kind: routed ? 'stream-routed' : 'stream-unrouted',
     label: headerLabel,

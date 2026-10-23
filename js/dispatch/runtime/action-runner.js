@@ -255,7 +255,39 @@ function doRun(actionKey, action, args = []) {
   // of reseeding on re-run — a status-over-time log. Best paired with tab:true so
   // it accumulates in its own tab, not the shared Transcript. See docs/DATAFLOW.md.
   if (action.output === 'append') opts.append = true;
+  // Convergence (docs/ports-and-wires.md P1 — shell path): if the action declares
+  // `ports.in`, resolve via wire/inject the same way doRunFabric does, and bind
+  // the resolved values as the child shell's environment (opts.env → stream.js
+  // spawn). The script references `$name` instead of `$1`; a bound value never
+  // touches a shell parser so bytes arrive literally. Unready → surface the per-
+  // input reason and skip the run (mirrors the doRunFabric error path).
+  if (action.ports && action.ports.in) {
+    const { ready, values, missing } = _resolvePortsForAction(actionKey, action, getModel());
+    if (!ready) {
+      appendViewerLines(`[dim]$ ${esc(actionKey)}[/]\n` +
+        missing.map((m) => `[warning]not ready: ${m.reason}[/]`).join('\n'));
+      return;
+    }
+    opts.env = { ...process.env, ...values };
+  }
   streamCommand(actionKey, cmd, args, opts);
+}
+
+/**
+ * Resolve a shell action's `ports.in` the same way doRunFabric resolves a
+ * fabric action's — via sticky injects + wires + the fabric host's portValue
+ * selector, scoped to the current group. Returns `{ ready, values, missing }`
+ * from fabric/resolve.js; an action with no declared inputs resolves ready with
+ * an empty values map. Exported for shell-ports unit tests.
+ */
+function _resolvePortsForAction(actionKey, action, model) {
+  const inputs = (action.ports && action.ports.in) || {};
+  const group = model.currentGroup || '';
+  return resolveInputs(actionKey, inputs, {
+    injects: ((model.fabric && model.fabric.injects) || {})[group] || {},
+    wires: fabricPorts.listWires(),
+    portValue: fabricPorts.portValue,
+  });
 }
 
 // Fabric run (docs/ports-and-wires.md). Resolve the consumer's input ports
@@ -309,4 +341,4 @@ function doRunFabric(actionKey, action) {
 
 // Re-export streaming helpers so existing import sites
 // (dispatch.js, plugins/docker.js, cleanup.js) keep working.
-module.exports = { runAction, doRun, killAll, streamCommand, _spawnUsesTmux, doRunFabric, shQuote };
+module.exports = { runAction, doRun, killAll, streamCommand, _spawnUsesTmux, doRunFabric, shQuote, _resolvePortsForAction };

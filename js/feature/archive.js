@@ -84,12 +84,20 @@ function groupActions(group) {
       type: 'run',
       label: 'Verify',
       desc: 'Validate an archive against its .sha256 sidecar',
-      args: '<archive-file>',
+      // Named input port (docs/ports-and-wires.md P1 — shell path): the resolved
+      // value is bound as the `$file` env var when the child shell spawns, so the
+      // script never parses the user value. The TUI collects this via the fabric
+      // modal (or a wire); the CLI maps the first positional `--exec` arg to the
+      // first port in declaration order.
+      ports: {
+        in: {
+          file: { type: 'string', required: true, desc: 'archive to verify' },
+        },
+      },
       script: [
         'set -e',
         PICK_SUM,
-        'F="${1:?Usage: verify <archive-file>}"',
-        '$SUM -c "$F.sha256"',
+        '$SUM -c "$file.sha256"',
       ].join('\n'),
     },
   };

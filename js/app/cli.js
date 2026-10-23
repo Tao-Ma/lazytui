@@ -182,10 +182,35 @@ function runCli(configPath, actionPath, actionArgs) {
     ? path.resolve(path.dirname(configPath), config.project_dir)
     : path.dirname(path.resolve(configPath));
 
+  // Convergence (docs/ports-and-wires.md P1 — shell path): if the action
+  // declares `ports.in`, map CLI positional args to port names in declaration
+  // order and bind them as the child's environment ($file, $start_lsn, …) so
+  // the script references named ports instead of positional `$1`. Legacy
+  // actions (no ports.in) keep the POSIX `$@` behavior unchanged.
+  let childArgs = actionArgs;
+  let childEnv = process.env;
+  if (action.ports && action.ports.in) {
+    const portDecls = action.ports.in;
+    const portNames = Object.keys(portDecls);
+    const portEnv = {};
+    actionArgs.forEach((v, i) => { if (i < portNames.length) portEnv[portNames[i]] = v; });
+    const missing = portNames.filter((n) =>
+      (portDecls[n].required !== false) && portEnv[n] == null);
+    if (missing.length) {
+      process.stderr.write(
+        `tui --exec: missing required port(s): ${missing.join(', ')}\n` +
+        `  usage: --exec ${actionPath} ${portNames.map((n) => `<${n}>`).join(' ')}\n`);
+      return Promise.resolve(1);
+    }
+    childArgs = [];                                      // ports supersede $@
+    childEnv = { ...process.env, ...portEnv };
+  }
+
   return new Promise((resolve) => {
-    const child = spawn('sh', ['-c', script, '--', ...actionArgs], {
+    const child = spawn('sh', ['-c', script, '--', ...childArgs], {
       cwd,
       stdio: 'inherit',
+      env: childEnv,
     });
 
     // T18 — forward parent's termination signals to the child. With
