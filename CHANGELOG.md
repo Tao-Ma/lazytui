@@ -6,6 +6,23 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.32] — 2026-10-23
+
+### Fixed
+
+- **The invoke-time popup now paints.** The args→ports P2 (v0.6.30) opened the
+  fabric-field modal when a run had a required `ports.in` input missing — but the
+  only renderer was the ports-pane's in-grid editor, gated on `paneId` equality. The
+  invoke-time path dispatches with `paneId: null` and that gate never matched (and a
+  layout may have no ports pane at all), so the modal painted nothing while
+  `fabricFieldMode` swallowed every key — the TUI looked frozen (Esc still
+  cancelled; blind-typing + Enter still submitted; zero feedback). A new render-only
+  `js/overlay/fabric-field.js` paints a centered overlay only when the modal opened
+  with `paneId == null` — the ports-pane in-grid path is unchanged. The overlay
+  shows the action label, the addr, the port's declared `desc`, the edit buffer with
+  an in-buffer caret, and an enter/esc footer. Credit: dev9-env operator for
+  catching this on `session enable`.
+
 ## [0.6.31] — 2026-10-23
 
 ### Fixed
@@ -3575,7 +3592,8 @@ release tarballs. Full pre-squash development history is preserved
 on the internal gitea mirror under the `backup/main-history` branch
 and the `v0.1.0-pre-squash` tag.
 
-[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.31...HEAD
+[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.32...HEAD
+[0.6.32]: https://github.com/Tao-Ma/lazytui/compare/v0.6.31...v0.6.32
 [0.6.31]: https://github.com/Tao-Ma/lazytui/compare/v0.6.30...v0.6.31
 [0.6.30]: https://github.com/Tao-Ma/lazytui/compare/v0.6.29...v0.6.30
 [0.6.29]: https://github.com/Tao-Ma/lazytui/compare/v0.6.28...v0.6.29
