@@ -6,6 +6,22 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.31] — 2026-10-23
+
+### Fixed
+
+- **An action named with hyphens (`ddns-ping`, `rotate-host-keys`) can now declare
+  `ports.in`.** Fabric P1 (v0.6.8) required the action name to be a strict identifier
+  (`[A-Za-z_][A-Za-z0-9_]*`) when the action declared ports, because the name is
+  addressable as `name.port`. The constraint was benign while `args: '<hint>'` + the
+  prompt popup existed — configs using hyphenated action names + `args:` just worked.
+  The args→ports P3 (v0.6.30) retired `args:`, so hyphenated-named actions that
+  previously got an interactive popup now couldn't add `ports.in` without renaming.
+  The address-name rule is now **asymmetric**: port names stay strict (they bind as
+  POSIX env vars on shell actions and must `\w`-match in `{{name}}` argv holes), but
+  component / action names allow hyphens — `ddns-ping.host` splits unambiguously on
+  `.`, and the action name itself never becomes an env var.
+
 ## [0.6.30] — 2026-10-23
 
 ### Changed
@@ -3559,7 +3575,8 @@ release tarballs. Full pre-squash development history is preserved
 on the internal gitea mirror under the `backup/main-history` branch
 and the `v0.1.0-pre-squash` tag.
 
-[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.30...HEAD
+[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.31...HEAD
+[0.6.31]: https://github.com/Tao-Ma/lazytui/compare/v0.6.30...v0.6.31
 [0.6.30]: https://github.com/Tao-Ma/lazytui/compare/v0.6.29...v0.6.30
 [0.6.29]: https://github.com/Tao-Ma/lazytui/compare/v0.6.28...v0.6.29
 [0.6.28]: https://github.com/Tao-Ma/lazytui/compare/v0.6.27...v0.6.28
