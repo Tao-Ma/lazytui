@@ -55,7 +55,7 @@ external clients (**P4**, optional).
 | **Output port** | A named, typed value a component publishes — a projection of its slice. |
 | **Input port** | A named, typed value a component consumes. The consumer's named typed parameters. |
 | **Wire** | A *standing* connection `producer.out → consumer.in`, stored in config. Resolves **by reference** — re-reads the upstream each invoke. |
-| **Inject** | A *one-shot* value pushed into an input port (right-click, later the agent). **By value** — a frozen literal, sticky until replaced or cleared. |
+| **Inject** | A value pushed into an input port (right-click, invoke-time popup, later the agent). **By value** — a frozen literal. Default: **sticky** (persists until replaced or cleared). The invoke-time popup path writes `oneShot: true` so the value is consumed by the next run that resolves it. |
 | **Port value** | The current value of an output port — a derived, memoized selector over the source slice. Not stored in the model. |
 
 ## Type model — type-agnostic core
@@ -251,6 +251,46 @@ fill (above) or the unresolved list. The command run is the existing effect chan
 Insertion point: `js/dispatch/runtime/action-runner.js#doRunFabric`. The "tell" surfaces via the
 `appendViewerLines('[yellow] not ready: …')` convention (as spawn/background already do)
 and the P1.5 pane readiness badge.
+
+### Invoke-time prompt — args→ports convergence
+
+The pre-fabric "args surface" (a single string `args: '<hint>'` + a bespoke
+`prompt` modal + positional `$1/$@` substitution) was retired in favor of
+`ports.in` as the single parameter model for every action — shell *or* argv:
+
+- **Schema**: a `script:` (shell) action may declare `ports.in` the same way an
+  argv `run:` action does. Resolution runs through the same `inject > wire >
+  default > error` precedence.
+- **Binding**: for an argv action, resolved values fill the `{{name}}` holes
+  (bind-parameter, zero shell interpretation). For a shell action, they bind as
+  **environment variables** when the child `sh -c` spawns — the script
+  references `$name` and the kernel delivers the value as a literal env entry
+  regardless of its bytes. One schema, two execution flavors.
+- **Interactive collection**: when the resolver reports a required input missing
+  AND no wire exists AND no sticky inject is set, the action-runner opens the
+  **`fabric-field` modal** over the first missing required port, carrying a
+  `pendingAction = {actionKey, action}`. On submit the modal writes a **one-shot**
+  inject (`port_inject` with `oneShot: true` — not sticky, consumed by the next
+  resolve) and emits a `do_run` cmd that re-enters `doRun`. The re-entry re-
+  resolves and either opens the next prompt (per-port loop) or runs; on run,
+  `_consumeOneShotInjects` clears the one-shot entries whose source was `inject`
+  so they don't persist.
+- **Cancel**: `fabric_field_cancel` drops the `pendingAction` without emitting a
+  cmd. Previously-collected one-shot injects from the same chain stay until a
+  later invocation consumes them (resume-friendly).
+- **ports-pane edits** (`fabric_field_open` from the component-ports pane) carry
+  **no** `pendingAction` → sticky inject, no cmd emission — byte-identical to
+  the pre-P2 behavior.
+- **CLI** (`--exec group:action arg1 arg2`): positional args map to port names
+  in declaration order and bind as the child's env. Missing a required port
+  errors with a usage hint. Actions without `ports.in` keep the POSIX `$@` path.
+
+Insertion points: `_resolvePortsForAction` (shared with `doRunFabric`),
+`_promptMissing` (opens the modal), `_consumeOneShotInjects` (clears post-
+resolve) in `js/dispatch/runtime/action-runner.js`; the `pendingAction` branch of
+`fabric_field_submit` in `js/dispatch/update/modal/fabric-field.js`. Reducer
+contract pinned by `test-shell-action-prompt.js`; action-runner wiring pinned by
+`test-action-runner-prompt.js`; shell env binding by `test-shell-action-ports.js`.
 
 ## Discovery
 

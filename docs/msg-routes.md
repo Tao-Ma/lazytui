@@ -354,17 +354,13 @@ The pending action is a Cmd **descriptor** in the model (e.g.
 `{type:'do_run', actionKey, action, args}`), never a closure — so `y` re-emits
 data, replay-safe.
 
-### 5.2 `prompt` (`modal/prompt.js`) — args prompt
+### 5.2 (retired in P3) legacy args `prompt` modal
 
-| Msg | Writes | Emits | Purity |
-|---|---|---|---|
-| `prompt_enter` | `modes.promptMode→true`, `modal.prompt={label,spec,text,ghost,cmd}` | — | shell¹ |
-| `prompt_key` | `modal.prompt.text` (edit; ghost-accept via `ghostSuffix` leaf, backspace, Ctrl+U, paste) | — | ✓ |
-| `prompt_submit` | clears prompt + flag (guarded) | base `cmd` **with parsed `args`** merged (`text.trim().split(/\s+/)`) | ✓ |
-| `prompt_cancel` | clears prompt + flag (guarded) | — | ✓ |
-
-¹ `msg.ghost` (autosuggest) is seeded by the caller from the yank register
-  (which the reducer can't read).
+The single-string `args: '<hint>'` schema field and its `prompt_enter / prompt_key /
+prompt_submit / prompt_cancel` Msg family were retired in the args→ports P3
+cleanup. Invoke-time args collection is now the fabric-field modal with a
+`pendingAction` context (see **5.X `fabric-field` — invoke-time prompt (P2)**
+below, and `test-shell-action-prompt.js` for the reducer contract).
 
 ### 5.3 `copy` (`modal/copy.js`) — copy menu (content thunks stay module-held)
 
@@ -482,26 +478,35 @@ closures stay module-held in `dispatch/control/cmdline.js`.
   #D11: the body-refresh on exit is the reducer's decision (`show_selected_info`
   Cmd), not a second imperative dispatch.
 
-### 5.10 `fabric-field` (`modal/fabric-field.js`) — the component-ports in-grid input editor
+### 5.10 `fabric-field` (`modal/fabric-field.js`) — ports-pane editor + invoke-time prompt
 
-The `component-ports` pane's field editor (docs/ports-and-wires.md, "Manual field
-input = an inject"). Same shape as the cmdline/prompt editors, but the buffer edits
-ONE input port's value and commits it as a sticky inject.
+Two paths share one modal (docs/ports-and-wires.md): the component-ports pane's
+field editor ("Manual field input = an inject"), and the invoke-time args prompt
+the action-runner opens when an action's required `ports.in` isn't resolved (P2 —
+the retired legacy `prompt_enter` modal's replacement). Same single-line buffer;
+the two paths differ only by the `pendingAction` context carried on `enter`.
 
 | Msg | Writes | Emits | Purity |
 |---|---|---|---|
-| `fabric_field_enter` | `modes.fabricFieldMode→true`, `modal.fabricField={paneId,addr,text}` | — | shell¹ |
+| `fabric_field_enter` | `modes.fabricFieldMode→true`, `modal.fabricField={paneId,addr,text,pendingAction?}` | — | shell¹ |
 | `fabric_field_key` | `modal.fabricField.text` (type/backspace/Ctrl+U/paste; single-line) | — | ✓ |
-| `fabric_field_submit` | commits the raw text as a sticky inject (`fabric.applyInject`) + closes (guarded) | — | ✓² |
-| `fabric_field_cancel` | closes (guarded) | — | ✓ |
+| `fabric_field_submit` | commits raw text as inject (sticky if `pendingAction` absent, else ONE-SHOT via `applyInject(…, {oneShot:true})`) + closes (guarded) | `pendingAction` set → `[{type:'do_run', actionKey, action}]`; else `[]` | ✓² |
+| `fabric_field_cancel` | closes + drops `pendingAction` (guarded) | — | ✓ |
 
-¹ Won't open over a live modal (`isChainActive` guard, like `prompt_enter`). The
-  selected input row → `component.port` address is resolved by the
-  `fabric_field_open` effect (it needs model/focus the pure pane lacks) and
-  stamped on `msg.addr`.
-² Submit is ONE atomic reduction — the inject write (`model.fabric.injects`) + the
-  mode close, no handler cascade. Empty text injects `""` (a real, honoured value);
-  use `x`/clear to remove one. The raw text is NEVER re-parsed (bind-parameter model).
+¹ Won't open over a live modal (`isChainActive` guard, matching the retired
+  `prompt_enter`). From the ports pane, the `fabric_field_open` effect resolves
+  the selected row → `component.port` address and stamps `msg.addr`
+  (no `pendingAction`). From the action-runner, `_promptMissing` stamps
+  `addr = actionKey.portName` AND `pendingAction = {actionKey, action}`.
+
+² Submit is ONE atomic reduction — the inject write (`model.fabric.injects`) +
+  the mode close + the optional cmd. Empty text injects `""` (a real, honoured
+  value); use `x`/clear to remove one. The raw text is NEVER re-parsed
+  (bind-parameter model). The P2 `pendingAction` branch is the per-port loop:
+  the emitted `do_run` cmd re-enters `doRun`, which re-resolves — if another
+  required port is still missing, `_promptMissing` opens the next prompt; if
+  ready, `_consumeOneShotInjects` clears the one-shot entries whose source was
+  `inject` and the action spawns.
 
 ### 5.11 `fabric` (`update/fabric.js`) — the dataflow-fabric state store (NOT a modal)
 
@@ -513,19 +518,27 @@ serialised to config) yet IN-MODEL, so it rides the WAL and replay reproduces it
 
 | Msg | Writes | Emits | Purity |
 |---|---|---|---|
-| `port_inject{port,value}` | `fabric.injects[port]={value,at}` (last-write-wins; `at` from `model.now`) | — | ✓¹ |
+| `port_inject{port,value,oneShot?}` | `fabric.injects[port]={value,at,oneShot?}` (last-write-wins; `at` from `model.now`) | — | ✓¹ |
 | `port_clear{port}` | removes `fabric.injects[port]` (identity-preserve if absent) | — | ✓ |
+| `port_consume_oneshot{ports:[addr…]}` | removes each listed inject that is BOTH `oneShot` AND present (sticky entries and non-listed oneShots stay); identity-preserve on no-op | — | ✓³ |
 | `fabric_output_set{group,name,lines}` | `fabric.output[group][name]` (a producer's raw stdout, replaced per run) | — | ✓ |
 | `wire_create{from,to}` | `fabric.wires` (one runtime wire per input `to`, last-write-wins; identity-preserve on a no-op re-wire) | — | ✓² |
 | `wire_delete{from,to}` | `fabric.wires` (drop by exact endpoints; a config wire lives in the YAML → no-op) | — | ✓ |
 
-¹ Injects are STICKY (persist until overwritten or cleared, NOT auto-consumed on
-  run); resolve-time precedence is inject > wire > default. `at` is stamped from
-  `model.now` (the frame clock) — replay-safe, never `Date.now()`. `applyInject` is
-  shared with the `fabric_field_submit` modal arm (§5.10) so both paths land
-  identical state.
+¹ Injects are STICKY by default (persist until overwritten or cleared); resolve-
+  time precedence is inject > wire > default. `oneShot: true` marks a popup-
+  collected value (the fabric-field invoke-time path, §5.10) so it's consumed by
+  the next run that resolves it. `at` is stamped from `model.now` (the frame
+  clock) — replay-safe, never `Date.now()`. `applyInject` is shared with the
+  `fabric_field_submit` modal arm so both paths land identical state.
 ² Shape-guarded here; wire TYPE-equality is validated at the handler (where the
   port types are in scope) so the reducer stays a pure, dependency-light transform.
+
+³ Called by the action-runner's `_consumeOneShotInjects` right before
+  `streamCommand` so a failed spawn still consumes the value (clean one-shot
+  semantics; the next run re-prompts). Reads the resolver's `sources` map:
+  only ports whose source was `inject` AND whose record carries `oneShot: true`
+  land in the clear list. Pinned by `test-action-runner-prompt.js`.
 
 **Verdict (§5): pure TEA.** Every modal arm — and the fabric state store — is pure;
 all view/topology/clock/out-of-TEA reads are stamped onto the Msg by the dispatch
@@ -1359,7 +1372,7 @@ this is the producer-side completeness check.
 |---|---|
 | `nav_up`/`nav_down` | `moveSel` → `dispatch.navSelect` → `nav_select` |
 | `focus_left`/`focus_right`/`focus_panel` | `msg→focus_set` (layout) |
-| `run_selected` | context-dependent: focused `terminal` pane→`activateTerminal`→`terminal_enter`; focused `agent` pane→`msg→agent_activate`; action tab→`_runResolvedAction`→`prompt_enter` or `run_action` fx; groups branch→`msg→toggle_group`, leaf→`msg→focus_set(actions)`; actions→`_runResolvedAction`; else→`dispatch.showSelectedInfo`→`info_show_content` |
+| `run_selected` | context-dependent: focused `terminal` pane→`activateTerminal`→`terminal_enter`; focused `agent` pane→`msg→agent_activate`; action tab→`_runResolvedAction`→`runAction` (ports.in missing → `fabric_field_enter` with pendingAction, P2); groups branch→`msg→toggle_group`, leaf→`msg→focus_set(actions)`; actions→`_runResolvedAction`; else→`dispatch.showSelectedInfo`→`info_show_content` |
 | `next_tab`/`prev_tab` | `applyMsg(next_tab/prev_tab + _viewerTabBundle)` → `set_active_tab` (layout) |
 | `page_up`/`page_down` | content pane→`msg→viewer_scroll{delta}` (tvu); list→`_pageInListPanel`→`nav_select` |
 | `goto_top`/`goto_bottom` | content pane→`msg→viewer_scroll{to}` (tvu); list→`_jumpInListPanel`→`nav_select` |
@@ -1371,7 +1384,7 @@ this is the producer-side completeness check.
 | `send_to_port` | right-click → `applyMsg(menu_open)` (input-port picker; each row → `port_inject`) |
 | `port_inject` | `applyMsg(port_inject{port,value})` (the picked port + selection value; also the P2 agent's push primitive) |
 | `wire_create` | type-validate, then `applyMsg(wire_create{from,to})` (mismatch → diag warn, no wire) |
-| `ctx_run_action` | `_runActionByKey` → `_runResolvedAction` (`prompt_enter` / `run_action`) |
+| `ctx_run_action` | `_runActionByKey` → `_runResolvedAction` → `runAction` (ports.in missing → `fabric_field_enter` with pendingAction, P2) |
 | `ctx_run_command` | `cmdline.runCommandString` |
 | `refresh` | `api.refreshAll()` (direct async — broadcasts `refresh`) |
 | `show_help` | `overlay/help.showHelp()` (direct) |
