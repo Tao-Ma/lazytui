@@ -495,9 +495,14 @@ the two paths differ only by the `pendingAction` context carried on `enter`.
 
 ¹ Won't open over a live modal (`isChainActive` guard, matching the retired
   `prompt_enter`). From the ports pane, the `fabric_field_open` effect resolves
-  the selected row → `component.port` address and stamps `msg.addr`
-  (no `pendingAction`). From the action-runner, `_promptMissing` stamps
-  `addr = actionKey.portName` AND `pendingAction = {actionKey, action}`.
+  the selected row → `component.port` address and stamps `msg.addr` with the
+  pane's own `paneId` (no `pendingAction`). From the action-runner,
+  `_promptMissing` stamps `addr = actionKey.portName`, `paneId: null`, AND
+  `pendingAction = {actionKey, action}`. The two paths split by paneId:
+  **paneId non-null** → the ports-pane's `render` paints the editor **in-grid**
+  (gated on `ff.paneId === panel.paneId`); **paneId null** → `overlay/fabric-field.js`
+  paints a centered overlay (title = action label, addr, port desc, edit buffer
+  with in-buffer caret, enter/esc footer). Both share the same reducer arms.
 
 ² Submit is ONE atomic reduction — the inject write (`model.fabric.injects`) +
   the mode close + the optional cmd. Empty text injects `""` (a real, honoured

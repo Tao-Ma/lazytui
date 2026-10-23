@@ -277,8 +277,12 @@ The pre-fabric "args surface" (a single string `args: '<hint>'` + a bespoke
 - **Interactive collection**: when the resolver reports a required input missing
   AND no wire exists AND no sticky inject is set, the action-runner opens the
   **`fabric-field` modal** over the first missing required port, carrying a
-  `pendingAction = {actionKey, action}`. On submit the modal writes a **one-shot**
-  inject (`port_inject` with `oneShot: true` — not sticky, consumed by the next
+  `pendingAction = {actionKey, action}` and `paneId: null`. The render splits by
+  paneId — ports-pane manual edits (non-null) stay **in-grid** inside the ports
+  pane's render function; invoke-time (null) paints a centered overlay via
+  `js/overlay/fabric-field.js` (title = the action label, addr, port desc, edit
+  buffer, enter/esc footer). On submit the modal writes a **one-shot** inject
+  (`port_inject` with `oneShot: true` — not sticky, consumed by the next
   resolve) and emits a `do_run` cmd that re-enters `doRun`. The re-entry re-
   resolves and either opens the next prompt (per-port loop) or runs; on run,
   `_consumeOneShotInjects` clears the one-shot entries whose source was `inject`

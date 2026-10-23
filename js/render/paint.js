@@ -953,6 +953,11 @@ function render(model) {
   if (md.freeConfigMode)  { renderPanelListOverlay(); }
   if (md.cmdMode)     renderCmdline();
   if (md.confirmMode) renderConfirmOverlay();
+  // Invoke-time fabric-field popup (ports-pane in-grid edits paint themselves,
+  // gated on paneId equality inside the ports-pane's render — see
+  // overlay/fabric-field.js). Modes are mutually exclusive via the modeChain,
+  // so position next to confirmMode is safe.
+  if (md.fabricFieldMode) require('../overlay/fabric-field').renderFabricFieldOverlay();
   if (md.registerPopupMode) renderRegisterPopup();
   if (md.prefixMode)  renderWhichKey();
   // Tab list overlay (only when active). The `[≡]` trigger glyph is
