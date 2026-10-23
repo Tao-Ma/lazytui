@@ -10,7 +10,7 @@ const { SchemaError } = require('./errors');
 // Dataflow fabric (docs/ports-and-wires.md) — parser→fabric is a clean
 // down-edge (fabric imports nothing back). Reused so the "valid parse kinds",
 // extract shape, and address grammar have a single source of truth.
-const { parseFabricAddr, isValidFabricName } = require('../fabric/address');
+const { parseFabricAddr, isValidFabricName, isValidFabricComponentName } = require('../fabric/address');
 const { compileParse, compileExtract } = require('../fabric/parse');
 const { compileCommand, commandHoles } = require('../fabric/command');
 
@@ -1056,14 +1056,18 @@ function validateActionRun(adata, ctx) {
 }
 
 // Validate an action's `ports: { in?, out? }`. The action NAME is addressable
-// as `name.port`, so it must be a dot-free identifier (decision 4). Every port
-// carries a required `type` (the equality-match key); an output port projects
-// via `from` (defaults to the port name) OR a `{regex,group}` extract, not both.
+// as `name.port` (decision 4 — dot-free), so hyphens are fine (hyphen != dot)
+// but every segment must still be free of the `.` separator. Port NAMES stay
+// stricter — they bind as POSIX env vars and must `\w`-match in `{{name}}`
+// template holes. Every port carries a required `type` (the equality-match
+// key); an output port projects via `from` (defaults to the port name) OR a
+// `{regex,group}` extract, not both.
 function validateActionPorts(aname, ports, ctx) {
   if (!isMapping(ports)) throw new SchemaError("'ports' must be a mapping", { context: ctx });
-  if (!isValidFabricName(aname)) {
+  if (!isValidFabricComponentName(aname)) {
     throw new SchemaError(
-      `action name '${aname}' declares ports, so it must be an identifier [A-Za-z_][A-Za-z0-9_]*`,
+      `action name '${aname}' declares ports, so it must be [A-Za-z_][A-Za-z0-9_-]* ` +
+      `(identifiers with hyphens ok, dots reserved as the address separator)`,
       { context: ctx });
   }
   for (const dir of Object.keys(ports)) {

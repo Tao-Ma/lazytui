@@ -73,11 +73,30 @@ describe('[fabric-schema] ports validation', () => {
   it('rejects from/extract on an input port', () => {
     assert(throws(() => validate(baseCfg(pg => { pg.actions.xlogminer.ports.in.start_lsn.from = 'x'; }))));
   });
-  it('rejects a non-identifier action name that declares ports', () => {
+  it('rejects an action name that would collide with the `.` address separator', () => {
+    // Post-v0.6.31: hyphens in action names are OK (component-name rule relaxed
+    // for configs like `ddns-ping` + ports.in; see test-hyphenated-action-ports.js).
+    // Dots still break `parseFabricAddr`'s `component.port` split, so names with
+    // dots must still be rejected when the action declares ports.
     const msg = errOf(() => validate(baseCfg(pg => {
-      pg.actions['bad-name'] = { label: 'b', cmd: 'x', ports: { out: { p: { type: 't' } } } };
+      pg.actions['bad.name'] = { label: 'b', cmd: 'x', ports: { out: { p: { type: 't' } } } };
     })));
-    assert(/identifier/.test(msg), msg);
+    assert(/\[A-Za-z_\]\[A-Za-z0-9_-\]\*/.test(msg) || /identifier/.test(msg), msg);
+  });
+
+  it('accepts a HYPHENATED action name that declares ports (post-v0.6.31)', () => {
+    // Was a regression after v0.6.30 retired `args:` — hyphenated action names
+    // couldn't easily get an interactive popup without renaming. Component-name
+    // rule was relaxed to [A-Za-z_][A-Za-z0-9_-]*; port names stay strict.
+    let threw = null;
+    try {
+      validate(baseCfg(pg => {
+        pg.actions['rotate-host-keys'] = { label: 'r', cmd: 'echo', ports: {
+          in: { host: { type: 'string', required: true } },
+        } };
+      }));
+    } catch (e) { threw = e; }
+    assert(threw == null, `hyphenated action with ports should parse, got: ${threw && threw.message}`);
   });
   it('rejects a bad parse kind', () => {
     const msg = errOf(() => validate(baseCfg(pg => { pg.actions.controldata.parse = { toml: true }; })));

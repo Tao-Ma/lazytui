@@ -15,13 +15,28 @@
  */
 'use strict';
 
-// Component and port names must be identifiers so the `.` separator is
-// unambiguous (decision 4's dot-free-name guard). Reused by schema validation.
-const NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+// Port names must be strict identifiers so the `.` separator is unambiguous
+// AND the name is a legal POSIX env-var and `\w`-matching `{{name}}` hole.
+// Component names (an action-with-ports, or a Component) relax that to also
+// allow hyphens — common action-key conventions like `ddns-ping` /
+// `rotate-host-keys` need to work alongside `ports.in`. The `.`-delimited
+// address scheme still splits unambiguously (hyphen != dot).
+const NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;             // ports: identifier-strict
+const COMPONENT_NAME_RE = /^[A-Za-z_][A-Za-z0-9_-]*$/;  // components: + hyphens ok
 
-/** True if `s` is a legal fabric identifier (component or port name). */
+/** True if `s` is a legal fabric PORT name — strict identifier. */
 function isValidFabricName(s) {
   return typeof s === 'string' && NAME_RE.test(s);
+}
+
+/**
+ * True if `s` is a legal fabric COMPONENT name (action-with-ports, Component).
+ * Allows hyphens in addition to identifier chars: `ddns-ping`, `rotate-host-keys`.
+ * Port names stay stricter (see isValidFabricName) because they bind as POSIX
+ * env vars and must `\w`-match in `{{name}}` holes.
+ */
+function isValidFabricComponentName(s) {
+  return typeof s === 'string' && COMPONENT_NAME_RE.test(s);
 }
 
 /**
@@ -43,10 +58,15 @@ function parseFabricAddr(str) {
       `is not supported yet — wires are same-group in P1`);
   }
   const [component, port] = parts;
-  if (!isValidFabricName(component) || !isValidFabricName(port)) {
+  if (!isValidFabricComponentName(component)) {
     throw new Error(
-      `fabric address '${str}': component and port must be identifiers ` +
-      `[A-Za-z_][A-Za-z0-9_]*`);
+      `fabric address '${str}': component must be [A-Za-z_][A-Za-z0-9_-]* ` +
+      `(identifiers with hyphens ok)`);
+  }
+  if (!isValidFabricName(port)) {
+    throw new Error(
+      `fabric address '${str}': port must be a strict identifier ` +
+      `[A-Za-z_][A-Za-z0-9_]* (env-var constraint — no hyphens)`);
   }
   return { component, port };
 }
@@ -56,4 +76,4 @@ function formatFabricAddr(component, port) {
   return `${component}.${port}`;
 }
 
-module.exports = { isValidFabricName, parseFabricAddr, formatFabricAddr };
+module.exports = { isValidFabricName, isValidFabricComponentName, parseFabricAddr, formatFabricAddr };

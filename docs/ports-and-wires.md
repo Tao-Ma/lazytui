@@ -182,9 +182,17 @@ spaces, quotes, `$`, backticks, `;`, newlines — it arrives as one literal argu
 ## Addressing
 
 `component.port` (attribute-access), e.g. `controldata.redo_lsn`. In P1 addresses are
-**same-group** — wires live in a group's `wires:` block, so the group is implicit. A
-component that declares `ports` (and its port names) must be a **dot-free identifier**
-(`[A-Za-z_][A-Za-z0-9_]*`) so the single `.` splits unambiguously.
+**same-group** — wires live in a group's `wires:` block, so the group is implicit.
+Name constraints are **asymmetric** so the `.` separator stays unambiguous AND common
+action-key conventions keep working:
+
+- **Port names**: strict identifiers `[A-Za-z_][A-Za-z0-9_]*`. They bind as POSIX env
+  vars when a shell action resolves `ports.in` to its child env, and fill `{{name}}`
+  argv holes which match `\w` — so no hyphens, no non-ASCII.
+- **Component names** (an action-with-ports, or a registered Component):
+  `[A-Za-z_][A-Za-z0-9_-]*` — identifier chars **plus hyphens**. Addresses like
+  `ddns-ping.host` split unambiguously on `.` (hyphen != dot), and shell actions
+  bind only port values as env (the action name never becomes an env var).
 
 Parsed by a small dedicated `parseFabricAddr(str) → { group?, component, port }` —
 **not** the `:open` scheme registry (that opens *targets as content tabs* and doesn't
