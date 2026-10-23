@@ -23,7 +23,7 @@
  */
 'use strict';
 
-const TYPES = ['port_inject', 'port_clear', 'fabric_output_set', 'wire_create', 'wire_delete'];
+const TYPES = ['port_inject', 'port_clear', 'port_consume_oneshot', 'fabric_output_set', 'wire_create', 'wire_delete'];
 
 // Runtime injects and wires are GROUP-SCOPED — keyed by the current group, mirroring
 // model.fabric.output[group][name]. A `component.port` name may be reused across groups
@@ -55,15 +55,22 @@ function _withGroupWires(model, group, groupWires) {
 }
 
 /**
- * Write a sticky by-value inject for `port` in the current group, `at`-stamped from model.now
+ * Write a by-value inject for `port` in the current group, `at`-stamped from model.now
  * (replay-safe). The canonical inject write — shared by the `port_inject` arm
  * and the component-ports field editor's submit (modal/fabric-field.js) so both
  * paths land identical state. Last-write-wins on the same port.
+ *
+ * `opts.oneShot: true` marks the inject as consumed by the next run that resolves it —
+ * the invoke-time popup path (fabric-field opened with a `pendingAction` from the
+ * action-runner, docs/ports-and-wires.md P2) uses this so popup-collected values
+ * don't persist like a ports-pane manual edit does. Default is sticky (opts absent).
  */
-function applyInject(model, port, value) {
+function applyInject(model, port, value, opts) {
   const group = model.currentGroup;
   const groupInjects = _injectsOf(model, group);
-  return _withGroupInjects(model, group, { ...groupInjects, [port]: { value, at: model.now } });
+  const rec = { value, at: model.now };
+  if (opts && opts.oneShot) rec.oneShot = true;
+  return _withGroupInjects(model, group, { ...groupInjects, [port]: rec });
 }
 
 function update(model, msg) {
@@ -81,9 +88,29 @@ function update(model, msg) {
       return [{ ...model, fabric: { ...fab, output: { ...output, [msg.group]: g } } }, []];
     }
     case 'port_inject': {
-      // { port: "xlogminer.start_lsn", value } — last-write-wins.
+      // { port: "xlogminer.start_lsn", value, oneShot? } — last-write-wins.
+      // `oneShot: true` is the invoke-time-popup path (P2 — the fabric-field
+      // modal opened with a pendingAction); the next port_consume_oneshot
+      // referencing this port removes it. Default is sticky.
       if (typeof msg.port !== 'string' || !msg.port) return [model, []];
-      return [applyInject(model, msg.port, msg.value), []];
+      return [applyInject(model, msg.port, msg.value, msg.oneShot ? { oneShot: true } : null), []];
+    }
+    case 'port_consume_oneshot': {
+      // { ports: [addr, ...] } — remove each inject in the current group that
+      // is BOTH oneShot AND listed. Sticky injects and non-listed oneShots stay.
+      // Called by action-runner after a successful resolve/run, so a popup-
+      // collected value lives for exactly one invocation. Identity-preserving
+      // when nothing matches (no churn / render on a no-op consume).
+      if (!Array.isArray(msg.ports) || msg.ports.length === 0) return [model, []];
+      const groupInjects = _injectsOf(model, group);
+      let changed = false;
+      const next = { ...groupInjects };
+      for (const addr of msg.ports) {
+        const rec = groupInjects[addr];
+        if (rec && rec.oneShot) { delete next[addr]; changed = true; }
+      }
+      if (!changed) return [model, []];
+      return [_withGroupInjects(model, group, next), []];
     }
     case 'port_clear': {
       // { port } — remove one from the current group; identity-preserve when absent (no-op).

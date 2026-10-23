@@ -20,7 +20,7 @@ const { applyInject } = require('../fabric');
 
 const TYPES = ['fabric_field_enter', 'fabric_field_key', 'fabric_field_submit', 'fabric_field_cancel'];
 
-const CLOSED = { paneId: null, addr: null, text: '' };
+const CLOSED = { paneId: null, addr: null, text: '', pendingAction: null };
 
 function update(model, msg) {
   switch (msg.type) {
@@ -29,11 +29,17 @@ function update(model, msg) {
       // state); mirrors prompt_enter / confirm_enter.
       if (isChainActive(model.modes)) return [model, []];
       if (typeof msg.addr !== 'string' || !msg.addr) return [model, []];
+      // P2 (docs/ports-and-wires.md) — an invoke-time popup opened by the
+      // action-runner carries a `pendingAction` ({actionKey, action}) so submit
+      // can re-dispatch the deferred run (which loops to the next missing port
+      // or finally runs). ports-pane manual edits leave it null → sticky inject,
+      // no cmd on submit (the atomic ports-pane behavior stays unchanged).
       return [withModalMode(model, { fabricFieldMode: true }, {
         fabricField: {
           paneId: msg.paneId || null,
           addr: msg.addr,
           text: typeof msg.text === 'string' ? msg.text : '',
+          pendingAction: msg.pendingAction || null,
         },
       }), []];
     }
@@ -54,11 +60,21 @@ function update(model, msg) {
     case 'fabric_field_submit': {
       if (!model.modes.fabricFieldMode) return [model, []];
       const f = model.modal.fabricField;
-      // Commit the raw text as a sticky inject (never re-parsed), then close —
-      // one atomic reduction (the inject write + mode close), no handler cascade.
-      // Empty text injects "" (a real, honoured value); use clear to remove one.
-      const injected = applyInject(model, f.addr, f.text);
-      return [withModalMode(injected, { fabricFieldMode: false }, { fabricField: { ...CLOSED } }), []];
+      // Commit the raw text as an inject (never re-parsed), then close.
+      // P2 — an invoke-time popup (pendingAction set) writes ONE-SHOT so the
+      // next port_consume_oneshot removes it; ports-pane manual edits (no
+      // pendingAction) stay sticky as before. Empty text injects "" (a real,
+      // honoured value); use clear to remove one.
+      const pending = f.pendingAction;
+      const injected = applyInject(model, f.addr, f.text, pending ? { oneShot: true } : null);
+      const closed = withModalMode(injected, { fabricFieldMode: false }, { fabricField: { ...CLOSED } });
+      // Pending → re-dispatch the deferred run via a do_run cmd (action-runner
+      // re-resolves ports; if more required inputs are still missing, it opens
+      // fabric-field for the next one — the loop. If ready, it runs).
+      if (pending) {
+        return [closed, [{ type: 'do_run', actionKey: pending.actionKey, action: pending.action }]];
+      }
+      return [closed, []];
     }
     case 'fabric_field_cancel':
       if (!model.modes.fabricFieldMode) return [model, []];

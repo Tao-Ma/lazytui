@@ -259,16 +259,21 @@ function doRun(actionKey, action, args = []) {
   // `ports.in`, resolve via wire/inject the same way doRunFabric does, and bind
   // the resolved values as the child shell's environment (opts.env → stream.js
   // spawn). The script references `$name` instead of `$1`; a bound value never
-  // touches a shell parser so bytes arrive literally. Unready → surface the per-
-  // input reason and skip the run (mirrors the doRunFabric error path).
+  // touches a shell parser so bytes arrive literally. P2 — if a required input
+  // is missing, open fabric-field over the first one with a pendingAction, so
+  // submit writes a one-shot inject and re-dispatches this run (loops through
+  // the missing ports one by one).
   if (action.ports && action.ports.in) {
-    const { ready, values, missing } = _resolvePortsForAction(actionKey, action, getModel());
-    if (!ready) {
+    const resolved = _resolvePortsForAction(actionKey, action, getModel());
+    if (!resolved.ready) {
+      if (_promptMissing(actionKey, action, resolved.missing)) return;
+      // No required missing (only optional) and still not ready → nothing to prompt.
       appendViewerLines(`[dim]$ ${esc(actionKey)}[/]\n` +
-        missing.map((m) => `[warning]not ready: ${m.reason}[/]`).join('\n'));
+        resolved.missing.map((m) => `[warning]not ready: ${m.reason}[/]`).join('\n'));
       return;
     }
-    opts.env = { ...process.env, ...values };
+    opts.env = { ...process.env, ...resolved.values };
+    _consumeOneShotInjects(actionKey, action, resolved.sources);
   }
   streamCommand(actionKey, cmd, args, opts);
 }
@@ -276,9 +281,9 @@ function doRun(actionKey, action, args = []) {
 /**
  * Resolve a shell action's `ports.in` the same way doRunFabric resolves a
  * fabric action's — via sticky injects + wires + the fabric host's portValue
- * selector, scoped to the current group. Returns `{ ready, values, missing }`
- * from fabric/resolve.js; an action with no declared inputs resolves ready with
- * an empty values map. Exported for shell-ports unit tests.
+ * selector, scoped to the current group. Returns `{ ready, values, sources,
+ * missing }` from fabric/resolve.js; an action with no declared inputs resolves
+ * ready with empty maps. Exported for shell-ports unit tests.
  */
 function _resolvePortsForAction(actionKey, action, model) {
   const inputs = (action.ports && action.ports.in) || {};
@@ -288,6 +293,46 @@ function _resolvePortsForAction(actionKey, action, model) {
     wires: fabricPorts.listWires(),
     portValue: fabricPorts.portValue,
   });
+}
+
+/**
+ * P2 — open the fabric-field modal over the FIRST required-and-missing input of
+ * an action, with a `pendingAction` so submit re-dispatches the deferred run.
+ * The modal's submit writes a ONE-SHOT inject and re-emits do_run; if more
+ * required inputs are still missing, this helper fires again on the next port —
+ * the per-port loop. Returns true iff a modal was opened; the caller must
+ * return without running.
+ */
+function _promptMissing(actionKey, action, missing) {
+  const inputs = (action && action.ports && action.ports.in) || {};
+  const firstRequired = missing.find((m) => inputs[m.port] && inputs[m.port].required !== false);
+  if (!firstRequired) return false;
+  const addr = `${actionKey}.${firstRequired.port}`;
+  applyMsg({ type: 'fabric_field_enter', paneId: null, addr, text: '',
+             pendingAction: { actionKey, action } });
+  return true;
+}
+
+/**
+ * P2 — clear any one-shot injects consumed by a successful resolve. Reads the
+ * resolver's `sources` map: a port whose source was 'inject' AND whose inject
+ * record carries `oneShot` is cleared via `port_consume_oneshot`. Sticky injects
+ * (ports-pane manual edits) are left alone. Called RIGHT BEFORE streamCommand
+ * so a failed spawn still consumes the value (clean one-shot semantics; the
+ * next run re-prompts).
+ */
+function _consumeOneShotInjects(actionKey, action, sources) {
+  if (!sources) return;
+  const m = getModel();
+  const group = m.currentGroup || '';
+  const groupInjects = ((m.fabric && m.fabric.injects) || {})[group] || {};
+  const toConsume = [];
+  for (const [port, src] of Object.entries(sources)) {
+    if (src !== 'inject') continue;
+    const addr = `${actionKey}.${port}`;
+    if (groupInjects[addr] && groupInjects[addr].oneShot) toConsume.push(addr);
+  }
+  if (toConsume.length) applyMsg({ type: 'port_consume_oneshot', ports: toConsume });
 }
 
 // Fabric run (docs/ports-and-wires.md). Resolve the consumer's input ports
@@ -304,7 +349,7 @@ function doRunFabric(actionKey, action) {
   const group = model.currentGroup;
   const inputs = (action.ports && action.ports.in) || {};
 
-  const { ready, values, missing } = resolveInputs(actionKey, inputs, {
+  const { ready, values, sources, missing } = resolveInputs(actionKey, inputs, {
     // Group-scoped injects (B3) — this run's group, matching listWires() (group-bound).
     injects: ((model.fabric && model.fabric.injects) || {})[group] || {},
     // config + runtime wires, MERGED by the fabric host — the SAME source the
@@ -316,6 +361,9 @@ function doRunFabric(actionKey, action) {
     portValue: fabricPorts.portValue,
   });
   if (!ready) {
+    // P2 — prompt via fabric-field for a required missing input (same path as
+    // the shell doRun arm; the two run surfaces share the invoke-time prompt).
+    if (_promptMissing(actionKey, action, missing)) return;
     appendViewerLines(`[dim]$ ${esc(actionKey)}[/]\n` +
       missing.map(m => `[warning]not ready: ${m.reason}[/]`).join('\n'));
     return;
@@ -329,6 +377,7 @@ function doRunFabric(actionKey, action) {
     appendViewerLines(`[dim]$ ${esc(actionKey)}[/]\n[error]${esc(e.message)}[/]`);
     return;
   }
+  _consumeOneShotInjects(actionKey, action, sources);
   // cmd string is display/history only; opts.argv is the executed vector. opts.fabric
   // routes the RAW output to model.fabric.output[group][actionKey] for parsing;
   // ensureActionTab routes the DISPLAY to the component's text-view instance.
