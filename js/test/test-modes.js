@@ -23,7 +23,7 @@ describe('[1] registry derivations', () => {
        'confirmMode,freeConfigTitleEditMode,freeConfigMode,menuOpen,filterMode,copyMode,detailSearchMode,registerPopupMode,prefixMode,cmdMode,fabricFieldMode,paneMenuMode,jobsMode,diagLogMode,agentMode');
   });
   it('isOverlayActive matches the pre-registry hardcoded list', () => {
-    const overlay = ['copyMode','menuOpen','freeConfigMode','cmdMode','confirmMode','registerPopupMode','prefixMode','paneMenuMode','jobsMode','diagLogMode'];
+    const overlay = ['copyMode','menuOpen','freeConfigMode','cmdMode','confirmMode','registerPopupMode','prefixMode','paneMenuMode','jobsMode','diagLogMode','fabricFieldMode'];
     for (const f of modes.MODES.map(m => m.flag)) {
       const s = {}; s[f] = true;
       eq(modes.isOverlayActive(s), overlay.includes(f), `${f} overlay`);

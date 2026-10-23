@@ -52,9 +52,15 @@ const MODES = [
   { flag: 'registerPopupMode',       chain: true,  overlay: true,  modal: false, reset: true, suppressChrome: true  },
   { flag: 'prefixMode',              chain: true,  overlay: true,  modal: true,  reset: true, suppressChrome: false },
   { flag: 'cmdMode',                 chain: true,  overlay: true,  modal: false, reset: true, suppressChrome: true  },
-  // Fabric field-edit (P1.5) — an in-grid text editor for a component-ports input
-  // row (not a centered overlay → overlay:false), owns the footer row while active.
-  { flag: 'fabricFieldMode',         chain: true,  overlay: false, modal: true,  reset: true, suppressChrome: true  },
+  // Fabric field-edit — one flag covers TWO renderers: the P1.5 ports-pane in-grid
+  // editor (ports-pane renders its own cell), AND the args→ports P2 (v0.6.30)
+  // invoke-time centered popup (overlay/fabric-field.js, gated on paneId==null).
+  // overlay:true so paint.js's forceFull repaint fires when the mode closes —
+  // without it, the invoke-time popup's directly-written cells linger after Esc
+  // because the cell-diff cache for the panels underneath never saw them change
+  // (the user-reported "popup won't disappear" + "text out of popup" residue).
+  // The in-grid path pays only a trivial full repaint on close — cosmetic, no leak.
+  { flag: 'fabricFieldMode',         chain: true,  overlay: true,  modal: true,  reset: true, suppressChrome: true  },
   // v0.6.4 #1 Step 2 — the one `[≡]` pane-menu (unioned the former
   // tabListMode + paneSelectMode; same column profile).
   { flag: 'paneMenuMode',            chain: true,  overlay: true,  modal: false, reset: true, suppressChrome: false },
