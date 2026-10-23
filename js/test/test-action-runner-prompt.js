@@ -58,17 +58,24 @@ function setInject(group, addr, value, opts) {
   m.fabric.injects[group][addr] = rec;
 }
 
-describe('[action-runner-prompt] _promptMissing opens fabric-field for the first required-missing port', () => {
+// Helper: wrap a missing-array in the resolved shape _promptMissing now takes.
+// Tests that pre-dated slice 1 only cared about `missing`; slice 1 added values/
+// sources for the form path's pre-fill. For the 1-port fabric-field lane the
+// pre-fill is unused; for the form lane the test opts into values/sources.
+const resolved = (missing, values = {}, sources = {}) => ({ ready: false, missing, values, sources });
+
+describe('[action-runner-prompt] _promptMissing: 1-port lane opens fabric-field', () => {
   it('exports the two integration helpers (regression guard)', () => {
     assert(typeof runner._promptMissing === 'function', '_promptMissing exported');
     assert(typeof runner._consumeOneShotInjects === 'function', '_consumeOneShotInjects exported');
   });
 
-  it('opens the modal with pendingAction + returns true when a required port is missing', () => {
+  it('a 1-port action with a required missing opens fabric-field (not the form)', () => {
     boot();
-    const opened = runner._promptMissing('verify', ACTION_REQUIRED, [{ port: 'file', reason: 'x' }]);
+    const opened = runner._promptMissing('verify', ACTION_REQUIRED, resolved([{ port: 'file', reason: 'x' }]));
     assert(opened === true, 'returns true to signal "modal opened; do not run"');
     assert(getModel().modes.fabricFieldMode === true, 'fabric-field modal opened');
+    assert(!getModel().modes.fabricFormMode, 'FORM did NOT open — 1-port stays on the lean single-line popup');
     eq(getModel().modal.fabricField.addr, 'verify.file', 'addr is `actionKey.portName`');
     const pa = getModel().modal.fabricField.pendingAction;
     assert(pa != null, 'pendingAction stored on modal state');
@@ -78,18 +85,62 @@ describe('[action-runner-prompt] _promptMissing opens fabric-field for the first
 
   it('OPTIONAL missing ports are NOT promptable — returns false, no modal', () => {
     boot();
-    const opened = runner._promptMissing('opt', ACTION_OPTIONAL, [{ port: 'v', reason: 'x' }]);
+    const opened = runner._promptMissing('opt', ACTION_OPTIONAL, resolved([{ port: 'v', reason: 'x' }]));
     assert(opened === false, 'returns false — nothing required to prompt');
     assert(!getModel().modes.fabricFieldMode, 'no modal was opened');
+    assert(!getModel().modes.fabricFormMode, 'no form opened either');
+  });
+});
+
+describe('[action-runner-prompt] _promptMissing: 2+-port lane opens fabric-form', () => {
+  it('opens the FORM with ALL declared ports materialized (not just the missing one)', () => {
+    boot();
+    // mixed has `v` (optional) + `file` (required); only `file` is missing.
+    const missing = [{ port: 'file', reason: 'y' }];
+    const opened = runner._promptMissing('mixed', ACTION_MIXED, resolved(missing));
+    assert(opened === true);
+    assert(getModel().modes.fabricFormMode === true, 'fabric-FORM modal opened (not fabric-field)');
+    assert(!getModel().modes.fabricFieldMode, 'fabric-field did NOT open');
+    const form = getModel().modal.fabricForm;
+    const ports = form.fields.map((x) => x.port).sort();
+    eq(ports.join(','), 'file,v', 'both declared ports materialized');
+    // Required-first order (reducer re-sorts): file (required) ahead of v (optional).
+    eq(form.fields[0].port, 'file', 'required field is focused first');
+    eq(form.focusIdx, 0);
+    assert(form.pendingAction && form.pendingAction.actionKey === 'mixed', 'pendingAction carries key');
   });
 
-  it('with mixed required/optional missing, opens over the first REQUIRED one (skips optionals)', () => {
+  it('pre-fills a resolved port from `values[]` (inject/wire/default already settled)', () => {
     boot();
-    const missing = [{ port: 'v', reason: 'x' }, { port: 'file', reason: 'y' }];
-    const opened = runner._promptMissing('mixed', ACTION_MIXED, missing);
+    // Pretend `v` resolved to 'hello' (via wire), `file` still missing.
+    const opened = runner._promptMissing('mixed', ACTION_MIXED,
+      resolved([{ port: 'file', reason: 'y' }], { v: 'hello' }, { v: 'wire' }));
     assert(opened === true);
-    eq(getModel().modal.fabricField.addr, 'mixed.file',
-      'skipped optional `v`, opened over required `file`');
+    const form = getModel().modal.fabricForm;
+    const map = Object.fromEntries(form.fields.map((x) => [x.port, x]));
+    eq(map.v.text, 'hello', 'resolved value pre-fills the field');
+    assert(map.v.isModified && !map.v.isDefault, 'wire-sourced value differs from (nonexistent) default → modified');
+    eq(map.file.text, '', 'missing port starts empty');
+    assert(!map.file.isDefault && !map.file.isModified, 'file: empty + no default → neither chip');
+  });
+
+  it('pre-fills a port with a declared default when nothing upstream resolved it', () => {
+    boot();
+    // A 2-port action with a defaulted optional. Required `host` missing, optional `role` unresolved.
+    const ACTION_WITH_DEFAULT = {
+      type: 'run', script: 'echo $host $role',
+      ports: { in: {
+        host: { type: 'string', required: true, desc: 'hostname' },
+        role: { type: 'string', required: false, default: 'worker', desc: 'node role' },
+      } },
+    };
+    const opened = runner._promptMissing('prov', ACTION_WITH_DEFAULT,
+      resolved([{ port: 'host', reason: 'x' }, { port: 'role', reason: 'default' }]));
+    assert(opened === true);
+    const form = getModel().modal.fabricForm;
+    const map = Object.fromEntries(form.fields.map((x) => [x.port, x]));
+    eq(map.role.text, 'worker', 'default pre-filled when nothing in values[]');
+    assert(map.role.isDefault && !map.role.isModified, 'role chip: [default]');
   });
 });
 

@@ -266,7 +266,7 @@ function doRun(actionKey, action, args = []) {
   if (action.ports && action.ports.in) {
     const resolved = _resolvePortsForAction(actionKey, action, getModel());
     if (!resolved.ready) {
-      if (_promptMissing(actionKey, action, resolved.missing)) return;
+      if (_promptMissing(actionKey, action, resolved)) return;
       // No required missing (only optional) and still not ready → nothing to prompt.
       appendViewerLines(`[dim]$ ${esc(actionKey)}[/]\n` +
         resolved.missing.map((m) => `[warning]not ready: ${m.reason}[/]`).join('\n'));
@@ -296,18 +296,60 @@ function _resolvePortsForAction(actionKey, action, model) {
 }
 
 /**
- * P2 — open the fabric-field modal over the FIRST required-and-missing input of
- * an action, with a `pendingAction` so submit re-dispatches the deferred run.
- * The modal's submit writes a ONE-SHOT inject and re-emits do_run; if more
- * required inputs are still missing, this helper fires again on the next port —
- * the per-port loop. Returns true iff a modal was opened; the caller must
- * return without running.
+ * P2 — open the invoke-time popup over an action's inputs. Two lanes:
+ *   - **2+ declared `ports.in`** → the multi-field `fabric-form` overlay
+ *     (args→ports slice 1). All declared ports are materialized as form fields,
+ *     pre-filled from `resolved.values` (inject/wire/default) where present,
+ *     with their decl's `required`/`default`/`desc` carried through so the
+ *     form's chips ([default]/[modified]/[unset]) classify correctly. Submit
+ *     writes one one-shot inject per *modified* field + re-emits do_run.
+ *   - **1 declared port** → the single-line `fabric-field` overlay (pre-slice-1
+ *     behavior). Opens over the one required-missing port; submit writes a
+ *     one-shot inject + re-emits do_run; next re-dispatch loops to the next
+ *     required missing (there is none for a 1-port action, so it runs).
+ *
+ * `resolved` is the `{ready, values, sources, missing}` from `_resolvePortsForAction`;
+ * the caller already computed it before deciding to prompt, so we take it as a
+ * param instead of re-resolving.
+ *
+ * Returns true iff a modal was opened — the caller must then return without
+ * running.
  */
-function _promptMissing(actionKey, action, missing) {
+function _promptMissing(actionKey, action, resolved) {
   const inputs = (action && action.ports && action.ports.in) || {};
-  const firstRequired = missing.find((m) => inputs[m.port] && inputs[m.port].required !== false);
-  if (!firstRequired) return false;
-  const addr = `${actionKey}.${firstRequired.port}`;
+  const missing = (resolved && resolved.missing) || [];
+  const values = (resolved && resolved.values) || {};
+  const requiredMissing = missing.find((m) => inputs[m.port] && inputs[m.port].required !== false);
+  if (!requiredMissing) return false;
+
+  const declNames = Object.keys(inputs);
+  if (declNames.length >= 2) {
+    // Multi-field form lane. Materialize every declared port — not just the
+    // missing ones — so the user sees the whole action's inputs at once with
+    // whatever's already resolved pre-filled. A port's `text` is:
+    //   - its resolved value (inject/wire/default) if resolver put it in values[],
+    //   - else its decl.default (pre-fill so [default] chip reads correctly),
+    //   - else empty (→ renderer paints [unset] when decl has no default).
+    const fields = declNames.map((port) => {
+      const decl = inputs[port] || {};
+      const def = decl.default != null ? String(decl.default) : null;
+      const resolvedVal = (port in values) ? String(values[port]) : null;
+      const text = resolvedVal != null ? resolvedVal : (def != null ? def : '');
+      return {
+        port,
+        text,
+        required: decl.required !== false,
+        default: def,
+        desc: typeof decl.desc === 'string' ? decl.desc : '',
+      };
+    });
+    applyMsg({ type: 'fabric_form_enter', fields,
+               pendingAction: { actionKey, action } });
+    return true;
+  }
+
+  // 1-port lane — unchanged.
+  const addr = `${actionKey}.${requiredMissing.port}`;
   applyMsg({ type: 'fabric_field_enter', paneId: null, addr, text: '',
              pendingAction: { actionKey, action } });
   return true;
@@ -349,7 +391,7 @@ function doRunFabric(actionKey, action) {
   const group = model.currentGroup;
   const inputs = (action.ports && action.ports.in) || {};
 
-  const { ready, values, sources, missing } = resolveInputs(actionKey, inputs, {
+  const resolved = resolveInputs(actionKey, inputs, {
     // Group-scoped injects (B3) — this run's group, matching listWires() (group-bound).
     injects: ((model.fabric && model.fabric.injects) || {})[group] || {},
     // config + runtime wires, MERGED by the fabric host — the SAME source the
@@ -360,10 +402,11 @@ function doRunFabric(actionKey, action) {
     wires: fabricPorts.listWires(),
     portValue: fabricPorts.portValue,
   });
+  const { ready, values, sources, missing } = resolved;
   if (!ready) {
     // P2 — prompt via fabric-field for a required missing input (same path as
     // the shell doRun arm; the two run surfaces share the invoke-time prompt).
-    if (_promptMissing(actionKey, action, missing)) return;
+    if (_promptMissing(actionKey, action, resolved)) return;
     appendViewerLines(`[dim]$ ${esc(actionKey)}[/]\n` +
       missing.map(m => `[warning]not ready: ${m.reason}[/]`).join('\n'));
     return;

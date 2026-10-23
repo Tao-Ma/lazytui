@@ -102,8 +102,11 @@ describe('[hyphenated-action] fabric component names allow hyphens; port names s
 
   it('action-runner _promptMissing opens fabric-field with the hyphenated addr intact', () => {
     boot();
+    // Slice-1 commit 3 widened _promptMissing's third arg from `missing[]` to the full
+    // `{ready, values, sources, missing}` resolved object (so the 2+-port lane can
+    // pre-fill form fields). The 1-port action here still opens fabric-field.
     const opened = runner._promptMissing('ddns-ping', HYPHENATED_ACTION,
-      [{ port: 'host', reason: 'x' }]);
+      { ready: false, missing: [{ port: 'host', reason: 'x' }], values: {}, sources: {} });
     assert(opened === true, 'modal opened');
     eq(getModel().modal.fabricField.addr, 'ddns-ping.host',
       'addr carries the hyphenated action name verbatim');
