@@ -74,53 +74,84 @@ describe('[fabric-schema] ports validation', () => {
     assert(throws(() => validate(baseCfg(pg => { pg.actions.xlogminer.ports.in.start_lsn.from = 'x'; }))));
   });
 
-  // S1 / S2 from slice-1 pre-release review round 4 Fork 1 — fail-fast at load.
-  it('S1 — rejects an input port name that would shadow a security-sensitive env var', () => {
-    const msg = errOf(() => validate(baseCfg(pg => {
-      pg.actions.xlogminer.ports.in.PATH = { type: 'string', required: true };
-    })));
-    assert(/PATH.*shadow/i.test(msg) || /rename/.test(msg), msg);
+  // S1 / S2 from slice-1 pre-release review round 4 Fork 1 — WARN at load,
+  // runtime guard provides the actual defense. Downgraded from throw-at-load
+  // to warn-and-keep per round 5 backward-compat review: a pre-existing YAML
+  // that quietly declared a shadow-prone port name must not have its whole
+  // load fail on upgrade.
+  it('S1 — WARNS (not throws) when a port name would shadow a security-sensitive env var', () => {
+    const w = [];
+    let threw = null;
+    try {
+      validate(baseCfg(pg => {
+        pg.actions.xlogminer.ports.in.PATH = { type: 'string', required: true };
+      }), undefined, w);
+    } catch (e) { threw = e; }
+    assert(threw == null, `S1 must not throw on upgrade, got: ${threw && threw.message}`);
+    assert(w.some((x) => x.code === 'port.env_shadow' && /PATH/.test(x.message)),
+      `expected a port.env_shadow warning naming PATH, got: ${JSON.stringify(w)}`);
   });
-  it('S1 — rejects a BASH_FUNC_<x> port name (shellshock-class export)', () => {
-    const msg = errOf(() => validate(baseCfg(pg => {
+  it('S1 — WARNS on a BASH_FUNC_<x> port name (shellshock-class export)', () => {
+    const w = [];
+    validate(baseCfg(pg => {
       pg.actions.xlogminer.ports.in.BASH_FUNC_x = { type: 'string', required: true };
-    })));
-    assert(/BASH_FUNC_x.*shadow/i.test(msg), msg);
+    }), undefined, w);
+    assert(w.some((x) => x.code === 'port.env_shadow' && /BASH_FUNC_x/.test(x.message)),
+      `expected a port.env_shadow warning naming BASH_FUNC_x, got: ${JSON.stringify(w)}`);
   });
-  it('S1 — permits a lowercase port name that happens to spell `path`', () => {
+  it('S1 — permits a lowercase port name that happens to spell `path` (NO warning)', () => {
+    const w = [];
     let threw = null;
     try {
       validate(baseCfg(pg => {
         pg.actions.xlogminer.ports.in.path = { type: 'string', required: true };
-      }));
+      }), undefined, w);
     } catch (e) { threw = e; }
     assert(threw == null, `lowercase "path" is NOT in the denylist — should load, got: ${threw && threw.message}`);
+    assert(!w.some((x) => x.code === 'port.env_shadow'),
+      `lowercase path should NOT produce a shadow warning, got: ${JSON.stringify(w)}`);
   });
-  it('S2 — rejects a non-primitive `default` (array / object)', () => {
-    const msgArr = errOf(() => validate(baseCfg(pg => {
+  it('S2 — WARNS (not throws) and DROPS a non-primitive `default` (array)', () => {
+    const w = [];
+    const cfg = baseCfg(pg => {
       pg.actions.xlogminer.ports.in.start_lsn.default = [1, 2, 3];
-    })));
-    assert(/default.*(string|number|boolean|array)/i.test(msgArr), msgArr);
-    const msgObj = errOf(() => validate(baseCfg(pg => {
-      pg.actions.xlogminer.ports.in.start_lsn.default = { k: 'v' };
-    })));
-    assert(/default.*(string|number|boolean|object)/i.test(msgObj), msgObj);
+    });
+    validate(cfg, undefined, w);
+    assert(w.some((x) => x.code === 'port.bad_default_type' && /array/.test(x.message)),
+      `expected a port.bad_default_type warning naming "array", got: ${JSON.stringify(w)}`);
+    // The bad default must be stripped so action-runner never String()s it.
+    assert(!('default' in cfg.groups.pg.actions.xlogminer.ports.in.start_lsn),
+      'bad default dropped from the schema in-place');
   });
-  it('S2 — accepts a numeric OR boolean `default`', () => {
+  it('S2 — WARNS and DROPS a non-primitive `default` (object)', () => {
+    const w = [];
+    const cfg = baseCfg(pg => {
+      pg.actions.xlogminer.ports.in.start_lsn.default = { k: 'v' };
+    });
+    validate(cfg, undefined, w);
+    assert(w.some((x) => x.code === 'port.bad_default_type' && /object/.test(x.message)),
+      `expected a port.bad_default_type warning naming "object", got: ${JSON.stringify(w)}`);
+    assert(!('default' in cfg.groups.pg.actions.xlogminer.ports.in.start_lsn),
+      'bad object default dropped from the schema in-place');
+  });
+  it('S2 — accepts a numeric OR boolean `default` (no warning)', () => {
+    const w = [];
     let threw = null;
     try {
       validate(baseCfg(pg => {
         pg.actions.xlogminer.ports.in.start_lsn.default = 22;        // number OK
-      }));
+      }), undefined, w);
     } catch (e) { threw = e; }
     assert(threw == null, `numeric default should load, got: ${threw && threw.message}`);
     threw = null;
     try {
       validate(baseCfg(pg => {
         pg.actions.xlogminer.ports.in.verbose = { type: 'string', required: false, default: false };
-      }));
+      }), undefined, w);
     } catch (e) { threw = e; }
     assert(threw == null, `boolean default should load, got: ${threw && threw.message}`);
+    assert(!w.some((x) => x.code === 'port.bad_default_type'),
+      'no bad-default warning for primitives');
   });
   it('rejects an action name that would collide with the `.` address separator', () => {
     // Post-v0.6.31: hyphens in action names are OK (component-name rule relaxed

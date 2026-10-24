@@ -63,12 +63,18 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   `-c`-flagged script. The CLI gap was [[feedback_fix_the_class_not_the_instance]]
   in action: the TUI-only fix in an earlier commit left the CLI vulnerable
   to the identical attack — the deep review's historical-regression fork
-  spotted it against the v0.6.29 CLI/TUI drift pattern.
-- **Non-primitive port `default:` values are now rejected at config load.**
+  spotted it against the v0.6.29 CLI/TUI drift pattern. The parse-time
+  check is a *warning* (via the standard config-warning channel) rather
+  than an error — the runtime guard is the actual defense, and warn-and-keep
+  preserves backward compat with any YAML that already had a shadow-prone
+  port name quietly broken.
+- **Non-primitive port `default:` values are now flagged at config load.**
   A YAML `default: [1,2,3]` would stringify to `"1,2,3"` and silently pre-fill
-  the form; a `default: {k: v}` to `"[object Object]"`. The parser now throws
-  with the offending type named, so the author sees the mistake instead of
-  the user seeing garbage.
+  the form; a `default: {k: v}` to `"[object Object]"`. The parser now warns
+  (via the standard config-warning channel the TUI surfaces as `⚠ N config
+  warning(s)` in the footer) and drops the bad default so the port behaves as
+  if none was declared. (Downgraded from hard-throw to warn+drop so a
+  pre-existing YAML with a quietly broken default still loads on upgrade.)
 - **Field text cap (8 192 UTF-16 code units per field, ≈ 8 KiB on ASCII,
   up to 32 KiB on all-emoji).** Pastes and sustained typing can't bloat a
   field beyond this — a WAL-rider bound that applies to both the multi-field

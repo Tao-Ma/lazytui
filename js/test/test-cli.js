@@ -239,38 +239,25 @@ describe('[10] --spec — Component authoring spec bundle', () => {
   });
 });
 
-describe('[env-shadow] parser refuses port names that would hijack the shell env (fail-fast at load)', () => {
-  const BAD_PATH = path.join(TMP, 'shadow-path.yml');
-  fs.writeFileSync(BAD_PATH, `project_dir: .
+describe('[env-shadow] parser warns + runtime refuses on shadow-prone port names (two-layer defense)', () => {
+  // Round 5 downgraded S1/S2 from throw-at-load to warn-and-keep so a
+  // pre-existing YAML with a quietly-broken shadow port still loads. The
+  // runtime shadow guard is the actual defense (asserted at the --exec
+  // layer here); the parser warning is UX for the author.
+  const SHADOW_PATH = path.join(TMP, 'shadow-path.yml');
+  fs.writeFileSync(SHADOW_PATH, `project_dir: .
 
 groups:
   g:
     label: G
     actions:
-      bad:
-        script: echo hi
+      shadow_path:
+        script: 'printf "%s" "$PATH"'
         type: run
-        label: Bad
+        label: Shadow PATH
         ports:
           in:
             PATH:
-              type: string
-              required: true
-`);
-  const BAD_BASH_FUNC = path.join(TMP, 'shadow-bash-func.yml');
-  fs.writeFileSync(BAD_BASH_FUNC, `project_dir: .
-
-groups:
-  g:
-    label: G
-    actions:
-      bad:
-        script: echo hi
-        type: run
-        label: Bad
-        ports:
-          in:
-            BASH_FUNC_x:
               type: string
               required: true
 `);
@@ -281,20 +268,12 @@ groups:
     });
   }
 
-  it('refuses a port literally named PATH at config load', () => {
-    const r = runWith(BAD_PATH, 'g:bad', 'val');
-    assert(r.status !== 0, `expected non-zero rc, got ${r.status}`);
-    assert(r.stderr.includes("'PATH'") && r.stderr.includes('shadow'),
-      `stderr must name the port and the hazard, got: ${JSON.stringify(r.stderr)}`);
-    assert(r.stderr.includes('rename'),
-      'stderr suggests renaming the port');
-  });
-
-  it('refuses a port named BASH_FUNC_<anything> (shellshock-class) at load', () => {
-    const r = runWith(BAD_BASH_FUNC, 'g:bad', 'val');
-    assert(r.status !== 0, `expected non-zero rc, got ${r.status}`);
-    assert(r.stderr.includes("'BASH_FUNC_x'"),
-      `stderr must name the offending port, got: ${JSON.stringify(r.stderr)}`);
+  it('runs the action and the runtime guard refuses the PATH override', () => {
+    const r = runWith(SHADOW_PATH, 'g:shadow_path', '/attacker/bin:/tmp');
+    eq(r.status, 0, `rc 0 — action still runs, got ${r.status}, stderr=${r.stderr}`);
+    eq(r.stdout, process.env.PATH, 'child PATH inherited from parent (round-2 runtime guard still fires)');
+    assert(r.stderr.includes('shadowing env — PATH'),
+      `runtime guard emits stderr for PATH refusal, got: ${JSON.stringify(r.stderr)}`);
   });
 });
 

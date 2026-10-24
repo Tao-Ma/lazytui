@@ -141,7 +141,7 @@ function validate(data, _sourceFile, warnings) {
   if ('metrics' in data)  validateMetrics(data.metrics);
 
   for (const [gname, gdata] of Object.entries(groups)) {
-    validateGroup(gname, gdata);
+    validateGroup(gname, gdata, '', warnings);
   }
 }
 
@@ -776,7 +776,7 @@ function validateFiles(files) {
   }
 }
 
-function validateGroup(gname, gdata, parentPath = '') {
+function validateGroup(gname, gdata, parentPath = '', warnings) {
   const full = joinPath(parentPath, gname);
   const ctx = `group '${full}'`;
   if (!isMapping(gdata)) throw new SchemaError('must be a mapping', { context: ctx });
@@ -927,7 +927,7 @@ function validateGroup(gname, gdata, parentPath = '') {
       throw new SchemaError("'actions' must be a non-empty mapping", { context: ctx });
     }
     for (const [aname, adata] of Object.entries(actions)) {
-      validateAction(full, aname, adata);
+      validateAction(full, aname, adata, warnings);
     }
   }
 
@@ -956,7 +956,7 @@ function validateGroup(gname, gdata, parentPath = '') {
   }
 }
 
-function validateAction(groupPath, aname, adata) {
+function validateAction(groupPath, aname, adata, warnings) {
   const ctx = `group '${groupPath}', action '${aname}'`;
   if (!isMapping(adata)) throw new SchemaError('must be a mapping', { context: ctx });
   checkUnknownKeys(adata, VALID_ACTION_KEYS, ctx);
@@ -1026,7 +1026,7 @@ function validateAction(groupPath, aname, adata) {
     try { compileParse(adata.parse); }
     catch (e) { throw new SchemaError(`invalid 'parse': ${e.message}`, { context: ctx }); }
   }
-  if ('ports' in adata) validateActionPorts(aname, adata.ports, ctx);
+  if ('ports' in adata) validateActionPorts(aname, adata.ports, ctx, warnings);
   if ('run' in adata) validateActionRun(adata, ctx);
 }
 
@@ -1063,7 +1063,7 @@ function validateActionRun(adata, ctx) {
 // template holes. Every port carries a required `type` (the equality-match
 // key); an output port projects via `from` (defaults to the port name) OR a
 // `{regex,group}` extract, not both.
-function validateActionPorts(aname, ports, ctx) {
+function validateActionPorts(aname, ports, ctx, warnings) {
   if (!isMapping(ports)) throw new SchemaError("'ports' must be a mapping", { context: ctx });
   if (!isValidFabricComponentName(aname)) {
     throw new SchemaError(
@@ -1109,27 +1109,41 @@ function validateActionPorts(aname, ports, ctx) {
           throw new SchemaError("input ports don't take 'from' / 'extract'", { context: pctx });
         }
         // S2: a `default:` must be a primitive scalar — string, number, boolean.
-        // Otherwise action-runner would `String(default)` an array or object
-        // and the form would pre-fill with "[object Object]" or "1,2,3", which
-        // is never what the author meant. (Slice-1 pre-release review round 4
-        // Fork 1 S2.)
+        // A non-primitive would get `String()`'d by action-runner at run time,
+        // yielding "[object Object]" or "1,2,3" as the form pre-fill — never
+        // what the author meant. We WARN (not throw) and DROP the bad default
+        // so the port behaves as if no default was declared, preserving
+        // backward compat with any YAML that already had this quietly broken.
+        // (Slice-1 pre-release review round 4 Fork 1 S2 — warn-not-throw per
+        // round 5 backward-compat review.)
         if ('default' in pdef) {
           const dt = typeof pdef.default;
           if (pdef.default != null && dt !== 'string' && dt !== 'number' && dt !== 'boolean') {
-            throw new SchemaError(
-              `'default' must be a string, number, or boolean (got ${dt === 'object' && Array.isArray(pdef.default) ? 'array' : dt})`,
-              { context: pctx });
+            if (warnings) {
+              warnings.push({
+                code: 'port.bad_default_type',
+                message: `${pctx}: 'default' must be a string/number/boolean (got ${
+                  dt === 'object' && Array.isArray(pdef.default) ? 'array' : dt
+                }) — dropped`,
+              });
+            }
+            delete pdef.default;
           }
         }
         // S1: a port name that would shadow a security-sensitive env var
-        // (PATH, LD_PRELOAD, BASH_ENV, …) is accepted here but refused at
-        // run-time by `_envWithShadowGuard`. Fail-fast at load so the author
-        // sees it the moment they add the port, instead of only when
-        // invoking the action. (Slice-1 pre-release review round 4 Fork 1 S1.)
-        if (isShadowedEnvName(pname)) {
-          throw new SchemaError(
-            `port name '${pname}' would shadow a security-sensitive env var and is refused at run time; rename it (e.g. '${pname.toLowerCase()}')`,
-            { context: pctx });
+        // (PATH, LD_PRELOAD, BASH_ENV, …) will be dropped at run time by
+        // _envWithShadowGuard regardless, so the port never actually overrides
+        // the parent env. We WARN at load (not throw) so the author sees the
+        // bug WITHOUT breaking a pre-existing config whose whole load would
+        // otherwise fail at the first offending port. The port stays in the
+        // schema; the runtime guard is the actual defense. (Slice-1 pre-release
+        // review round 4 Fork 1 S1 — warn-not-throw per round 5 backward-
+        // compat review.)
+        if (isShadowedEnvName(pname) && warnings) {
+          warnings.push({
+            code: 'port.env_shadow',
+            message: `${pctx}: port name '${pname}' would shadow a security-sensitive env var — dropped at run time; rename it (e.g. '${pname.toLowerCase()}') to silence this warning`,
+          });
         }
       }
     }
