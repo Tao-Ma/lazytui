@@ -8,6 +8,28 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Tab + Shift-Tab in the invoke-time form actually move focus now.** The
+  earlier draft of the dispatch handler tested `key === 'tab'` / `key ===
+  'backtab'`, but the key normalizer never emits those symbolic names — a
+  bare Tab arrives as `seq === '\t'`, and Shift-Tab (`\x1b[Z`) was dropped
+  as `unknown_escape` before any handler saw it. **The form's headline
+  focus-move keyboard affordance has never worked.** Added `\x1b[Z →
+  handleKey('backtab')` to the input ladder, switched the form handler to
+  `seq === '\t'` + `key === 'backtab'`, and added key-PATH integration tests
+  that drive `_dispatchToken` end-to-end so a future string-name typo
+  surfaces at the layer that was blind before.
+- **Trojan Source class (CVE-2021-42574) stripped from every content path.**
+  Unicode bidi overrides (U+202A..E) and isolates (U+2066..9) passed through
+  `esc()` unchanged, so a `desc: "rm ‮etyafs‬.sh"` reordered on
+  display to read as `rm sfaty.sh` on bidi-aware terminals. The new form
+  prominently displays port VALUES for review — the exact attack vector.
+  Fixed in `stripControls` so every overlay / viewer / pane is covered.
+- **The 8 Ki field-text cap no longer leaves a lone high surrogate at the
+  tail.** `text.slice(0, 8192)` is UTF-16 unit based; splitting at a
+  supplementary-plane char (emoji) left an orphan high surrogate that drifted
+  one column against the paint. The cap now steps back one unit when the tail
+  lands on a 0xD800..0xDBFF code unit. Applied to both fabric-form and
+  fabric-field.
 - **The invoke-time popup's caret glyph now actually shows.** Both the single-
   port fabric-field (shipped v0.6.30) and the multi-field fabric-form used
   `[reverse]`'s mis-spelled sibling `[inverse]` for the in-buffer caret —
@@ -30,14 +52,23 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 - **A port VALUE can no longer override `PATH` / `SHELL` / `LD_PRELOAD` /
   `LD_LIBRARY_PATH` / `LD_AUDIT` / `DYLD_INSERT_LIBRARIES` /
   `DYLD_LIBRARY_PATH` / `DYLD_FORCE_FLAT_NAMESPACE` / `BASH_ENV` / `ENV` /
-  `BASH_FUNC_*` on a shell action.** A port named one of these — whether set
-  by the author or typed into the invoke-time form — is dropped before
-  `opts.env` is built, and a dim `[warning]` surfaces in the viewer. The
-  parent env still passes through unchanged, so a well-behaved YAML keeps
-  working. `BASH_ENV` / `ENV` / `BASH_FUNC_*` close a shellshock-class RCE
+  `BASH_FUNC_*` on a shell action.** A port named one of these is refused in
+  three places that now share a single denylist leaf (`js/leaves/security/
+  env-shadow.js`): the parser rejects it at config load with a rename hint,
+  the TUI invoke path drops it before `opts.env` is built with a `[warning]`
+  in the viewer, and the CLI `--exec` path drops it with a warning on
+  stderr. `BASH_ENV` / `ENV` / `BASH_FUNC_*` close a shellshock-class RCE
   path on systems where `/bin/sh` is actually bash (macOS, RHEL, Alpine with
   bash) — bash sources `$BASH_ENV` BEFORE executing a non-interactive
-  `-c`-flagged script.
+  `-c`-flagged script. The CLI gap was [[feedback_fix_the_class_not_the_instance]]
+  in action: the TUI-only fix in an earlier commit left the CLI vulnerable
+  to the identical attack — the deep review's historical-regression fork
+  spotted it against the v0.6.29 CLI/TUI drift pattern.
+- **Non-primitive port `default:` values are now rejected at config load.**
+  A YAML `default: [1,2,3]` would stringify to `"1,2,3"` and silently pre-fill
+  the form; a `default: {k: v}` to `"[object Object]"`. The parser now throws
+  with the offending type named, so the author sees the mistake instead of
+  the user seeing garbage.
 - **Field text cap (8 192 UTF-16 code units per field, ≈ 8 KiB on ASCII,
   up to 32 KiB on all-emoji).** Pastes and sustained typing can't bloat a
   field beyond this — a WAL-rider bound that applies to both the multi-field
@@ -60,6 +91,12 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **"Required inputs still missing" hint on the invoke-time popup.** When any
+  required port is empty and has no declared default, the overlay surfaces a
+  dim `[warning]` row above the keybind footer naming the ports. Previously
+  a submit-with-empty-required silently re-opened the same popup — the TUI
+  looked wedged. The hint shows on first open AND on reopen; it disappears
+  the moment the user fills the last missing field.
 - **Multi-field invoke-time popup for actions with 2+ declared `ports.in`.**
   When you invoke an action whose required inputs aren't all resolved and the
   action declares two or more ports, the TUI now opens one popup with every
