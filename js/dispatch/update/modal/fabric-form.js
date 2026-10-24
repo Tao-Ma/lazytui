@@ -52,7 +52,28 @@ const TYPES = [
   'fabric_form_choices_close', 'fabric_form_choices_nav',
 ];
 
-const CLOSED = { fields: [], focusIdx: 0, pendingAction: null, picking: null };
+const CLOSED = { fields: [], focusIdx: 0, pendingAction: null, picking: null,
+                 requestSeq: 0 };
+
+// Deterministic hash of a port's depended-on values. Order-independent (sorted
+// keys) so a decl rewrite that reorders dependsOn can't invalidate the cache;
+// pure JSON stringify so replay reproduces identical hashes.
+function _depsHash(values) {
+  const keys = Object.keys(values || {}).sort();
+  const pairs = keys.map((k) => [k, values[k]]);
+  return JSON.stringify(pairs);
+}
+// Build the depValues map for a computed field — just a slice of the form's
+// current field texts, keyed by name. Fields the field doesn't depend on are
+// not included (the fetch handler sees ONLY the deps it needs).
+function _depValuesForField(fields, dependsOn) {
+  const dv = {};
+  for (const name of dependsOn || []) {
+    const f = fields.find((x) => x.port === name);
+    if (f && typeof f.text === 'string') dv[name] = f.text;
+  }
+  return dv;
+}
 
 // Per-field text size ceiling, in JS String code units (UTF-16; NOT bytes —
 // 8192 code units can be anywhere from 8 KiB on all-ASCII to 32 KiB when the
@@ -180,14 +201,38 @@ function update(model, msg) {
       // dupe entries; if nothing survives, the modal is not opened.
       const fields = _partition(_cleanFields(msg.fields));
       if (fields.length === 0) return [model, []];
+      // Initial choices requests: for every computed field whose dependsOn
+      // values are already in the form state, emit a request Cmd via the `msg`
+      // effect. (A computed field with no deps also qualifies — depValues={}
+      // hashes trivially; fetch runs immediately.) A field whose deps aren't
+      // all populated stays idle: the renderer paints no `[fetching…]` chip,
+      // and the fetch fires once the user tabs to a dep and provides a value.
+      const initialRequests = [];
+      for (const field of fields) {
+        if (!field.choicesFnRef) continue;
+        const deps = field.dependsOn || [];
+        // Only fire when ALL deps have non-empty text — a request against
+        // partially-resolved deps is almost always wasted (`choices_fn` for
+        // "sections of this file" with an empty file path).
+        const haveAllDeps = deps.every((n) => {
+          const d = fields.find((x) => x.port === n);
+          return d && typeof d.text === 'string' && d.text !== '';
+        });
+        if (!haveAllDeps) continue;
+        initialRequests.push({
+          type: 'msg',
+          msg: { type: 'fabric_form_choices_request', port: field.port },
+        });
+      }
       return [withModalMode(model, { fabricFormMode: true }, {
         fabricForm: {
           fields,
           focusIdx: 0,
           pendingAction: msg.pendingAction || null,
-          picking: null,   // choices-popover state; opened via fabric_form_choices_open
+          picking: null,       // choices-popover state; opened via fabric_form_choices_open
+          requestSeq: 0,       // monotonic counter for choices-request ids (replay-safe)
         },
-      }), []];
+      }), initialRequests];
     }
     case 'fabric_form_key': {
       if (!model.modes.fabricFormMode) return [model, []];
@@ -229,7 +274,33 @@ function update(model, msg) {
       const f = model.modal.fabricForm;
       const nextIdx = _advance(f.fields, f.focusIdx, msg.type === 'fabric_form_focus_next' ? 1 : -1);
       if (nextIdx === f.focusIdx) return [model, []];
-      return [withModal(model, { fabricForm: { ...f, focusIdx: nextIdx } }), []];
+      // Reactive refetch: the just-blurred field may be a dependency of one or
+      // more computed fields. For each dependent whose current depsHash differs
+      // from its stored inputsHash, emit a request Cmd (via `msg`). An unchanged
+      // hash is a no-op (user tabbed out without editing the dep) → no refetch
+      // / no flicker.
+      const blurredPort = f.fields[f.focusIdx] && f.fields[f.focusIdx].port;
+      const refetchCmds = [];
+      if (blurredPort) {
+        for (const field of f.fields) {
+          if (!field.choicesFnRef) continue;
+          if (!(field.dependsOn || []).includes(blurredPort)) continue;
+          const dv = _depValuesForField(f.fields, field.dependsOn);
+          const h = _depsHash(dv);
+          const stored = field.computed ? field.computed.inputsHash : null;
+          if (h === stored) continue;
+          // Also drop requests when a dep is empty — the field would re-enter
+          // pending state forever otherwise (fetch runs with empty values and
+          // most impls return []).
+          const allDepsSet = (field.dependsOn || []).every((n) => dv[n] && dv[n] !== '');
+          if (!allDepsSet) continue;
+          refetchCmds.push({
+            type: 'msg',
+            msg: { type: 'fabric_form_choices_request', port: field.port },
+          });
+        }
+      }
+      return [withModal(model, { fabricForm: { ...f, focusIdx: nextIdx } }), refetchCmds];
     }
     case 'fabric_form_reset_default': {
       if (!model.modes.fabricFormMode) return [model, []];
@@ -292,36 +363,51 @@ function update(model, msg) {
       // Nothing to undo — submit is atomic, so an open form has written no injects yet.
       return [withModalMode(model, { fabricFormMode: false }, { fabricForm: { ...CLOSED } }), []];
     case 'fabric_form_choices_request': {
-      // `{ port, requestId, inputsHash, depValues }` — mark the port's
+      // `{ port, requestId?, inputsHash?, depValues? }` — mark the port's
       // computed slot pending (so the renderer paints [fetching…]) and emit
-      // the `fetch_choices` effect. Caller already decided we need a fetch
-      // (deps resolved, inputsHash changed from last time) — the reducer
-      // doesn't second-guess, but it DOES early-return when the field has no
-      // choicesFnRef (so a stale request arm can never materialize a fetch
-      // for a port that lost its choices_fn).
+      // the `fetch_choices` effect. `requestId` / `inputsHash` / `depValues`
+      // are all AUTO-COMPUTED from form state when the caller omits them (the
+      // production path from action-runner just sends `{port}`); the test
+      // path can pass explicit values to pin specific transitions.
+      //
+      // Early-returns:
+      //   - form closed → no-op
+      //   - port not found → no-op
+      //   - port has no choicesFnRef → no-op (a stale request arm can't drag
+      //     an idle port into the computed-choices state machine)
       if (!model.modes.fabricFormMode) return [model, []];
       const f = model.modal.fabricForm;
       const idx = f.fields.findIndex((x) => x.port === msg.port);
       if (idx < 0) return [model, []];
       const cur = f.fields[idx];
       if (!cur.choicesFnRef) return [model, []];
+      const depValues = msg.depValues !== undefined
+        ? msg.depValues
+        : _depValuesForField(f.fields, cur.dependsOn);
+      const inputsHash = msg.inputsHash !== undefined
+        ? msg.inputsHash
+        : _depsHash(depValues);
+      const nextSeq = (f.requestSeq || 0) + 1;
+      const requestId = msg.requestId !== undefined ? msg.requestId : nextSeq;
       const nextFields = f.fields.slice();
       nextFields[idx] = { ...cur, computed: {
         ...(cur.computed || EMPTY_COMPUTED),
         state: 'pending',
-        requestId: msg.requestId,
-        inputsHash: msg.inputsHash || null,
+        requestId,
+        inputsHash,
         error: null,
       }};
       const pending = f.pendingAction;
       const actionKey = pending && pending.actionKey;
-      return [withModal(model, { fabricForm: { ...f, fields: nextFields } }), [{
+      return [withModal(model, { fabricForm: {
+        ...f, fields: nextFields, requestSeq: nextSeq,
+      } }), [{
         type: 'fetch_choices',
         key: `choices_fn:${actionKey}.${cur.port}`,
         ref: cur.choicesFnRef,
         port: cur.port,
-        values: msg.depValues || {},
-        requestId: msg.requestId,
+        values: depValues,
+        requestId,
         actionKey,
         group: model.currentGroup || null,
       }]];
@@ -416,4 +502,4 @@ function update(model, msg) {
   }
 }
 
-module.exports = { TYPES, update };
+module.exports = { TYPES, update, _depsHash, _depValuesForField };

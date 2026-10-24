@@ -401,12 +401,21 @@ function _promptMissing(actionKey, action, resolved) {
       const def = decl.default != null ? String(decl.default) : null;
       const resolvedVal = (port in values) ? String(values[port]) : null;
       const text = resolvedVal != null ? resolvedVal : (def != null ? def : '');
+      // args→ports slice 2: carry `choices_fn:` + `depends_on:` through so the
+      // reducer can seed the field's computed slot and the enter arm can fire
+      // initial requests for fields with resolved deps.
+      const choicesFnRef = typeof decl.choices_fn === 'string' && decl.choices_fn
+        ? decl.choices_fn : null;
+      const dependsOn = Array.isArray(decl.depends_on)
+        ? decl.depends_on.filter((n) => typeof n === 'string' && n) : [];
       return {
         port,
         text,
         required: decl.required !== false,
         default: def,
         desc: typeof decl.desc === 'string' ? decl.desc : '',
+        choicesFnRef,
+        dependsOn,
       };
     });
     applyMsg({ type: 'fabric_form_enter', fields,
