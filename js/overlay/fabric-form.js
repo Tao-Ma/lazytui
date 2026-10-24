@@ -37,9 +37,11 @@ const { renderOverlay, truncate, viewportDims } = require('../leaves/render/draw
 // Hard max for the overlay; the dims clamp (renderOverlay → overlayBox) narrows
 // to COLS-2 on tight terminals.
 const MAX_WIDTH = 72;
-// Longest chip label is `[modified]` (10 visible cells). Reserve one trailing
-// space before the chip for breathing room; renderPanel adds the right border.
-const CHIP_SLOT = 11;
+// Floor on the chip reserve — covers [modified] (10) + 1 for breathing room.
+// The actual reserve each frame is `max(MIN_CHIP_SLOT, longest chip actually
+// painted)`, so slice-2's longer labels ([fetching…]=10, [1024 choices]=15)
+// don't overflow and truncate the row (R1D-BUG1).
+const MIN_CHIP_SLOT = 11;
 // How many rows of context to keep BELOW the focused row when scroll-follows-
 // focus kicks in. 2 is enough to see the dim desc of the next field (if any)
 // so the user has forward look-ahead while Tab-ing.
@@ -82,7 +84,7 @@ function _chipMarkup(f) {
 // survive; chip is omitted for the frame — the user still sees the field
 // name, which is more useful than a mangled chip (slice-1 pre-release review
 // round 2 UX Fork Finding 2).
-function _inputRow(f, focused, name, pad, leftW, midW, chip) {
+function _inputRow(f, focused, name, pad, leftW, midW, chip, chipSlot) {
   const prefix = focused ? '[accent]>[/] ' : '  ';
   const left = `  ${focused ? '[accent]' + name + '[/]' : name}${pad} ${prefix}`;
   const caret = focused ? '[reverse] [/]' : '';
@@ -107,15 +109,15 @@ function _inputRow(f, focused, name, pad, leftW, midW, chip) {
     // Narrow-terminal fallback: no room for the chip reserve, so drop it.
     chipPart = '';
   } else if (chip) {
-    // Right-anchor the chip inside the CHIP_SLOT reserve so chips of
-    // different widths all end at the same column.
+    // Right-anchor the chip inside the reserve so chips of different widths
+    // all end at the same column.
     const chipVis = visibleLen(chip);
-    const lead = ' '.repeat(Math.max(0, CHIP_SLOT - chipVis));
+    const lead = ' '.repeat(Math.max(0, chipSlot - chipVis));
     chipPart = ` ${lead}${chip}`;
   } else {
     // No chip for this row, but reserve the slot so sibling rows' chips
     // land in the same column.
-    chipPart = ' '.repeat(CHIP_SLOT + 1);
+    chipPart = ' '.repeat(chipSlot + 1);
   }
   return `${left}${mid}${chipPart}`;
 }
@@ -177,16 +179,30 @@ function renderFabricFormOverlay() {
   const vp = viewportDims();
   const menuW = Math.min(MAX_WIDTH, Math.max(0, vp.cols - 2));
   const innerW = Math.max(0, menuW - 2);
+  // Dynamic chip reserve: scan every field's chip once up front and take the
+  // widest. Slice 1's fixed CHIP_SLOT=11 was tuned for [modified]; slice 2's
+  // [fetching…] / [N choices] / [1024 choices] overran at N≥10 (R1D-BUG1).
+  // Precomputing lets wider chips still right-anchor and shorter chips still
+  // line up at a shared end column.
+  let chipSlot = MIN_CHIP_SLOT;
+  for (const field of f.fields) {
+    const c = _chipMarkup(field);
+    if (c) chipSlot = Math.max(chipSlot, visibleLen(c));
+  }
   // `midW` is the input area. Reserve the chip slot (chip + 1-cell gap)
   // regardless of whether this row has a chip, so chips across rows line up
   // AND an unchipped row's input doesn't visually bleed into the slot.
-  const midW = Math.max(0, innerW - leftW - CHIP_SLOT - 1);
+  const midW = Math.max(0, innerW - leftW - chipSlot - 1);
 
   // Walk partitioned fields → markup rows, tracking which line the focused
   // row lands on so scroll-follows-focus can land that row inside the viewport.
+  // When the choices popover is open, we also track the HIGHLIGHTED-choice row
+  // and prefer it as the scroll anchor so the user's selection stays visible
+  // even in a long list (R1D-BUG2).
   const focusField = f.fields[f.focusIdx] || null;
   const findFocus = (field) => field === focusField;
   let focusLineIdx = -1;
+  let pickingLineIdx = -1;
   const rows = [];
   const picking = f.picking;
   function pushField(field) {
@@ -194,7 +210,7 @@ function renderFabricFormOverlay() {
     const pad = ' '.repeat(Math.max(0, maxNameVis - visibleLen(name)));
     const chip = _chipMarkup(field);
     if (findFocus(field)) focusLineIdx = rows.length;
-    rows.push(_inputRow(field, findFocus(field), name, pad, leftW, midW, chip));
+    rows.push(_inputRow(field, findFocus(field), name, pad, leftW, midW, chip, chipSlot));
     if (field.desc) rows.push(_descRow(field.desc, leftW));
     // Choices popover: when this field is the picked port, render the choices
     // list indented to the input column. Highlighted entry inverse-painted
@@ -213,6 +229,7 @@ function renderFabricFormOverlay() {
         } else {
           for (let i = 0; i < c.items.length; i++) {
             const label = c.labels && c.labels[i] ? c.labels[i] : c.items[i];
+            if (i === picking.idx) pickingLineIdx = rows.length;
             const painted = i === picking.idx
               ? `[reverse]${esc(label)}[/]`
               : esc(label);
@@ -222,7 +239,9 @@ function renderFabricFormOverlay() {
           // tells the user the fn's return was longer than the cap so they
           // know what they're not seeing.
           if (c.truncated) {
-            rows.push(`${' '.repeat(leftW)}[dim][+more…][/]`);
+            // Escape the leading `[` so Rich doesn't try to parse `[+more…]`
+            // as a markup tag (same discipline as the chip strings).
+            rows.push(`${' '.repeat(leftW)}[dim]\\[+more…][/]`);
           }
         }
       }
@@ -275,9 +294,13 @@ function renderFabricFormOverlay() {
   const title = esc(rawTitle);
 
   // Scroll — innerH matches renderPanel's: menuH-2, menuH = min(rows+2, ROWS-2).
+  // When the popover is open, prefer the HIGHLIGHTED-choice row as the scroll
+  // anchor so a long list stays navigable; otherwise fall back to the focused
+  // field row (slice-1 behavior).
   const menuH = Math.min(rows.length + 2, Math.max(0, vp.rows - 2));
   const innerH = Math.max(1, menuH - 2);
-  const scrollOffset = focusLineIdx < 0 ? 0 : _scrollFor(focusLineIdx, rows.length, innerH);
+  const anchorLineIdx = pickingLineIdx >= 0 ? pickingLineIdx : focusLineIdx;
+  const scrollOffset = anchorLineIdx < 0 ? 0 : _scrollFor(anchorLineIdx, rows.length, innerH);
 
   renderOverlay({ lines: rows, title, maxWidth: MAX_WIDTH, scrollOffset });
 }

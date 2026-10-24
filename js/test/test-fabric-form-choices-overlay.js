@@ -222,6 +222,84 @@ describe('[fabric-form-choices-overlay] popover', () => {
     const out = captureStripped(m, () => renderFabricFormOverlay());
     assert(out.includes('ENOENT: /tmp/x.md'), `expected error text in popover, got:\n${out}`);
   });
+
+  it('truncated reply paints `[+more…]` row at the end of the list', () => {
+    let m = openFormWithSectionFocused();
+    [m] = runtime.update(m, { type: 'fabric_form_choices_request', port: 'section', requestId: 9 });
+    [m] = runtime.update(m, {
+      type: 'fabric_form_choices_resolved', port: 'section', requestId: 9,
+      items: ['a', 'b', 'c'], labels: null, error: null, truncated: true,
+    });
+    [m] = runtime.update(m, { type: 'fabric_form_choices_open', port: 'section' });
+    const out = captureStripped(m, () => renderFabricFormOverlay());
+    assert(out.includes('[+more…]'), `expected +more affordance, got:\n${out}`);
+  });
+});
+
+// R1D-BUG1 regression: `[N choices]` for N≥10 was 12+ cells but CHIP_SLOT was
+// a fixed 11 cells, so the chip overran the row budget and renderPanel
+// truncated with `…` (`[10 choice…`). The fix picks chipSlot dynamically from
+// the actual chips painted this frame.
+describe('[fabric-form-choices-overlay] R1D-BUG1 — chip survives at N ≥ 10 items', () => {
+  function openFormWithNItems(n) {
+    let m = freshModel();
+    [m] = runtime.update(m, { type: 'fabric_form_enter', fields: fieldsFor(), pendingAction: PENDING });
+    [m] = runtime.update(m, { type: 'fabric_form_focus_next' });   // focus section
+    [m] = runtime.update(m, { type: 'fabric_form_choices_request', port: 'section', requestId: 100 });
+    const items = Array.from({ length: n }, (_, i) => `opt${i}`);
+    [m] = runtime.update(m, {
+      type: 'fabric_form_choices_resolved', port: 'section', requestId: 100,
+      items, labels: null, error: null,
+    });
+    return m;
+  }
+
+  it('[10 choices] paints without truncation', () => {
+    const m = openFormWithNItems(10);
+    const out = captureStripped(m, () => renderFabricFormOverlay());
+    assert(out.includes('[10 choices]'),
+      `expected [10 choices] chip intact (not truncated to '[10 choice…'), got:\n${out}`);
+    assert(!/\[10 choice…/.test(out), 'the slice-1 fixed CHIP_SLOT would truncate here');
+  });
+
+  it('[1024 choices] paints without truncation', () => {
+    const m = openFormWithNItems(1024);
+    const out = captureStripped(m, () => renderFabricFormOverlay());
+    assert(out.includes('[1024 choices]'),
+      `expected [1024 choices] chip intact, got:\n${out}`);
+  });
+});
+
+// R1D-BUG2 regression: _scrollFor was anchored on the FIELD row, not the
+// highlighted popover row. With a long items[] and nav past viewport bottom,
+// the user could never see the highlighted entry — Up/Down moved an invisible
+// cursor. Fix: popover-open paints track the picking-idx row and prefer it as
+// the scroll anchor.
+describe('[fabric-form-choices-overlay] R1D-BUG2 — popover scroll follows highlight', () => {
+  it('nav to idx 20 in a 30-item list keeps the highlighted entry on-screen', () => {
+    process.stdout.columns = 80; process.stdout.rows = 15;   // narrow enough to force scroll
+    let m = freshModel();
+    [m] = runtime.update(m, { type: 'fabric_form_enter', fields: fieldsFor(), pendingAction: PENDING });
+    [m] = runtime.update(m, { type: 'fabric_form_focus_next' });
+    [m] = runtime.update(m, { type: 'fabric_form_choices_request', port: 'section', requestId: 101 });
+    const items = Array.from({ length: 30 }, (_, i) => `opt${String(i).padStart(2, '0')}`);
+    [m] = runtime.update(m, {
+      type: 'fabric_form_choices_resolved', port: 'section', requestId: 101,
+      items, labels: null, error: null,
+    });
+    [m] = runtime.update(m, { type: 'fabric_form_choices_open', port: 'section' });
+    // Nav to idx 20.
+    for (let i = 0; i < 20; i++) {
+      [m] = runtime.update(m, { type: 'fabric_form_choices_nav', dir: 1 });
+    }
+    const raw = captureRaw(m, () => renderFabricFormOverlay());
+    // The highlighted entry (`opt20`) must appear in the raw output with the
+    // reverse SGR. Pre-fix, scroll was anchored on the field row (near 0), so
+    // only opt00..opt07 fit in a 15-row viewport.
+    assert(/\x1b\[7m[^]*?opt20/.test(raw),
+      `highlighted opt20 should be painted (with reverse SGR), got:\n${raw.slice(0, 800)}`);
+    process.stdout.columns = 120; process.stdout.rows = 30;
+  });
 });
 
 report();
