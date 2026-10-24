@@ -539,15 +539,15 @@ dataflow mechanics.
 
 | Msg | Writes | Emits | Purity |
 |---|---|---|---|
-| `fabric_form_enter{fields,pendingAction?}` | `modes.fabricFormMode→true`, `modal.fabricForm={fields,focusIdx:0,pendingAction}`; sorts fields required-first and recomputes `isDefault`/`isModified` per row from `(text, default)` | — | shell¹ |
+| `fabric_form_enter{fields,pendingAction?}` | `modes.fabricFormMode→true`, `modal.fabricForm={fields,focusIdx:0,pendingAction,picking:null,requestSeq:0}`; sorts fields required-first and recomputes `isDefault`/`isModified` per row from `(text, default)` | one `{type:'msg', msg:{type:'fabric_form_choices_request', port}}` per computed field whose depended-on ports all carry non-empty text at open (slice 2) | shell¹ |
 | `fabric_form_key{seq,key}` | `modal.fabricForm.fields[focusIdx].text` (type/backspace/Ctrl+U/paste) + the row's chip flags; sibling fields unchanged (guarded) | — | ✓ |
-| `fabric_form_focus_next` / `fabric_form_focus_prev` | `modal.fabricForm.focusIdx` wraps modulo `fields.length` (guarded; identity on single-field edge) | — | ✓ |
+| `fabric_form_focus_next` / `fabric_form_focus_prev` | `modal.fabricForm.focusIdx` wraps modulo `fields.length` (guarded; identity on single-field edge). Also resets any pending computed field whose deps got emptied → `state:'idle'`, requestId:0 | per computed field: `{type:'cancel_effect',key}` for every pending fetch whose deps got emptied + `{type:'msg', msg:{type:'fabric_form_choices_request', port}}` for every dependent whose deps-hash changed since its last fetch | ✓ |
 | `fabric_form_reset_default` | focused field: `text←default` (or `''` if no default); chips re-derived (guarded) | — | ✓ |
 | `fabric_form_clear` | focused field: `text←''`; chips re-derived (guarded) | — | ✓ |
 | `fabric_form_submit` | writes a ONE-SHOT inject per MODIFIED field via chained `applyInject(…, {oneShot:true})` + closes (guarded) | `pendingAction` set → `[{type:'do_run', actionKey, action}]`; else `[]` | ✓² |
-| `fabric_form_cancel` | closes (guarded); no injects to roll back — submit is atomic by construction | — | ✓ |
+| `fabric_form_cancel` | closes (guarded); no injects to roll back — submit is atomic by construction | `{type:'cancel_effect', key}` for every pending choices fetch (slice 2 — stops a slow fn from retaining `host.applyMsg` and writing a dead resolved Msg to the WAL) | ✓ |
 | `fabric_form_choices_request{port,requestId?,inputsHash?,depValues?}` | marks `fields[port].computed.state='pending'` + bumps `requestSeq` + stamps `computed.requestId`/`inputsHash` (missing fields auto-computed from form state) | `[{type:'fetch_choices', key:'choices_fn:<actionKey>.<port>', ref, port, values, requestId, actionKey, group}]`; no-op when port missing or has no `choicesFnRef` | ✓³ |
-| `fabric_form_choices_resolved{port,requestId,items,labels?,error?}` | if the field's current `computed.requestId === msg.requestId`, writes `computed.{state,items,labels,error}`; otherwise dropped (stale-reply guard) | — | ✓ |
+| `fabric_form_choices_resolved{port,actionKey?,requestId,items,labels?,error?,truncated?}` | triple stale-reply guard: fabricFormMode, `actionKey` matches `pendingAction.actionKey` (cross-form), AND `computed.requestId === msg.requestId`; writes `computed.{state,items,labels,error,truncated}` + clamps `picking.idx` if items[] shrunk below it | — | ✓ |
 | `fabric_form_choices_pick{port,value}` | writes `fields[port].text←value` via `_editCurrent` (chips recomputed) + clears `picking` | — | ✓ |
 | `fabric_form_choices_open{port}` | sets `picking={port, idx:0}` (guarded: field must have `choicesFnRef`; idempotent on same-port) | — | ✓ |
 | `fabric_form_choices_close` | clears `picking` (identity-preserve when already closed) | — | ✓ |

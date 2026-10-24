@@ -358,6 +358,13 @@ compute surface is a form-only concern:
   reproduces frames from the recorded payload WITHOUT re-executing the fn,
   so a fn that touches the fs or spawns a child is safe to use — same
   discipline as the `stream.js` output path.
+- **Resource caps**: the runtime caps the fn's return at 1024 items (MAX_
+  CHOICES in `choices-fn-runtime.js`) so a buggy/hostile fn can't bloat the
+  WAL or stall the overlay with a 10M-element array. `fabric_form_cancel`
+  emits a `cancel_effect` Cmd per in-flight fetch so a slow fn can't retain
+  `host.applyMsg` after the user bails. Cross-form stale replies are
+  guarded by `actionKey` match on the resolved arm, so a fetch belonging
+  to a prior form can't land into a new form whose port has the same name.
 
 Insertion points: `_promptMissing` in `js/dispatch/runtime/action-runner.js`
 carries `choicesFnRef` + `dependsOn` through to the field snapshots; the

@@ -359,6 +359,9 @@ edit-section:
 Then in the component (any Component or feature plugin that ships `name:`):
 
 ```js
+'use strict';
+const fs = require('fs');
+
 module.exports = {
   name: 'edit',
   groupActions: { /* ... */ },
@@ -388,6 +391,13 @@ A few rules the parser enforces (warn+drop, not throw — your YAML keeps loadin
 - `choices_fn` must be a dotted ref `<component>.<fnName>`. A bare name or anything else is dropped at load.
 - `depends_on` must be a list of sibling port names. Entries that aren't strings, aren't declared, or reference the port itself are dropped.
 - An unknown ref at run time paints `[error]` on the field with a message pointing to the unregistered name.
+- The returned list is capped at 1024 items — anything past that is dropped and the popover paints a `[+more…]` row so you know the cap applied.
+
+Three things worth knowing before you ship a `choices_fn`:
+
+- **SPACE on a plain port is still a literal space.** The space-opens-popover affordance fires only when the focused field has a `choices_fn:`; any other port treats the key as text input, preserving pre-slice-2 behavior.
+- **The returned strings pass through to the overlay AS-IS.** `esc()` neutralizes bracket markup like `[reverse]`, but raw ANSI SGR escape bytes (`\x1b[31m…`) are preserved and render colored in the popover. Treat return values as display content you own — if the fn's upstream is untrusted, strip SGR before returning.
+- **The fn is a shortcut, not a hard constraint.** The user can always free-type a value that isn't in the choices list, and that value binds like any other port value at submit time.
 
 Replay stays deterministic. The fn is a side effect — the first live invocation goes through the `fetch_choices` effect channel; its *result* lands as a reducer arm whose payload is captured in the WAL. Replay reproduces frames from the recorded payload without re-executing the fn, so a fn that touches the fs or spawns a child is safe to use.
 
