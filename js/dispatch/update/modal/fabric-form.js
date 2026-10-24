@@ -48,10 +48,11 @@ const TYPES = [
   // the pre-fetch state write a reducer uses when a request is kicked off.
   // Placeholder arms in commit 2 — the real reducer body lands in commit 3.
   'fabric_form_choices_request', 'fabric_form_choices_resolved',
-  'fabric_form_choices_pick',
+  'fabric_form_choices_pick', 'fabric_form_choices_open',
+  'fabric_form_choices_close', 'fabric_form_choices_nav',
 ];
 
-const CLOSED = { fields: [], focusIdx: 0, pendingAction: null };
+const CLOSED = { fields: [], focusIdx: 0, pendingAction: null, picking: null };
 
 // Per-field text size ceiling, in JS String code units (UTF-16; NOT bytes —
 // 8192 code units can be anywhere from 8 KiB on all-ASCII to 32 KiB when the
@@ -184,6 +185,7 @@ function update(model, msg) {
           fields,
           focusIdx: 0,
           pendingAction: msg.pendingAction || null,
+          picking: null,   // choices-popover state; opened via fabric_form_choices_open
         },
       }), []];
     }
@@ -353,16 +355,61 @@ function update(model, msg) {
     case 'fabric_form_choices_pick': {
       // `{ port, value }` — user picked an entry from the choices popover.
       // Writes `value` into the field's text (through `_editCurrent` so the
-      // chip classification is recomputed). Does NOT submit — the user may
-      // tweak a sibling field before run.
+      // chip classification is recomputed) AND closes the picker so key input
+      // flows back to the regular form. Does NOT submit — the user may tweak
+      // a sibling field before run.
       if (!model.modes.fabricFormMode) return [model, []];
       const f = model.modal.fabricForm;
       const idx = f.fields.findIndex((x) => x.port === msg.port);
       if (idx < 0) return [model, []];
       const value = typeof msg.value === 'string' ? msg.value : '';
       const nextFields = _editCurrent(f.fields, idx, value);
-      if (nextFields === f.fields) return [model, []];
-      return [withModal(model, { fabricForm: { ...f, fields: nextFields } }), []];
+      // Even when value === current text (no mutation), close the picker so
+      // Enter-on-highlighted-value-already-in-field doesn't leave the popover
+      // open forever.
+      const picking = null;
+      if (nextFields === f.fields && f.picking === null) return [model, []];
+      return [withModal(model, { fabricForm: { ...f, fields: nextFields, picking } }), []];
+    }
+    case 'fabric_form_choices_open': {
+      // `{ port }` — space pressed on the focused computed-choices field. Only
+      // meaningful when the field actually has a choicesFnRef (idle fields are
+      // invisible to the picker). The popover starts at idx 0; a later nav
+      // msg moves it. If the computed state is still 'pending', the popover
+      // opens empty — the renderer paints an "awaiting choices…" row — so
+      // the user has a visible affordance that the fetch is in flight.
+      if (!model.modes.fabricFormMode) return [model, []];
+      const f = model.modal.fabricForm;
+      const idx = f.fields.findIndex((x) => x.port === msg.port);
+      if (idx < 0) return [model, []];
+      const field = f.fields[idx];
+      if (!field.choicesFnRef) return [model, []];
+      if (f.picking && f.picking.port === msg.port) return [model, []];   // idempotent
+      return [withModal(model, { fabricForm: { ...f, picking: { port: msg.port, idx: 0 } } }), []];
+    }
+    case 'fabric_form_choices_close': {
+      // Esc / blur / any key that closes the popover without committing.
+      if (!model.modes.fabricFormMode) return [model, []];
+      const f = model.modal.fabricForm;
+      if (f.picking === null) return [model, []];
+      return [withModal(model, { fabricForm: { ...f, picking: null } }), []];
+    }
+    case 'fabric_form_choices_nav': {
+      // `{ dir: -1 | 1 }` — move the popover's highlighted index. Reads the
+      // picking field's current items length so the clamp honors a resolved
+      // reply that just landed. No wrap — users expect Up at idx 0 to stop,
+      // same as the menu modal.
+      if (!model.modes.fabricFormMode) return [model, []];
+      const f = model.modal.fabricForm;
+      if (f.picking === null) return [model, []];
+      const field = f.fields.find((x) => x.port === f.picking.port);
+      if (!field || !field.computed || field.computed.state !== 'ok') return [model, []];
+      const n = field.computed.items.length;
+      if (n === 0) return [model, []];
+      const dir = msg.dir < 0 ? -1 : 1;
+      const nextIdx = Math.max(0, Math.min(n - 1, f.picking.idx + dir));
+      if (nextIdx === f.picking.idx) return [model, []];
+      return [withModal(model, { fabricForm: { ...f, picking: { ...f.picking, idx: nextIdx } } }), []];
     }
     default:
       return [model, []];

@@ -46,6 +46,18 @@ const CHIP_SLOT = 11;
 const SCROLL_BOTTOM_CONTEXT = 2;
 
 function _chipMarkup(f) {
+  // Computed-choices chip variants (args→ports slice 2) take precedence while
+  // the fetch is pending or errored. Once state === 'ok' and the user hasn't
+  // picked / typed yet, the chip reads `[N choices]` so the affordance is
+  // visible before the user presses space to open the popover.
+  if (f.computed) {
+    if (f.computed.state === 'pending') return '[dim]\\[fetching…][/]';
+    if (f.computed.state === 'error')   return '[error]\\[error][/]';
+    if (f.computed.state === 'ok' && f.text === '' && f.default == null) {
+      const n = f.computed.items.length;
+      return `[dim]\\[${n} choice${n === 1 ? '' : 's'}][/]`;
+    }
+  }
   if (f.isDefault) return '[dim]\\[default][/]';
   if (f.isModified) return '[warning]\\[modified][/]';
   if (f.text === '' && f.default == null) return '[dim]\\[unset][/]';
@@ -176,6 +188,7 @@ function renderFabricFormOverlay() {
   const findFocus = (field) => field === focusField;
   let focusLineIdx = -1;
   const rows = [];
+  const picking = f.picking;
   function pushField(field) {
     const name = esc(field.port);
     const pad = ' '.repeat(Math.max(0, maxNameVis - visibleLen(name)));
@@ -183,6 +196,31 @@ function renderFabricFormOverlay() {
     if (findFocus(field)) focusLineIdx = rows.length;
     rows.push(_inputRow(field, findFocus(field), name, pad, leftW, midW, chip));
     if (field.desc) rows.push(_descRow(field.desc, leftW));
+    // Choices popover: when this field is the picked port, render the choices
+    // list indented to the input column. Highlighted entry inverse-painted
+    // (matches the caret / field-focus style). The error path shows the error
+    // text instead of the list; a pending popover shows an awaiting-row so
+    // the user has visible feedback that the fetch is in flight.
+    if (picking && picking.port === field.port) {
+      const c = field.computed || null;
+      if (!c || c.state === 'pending') {
+        rows.push(`${' '.repeat(leftW)}[dim]awaiting choices…[/]`);
+      } else if (c.state === 'error') {
+        rows.push(`${' '.repeat(leftW)}[error]${esc(c.error || 'choices failed')}[/]`);
+      } else if (c.state === 'ok') {
+        if (c.items.length === 0) {
+          rows.push(`${' '.repeat(leftW)}[dim](no choices)[/]`);
+        } else {
+          for (let i = 0; i < c.items.length; i++) {
+            const label = c.labels && c.labels[i] ? c.labels[i] : c.items[i];
+            const painted = i === picking.idx
+              ? `[reverse]${esc(label)}[/]`
+              : esc(label);
+            rows.push(`${' '.repeat(leftW)}${painted}`);
+          }
+        }
+      }
+    }
   }
 
   if (required.length) {
@@ -207,7 +245,17 @@ function renderFabricFormOverlay() {
   if (stillMissing.length) {
     rows.push(`[warning]required inputs still missing: ${esc(stillMissing.join(', '))}[/]`);
   }
-  rows.push('[dim]\\[tab] next   \\[shift-tab] prev   \\[enter] run   \\[esc] cancel[/]');
+  // Help line adapts to the mode: the picker gets its own keys; a focused
+  // computed-choices field advertises `[space] choices` so the affordance is
+  // discoverable without reading docs.
+  if (picking) {
+    rows.push('[dim]\\[up/down] move   \\[enter] pick   \\[esc] close[/]');
+  } else {
+    const focused = f.fields[f.focusIdx];
+    const hasChoices = focused && focused.choicesFnRef;
+    const spaceHint = hasChoices ? '   \\[space] choices' : '';
+    rows.push(`[dim]\\[tab] next   \\[shift-tab] prev${spaceHint}   \\[enter] run   \\[esc] cancel[/]`);
+  }
 
   // Title — the action's label (friendlier than its key), falling back to
   // the actionKey, falling back to "Input" like fabric-field does. esc() the

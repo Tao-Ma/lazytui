@@ -1029,10 +1029,48 @@ const _modeHandlers = {
   // dead code — the string-name typo class, same as the `[inverse]` →
   // `[reverse]` caret bug caught in round 3.
   fabricFormMode:      (key, seq) => {
+    // Choices popover (`choices_fn:`): when `picking` is non-null, intercept
+    // the picker's keys. Up/Down move within the choices list, Enter picks the
+    // highlighted entry, Esc / Space close the popover. Tab routes through to
+    // the regular form (closing the popover first) so the user can keep moving
+    // between fields. Any other key falls through to the field editor after
+    // closing — a type-ahead search is a planned follow-up slice.
+    const f = getModel().modal && getModel().modal.fabricForm;
+    if (f && f.picking) {
+      if      (key === 'up')               { applyMsg({ type: 'fabric_form_choices_nav', dir: -1 }); return; }
+      else if (key === 'down')             { applyMsg({ type: 'fabric_form_choices_nav', dir:  1 }); return; }
+      else if (key === 'escape')           { applyMsg({ type: 'fabric_form_choices_close' }); return; }
+      else if (seq === ' ')                { applyMsg({ type: 'fabric_form_choices_close' }); return; }
+      else if (key === 'return')           {
+        const field = f.fields.find((x) => x.port === f.picking.port);
+        const value = field && field.computed && field.computed.items[f.picking.idx];
+        if (typeof value === 'string') {
+          applyMsg({ type: 'fabric_form_choices_pick', port: f.picking.port, value });
+        } else {
+          applyMsg({ type: 'fabric_form_choices_close' });
+        }
+        return;
+      }
+      // Tab / Shift-Tab + anything else: close the popover, then fall through
+      // to the regular form routing below so the user's intent still lands.
+      applyMsg({ type: 'fabric_form_choices_close' });
+    }
     if      (key === 'escape')             applyMsg({ type: 'fabric_form_cancel' });
     else if (key === 'return')             applyMsg({ type: 'fabric_form_submit' });
     else if (seq === '\t')                 applyMsg({ type: 'fabric_form_focus_next' });
     else if (key === 'backtab')            applyMsg({ type: 'fabric_form_focus_prev' });
+    else if (seq === ' ') {
+      // Space on a focused computed-choices field opens the popover; on any
+      // other field it falls through to the field-key edit (= a literal space
+      // in the text), which preserves pre-slice-2 behavior for ports without
+      // `choices_fn:`.
+      const focused = f && f.fields[f.focusIdx];
+      if (focused && focused.choicesFnRef) {
+        applyMsg({ type: 'fabric_form_choices_open', port: focused.port });
+      } else {
+        applyMsg({ type: 'fabric_form_key', key, seq });
+      }
+    }
     else                                   applyMsg({ type: 'fabric_form_key', key, seq });
   },
   paneMenuMode:        (key, seq) => handlePaneMenuKey(key, seq),

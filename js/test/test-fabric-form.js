@@ -441,4 +441,89 @@ describe('[fabric-form] KEY path integration — Tab / Shift-Tab reach the reduc
   });
 });
 
+// args→ports slice 2 (choices_fn) — key-path integration for the choices
+// popover. Same discipline as the slice-1 Tab blocker above: the reducer
+// tests drive msgs directly, but the full stack can still break on the
+// `space` key wiring, so pin that end-to-end here.
+describe('[fabric-form] KEY path integration — choices popover (slice 2)', () => {
+  const { _dispatchToken } = require('../dispatch/control/input');
+  const store = require('../model/store');
+
+  const CF_ACTION = {
+    label: 'Edit section', type: 'run', script: 'edit "$file" "$section"',
+    ports: { in: {
+      file:    { type: 'path',   required: true,  desc: 'target file' },
+      section: { type: 'string', required: true,  desc: 'section',
+                 choices_fn: 'edit.sections_of', depends_on: ['file'] },
+    } },
+  };
+  function cfFields() {
+    return [
+      { port: 'file',    text: '/tmp/x.md', required: true, default: null, desc: 'target file' },
+      { port: 'section', text: '',          required: true, default: null, desc: 'section',
+        choicesFnRef: 'edit.sections_of', dependsOn: ['file'] },
+    ];
+  }
+  function openPopover(items = ['intro', 'body', 'outro']) {
+    let m = freshModel();
+    [m] = runtime.update(m, {
+      type: 'fabric_form_enter', fields: cfFields(),
+      pendingAction: { actionKey: 'edit-section', action: CF_ACTION },
+    });
+    // Focus the section field (second).
+    [m] = runtime.update(m, { type: 'fabric_form_focus_next' });
+    // Simulate the resolved reply so the popover has something to display.
+    [m] = runtime.update(m, { type: 'fabric_form_choices_request', port: 'section', requestId: 1 });
+    [m] = runtime.update(m, {
+      type: 'fabric_form_choices_resolved', port: 'section', requestId: 1,
+      items, labels: null, error: null,
+    });
+    store.setModel(m);
+  }
+
+  it('Space on a focused computed-choices field opens the popover (end-to-end)', () => {
+    openPopover();
+    _dispatchToken(' ');
+    const after = store.getModel().modal.fabricForm;
+    assert(after.picking, 'picking state active');
+    eq(after.picking.port, 'section', 'picking the section field');
+    eq(after.picking.idx, 0, 'picker idx starts at 0');
+  });
+
+  it('Space on a plain focused field is a literal space (regression guard)', () => {
+    let m = freshModel();
+    [m] = runtime.update(m, {
+      type: 'fabric_form_enter', fields: cfFields(),
+      pendingAction: { actionKey: 'edit-section', action: CF_ACTION },
+    });
+    store.setModel(m);   // file is the focused field — no choicesFnRef
+    _dispatchToken(' ');
+    const after = store.getModel().modal.fabricForm;
+    eq(after.picking, null, 'picker did NOT open on the plain port');
+    eq(after.fields[0].text, '/tmp/x.md ', 'the space landed as a literal character in the file field');
+  });
+
+  it('Down inside the popover moves the highlight; Enter picks it', () => {
+    openPopover(['a', 'b', 'c']);
+    _dispatchToken(' ');           // open
+    _dispatchToken('\x1b[B');      // Down (CSI B) → idx 1
+    _dispatchToken('\r');          // Enter → pick 'b'
+    const after = store.getModel().modal.fabricForm;
+    eq(after.picking, null, 'popover closed after pick');
+    const section = after.fields.find((x) => x.port === 'section');
+    eq(section.text, 'b', 'picked value landed in the field text');
+  });
+
+  it('Esc inside the popover closes without picking', () => {
+    openPopover();
+    _dispatchToken(' ');
+    _dispatchToken('\x1b');        // Esc
+    const after = store.getModel().modal.fabricForm;
+    eq(after.picking, null, 'popover closed');
+    const section = after.fields.find((x) => x.port === 'section');
+    eq(section.text, '', 'no value picked — section stays empty');
+    assert(store.getModel().modes.fabricFormMode, 'form itself is still open — Esc closed the popover, not the form');
+  });
+});
+
 report();
