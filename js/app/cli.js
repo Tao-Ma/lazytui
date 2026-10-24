@@ -203,7 +203,20 @@ function runCli(configPath, actionPath, actionArgs) {
       return Promise.resolve(1);
     }
     childArgs = [];                                      // ports supersede $@
-    childEnv = { ...process.env, ...portEnv };
+    // Env-shadow guard — same denylist the TUI invoke path uses
+    // (slice-1 pre-release review round 4 Finding 1; CLI/TUI drift class.
+    // See js/dispatch/runtime/action-runner.js:filterShadowedPortValues
+    // for the denylist comment + rationale, incl. shellshock-class BASH_ENV
+    // / BASH_FUNC_* on bash-as-sh systems.) Refused keys are reported on
+    // stderr so the operator sees them AND the action still proceeds with
+    // the parent env's values for those slots.
+    const { filterShadowedPortValues } = require('../dispatch/runtime/action-runner');
+    const { safe, shadowed } = filterShadowedPortValues(portEnv);
+    if (shadowed.length) {
+      process.stderr.write(
+        `tui --exec ${actionPath}: ignored port(s) shadowing env — ${shadowed.join(', ')}\n`);
+    }
+    childEnv = { ...process.env, ...safe };
   }
 
   return new Promise((resolve) => {

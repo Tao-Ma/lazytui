@@ -13,6 +13,7 @@ const { SchemaError } = require('./errors');
 const { parseFabricAddr, isValidFabricName, isValidFabricComponentName } = require('../fabric/address');
 const { compileParse, compileExtract } = require('../fabric/parse');
 const { compileCommand, commandHoles } = require('../fabric/command');
+const { isShadowedEnvName } = require('../leaves/security/env-shadow');
 
 const VALID_ACTION_TYPES = new Set(['run', 'spawn', 'background']);
 // Per-action re-run behavior for the streamed output buffer: 'replace' (default)
@@ -1106,6 +1107,29 @@ function validateActionPorts(aname, ports, ctx) {
         }
         if ('from' in pdef || 'extract' in pdef) {
           throw new SchemaError("input ports don't take 'from' / 'extract'", { context: pctx });
+        }
+        // S2: a `default:` must be a primitive scalar — string, number, boolean.
+        // Otherwise action-runner would `String(default)` an array or object
+        // and the form would pre-fill with "[object Object]" or "1,2,3", which
+        // is never what the author meant. (Slice-1 pre-release review round 4
+        // Fork 1 S2.)
+        if ('default' in pdef) {
+          const dt = typeof pdef.default;
+          if (pdef.default != null && dt !== 'string' && dt !== 'number' && dt !== 'boolean') {
+            throw new SchemaError(
+              `'default' must be a string, number, or boolean (got ${dt === 'object' && Array.isArray(pdef.default) ? 'array' : dt})`,
+              { context: pctx });
+          }
+        }
+        // S1: a port name that would shadow a security-sensitive env var
+        // (PATH, LD_PRELOAD, BASH_ENV, …) is accepted here but refused at
+        // run-time by `_envWithShadowGuard`. Fail-fast at load so the author
+        // sees it the moment they add the port, instead of only when
+        // invoking the action. (Slice-1 pre-release review round 4 Fork 1 S1.)
+        if (isShadowedEnvName(pname)) {
+          throw new SchemaError(
+            `port name '${pname}' would shadow a security-sensitive env var and is refused at run time; rename it (e.g. '${pname.toLowerCase()}')`,
+            { context: pctx });
         }
       }
     }

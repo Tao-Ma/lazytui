@@ -73,6 +73,55 @@ describe('[fabric-schema] ports validation', () => {
   it('rejects from/extract on an input port', () => {
     assert(throws(() => validate(baseCfg(pg => { pg.actions.xlogminer.ports.in.start_lsn.from = 'x'; }))));
   });
+
+  // S1 / S2 from slice-1 pre-release review round 4 Fork 1 — fail-fast at load.
+  it('S1 — rejects an input port name that would shadow a security-sensitive env var', () => {
+    const msg = errOf(() => validate(baseCfg(pg => {
+      pg.actions.xlogminer.ports.in.PATH = { type: 'string', required: true };
+    })));
+    assert(/PATH.*shadow/i.test(msg) || /rename/.test(msg), msg);
+  });
+  it('S1 — rejects a BASH_FUNC_<x> port name (shellshock-class export)', () => {
+    const msg = errOf(() => validate(baseCfg(pg => {
+      pg.actions.xlogminer.ports.in.BASH_FUNC_x = { type: 'string', required: true };
+    })));
+    assert(/BASH_FUNC_x.*shadow/i.test(msg), msg);
+  });
+  it('S1 — permits a lowercase port name that happens to spell `path`', () => {
+    let threw = null;
+    try {
+      validate(baseCfg(pg => {
+        pg.actions.xlogminer.ports.in.path = { type: 'string', required: true };
+      }));
+    } catch (e) { threw = e; }
+    assert(threw == null, `lowercase "path" is NOT in the denylist — should load, got: ${threw && threw.message}`);
+  });
+  it('S2 — rejects a non-primitive `default` (array / object)', () => {
+    const msgArr = errOf(() => validate(baseCfg(pg => {
+      pg.actions.xlogminer.ports.in.start_lsn.default = [1, 2, 3];
+    })));
+    assert(/default.*(string|number|boolean|array)/i.test(msgArr), msgArr);
+    const msgObj = errOf(() => validate(baseCfg(pg => {
+      pg.actions.xlogminer.ports.in.start_lsn.default = { k: 'v' };
+    })));
+    assert(/default.*(string|number|boolean|object)/i.test(msgObj), msgObj);
+  });
+  it('S2 — accepts a numeric OR boolean `default`', () => {
+    let threw = null;
+    try {
+      validate(baseCfg(pg => {
+        pg.actions.xlogminer.ports.in.start_lsn.default = 22;        // number OK
+      }));
+    } catch (e) { threw = e; }
+    assert(threw == null, `numeric default should load, got: ${threw && threw.message}`);
+    threw = null;
+    try {
+      validate(baseCfg(pg => {
+        pg.actions.xlogminer.ports.in.verbose = { type: 'string', required: false, default: false };
+      }));
+    } catch (e) { threw = e; }
+    assert(threw == null, `boolean default should load, got: ${threw && threw.message}`);
+  });
   it('rejects an action name that would collide with the `.` address separator', () => {
     // Post-v0.6.31: hyphens in action names are OK (component-name rule relaxed
     // for configs like `ddns-ping` + ports.in; see test-hyphenated-action-ports.js).

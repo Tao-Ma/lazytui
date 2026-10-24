@@ -239,4 +239,63 @@ describe('[10] --spec — Component authoring spec bundle', () => {
   });
 });
 
+describe('[env-shadow] parser refuses port names that would hijack the shell env (fail-fast at load)', () => {
+  const BAD_PATH = path.join(TMP, 'shadow-path.yml');
+  fs.writeFileSync(BAD_PATH, `project_dir: .
+
+groups:
+  g:
+    label: G
+    actions:
+      bad:
+        script: echo hi
+        type: run
+        label: Bad
+        ports:
+          in:
+            PATH:
+              type: string
+              required: true
+`);
+  const BAD_BASH_FUNC = path.join(TMP, 'shadow-bash-func.yml');
+  fs.writeFileSync(BAD_BASH_FUNC, `project_dir: .
+
+groups:
+  g:
+    label: G
+    actions:
+      bad:
+        script: echo hi
+        type: run
+        label: Bad
+        ports:
+          in:
+            BASH_FUNC_x:
+              type: string
+              required: true
+`);
+
+  function runWith(fixture, ...args) {
+    return spawnSync(process.execPath, [TUI, fixture, '--exec', ...args], {
+      encoding: 'utf8', timeout: 5000,
+    });
+  }
+
+  it('refuses a port literally named PATH at config load', () => {
+    const r = runWith(BAD_PATH, 'g:bad', 'val');
+    assert(r.status !== 0, `expected non-zero rc, got ${r.status}`);
+    assert(r.stderr.includes("'PATH'") && r.stderr.includes('shadow'),
+      `stderr must name the port and the hazard, got: ${JSON.stringify(r.stderr)}`);
+    assert(r.stderr.includes('rename'),
+      'stderr suggests renaming the port');
+  });
+
+  it('refuses a port named BASH_FUNC_<anything> (shellshock-class) at load', () => {
+    const r = runWith(BAD_BASH_FUNC, 'g:bad', 'val');
+    assert(r.status !== 0, `expected non-zero rc, got ${r.status}`);
+    assert(r.stderr.includes("'BASH_FUNC_x'"),
+      `stderr must name the offending port, got: ${JSON.stringify(r.stderr)}`);
+  });
+});
+
 report();

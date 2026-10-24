@@ -301,28 +301,44 @@ function doRun(actionKey, action, args = []) {
 //   BASH_FUNC_* — the shellshock-class exported-function path. Rejected via
 //     prefix match below, not via Set membership, because the suffix is
 //     arbitrary.
-const _ENV_SHADOW_DENY = new Set([
-  'PATH', 'SHELL',
-  'LD_PRELOAD', 'LD_LIBRARY_PATH', 'LD_AUDIT',
-  'DYLD_INSERT_LIBRARIES', 'DYLD_LIBRARY_PATH', 'DYLD_FORCE_FLAT_NAMESPACE',
-  'BASH_ENV', 'ENV',
-]);
-function _envWithShadowGuard(actionKey, values) {
+// The env-shadow denylist is a shared leaf — the parser imports the same
+// set to reject these port names at CONFIG LOAD (fail-fast), and we use it
+// here to refuse any that slipped through at SPAWN time (defense-in-depth
+// against programmatically-constructed Msgs or future callers that bypass
+// the parser).
+const { isShadowedEnvName } = require('../../leaves/security/env-shadow');
+
+// Pure part of the env-shadow guard: filter a values map into the subset safe
+// to spread into the child env, plus the list of keys that were refused.
+// Separate from the viewer-warning sink so BOTH the TUI invoke path AND the
+// CLI `--exec` path can share the denylist without pulling in a GUI dependency.
+// (slice-1 pre-release review round 4 Finding 1 — CLI/TUI drift class;
+// [[feedback_fix_the_class_not_the_instance]].)
+function filterShadowedPortValues(values) {
   const safe = {};
   const shadowed = [];
   for (const [k, v] of Object.entries(values || {})) {
     // Refuse unconditionally — if the parent env doesn't carry it, a port
     // value would INJECT it into the child (worse than shadowing an existing
     // value), so the parent-env check was wrong.
-    if (_ENV_SHADOW_DENY.has(k) || k.startsWith('BASH_FUNC_')) {
+    if (isShadowedEnvName(k)) {
       shadowed.push(k);
       continue;
     }
     safe[k] = v;
   }
+  return { safe, shadowed };
+}
+
+function _envWithShadowGuard(actionKey, values) {
+  const { safe, shadowed } = filterShadowedPortValues(values);
   if (shadowed.length) {
+    // Prefix with the standard `$ actionKey` tag every other action-runner
+    // warning uses, so a viewer-search for "$ provision" finds this line too
+    // (slice-1 pre-release review round 4 Fork 1 S4).
     appendViewerLines(
-      `[warning]${esc(actionKey)}: ignored port(s) shadowing env — ${esc(shadowed.join(', '))}[/]`
+      `[dim]$ ${esc(actionKey)}[/]\n` +
+      `[warning]ignored port(s) shadowing env — ${esc(shadowed.join(', '))}[/]`
     );
   }
   return { ...process.env, ...safe };
@@ -484,4 +500,5 @@ function doRunFabric(actionKey, action) {
 // Re-export streaming helpers so existing import sites
 // (dispatch.js, plugins/docker.js, cleanup.js) keep working.
 module.exports = { runAction, doRun, killAll, streamCommand, _spawnUsesTmux, doRunFabric, shQuote,
-  _resolvePortsForAction, _promptMissing, _consumeOneShotInjects, _envWithShadowGuard };
+  _resolvePortsForAction, _promptMissing, _consumeOneShotInjects, _envWithShadowGuard,
+  filterShadowedPortValues };
