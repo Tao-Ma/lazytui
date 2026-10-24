@@ -101,6 +101,66 @@ describe('[fabric-form] enter + field materialization', () => {
     const [b] = runtime.update(m, { type: 'fabric_form_enter', pendingAction: PENDING });
     assert(!b.modes.fabricFormMode, 'missing fields → no-op');
   });
+
+  // ---- Hardening (pre-release review Fork 1 R1-R3) ----
+
+  it('accepts a numeric or boolean default and stringifies it (R1 — defense-in-depth)', () => {
+    const m = freshModel();
+    const fields = [
+      { port: 'count',  text: '',  required: true,  default: 22 },           // number
+      { port: 'enable', text: '',  required: false, default: false },        // boolean
+    ];
+    const [next] = runtime.update(m, { type: 'fabric_form_enter', fields, pendingAction: PENDING });
+    const map = Object.fromEntries(next.modal.fabricForm.fields.map((x) => [x.port, x]));
+    eq(map.count.default, '22', 'numeric default stringified');
+    eq(map.enable.default, 'false', 'boolean default stringified');
+  });
+
+  it('drops null/undefined slots and entries with empty port names (R2)', () => {
+    const m = freshModel();
+    const fields = [
+      null,
+      undefined,
+      { port: '', text: 'ghost', required: true },
+      { port: 'real', text: 'ok',   required: true, default: null },
+    ];
+    const [next] = runtime.update(m, { type: 'fabric_form_enter', fields, pendingAction: PENDING });
+    const ports = next.modal.fabricForm.fields.map((x) => x.port);
+    eq(ports.join(','), 'real', 'only the real one survived');
+  });
+
+  it('deduplicates by port name — last-wins (R3)', () => {
+    const m = freshModel();
+    const fields = [
+      { port: 'host', text: 'first',  required: true,  default: null },
+      { port: 'host', text: 'second', required: true,  default: null },
+    ];
+    const [next] = runtime.update(m, { type: 'fabric_form_enter', fields, pendingAction: PENDING });
+    eq(next.modal.fabricForm.fields.length, 1, 'only one survived');
+    eq(next.modal.fabricForm.fields[0].text, 'second', 'last-wins');
+  });
+
+  it('after cleaning, if nothing survives the modal is not opened (R2 belt-and-suspenders)', () => {
+    const m = freshModel();
+    const [next] = runtime.update(m, { type: 'fabric_form_enter',
+      fields: [null, { port: '' }, undefined], pendingAction: PENDING });
+    assert(!next.modes.fabricFormMode, 'no modal opened when all fields are garbage');
+  });
+
+  it('caps a field text at 8KB on paste and sustained typing (WAL / replay bound)', () => {
+    let m = freshModel();
+    [m] = runtime.update(m, { type: 'fabric_form_enter', fields: fieldsFor(), pendingAction: PENDING });
+    // Paste 100KB → capped to 8KB.
+    const huge = 'x'.repeat(100 * 1024);
+    [m] = runtime.update(m, { type: 'fabric_form_key', key: 'paste', seq: huge });
+    eq(m.modal.fabricForm.fields[0].text.length, 8192, 'paste capped');
+    // Try to append more via typing — still capped.
+    [m] = runtime.update(m, { type: 'fabric_form_key', key: 'a', seq: 'a' });
+    eq(m.modal.fabricForm.fields[0].text.length, 8192, 'typing past the cap is a no-op (text identity preserved)');
+    // Backspace still works (shrinks fine).
+    [m] = runtime.update(m, { type: 'fabric_form_key', seq: '\x7f' });
+    eq(m.modal.fabricForm.fields[0].text.length, 8191, 'shrink past the cap works');
+  });
 });
 
 // ---- [2] key editing (focused field only) ---------------------------

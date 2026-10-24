@@ -22,6 +22,10 @@ const TYPES = ['fabric_field_enter', 'fabric_field_key', 'fabric_field_submit', 
 
 const CLOSED = { paneId: null, addr: null, text: '', pendingAction: null };
 
+// Mirror of fabric-form.js's MAX_FIELD_TEXT — same reason, same behavior.
+// (slice-1 pre-release review Fork 2 Finding 6; shared class.)
+const MAX_FIELD_TEXT = 8192;
+
 function update(model, msg) {
   switch (msg.type) {
     case 'fabric_field_enter': {
@@ -54,6 +58,7 @@ function update(model, msg) {
       } else if (msg.seq && msg.seq.length === 1 && msg.seq.charCodeAt(0) >= 32 && msg.seq.charCodeAt(0) < 127) {
         text += msg.seq;
       }
+      if (text.length > MAX_FIELD_TEXT) text = text.slice(0, MAX_FIELD_TEXT);
       if (text === f.text) return [model, []];
       return [withModal(model, { fabricField: { ...f, text } }), []];
     }

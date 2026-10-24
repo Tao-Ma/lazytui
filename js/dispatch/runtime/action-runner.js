@@ -272,10 +272,45 @@ function doRun(actionKey, action, args = []) {
         resolved.missing.map((m) => `[warning]not ready: ${m.reason}[/]`).join('\n'));
       return;
     }
-    opts.env = { ...process.env, ...resolved.values };
+    opts.env = _envWithShadowGuard(actionKey, resolved.values);
     _consumeOneShotInjects(actionKey, action, resolved.sources);
   }
   streamCommand(actionKey, cmd, args, opts);
+}
+
+// Env vars we refuse to let a port VALUE override — overriding any of these
+// substantively changes which binary runs or what libraries it loads, so a
+// malicious or careless action YAML could use them to redirect the shell /
+// hijack the child process. The port NAME check is a cheap guard against a
+// badly-named port shadowing a sensitive variable the parent env sets; we
+// skip the override but keep the parent's value, and tell the user in the
+// viewer so the config bug is visible. The real trust boundary is still the
+// `script:` field — a malicious YAML author has bigger weapons — but this is
+// cheap defense-in-depth (slice-1 pre-release review Fork 2 Finding 4).
+const _ENV_SHADOW_DENY = new Set([
+  'PATH', 'SHELL',
+  'LD_PRELOAD', 'LD_LIBRARY_PATH', 'LD_AUDIT',
+  'DYLD_INSERT_LIBRARIES', 'DYLD_LIBRARY_PATH', 'DYLD_FORCE_FLAT_NAMESPACE',
+]);
+function _envWithShadowGuard(actionKey, values) {
+  const safe = {};
+  const shadowed = [];
+  for (const [k, v] of Object.entries(values || {})) {
+    // Refuse unconditionally — if the parent env doesn't carry it, a port
+    // value would INJECT it into the child (worse than shadowing an existing
+    // value), so the parent-env check was wrong.
+    if (_ENV_SHADOW_DENY.has(k)) {
+      shadowed.push(k);
+      continue;
+    }
+    safe[k] = v;
+  }
+  if (shadowed.length) {
+    appendViewerLines(
+      `[warning]${esc(actionKey)}: ignored port(s) shadowing env — ${esc(shadowed.join(', '))}[/]`
+    );
+  }
+  return { ...process.env, ...safe };
 }
 
 /**
@@ -434,4 +469,4 @@ function doRunFabric(actionKey, action) {
 // Re-export streaming helpers so existing import sites
 // (dispatch.js, plugins/docker.js, cleanup.js) keep working.
 module.exports = { runAction, doRun, killAll, streamCommand, _spawnUsesTmux, doRunFabric, shQuote,
-  _resolvePortsForAction, _promptMissing, _consumeOneShotInjects };
+  _resolvePortsForAction, _promptMissing, _consumeOneShotInjects, _envWithShadowGuard };

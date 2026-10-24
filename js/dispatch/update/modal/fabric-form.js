@@ -47,6 +47,15 @@ const TYPES = [
 
 const CLOSED = { fields: [], focusIdx: 0, pendingAction: null };
 
+// Per-field text size ceiling. A field is a prompt input — a KB or two is
+// generous for anything a human types; a paste much larger than this is
+// almost certainly either an accidental dump of logs/binary content or an
+// unbounded WAL-rider attempt (every keystroke rides the WAL, so N 10MB
+// fields would bloat replay checkpoints). The cap is enforced on every
+// text-growing path (typed append + paste); backspace / Ctrl-U are unlimited
+// as always (shrinking is fine). Slice-1 pre-release review Fork 2 Finding 6.
+const MAX_FIELD_TEXT = 8192;
+
 // Classify a (text, default) pair into the chip flags the submit path reads.
 // `def` is the declared default (string or null); `text` is the current value.
 function _chip(text, def) {
@@ -59,13 +68,44 @@ function _chip(text, def) {
 // Caller sends { port, text, required, default, desc }; the chip flags are
 // recomputed here from (text, default) so a caller-provided chip can never
 // drift from the text/default actually passed.
+//
+// Defense-in-depth (slice-1 pre-release review Fork 1 R1): `default` is also
+// accepted as a number/boolean and String()'d, so a caller that forgot to
+// stringify (e.g. a Msg hand-built in a test, or a non-action-runner source)
+// doesn't silently lose the default. Primary caller (action-runner's
+// `_promptMissing`) already stringifies; this is belt-and-suspenders.
 function _normalize(raw) {
   const port = String(raw && raw.port || '');
   const text = raw && typeof raw.text === 'string' ? raw.text : '';
   const required = raw && raw.required !== false;                 // default true
-  const def = raw && typeof raw.default === 'string' ? raw.default : null;
+  const def = raw && raw.default != null && typeof raw.default !== 'object'
+    ? String(raw.default)
+    : null;
   const desc = raw && typeof raw.desc === 'string' ? raw.desc : '';
   return { port, text, required, default: def, desc, ..._chip(text, def) };
+}
+
+// Defense-in-depth guards on the raw fields array passed on fabric_form_enter:
+//   - drop null / undefined slots so a caller holding an array with holes
+//     doesn't materialize ghost anonymous rows (Fork 1 R2);
+//   - drop entries with an empty port name — those would address injects as
+//     `actionKey.` which the fabric resolver can't key against (Fork 1 R2);
+//   - dedupe by port name, last-wins — matches YAML map semantics where a key
+//     that appears twice resolves to the last value (Fork 1 R3). Production
+//     path (action-runner builds `fields` from `Object.keys(ports.in)`) never
+//     produces duplicates, but the normalize/dedupe guards defense-in-depth
+//     against a hand-built Msg or a future caller that doesn't share that
+//     invariant.
+function _cleanFields(raw) {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Map();                               // port → last normalized record
+  for (const r of raw) {
+    if (r == null) continue;
+    const n = _normalize(r);
+    if (!n.port) continue;
+    seen.set(n.port, n);
+  }
+  return [...seen.values()];
 }
 
 // Required rows render before optional rows; original order preserved within
@@ -98,8 +138,10 @@ function update(model, msg) {
     case 'fabric_form_enter': {
       // Flat modals — don't open over a live modal.
       if (isChainActive(model.modes)) return [model, []];
-      if (!Array.isArray(msg.fields) || msg.fields.length === 0) return [model, []];
-      const fields = _partition(msg.fields.map(_normalize));
+      // Belt-and-suspenders defense: _cleanFields drops holes / empty-port /
+      // dupe entries; if nothing survives, the modal is not opened.
+      const fields = _partition(_cleanFields(msg.fields));
+      if (fields.length === 0) return [model, []];
       return [withModalMode(model, { fabricFormMode: true }, {
         fabricForm: {
           fields,
@@ -124,6 +166,10 @@ function update(model, msg) {
       } else {
         return [model, []];
       }
+      // Cap total field size — paste or sustained typing can't bloat WAL beyond
+      // this. Shrinking paths (backspace / Ctrl+U) bypass the cap by taking the
+      // `slice` or `''` branch first.
+      if (text.length > MAX_FIELD_TEXT) text = text.slice(0, MAX_FIELD_TEXT);
       const nextFields = _editCurrent(f.fields, f.focusIdx, text);
       if (nextFields === f.fields) return [model, []];
       return [withModal(model, { fabricForm: { ...f, fields: nextFields } }), []];
@@ -167,6 +213,22 @@ function update(model, msg) {
       // Write a one-shot inject for every modified field, in field order. Each
       // applyInject returns a new model; chain them. `_consumeOneShotInjects`
       // in action-runner clears them after a successful spawn.
+      //
+      // Atomicity (slice-1 pre-release review Fork 1 R4): this is a single
+      // reducer arm, so the chained writes land as one logical reduction —
+      // the frame emitted after this arm reflects either EVERY one-shot or
+      // (if applyInject threw) none, because the exception would unwind the
+      // whole arm before `withModalMode` runs. `applyInject` itself is pure
+      // (spread + shallow-copy, no I/O, no validation) and cannot throw
+      // today; this comment pins the invariant so a future validation layer
+      // added to applyInject must preserve "throw-rolls-back-all-N" or move
+      // the loop to a cmd. See docs/ports-and-wires.md ("Resolution &
+      // readiness").
+      //
+      // The one-shot "between-write race" is physically impossible under the
+      // single-threaded JS event loop: nothing can land between the N
+      // applyInject calls and the `do_run` cmd below, because the cmd queue
+      // doesn't flush until this arm returns.
       let next = model;
       for (const field of f.fields) {
         if (!field.isModified) continue;

@@ -182,4 +182,40 @@ describe('[action-runner-prompt] _consumeOneShotInjects clears consumed one-shot
   });
 });
 
+describe('[action-runner-prompt] _envWithShadowGuard refuses to let a port VALUE override dangerous env vars', () => {
+  it('a safe port value spreads normally into the env', () => {
+    const env = runner._envWithShadowGuard('an-action', { HOST: 'node-7.lan', PORT: '22' });
+    eq(env.HOST, 'node-7.lan', 'HOST passed through');
+    eq(env.PORT, '22', 'PORT passed through');
+    eq(env.PATH, process.env.PATH, "parent's PATH preserved");
+  });
+
+  it('a port named PATH / LD_PRELOAD / etc is DROPPED unconditionally', () => {
+    const origPath = process.env.PATH;
+    const origSh = process.env.SHELL;
+    const origLD = process.env.LD_PRELOAD;      // probably undefined — the point.
+    const env = runner._envWithShadowGuard('bad', {
+      PATH: '/attacker/bin:/tmp',
+      LD_PRELOAD: '/tmp/evil.so',
+      LD_LIBRARY_PATH: '/tmp',
+      DYLD_INSERT_LIBRARIES: '/tmp/x.dylib',
+      SHELL: '/tmp/evil-shell',
+      HOST: 'node-7.lan',
+    });
+    eq(env.PATH, origPath, 'malicious PATH was NOT applied');
+    eq(env.LD_PRELOAD, origLD, 'LD_PRELOAD was NOT injected (even when parent lacks it)');
+    eq(env.LD_LIBRARY_PATH, process.env.LD_LIBRARY_PATH, 'LD_LIBRARY_PATH refused');
+    eq(env.DYLD_INSERT_LIBRARIES, process.env.DYLD_INSERT_LIBRARIES, 'DYLD_INSERT_LIBRARIES refused');
+    eq(env.SHELL, origSh, 'SHELL preserved from parent');
+    eq(env.HOST, 'node-7.lan', 'non-shadowing values still passed');
+  });
+
+  it('null / undefined values map works gracefully', () => {
+    const env = runner._envWithShadowGuard('a', null);
+    eq(typeof env.PATH, 'string', 'parent env still inherited');
+    const env2 = runner._envWithShadowGuard('a', undefined);
+    eq(typeof env2.PATH, 'string', 'parent env still inherited');
+  });
+});
+
 report();

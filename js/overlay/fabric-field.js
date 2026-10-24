@@ -52,8 +52,12 @@ function renderFabricFieldOverlay() {
 
   // The action label (if the config declares one) is a friendlier title than
   // the bare "Input" fallback; mirrors the ports-pane field editor's style.
-  const title = (pa && pa.action && typeof pa.action.label === 'string' && pa.action.label)
+  // esc()'d so a YAML `label: "[reverse]EVIL[/]"` lands as a literal in the
+  // top border, not styled markup (slice-1 pre-release review Fork 2 — shared
+  // class with the fabric-form overlay's title).
+  const rawTitle = (pa && pa.action && typeof pa.action.label === 'string' && pa.action.label)
     ? pa.action.label : 'Input';
+  const title = esc(rawTitle);
 
   // Caret in-buffer: inverse space right after the typed text. Keeps the
   // paint.js cursor-visibility bitmap untouched (terminalMode/cmdMode only).
