@@ -6,6 +6,8 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.35] — 2026-10-24
+
 ### Added
 
 - **Computed port choices (`choices_fn:`).** An action port can now derive its
@@ -37,7 +39,97 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   ref `<component>.<fnName>`; `depends_on` must be an array of sibling port
   names. Malformed values on either are WARN+DROP (not throw) per the
   v0.6.34 round-5 backward-compat posture — a pre-existing config without
-  these keys continues to load unchanged.
+  these keys continues to load unchanged. A ref naming a reserved identifier
+  (`__proto__` / `constructor` / `prototype`) is also warn-dropped as a
+  defense-in-depth sharp edge.
+- **IME + non-ASCII keystrokes now reach the invoke-time form.** Both
+  `fabric_field_key` and `fabric_form_key` previously rejected any
+  `charCodeAt(0) < 32 || >= 127`, so CJK IME users / Cyrillic / Arabic / Hebrew
+  / emoji-via-surrogate-pair couldn't type into a form field at all. New
+  shared leaf `js/leaves/text/printable.js` accepts any string whose code
+  units are all U+0020+ except DEL, including supplementary-plane surrogates.
+  Slice-1 debt surfaced by slice 2's "free-type wins" guarantee — fixed in
+  both arms (fix the class, not the instance).
+
+### Fixed
+
+Three rounds of adversarial pre-release review found 15 BUGs + 44 SMELLs
+across the computed-choices surface; the shipping-impact BUGs are listed
+here. See the review-arc commits for the full scorecard.
+
+- **Submit-while-fetching no longer leaks stale items into the re-opened
+  form.** Pending section + Enter would let the OLD fetch's `.then`
+  dispatch its resolved Msg AFTER `do_run` → `_promptMissing` re-opened
+  the form (same actionKey, fresh requestId=1 colliding). Submit now
+  emits `cancel_effect` per pending field before `do_run`, mirroring the
+  cancel arm.
+- **Cross-form stale-reply collision closed.** The resolved arm now matches
+  `msg.actionKey` against `pendingAction.actionKey` so a fetch belonging
+  to a prior form can't land into a new form whose port happens to share
+  the same name. Guard tightened to treat null pendingAction as "any
+  actionKey mismatches" when msg.actionKey is set.
+- **Items[] cap now belt-and-suspenders.** `MAX_CHOICES=1024` was only
+  enforced in the live fetch handler. A resolved Msg from a replay fold of
+  a pre-release WAL (or a direct Component dispatch) bypassed the cap and
+  the overlay built a 100k-row rows[] every repaint. Reapplied at the
+  resolved reducer arm.
+- **Dep-blur refetch returning fewer items used to paint
+  `[reverse]undefined[/]`** at the stale picking index. Resolved arm now
+  clamps `picking.idx` to the new items length (or 0 on empty).
+- **Pending `[fetching…]` chip could wedge when a dep got emptied.** Focus
+  arm now resets a pending field whose deps are no longer all set
+  → `state: 'idle'`, requestId cleared, in-flight fetch aborted via
+  `cancel_effect`. Stale resolve is dropped by the requestId guard when
+  it finally lands.
+- **Newline / tab / CR in `choices_fn` return corrupted overlay geometry.**
+  `stripControls` preserves `\n`/`\t` by design (streamed action output
+  wants them); the choices overlay is one-row-per-item, so a raw newline
+  split the row and the cursor-move escape re-anchored subsequent paint.
+  `normalizeResult` now collapses row-breaks to a single space before the
+  payload reaches the WAL.
+- **Chip overrun at N ≥ 10 items.** Slice-1 pinned `CHIP_SLOT=11` cells
+  (tuned for `[modified]=10`), but `[1024 choices]` = 15 cells. renderPanel
+  truncated the row with `…` ("[10 choice…"). Chip reserve now computed
+  per-frame as `max(MIN_CHIP_SLOT, longest chip actually painted)`.
+- **Popover highlight could scroll off-screen.** `_scrollFor` anchored on
+  the field row, not the picking row. In a long items[] with the user
+  navigated past viewport bottom, Up/Down moved an invisible cursor.
+  Scroll now anchors on the picking row while the popover is open.
+- **Space on a focused computed-choices field** now opens the popover
+  cleanly after a Tab-fallthrough-close (dispatcher re-reads model so the
+  regular-form branch routes against the fresh picking state).
+- **`[N choices]` chip is now visible even when the port has a `default:`.**
+  The slice-2 original gated on `text === '' && default == null`, hiding
+  the choices affordance from the most common configuration.
+- **`labels[i] === ''`** now renders as a blank row instead of falling back
+  to `items[i]`. Author's `labels: ['', 'Beta']` surfaces exactly as asked.
+- **Empty-string items are dropped** in `normalizeResult` so a `''` doesn't
+  render as a blank unpickable row.
+
+### Observability + author experience
+
+- **Three new `diag-log` codes** for choices_fn error paths —
+  `choices_fn.unknown_ref`, `choices_fn.sync_throw`, `choices_fn.rejected`
+  — so authors can post-mortem a session via `:diag` without staring at a
+  silent `[error]` chip. `choices_fn.dropped_items` fires when a non-empty
+  return array normalizes to zero (common authoring mistake: returning
+  numbers / objects / per-char split).
+- **Help overlay (`?`/`:help`) now documents the invoke-time form.** Two
+  new sections cover the slice-1 base keys (Tab/Shift-Tab/Enter/Esc/
+  Backspace/Ctrl+U) and the slice-2 choices keys (Space/Up/Down/Enter/
+  Esc + free-type-wins).
+- **Picker help line now reads `[esc] close popover`** instead of the
+  ambiguous `[esc] close` (next-up Esc closes the form).
+
+### Known limitations (documented in action-ports-guide.md)
+
+- **Sticky-filled forms never open** → the user can't reach the choices
+  popover for a port whose required siblings are already resolved via
+  sticky injects / wires. The planned `[a] edit args` keybind will open
+  the form on demand even when every port is resolved.
+- **Wire-fed deps don't retrigger `choices_fn`** when upstream produces
+  new output after the form is up. A `wire_updated` subscription arm
+  would fix this; not in slice 2.
 
 ## [0.6.34] — 2026-10-24
 
