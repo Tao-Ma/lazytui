@@ -303,4 +303,97 @@ describe('[fabric-schema] parser passthrough', () => {
   });
 });
 
+// args→ports slice 2 — `choices_fn:` + `depends_on:` validation. Both are
+// warn-drop (not throw) per [[feedback_backcompat_on_new_validations]].
+
+describe('[fabric-schema] slice-2 choices_fn + depends_on', () => {
+  function cfgWith(section) {
+    return baseCfg(pg => {
+      pg.actions['edit-section'] = {
+        label: 'edit', cmd: 'edit', ports: { in: {
+          file:    { type: 'path',   required: true },
+          section: Object.assign({ type: 'string', required: true }, section),
+        } },
+      };
+    });
+  }
+
+  it('accepts a well-formed `choices_fn: component.fnName` + `depends_on: [file]`', () => {
+    const w = [];
+    const cfg = cfgWith({ choices_fn: 'edit.sections_of', depends_on: ['file'] });
+    let threw = null;
+    try { validate(cfg, undefined, w); } catch (e) { threw = e; }
+    assert(threw == null, `well-formed slice-2 keys should pass, got: ${threw && threw.message}`);
+    eq(cfg.groups.pg.actions['edit-section'].ports.in.section.choices_fn, 'edit.sections_of');
+    eq(cfg.groups.pg.actions['edit-section'].ports.in.section.depends_on, ['file']);
+    assert(!w.some((x) => x.code && x.code.startsWith('port.')),
+      `no port.* warnings expected, got: ${JSON.stringify(w)}`);
+  });
+
+  it('WARNS + DROPS a malformed `choices_fn` (no dot)', () => {
+    const w = [];
+    const cfg = cfgWith({ choices_fn: 'nodot' });
+    validate(cfg, undefined, w);
+    assert(w.some((x) => x.code === 'port.bad_choices_fn' && /nodot/.test(x.message)),
+      `expected a port.bad_choices_fn warning, got: ${JSON.stringify(w)}`);
+    assert(!('choices_fn' in cfg.groups.pg.actions['edit-section'].ports.in.section),
+      'bad choices_fn dropped from the schema');
+  });
+
+  it('WARNS + DROPS a non-string `choices_fn`', () => {
+    const w = [];
+    const cfg = cfgWith({ choices_fn: 42 });
+    validate(cfg, undefined, w);
+    assert(w.some((x) => x.code === 'port.bad_choices_fn'),
+      `expected a port.bad_choices_fn warning, got: ${JSON.stringify(w)}`);
+    assert(!('choices_fn' in cfg.groups.pg.actions['edit-section'].ports.in.section));
+  });
+
+  it('WARNS + DROPS a non-array `depends_on`', () => {
+    const w = [];
+    const cfg = cfgWith({ depends_on: 'file' });   // should be ['file']
+    validate(cfg, undefined, w);
+    assert(w.some((x) => x.code === 'port.bad_depends_on'),
+      `expected a port.bad_depends_on warning, got: ${JSON.stringify(w)}`);
+    assert(!('depends_on' in cfg.groups.pg.actions['edit-section'].ports.in.section));
+  });
+
+  it('WARNS + DROPS a `depends_on` entry that references an unknown port', () => {
+    const w = [];
+    const cfg = cfgWith({ depends_on: ['file', 'ghost'] });
+    validate(cfg, undefined, w);
+    assert(w.some((x) => x.code === 'port.unknown_depends_on' && /ghost/.test(x.message)),
+      `expected a port.unknown_depends_on warning naming 'ghost', got: ${JSON.stringify(w)}`);
+    eq(cfg.groups.pg.actions['edit-section'].ports.in.section.depends_on, ['file'],
+      'kept entries survive; unknown entry dropped');
+  });
+
+  it('WARNS + DROPS a `depends_on` entry that references the port itself', () => {
+    const w = [];
+    const cfg = cfgWith({ depends_on: ['section'] });   // self-reference
+    validate(cfg, undefined, w);
+    assert(w.some((x) => x.code === 'port.self_depends'),
+      `expected a port.self_depends warning, got: ${JSON.stringify(w)}`);
+    eq(cfg.groups.pg.actions['edit-section'].ports.in.section.depends_on, [],
+      'self-reference dropped');
+  });
+
+  it('WARNS + DROPS a non-string `depends_on` entry', () => {
+    const w = [];
+    const cfg = cfgWith({ depends_on: ['file', 42] });
+    validate(cfg, undefined, w);
+    assert(w.some((x) => x.code === 'port.bad_depends_on_entry'),
+      `expected a port.bad_depends_on_entry warning, got: ${JSON.stringify(w)}`);
+    eq(cfg.groups.pg.actions['edit-section'].ports.in.section.depends_on, ['file']);
+  });
+
+  it('upgrade-safe — a pre-existing config with legacy keys continues to load', () => {
+    // No choices_fn, no depends_on, no new rules trigger. Mirrors the round-5
+    // backward-compat posture: slice-2 validation must never make a load fail.
+    let threw = null;
+    try { validate(baseCfg()); } catch (e) { threw = e; }
+    assert(threw == null, `legacy config must still load, got: ${threw && threw.message}`);
+  });
+});
+
 report();

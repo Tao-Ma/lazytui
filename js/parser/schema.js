@@ -1145,6 +1145,71 @@ function validateActionPorts(aname, ports, ctx, warnings) {
             message: `${pctx}: port name '${pname}' would shadow a security-sensitive env var — dropped at run time; rename it (e.g. '${pname.toLowerCase()}') to silence this warning`,
           });
         }
+        // args→ports slice 2 — `choices_fn:` + `depends_on:` validation.
+        // Both are warn-drop (not throw) per [[feedback_backcompat_on_new_
+        // validations]]: a new rule that would reject previously-valid YAML
+        // belongs on the `warnings` channel, with the runtime as the actual
+        // defense (an unknown ref paints `[error]` on the field).
+        if ('choices_fn' in pdef) {
+          const ref = pdef.choices_fn;
+          const ok = typeof ref === 'string' &&
+                     /^[A-Za-z_][A-Za-z0-9_-]*\.[A-Za-z_][A-Za-z0-9_]*$/.test(ref);
+          if (!ok) {
+            if (warnings) {
+              warnings.push({
+                code: 'port.bad_choices_fn',
+                message: `${pctx}: 'choices_fn' must be a dotted ref '<component>.<fnName>' (got ${JSON.stringify(ref)}) — dropped`,
+              });
+            }
+            delete pdef.choices_fn;
+          }
+        }
+        if ('depends_on' in pdef) {
+          const raw = pdef.depends_on;
+          if (!Array.isArray(raw)) {
+            if (warnings) {
+              warnings.push({
+                code: 'port.bad_depends_on',
+                message: `${pctx}: 'depends_on' must be a list of sibling port names — dropped`,
+              });
+            }
+            delete pdef.depends_on;
+          } else {
+            const siblingNames = Object.keys(defs);
+            const kept = [];
+            for (const name of raw) {
+              if (typeof name !== 'string') {
+                if (warnings) {
+                  warnings.push({
+                    code: 'port.bad_depends_on_entry',
+                    message: `${pctx}: 'depends_on' entry must be a string (got ${typeof name}) — dropped`,
+                  });
+                }
+                continue;
+              }
+              if (name === pname) {
+                if (warnings) {
+                  warnings.push({
+                    code: 'port.self_depends',
+                    message: `${pctx}: 'depends_on' can't reference the port itself — dropped`,
+                  });
+                }
+                continue;
+              }
+              if (!siblingNames.includes(name)) {
+                if (warnings) {
+                  warnings.push({
+                    code: 'port.unknown_depends_on',
+                    message: `${pctx}: 'depends_on' names '${name}' but no sibling port with that name is declared — dropped`,
+                  });
+                }
+                continue;
+              }
+              kept.push(name);
+            }
+            pdef.depends_on = kept;
+          }
+        }
       }
     }
   }
