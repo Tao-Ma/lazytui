@@ -131,6 +131,14 @@ const { scheduleRender } = require('../leaves/infra/render-queue');
 const components = {};              // name -> component spec (functions, not state)
 const groupActionPlugins = [];      // groupActions-only feature plugins (NOT Components — no init/update)
 const statusProviders = [];         // Components that expose statusFor(name)
+// Computed-choices functions a component contributes for ports with `choices_fn:`
+// in YAML. Dotted-ref keyed (`<component>.<name>`) — the YAML ref is matched
+// against this Map at form-open time by the invoke-time choices runtime.
+// Separate from `components` / `groupActionPlugins` because a contributor may
+// ship either or both: a Component may expose choicesFns, and a feature plugin
+// (archive / config-branch / image-backup) may too. Registration is idempotent
+// by key (last-write-wins on an identical ref — matches re-boot / replay).
+const choicesFnRegistry = new Map();
 
 // Slice storage + panel→Component ownership map live in `./route` (a
 // zero-dep leaf) so the root reducer can read them without a require
@@ -271,6 +279,11 @@ function registerComponent(comp) {
     try { comp.installEffects(registerEffect); }
     catch (e) { console.error(`[component:${comp.name}] installEffects error: ${e.message}`); }
   }
+  // Choices-fn contributions — a Component may ship `choicesFns: {<name>: fn}`
+  // so a port with YAML `choices_fn: "<component>.<name>"` resolves against it.
+  // Namespaced under the Component's name; same discipline as the feature-plugin
+  // path above (one source of truth for both contributor shapes).
+  if (comp.choicesFns) registerChoicesFn(comp.name, comp.choicesFns);
   if (comp.panelTypes) {
     for (const [type, def] of Object.entries(comp.panelTypes)) {
       if (!_validatePanelDef(comp.name, type, def)) continue;
@@ -639,7 +652,49 @@ function registerGroupActionPlugin(plugin) {
   }
   if (groupActionPlugins.some((p) => p.name === plugin.name)) return;  // idempotent (re-boot / replay)
   groupActionPlugins.push(plugin);
+  // A feature plugin may also ship `choicesFns:` for ports with YAML `choices_fn:`.
+  // Register them under the plugin's name so refs resolve as `<plugin>.<fnName>`.
+  if (plugin.choicesFns) registerChoicesFn(plugin.name, plugin.choicesFns);
 }
+
+/**
+ * Register a map of computed-choices functions under a component / plugin name.
+ * A port with `choices_fn: "<name>.<fnName>"` in YAML looks the fn up via
+ * `getChoicesFn(ref)` at form-open time. Signature:
+ *
+ *   fn({ values, actionKey, group, signal }) → string[] | { items, labels?, error? }
+ *                                             | Promise<same>
+ *
+ * The runtime handler (feature/choices-fn-runtime.js) normalizes the return
+ * into a structured payload and dispatches `fabric_form_choices_resolved`.
+ *
+ * `componentName` + each `fnName` combine into the dotted ref the YAML uses.
+ * Idempotent (last-write-wins on a duplicate ref) — same discipline as
+ * `registerGroupActionPlugin`, so re-boot and replay stay well-defined.
+ */
+function registerChoicesFn(componentName, fns) {
+  if (typeof componentName !== 'string' || !componentName) return;
+  if (!fns || typeof fns !== 'object') return;
+  for (const [fnName, fn] of Object.entries(fns)) {
+    if (typeof fn !== 'function' || typeof fnName !== 'string' || !fnName) continue;
+    choicesFnRegistry.set(`${componentName}.${fnName}`, fn);
+  }
+}
+
+/**
+ * Resolve a dotted ref (`<component>.<fnName>`) to the registered function, or
+ * null when no match. The runtime handler is the primary caller; parser-time
+ * validation also consults this to warn on bad refs at config load.
+ */
+function getChoicesFn(ref) {
+  if (typeof ref !== 'string') return null;
+  return choicesFnRegistry.get(ref) || null;
+}
+
+// Test-only accessor — the register table itself. Used by test-fixture resets
+// (`_resetChoicesFns`) so a suite's leaked registration doesn't bleed into the
+// next describe block. Not part of the Component-facing contract.
+function _resetChoicesFns() { choicesFnRegistry.clear(); }
 
 /**
  * Canonical "what actions exist for this group?" accessor.
@@ -728,7 +783,8 @@ module.exports = {
   // --- Component registry / lifecycle ---
   // dispatchMsg / dispatchKeyToFocused / setInstanceReconciler relocated to
   // dispatch/runtime/loop.js (B/S6 — the runtime lives in the dispatch layer now).
-  registerComponent, registerGroupActionPlugin, registerEffect, wrap,
+  registerComponent, registerGroupActionPlugin, registerChoicesFn, getChoicesFn, _resetChoicesFns,
+  registerEffect, wrap,
   _components: _componentsMap,  // v0.6.3 Phase B — internal use by initState + fanout
   getComponent, getComponentOwningPanel, getFocus,
   borderControlsFor, paneTypeHasBottomBar,
