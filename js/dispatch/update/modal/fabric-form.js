@@ -79,10 +79,26 @@ function _chip(text, def) {
   return                                 { isDefault: false, isModified: true  };
 }
 
+// A field with a `choices_fn:` carries a `computed` slot the fetch handler
+// writes to. Shape: { state, requestId, inputsHash, items, labels, error }.
+//   state         'idle' | 'pending' | 'ok' | 'error'
+//   requestId     monotonic — the stale-reply guard; a resolved msg whose
+//                 id ≠ the field's current requestId is dropped on arrival.
+//   inputsHash    the depended-on values' hash at request time; the request
+//                 arm uses this to short-circuit no-op refetches on identical
+//                 inputs (same-form session).
+//   items/labels  the current result (empty while idle/pending).
+//   error         fetch error text, or null.
+const EMPTY_COMPUTED = { state: 'idle', requestId: 0, inputsHash: null,
+                         items: [], labels: null, error: null };
+
 // Normalize an incoming raw field decl into the slot shape the reducer stores.
-// Caller sends { port, text, required, default, desc }; the chip flags are
-// recomputed here from (text, default) so a caller-provided chip can never
-// drift from the text/default actually passed.
+// Caller sends { port, text, required, default, desc, choicesFnRef?, dependsOn? };
+// the chip flags are recomputed here from (text, default) so a caller-provided
+// chip can never drift from the text/default actually passed. Computed-choices
+// fields (choicesFnRef present) are seeded with an idle `computed` slot — the
+// renderer paints `[fetching…]` once the request arm transitions it to
+// `pending`, so a brand-new form opens quiet rather than flashing "idle".
 //
 // Defense-in-depth (slice-1 pre-release review Fork 1 R1): `default` is also
 // accepted as a number/boolean and String()'d, so a caller that forgot to
@@ -97,7 +113,13 @@ function _normalize(raw) {
     ? String(raw.default)
     : null;
   const desc = raw && typeof raw.desc === 'string' ? raw.desc : '';
-  return { port, text, required, default: def, desc, ..._chip(text, def) };
+  const choicesFnRef = raw && typeof raw.choicesFnRef === 'string' && raw.choicesFnRef
+    ? raw.choicesFnRef : null;
+  const dependsOn = raw && Array.isArray(raw.dependsOn)
+    ? raw.dependsOn.filter((n) => typeof n === 'string' && n) : [];
+  const computed = choicesFnRef ? { ...EMPTY_COMPUTED } : null;
+  return { port, text, required, default: def, desc, choicesFnRef, dependsOn,
+           computed, ..._chip(text, def) };
 }
 
 // Defense-in-depth guards on the raw fields array passed on fabric_form_enter:
@@ -267,14 +289,81 @@ function update(model, msg) {
       if (!model.modes.fabricFormMode) return [model, []];
       // Nothing to undo — submit is atomic, so an open form has written no injects yet.
       return [withModalMode(model, { fabricFormMode: false }, { fabricForm: { ...CLOSED } }), []];
-    // Args→ports slice 2 placeholder arms — the real bodies land in commit 3
-    // (fabric_form choices_request/resolved/pick). Keeping them here as no-ops
-    // means the msg-routing invariant (test-msg-routing) stays satisfied as
-    // the runtime handler lands in commit 2.
-    case 'fabric_form_choices_request':
-    case 'fabric_form_choices_resolved':
-    case 'fabric_form_choices_pick':
-      return [model, []];
+    case 'fabric_form_choices_request': {
+      // `{ port, requestId, inputsHash, depValues }` — mark the port's
+      // computed slot pending (so the renderer paints [fetching…]) and emit
+      // the `fetch_choices` effect. Caller already decided we need a fetch
+      // (deps resolved, inputsHash changed from last time) — the reducer
+      // doesn't second-guess, but it DOES early-return when the field has no
+      // choicesFnRef (so a stale request arm can never materialize a fetch
+      // for a port that lost its choices_fn).
+      if (!model.modes.fabricFormMode) return [model, []];
+      const f = model.modal.fabricForm;
+      const idx = f.fields.findIndex((x) => x.port === msg.port);
+      if (idx < 0) return [model, []];
+      const cur = f.fields[idx];
+      if (!cur.choicesFnRef) return [model, []];
+      const nextFields = f.fields.slice();
+      nextFields[idx] = { ...cur, computed: {
+        ...(cur.computed || EMPTY_COMPUTED),
+        state: 'pending',
+        requestId: msg.requestId,
+        inputsHash: msg.inputsHash || null,
+        error: null,
+      }};
+      const pending = f.pendingAction;
+      const actionKey = pending && pending.actionKey;
+      return [withModal(model, { fabricForm: { ...f, fields: nextFields } }), [{
+        type: 'fetch_choices',
+        key: `choices_fn:${actionKey}.${cur.port}`,
+        ref: cur.choicesFnRef,
+        port: cur.port,
+        values: msg.depValues || {},
+        requestId: msg.requestId,
+        actionKey,
+        group: model.currentGroup || null,
+      }]];
+    }
+    case 'fabric_form_choices_resolved': {
+      // `{ port, requestId, items, labels, error }` — the fetch_choices Cmd's
+      // reply (dispatched by the runtime handler in feature/choices-fn-
+      // runtime.js). Stale-reply guard: if the port's current requestId has
+      // moved on, drop. The runtime also drops its OWN stale replies before
+      // dispatching when the AbortSignal fired; this guard is defense-in-depth
+      // against the handler's internal state becoming inconsistent.
+      if (!model.modes.fabricFormMode) return [model, []];
+      const f = model.modal.fabricForm;
+      const idx = f.fields.findIndex((x) => x.port === msg.port);
+      if (idx < 0) return [model, []];
+      const cur = f.fields[idx];
+      if (!cur.computed || cur.computed.requestId !== msg.requestId) return [model, []];
+      const items = Array.isArray(msg.items) ? msg.items.filter((v) => typeof v === 'string') : [];
+      const labels = Array.isArray(msg.labels)
+        ? msg.labels.slice(0, items.length).map((v) => (typeof v === 'string' ? v : ''))
+        : null;
+      const error = typeof msg.error === 'string' && msg.error ? msg.error : null;
+      const nextFields = f.fields.slice();
+      nextFields[idx] = { ...cur, computed: {
+        ...cur.computed,
+        state: error ? 'error' : 'ok',
+        items, labels, error,
+      }};
+      return [withModal(model, { fabricForm: { ...f, fields: nextFields } }), []];
+    }
+    case 'fabric_form_choices_pick': {
+      // `{ port, value }` — user picked an entry from the choices popover.
+      // Writes `value` into the field's text (through `_editCurrent` so the
+      // chip classification is recomputed). Does NOT submit — the user may
+      // tweak a sibling field before run.
+      if (!model.modes.fabricFormMode) return [model, []];
+      const f = model.modal.fabricForm;
+      const idx = f.fields.findIndex((x) => x.port === msg.port);
+      if (idx < 0) return [model, []];
+      const value = typeof msg.value === 'string' ? msg.value : '';
+      const nextFields = _editCurrent(f.fields, idx, value);
+      if (nextFields === f.fields) return [model, []];
+      return [withModal(model, { fabricForm: { ...f, fields: nextFields } }), []];
+    }
     default:
       return [model, []];
   }
