@@ -603,6 +603,16 @@ function installBuiltins() {
   const choicesRuntime = require('../../feature/choices-fn-runtime');
   choicesRuntime.setRegistryHost({ getChoicesFn: api.getChoicesFn });
   choicesRuntime.registerFetchChoicesEffect(registerEffect);
+
+  // cancel_effect: reducer-emitted abort for an in-flight keyed effect.
+  // Reducers that know a side effect is no longer wanted (fabric_form_cancel
+  // aborting pending choices fetches; a future "cancel a running job"
+  // ergonomic verb) emit `{type: 'cancel_effect', key}` and this handler
+  // calls the exported cancelEffect(key). A key with no live effect is a
+  // no-op by design (same as cancelEffect itself).
+  registerEffect('cancel_effect', (eff) => {
+    if (typeof eff.key === 'string' && eff.key) cancelEffect(eff.key);
+  });
 }
 
 // Exposed so boot-wired subscription handlers that AREN'T started by an effect

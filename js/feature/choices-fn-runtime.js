@@ -60,23 +60,45 @@ let _lookup = null;
 function setRegistryHost(host) { _lookup = host && host.getChoicesFn; }
 function _getChoicesFn(ref) { return _lookup ? _lookup(ref) : null; }
 
+// Hard ceiling on the choices list — a buggy or hostile fn returning e.g.
+// Array(10_000_000).fill('x') would bloat `model.modal.fabricForm.fields[i].
+// computed.items` (and the WAL-captured resolved payload) by tens of MB and
+// make every repaint allocate the full rows[] array. The parallel of the
+// slice-1 MAX_FIELD_TEXT=8192 for paste bloat on a field text; here the risk
+// is the fn's RETURN SIZE, not keystroke paste. 1024 covers "list every
+// branch in a large monorepo" / "every table in a mid-sized db" with room
+// to spare; past that the overlay would be unusable anyway. R1B-BUG1.
+const MAX_CHOICES = 1024;
+
 // Normalize a (possibly-async) fn return into the resolved-arm payload shape.
 // Pure, no I/O; callable from unit tests without the effect wrapper.
+//
+// Return shape now includes `truncated: true` when the fn returned more than
+// MAX_CHOICES items — the overlay renders a trailing `[+N more]` row so the
+// user knows the cap applied.
 function normalizeResult(raw) {
-  if (raw == null) return { items: [], labels: null, error: null };
+  if (raw == null) return { items: [], labels: null, error: null, truncated: false };
+  let items, labels, error;
   if (Array.isArray(raw)) {
-    const items = raw.filter((v) => typeof v === 'string');
-    return { items, labels: null, error: null };
-  }
-  if (typeof raw === 'object') {
-    const items = Array.isArray(raw.items) ? raw.items.filter((v) => typeof v === 'string') : [];
-    const labels = Array.isArray(raw.labels)
+    items = raw.filter((v) => typeof v === 'string');
+    labels = null;
+    error = null;
+  } else if (typeof raw === 'object') {
+    items = Array.isArray(raw.items) ? raw.items.filter((v) => typeof v === 'string') : [];
+    labels = Array.isArray(raw.labels)
       ? raw.labels.slice(0, items.length).map((v) => (typeof v === 'string' ? v : ''))
       : null;
-    const error = typeof raw.error === 'string' && raw.error ? raw.error : null;
-    return { items, labels, error };
+    error = typeof raw.error === 'string' && raw.error ? raw.error : null;
+  } else {
+    return { items: [], labels: null, error: 'choices_fn returned an unsupported value', truncated: false };
   }
-  return { items: [], labels: null, error: 'choices_fn returned an unsupported value' };
+  let truncated = false;
+  if (items.length > MAX_CHOICES) {
+    items = items.slice(0, MAX_CHOICES);
+    if (labels) labels = labels.slice(0, MAX_CHOICES);
+    truncated = true;
+  }
+  return { items, labels, error, truncated };
 }
 
 /**
@@ -101,14 +123,16 @@ function registerFetchChoicesEffect(registerEffect) {
       host.applyMsg({
         type: 'fabric_form_choices_resolved',
         port: eff.port,
+        actionKey: eff.actionKey,       // R1C — cross-form stale-reply guard
         requestId: eff.requestId,
         items: payload.items,
         labels: payload.labels,
         error: payload.error,
+        truncated: !!payload.truncated,  // R1B-BUG1 — items cap affordance
       });
     };
     if (!fn) {
-      dispatchResolved({ items: [], labels: null, error: `unknown choices_fn: ${eff.ref}` });
+      dispatchResolved({ items: [], labels: null, error: `unknown choices_fn: ${eff.ref}`, truncated: false });
       if (host.releaseKey) host.releaseKey();
       return;
     }
@@ -121,7 +145,7 @@ function registerFetchChoicesEffect(registerEffect) {
         signal: host.signal,
       });
     } catch (e) {
-      dispatchResolved({ items: [], labels: null, error: String((e && e.message) || e) });
+      dispatchResolved({ items: [], labels: null, error: String((e && e.message) || e), truncated: false });
       if (host.releaseKey) host.releaseKey();
       return;
     }
@@ -143,7 +167,7 @@ function registerFetchChoicesEffect(registerEffect) {
           if (host.releaseKey) host.releaseKey();
           return;
         }
-        dispatchResolved({ items: [], labels: null, error: String((err && err.message) || err) });
+        dispatchResolved({ items: [], labels: null, error: String((err && err.message) || err), truncated: false });
         if (host.releaseKey) host.releaseKey();
       }
     );

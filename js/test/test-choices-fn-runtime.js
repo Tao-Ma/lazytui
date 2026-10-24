@@ -68,12 +68,12 @@ function makeHandler() {
 describe('[choices-fn-runtime] normalizeResult', () => {
   it('string[] → structured items', () => {
     eq(runtime.normalizeResult(['a', 'b']),
-       { items: ['a', 'b'], labels: null, error: null });
+       { items: ['a', 'b'], labels: null, error: null, truncated: false });
   });
 
   it('structured return passthrough', () => {
     eq(runtime.normalizeResult({ items: ['x', 'y'], labels: ['X', 'Y'] }),
-       { items: ['x', 'y'], labels: ['X', 'Y'], error: null });
+       { items: ['x', 'y'], labels: ['X', 'Y'], error: null, truncated: false });
   });
 
   it('labels longer than items are clamped', () => {
@@ -84,9 +84,25 @@ describe('[choices-fn-runtime] normalizeResult', () => {
 
   it('null / undefined → empty, no error', () => {
     eq(runtime.normalizeResult(null),
-       { items: [], labels: null, error: null });
+       { items: [], labels: null, error: null, truncated: false });
     eq(runtime.normalizeResult(undefined),
-       { items: [], labels: null, error: null });
+       { items: [], labels: null, error: null, truncated: false });
+  });
+
+  it('items[] over MAX_CHOICES → capped + truncated=true', () => {
+    const big = Array(5000).fill('x');
+    const r = runtime.normalizeResult(big);
+    eq(r.items.length, 1024, 'items capped at MAX_CHOICES');
+    eq(r.truncated, true);
+  });
+
+  it('labels also capped when items were capped', () => {
+    const big = Array(5000).fill('x');
+    const bigLabels = Array(5000).fill('L');
+    const r = runtime.normalizeResult({ items: big, labels: bigLabels });
+    eq(r.items.length, 1024);
+    eq(r.labels.length, 1024);
+    eq(r.truncated, true);
   });
 
   it('unsupported value → error payload', () => {

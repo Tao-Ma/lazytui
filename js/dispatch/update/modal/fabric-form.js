@@ -112,7 +112,7 @@ function _chip(text, def) {
 //   items/labels  the current result (empty while idle/pending).
 //   error         fetch error text, or null.
 const EMPTY_COMPUTED = { state: 'idle', requestId: 0, inputsHash: null,
-                         items: [], labels: null, error: null };
+                         items: [], labels: null, error: null, truncated: false };
 
 // Normalize an incoming raw field decl into the slot shape the reducer stores.
 // Caller sends { port, text, required, default, desc, choicesFnRef?, dependsOn? };
@@ -279,28 +279,52 @@ function update(model, msg) {
       // from its stored inputsHash, emit a request Cmd (via `msg`). An unchanged
       // hash is a no-op (user tabbed out without editing the dep) → no refetch
       // / no flicker.
+      //
+      // R1A-BUG2 — a pending request whose deps have been EMPTIED between
+      // fire and now gets its field reset to idle (state='idle', requestId
+      // cleared) so (a) the chip stops reading `[fetching…]` forever and
+      // (b) the in-flight fetch's resolved reply is dropped by the
+      // requestId guard when it lands.
       const blurredPort = f.fields[f.focusIdx] && f.fields[f.focusIdx].port;
       const refetchCmds = [];
+      const cancelCmds = [];
+      let nextFields = f.fields;
       if (blurredPort) {
-        for (const field of f.fields) {
+        const pending = f.pendingAction;
+        const actionKey = pending && pending.actionKey;
+        for (let i = 0; i < f.fields.length; i++) {
+          const field = f.fields[i];
           if (!field.choicesFnRef) continue;
           if (!(field.dependsOn || []).includes(blurredPort)) continue;
           const dv = _depValuesForField(f.fields, field.dependsOn);
+          const allDepsSet = (field.dependsOn || []).every((n) => dv[n] && dv[n] !== '');
+          // Dep got emptied: reset the field's computed state so pending
+          // doesn't wedge. If an in-flight fetch is running, abort it so a
+          // stale resolve can't repopulate items for the now-empty deps.
+          if (!allDepsSet) {
+            if (field.computed && field.computed.state === 'pending') {
+              if (nextFields === f.fields) nextFields = f.fields.slice();
+              nextFields[i] = { ...field, computed: {
+                ...EMPTY_COMPUTED, state: 'idle', requestId: 0, inputsHash: null,
+              }};
+              if (actionKey) {
+                cancelCmds.push({ type: 'cancel_effect', key: `choices_fn:${actionKey}.${field.port}` });
+              }
+            }
+            continue;
+          }
           const h = _depsHash(dv);
           const stored = field.computed ? field.computed.inputsHash : null;
           if (h === stored) continue;
-          // Also drop requests when a dep is empty — the field would re-enter
-          // pending state forever otherwise (fetch runs with empty values and
-          // most impls return []).
-          const allDepsSet = (field.dependsOn || []).every((n) => dv[n] && dv[n] !== '');
-          if (!allDepsSet) continue;
           refetchCmds.push({
             type: 'msg',
             msg: { type: 'fabric_form_choices_request', port: field.port },
           });
         }
       }
-      return [withModal(model, { fabricForm: { ...f, focusIdx: nextIdx } }), refetchCmds];
+      return [withModal(model, { fabricForm: {
+        ...f, focusIdx: nextIdx, fields: nextFields,
+      } }), [...cancelCmds, ...refetchCmds]];
     }
     case 'fabric_form_reset_default': {
       if (!model.modes.fabricFormMode) return [model, []];
@@ -358,10 +382,29 @@ function update(model, msg) {
       const closed = withModalMode(next, { fabricFormMode: false }, { fabricForm: { ...CLOSED } });
       return [closed, [{ type: 'do_run', actionKey, action: pending.action }]];
     }
-    case 'fabric_form_cancel':
+    case 'fabric_form_cancel': {
       if (!model.modes.fabricFormMode) return [model, []];
-      // Nothing to undo — submit is atomic, so an open form has written no injects yet.
-      return [withModalMode(model, { fabricFormMode: false }, { fabricForm: { ...CLOSED } }), []];
+      // R1B-SMELL1 / R1C-SMELL — abort any in-flight choices fetches before
+      // closing. Without this: a slow fn resolves after the modal is gone, a
+      // dead `fabric_form_choices_resolved` Msg lands (no-op'd by the mode
+      // guard above), the WAL carries garbage, and the Promise closure
+      // retains host.applyMsg until the fn settles. One cancel_effect per
+      // field with a pending request; keys match the fetch_choices Cmd keys.
+      const f = model.modal.fabricForm;
+      const pending = f.pendingAction;
+      const actionKey = pending && pending.actionKey;
+      const cancelCmds = [];
+      if (actionKey) {
+        for (const field of f.fields) {
+          if (field.computed && field.computed.state === 'pending') {
+            cancelCmds.push({ type: 'cancel_effect', key: `choices_fn:${actionKey}.${field.port}` });
+          }
+        }
+      }
+      // Nothing to undo on injects — submit is atomic, so an open form has
+      // written none yet.
+      return [withModalMode(model, { fabricFormMode: false }, { fabricForm: { ...CLOSED } }), cancelCmds];
+    }
     case 'fabric_form_choices_request': {
       // `{ port, requestId?, inputsHash?, depValues? }` — mark the port's
       // computed slot pending (so the renderer paints [fetching…]) and emit
@@ -413,14 +456,26 @@ function update(model, msg) {
       }]];
     }
     case 'fabric_form_choices_resolved': {
-      // `{ port, requestId, items, labels, error }` — the fetch_choices Cmd's
-      // reply (dispatched by the runtime handler in feature/choices-fn-
-      // runtime.js). Stale-reply guard: if the port's current requestId has
-      // moved on, drop. The runtime also drops its OWN stale replies before
-      // dispatching when the AbortSignal fired; this guard is defense-in-depth
-      // against the handler's internal state becoming inconsistent.
+      // `{ port, actionKey?, requestId, items, labels, error, truncated? }` —
+      // the fetch_choices Cmd's reply (dispatched by the runtime handler in
+      // feature/choices-fn-runtime.js). Three stale-reply guards:
+      //   1. form open (modes.fabricFormMode)
+      //   2. actionKey matches current pendingAction — stops a prior form's
+      //      in-flight fetch from landing into a new form whose port has the
+      //      same name (R1C cross-form stale-reply class).
+      //   3. requestId still matches the port's current computed.requestId
+      //      (defense-in-depth against handler internal-state drift).
+      // Also clamps `picking.idx` when the new items array is shorter than
+      // the user navigated: a dep-blur refetch that returns fewer items used
+      // to render `[reverse]undefined[/]` at the stale idx (R1A-BUG1).
       if (!model.modes.fabricFormMode) return [model, []];
       const f = model.modal.fabricForm;
+      // R1C: cross-form actionKey match. msg.actionKey can be absent (older
+      // dispatchers / tests built before this guard) — tolerate by skipping
+      // the match when it's not present.
+      if (msg.actionKey && f.pendingAction && f.pendingAction.actionKey !== msg.actionKey) {
+        return [model, []];
+      }
       const idx = f.fields.findIndex((x) => x.port === msg.port);
       if (idx < 0) return [model, []];
       const cur = f.fields[idx];
@@ -430,13 +485,20 @@ function update(model, msg) {
         ? msg.labels.slice(0, items.length).map((v) => (typeof v === 'string' ? v : ''))
         : null;
       const error = typeof msg.error === 'string' && msg.error ? msg.error : null;
+      const truncated = !!msg.truncated;
       const nextFields = f.fields.slice();
       nextFields[idx] = { ...cur, computed: {
         ...cur.computed,
         state: error ? 'error' : 'ok',
-        items, labels, error,
+        items, labels, error, truncated,
       }};
-      return [withModal(model, { fabricForm: { ...f, fields: nextFields } }), []];
+      // Clamp picking.idx if the user was navigated past the new list end.
+      let nextPicking = f.picking;
+      if (f.picking && f.picking.port === msg.port) {
+        if (items.length === 0) nextPicking = { ...f.picking, idx: 0 };
+        else if (f.picking.idx >= items.length) nextPicking = { ...f.picking, idx: items.length - 1 };
+      }
+      return [withModal(model, { fabricForm: { ...f, fields: nextFields, picking: nextPicking } }), []];
     }
     case 'fabric_form_choices_pick': {
       // `{ port, value }` — user picked an entry from the choices popover.

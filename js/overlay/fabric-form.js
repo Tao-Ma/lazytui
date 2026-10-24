@@ -218,6 +218,12 @@ function renderFabricFormOverlay() {
               : esc(label);
             rows.push(`${' '.repeat(leftW)}${painted}`);
           }
+          // R1B-BUG1: choices runtime caps items at MAX_CHOICES; the overlay
+          // tells the user the fn's return was longer than the cap so they
+          // know what they're not seeing.
+          if (c.truncated) {
+            rows.push(`${' '.repeat(leftW)}[dim][+more…][/]`);
+          }
         }
       }
     }
