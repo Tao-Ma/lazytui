@@ -194,7 +194,19 @@ function renderFabricFormOverlay() {
     rows.push(_sectionHeader('Optional'));
     for (const field of optional) pushField(field);
   }
+  // Required-still-missing hint — list any required field whose text is empty
+  // AND has no default to fall back on. Shows BOTH on first open (if any
+  // required was unresolved) AND on reopen (after a submit-with-empty bounced
+  // off the resolver and reopened the form). Without this hint, a user whose
+  // submit silently reopened the same form would think the TUI was wedged.
+  // (Slice-1 pre-release review round 4 Fork 1 S3.)
+  const stillMissing = f.fields
+    .filter((x) => x.required && x.text === '' && x.default == null)
+    .map((x) => x.port);
   rows.push('');
+  if (stillMissing.length) {
+    rows.push(`[warning]required inputs still missing: ${esc(stillMissing.join(', '))}[/]`);
+  }
   rows.push('[dim]\\[tab] next   \\[shift-tab] prev   \\[enter] run   \\[esc] cancel[/]');
 
   // Title — the action's label (friendlier than its key), falling back to

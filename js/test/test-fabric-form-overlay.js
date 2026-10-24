@@ -304,6 +304,28 @@ describe('[fabric-form-overlay] paints a bordered popup with required+optional s
     assert(allSame, `chip end-columns must match (right-anchored): got ${JSON.stringify(endCols)} on rows: ${JSON.stringify(chipRows.map((r) => r.text))}`);
   });
 
+  it('S3 — overlay shows a "required inputs still missing" hint when any required+empty+no-default field exists', () => {
+    // Mixed set: host (required, empty, no default) — missing;
+    //            role (required, has default pre-filled) — not missing;
+    //            tags (optional, empty) — not required.
+    const fields = [
+      { port: 'host', text: '',       required: true,  default: null,     desc: '' },
+      { port: 'role', text: 'worker', required: true,  default: 'worker', desc: '' },
+      { port: 'tags', text: '',       required: false, default: null,     desc: '' },
+    ];
+    const P = { actionKey: 'prov', action: { label: 'Prov', ports: { in: {} } } };
+    let m = freshModel();
+    [m] = runtime.update(m, { type: 'fabric_form_enter', fields, pendingAction: P });
+    const out = captureWith(m, () => renderFabricFormOverlay());
+    assert(/required inputs still missing: host/.test(out),
+      `missing-hint absent — got: ${JSON.stringify(out)}`);
+    // Fill in host → no more missing.
+    for (const c of 'node-7.lan') [m] = runtime.update(m, { type: 'fabric_form_key', key: c, seq: c });
+    const out2 = captureWith(m, () => renderFabricFormOverlay());
+    assert(!/required inputs still missing/.test(out2),
+      `hint should disappear when nothing is missing — got: ${JSON.stringify(out2)}`);
+  });
+
   it('focused row paints a REAL reverse-video caret (SGR 7), not a stripped-out `[inverse]` placeholder', () => {
     // Round 3 theme fork Finding 1: `[inverse]` isn't a legal Rich attribute
     // token (`js/leaves/text/ansi.js` _ATTRS = {bold, dim, reverse}); the
