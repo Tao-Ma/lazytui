@@ -17,6 +17,7 @@
 const { withModalMode, withModal } = require('../model-ops');
 const { isChainActive } = require('../../../leaves/input/modes');
 const { applyInject } = require('../fabric');
+const { isPrintableSeq: _isPrintableSeq } = require('../../../leaves/text/printable');
 
 const TYPES = ['fabric_field_enter', 'fabric_field_key', 'fabric_field_submit', 'fabric_field_cancel'];
 
@@ -57,7 +58,13 @@ function update(model, msg) {
       else if (msg.seq === '\x15') text = '';                      // Ctrl+U — clear
       else if (msg.key === 'paste' && typeof msg.seq === 'string') {
         text += msg.seq.replace(/[\r\n]+/g, ' ');                  // single-line: collapse breaks
-      } else if (msg.seq && msg.seq.length === 1 && msg.seq.charCodeAt(0) >= 32 && msg.seq.charCodeAt(0) < 127) {
+      } else if (_isPrintableSeq(msg.seq)) {
+        // R3C-BUG1 — non-ASCII keystrokes (CJK IME, Cyrillic, Arabic, emoji
+        // surrogate pairs) are legitimate text content. The pre-fix gate
+        // `charCodeAt(0) >= 32 && < 127` rejected them silently. The new
+        // predicate accepts any string whose characters are all printable
+        // (>= 0x20, not DEL), including supplementary-plane sequences
+        // (seq.length can be 1 for BMP chars or 2 for an emoji surrogate pair).
         text += msg.seq;
       }
       if (text.length > MAX_FIELD_TEXT) {

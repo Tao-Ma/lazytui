@@ -432,6 +432,74 @@ describe('[fabric-form-choices] R2B-BUG1 — submit aborts in-flight fetches', (
   });
 });
 
+// R3F-BUG1 — defense-in-depth items cap at the resolver arm. The
+// normalizeResult cap only fires inside the live fetch_choices handler;
+// a resolved Msg can also reach this arm from a replay fold of a pre-R1
+// WAL, a direct Component dispatch, or test tooling. Belt-and-suspenders
+// cap in the arm so model NEVER holds more than MAX_CHOICES items.
+describe('[fabric-form-choices] R3F-BUG1 — resolver arm caps items at 1024', () => {
+  it('an un-capped resolved Msg (direct dispatch) is capped at the arm', () => {
+    let m = openForm();
+    [m] = runtime.update(m, { type: 'fabric_form_choices_request', port: 'section' });
+    const requestId = m.modal.fabricForm.fields.find((x) => x.port === 'section').computed.requestId;
+    const huge = Array.from({ length: 5000 }, (_, i) => `opt${i}`);
+    const [after] = runtime.update(m, {
+      type: 'fabric_form_choices_resolved',
+      port: 'section', requestId,
+      items: huge, labels: null, error: null,
+      // NOTE: no `truncated:true` in the Msg — the arm forces it.
+    });
+    const section = after.modal.fabricForm.fields.find((x) => x.port === 'section');
+    eq(section.computed.items.length, 1024, 'items capped at 1024');
+    eq(section.computed.truncated, true, 'truncated flag set by the arm');
+  });
+
+  it('a resolved Msg with 1024 items passes through un-truncated', () => {
+    let m = openForm();
+    [m] = runtime.update(m, { type: 'fabric_form_choices_request', port: 'section' });
+    const requestId = m.modal.fabricForm.fields.find((x) => x.port === 'section').computed.requestId;
+    const exact = Array.from({ length: 1024 }, (_, i) => `opt${i}`);
+    const [after] = runtime.update(m, {
+      type: 'fabric_form_choices_resolved',
+      port: 'section', requestId,
+      items: exact, labels: null, error: null, truncated: false,
+    });
+    const section = after.modal.fabricForm.fields.find((x) => x.port === 'section');
+    eq(section.computed.items.length, 1024, 'items preserved at exactly the cap');
+    eq(section.computed.truncated, false, 'no truncation flag — not over the cap');
+  });
+});
+
+// R3C-BUG1 — the fabric_form_key gate used to reject non-ASCII (CJK, Cyrillic,
+// emoji) silently. Slice-2's "free-type wins" guarantee broke for any user
+// typing in a non-ASCII script. End-to-end from the arm.
+describe('[fabric-form-choices] R3C-BUG1 — IME / non-ASCII keys reach the field', () => {
+  it('CJK keystroke lands in focused field text', () => {
+    let m = openForm();
+    [m] = runtime.update(m, { type: 'fabric_form_key', seq: 'あ' });
+    const file = m.modal.fabricForm.fields.find((x) => x.port === 'file');
+    eq(file.text, 'あ', 'Japanese hiragana accepted');
+  });
+  it('emoji surrogate pair lands as one keystroke', () => {
+    let m = openForm();
+    [m] = runtime.update(m, { type: 'fabric_form_key', seq: '🎉' });
+    const file = m.modal.fabricForm.fields.find((x) => x.port === 'file');
+    eq(file.text, '🎉', 'emoji (surrogate pair, length=2) accepted');
+  });
+  it('control char still rejected (not weakened the gate)', () => {
+    let m = openForm();
+    const before = m;
+    const [after] = runtime.update(m, { type: 'fabric_form_key', seq: '\x1b' });
+    eq(after, before, 'Esc byte alone is dropped (not literal text)');
+  });
+  it('a seq containing CTRL char anywhere is rejected (defense against pasted sneakers)', () => {
+    let m = openForm();
+    const before = m;
+    const [after] = runtime.update(m, { type: 'fabric_form_key', seq: 'ok\nbad' });
+    eq(after, before, 'embedded newline in a non-paste key arm → reject');
+  });
+});
+
 // R2A-SMELL2 — the actionKey cross-form guard now tightened to drop a resolved
 // Msg carrying an actionKey whenever pendingAction is null (previously the
 // guard silently fell through).

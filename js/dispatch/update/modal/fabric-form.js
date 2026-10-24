@@ -37,6 +37,7 @@
 const { withModalMode, withModal } = require('../model-ops');
 const { isChainActive } = require('../../../leaves/input/modes');
 const { applyInject } = require('../fabric');
+const { isPrintableSeq: _isPrintableSeq } = require('../../../leaves/text/printable');
 
 const TYPES = [
   'fabric_form_enter', 'fabric_form_key',
@@ -252,8 +253,13 @@ function update(model, msg) {
       else if (msg.seq === '\x15') text = '';                                  // Ctrl+U — clear-line
       else if (msg.key === 'paste' && typeof msg.seq === 'string') {
         text += msg.seq.replace(/[\r\n]+/g, ' ');                              // single-line: collapse breaks
-      } else if (msg.seq && msg.seq.length === 1
-                 && msg.seq.charCodeAt(0) >= 32 && msg.seq.charCodeAt(0) < 127) {
+      } else if (_isPrintableSeq(msg.seq)) {
+        // R3C-BUG1 — non-ASCII keystrokes (CJK IME, Cyrillic, Arabic, emoji
+        // surrogate pairs) are legitimate text content. The pre-fix gate
+        // `charCodeAt(0) >= 32 && < 127` rejected them silently, so an author
+        // adding `choices_fn:` on a port that holds Japanese section names
+        // couldn't free-type (and the "free-type wins" guarantee failed for
+        // every non-ASCII user). Shared predicate with fabric-field.
         text += msg.seq;
       } else {
         return [model, []];
@@ -510,12 +516,26 @@ function update(model, msg) {
       if (idx < 0) return [model, []];
       const cur = f.fields[idx];
       if (!cur.computed || cur.computed.requestId !== msg.requestId) return [model, []];
-      const items = Array.isArray(msg.items) ? msg.items.filter((v) => typeof v === 'string') : [];
-      const labels = Array.isArray(msg.labels)
+      let items = Array.isArray(msg.items) ? msg.items.filter((v) => typeof v === 'string') : [];
+      let labels = Array.isArray(msg.labels)
         ? msg.labels.slice(0, items.length).map((v) => (typeof v === 'string' ? v : ''))
         : null;
       const error = typeof msg.error === 'string' && msg.error ? msg.error : null;
-      const truncated = !!msg.truncated;
+      let truncated = !!msg.truncated;
+      // R3F-BUG1 — belt-and-suspenders items cap. The MAX_CHOICES cap in
+      // choices-fn-runtime.js fires only for live fetches; a resolved Msg can
+      // reach this arm from THREE other paths that bypass the runtime: (1)
+      // replay fold of a pre-R1 WAL where the recorded payload is un-capped;
+      // (2) a future Component dispatching the Msg directly with its own
+      // items; (3) tests building hand-crafted payloads. Re-apply the cap
+      // here so the model NEVER holds more than MAX_CHOICES items regardless
+      // of entry path — single invariant to reason about on paint + replay.
+      const MAX_CHOICES_ARM = 1024;
+      if (items.length > MAX_CHOICES_ARM) {
+        items = items.slice(0, MAX_CHOICES_ARM);
+        if (labels) labels = labels.slice(0, MAX_CHOICES_ARM);
+        truncated = true;
+      }
       const nextFields = f.fields.slice();
       nextFields[idx] = { ...cur, computed: {
         ...cur.computed,
