@@ -179,6 +179,70 @@ describe('[E14] findModalClosure guard', () => {
   });
 });
 
+// Args→ports slice-1 pre-release review Fork 4: the fabric-form reducer
+// writes a `fields` array into `model.modal.fabricForm` on enter. The
+// contract: that subtree must round-trip JSON and carry no closures — like
+// every other modal — so a WAL checkpoint taken while a form is open folds
+// back to the identical state. The field array holds only strings / bools /
+// nulls today, but adding this test pins the invariant so a future "cache
+// the resolver's typed values as live objects" refactor can't quietly break
+// replay. Same shape for fabric-field (the 1-port lane).
+
+describe('[E14] fabric-form — replay-safe open/key/cancel/submit', () => {
+  const PENDING_ACTION = { actionKey: 'provision',
+    action: { type: 'run', script: 'provision "$host" "$role"',
+      ports: { in: { host: { type: 'string', required: true },
+                     role: { type: 'string', required: true, default: 'worker' } } } } };
+  const fields = [
+    { port: 'host', text: '',       required: true,  default: null },
+    { port: 'role', text: 'worker', required: true,  default: 'worker' },
+  ];
+
+  it('enter → key → cancel: continuation + fabricForm round-trip JSON at every step', () => {
+    let m = fresh();
+    m.currentGroup = 'g';   // injects are group-scoped (B3)
+    [m] = step(m, { type: 'fabric_form_enter', fields, pendingAction: PENDING_ACTION });
+    assert(m.modes.fabricFormMode, 'form open');
+    eq(m.modal.fabricForm.fields.length, 2, 'both fields materialized');
+    [m] = step(m, { type: 'fabric_form_key', key: 'a', seq: 'a' });
+    eq(m.modal.fabricForm.fields[0].text, 'a', 'typed char appears');
+    [m] = step(m, { type: 'fabric_form_cancel' });
+    assert(!m.modes.fabricFormMode, 'form closed');
+    eq(m.modal.fabricForm.fields.length, 0, 'buffer cleared');
+  });
+
+  it('submit path survives JSON round-trip (pendingAction is pure data from parser)', () => {
+    let m = fresh();
+    m.currentGroup = 'g';
+    [m] = step(m, { type: 'fabric_form_enter', fields, pendingAction: PENDING_ACTION });
+    [m] = step(m, { type: 'fabric_form_key', key: 'n', seq: 'n' });
+    const [m2, cmds] = step(m, { type: 'fabric_form_submit' });
+    assert(cmds.some((c) => c.type === 'do_run' && c.actionKey === 'provision'),
+      'submit emits do_run');
+    assert(!m2.modes.fabricFormMode, 'form closed');
+  });
+
+  it('a hand-planted closure under modal.fabricForm is caught by findModalClosure', () => {
+    const m = fresh();
+    const leaked = { ...m.modal, fabricForm: { fields: [{ port: 'host', text: () => {} }], focusIdx: 0, pendingAction: null } };
+    eq(findModalClosure(leaked), 'modal.fabricForm.fields.0.text', 'closure walker catches a planted leak');
+  });
+});
+
+describe('[E14] fabric-field — replay-safe open/key/cancel for the 1-port lane', () => {
+  it('enter → key → cancel: fabricField round-trips JSON at every step', () => {
+    let m = fresh();
+    m.currentGroup = 'g';
+    [m] = step(m, { type: 'fabric_field_enter', paneId: null, addr: 'provision.host', text: '',
+      pendingAction: { actionKey: 'provision', action: { ports: { in: { host: {} } } } } });
+    assert(m.modes.fabricFieldMode, 'field open');
+    [m] = step(m, { type: 'fabric_field_key', key: 'x', seq: 'x' });
+    eq(m.modal.fabricField.text, 'x', 'typed char landed');
+    [m] = step(m, { type: 'fabric_field_cancel' });
+    assert(!m.modes.fabricFieldMode, 'closed');
+  });
+});
+
 // Round-3 review: the wedge-guard's mode_clear (fired when a modal handler
 // throws) used to clear only the mode flag, leaving a stale continuation under
 // model.modal — a contract leak ("every exit clears it"). Now it drops it too.
