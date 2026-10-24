@@ -220,4 +220,29 @@ describe('[B4] visibleLen / stripMarkup treat SGR as zero-width plain text', () 
   });
 });
 
+describe('[trojan-source] stripControls removes Unicode bidi overrides (CVE-2021-42574 class)', () => {
+  const { esc, stripControls } = require('../leaves/text/ansi');
+  it('strips all five bidi override chars (U+202A..U+202E)', () => {
+    const payload = 'A‪B‫C‬D‭E‮F';
+    eq(stripControls(payload), 'ABCDEF', 'bidi override chars dropped');
+    eq(esc(payload), 'ABCDEF', 'esc() carries the strip through');
+  });
+  it('strips all four isolate chars (U+2066..U+2069)', () => {
+    const payload = 'A⁦B⁧C⁨D⁩E';
+    eq(stripControls(payload), 'ABCDE', 'isolate chars dropped');
+  });
+  it('a classic trojan-source payload reads literally after esc()', () => {
+    // `rm ‮etyafs‬.sh` would reorder-display as `rm sfaty.sh`
+    // on a bidi-aware terminal if we didn't strip. After the strip, the
+    // bytes read as the author actually typed them.
+    const malicious = 'rm ‮etyafs‬.sh';
+    eq(esc(malicious), 'rm etyafs.sh', 'display reflects source byte order after strip');
+  });
+  it('bidi strip does not touch benign Unicode (CJK, emoji, combining marks)', () => {
+    eq(stripControls('节点名'), '节点名', 'CJK preserved');
+    eq(stripControls('é̈ç'), 'é̈ç', 'combining diacritics preserved');
+    eq(stripControls('👨‍👩‍👧‍👦'), '👨‍👩‍👧‍👦', 'ZWJ emoji sequence preserved (ZWJ is U+200D, not in the bidi range)');
+  });
+});
+
 report();

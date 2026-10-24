@@ -1478,6 +1478,11 @@ function _dispatchToken(tok) {
   if (tok === '\x1b[D') return handleKey('left');
   if (tok === '\x1b[5~') return handleKey('pageup');
   if (tok === '\x1b[6~') return handleKey('pagedown');
+  // Shift-Tab arrives as CSI Z. Without this entry the token falls into the
+  // T25/B14 unknown-escape drop below and no handler ever sees it. Added for
+  // the args→ports slice-1 fabric-form (deep-review round 4 Finding 1 —
+  // shipping blocker; the form's Shift-Tab focus-prev relied on this).
+  if (tok === '\x1b[Z') return handleKey('backtab');
   if (tok === '\x1b' || tok === '\x1b\x1b') return handleKey('escape');
   if (tok === '\r' || tok === '\n' || tok === '\r\n') return handleKey('return');
   if (tok === '\x03') { cleanup(); process.exit(0); }
@@ -1562,4 +1567,5 @@ module.exports = {
   handleMouse,              // exported for tests (T13 modal-gate regression)
   _classifyPress,           // exported for tests (Theme F Phase 3 double-click derivation)
   _makeDataHandler,         // exported for tests (input-burst smoke drives the real handler)
+  _dispatchToken,           // exported for tests (round-4 Fork 2 — key-path integration for fabric-form Tab)
 };

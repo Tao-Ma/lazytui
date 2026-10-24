@@ -162,6 +162,21 @@ describe('[fabric-form] enter + field materialization', () => {
     assert(!after.modes.fabricFieldMode, 'fabric-field also cleared (same arm, same class)');
   });
 
+  it('surrogate split guard: cap never leaves a lone high surrogate at the tail (round 4 Fork 4 Finding 2)', () => {
+    let m = freshModel();
+    [m] = runtime.update(m, { type: 'fabric_form_enter', fields: fieldsFor(), pendingAction: PENDING });
+    // Paste 8191 `x` + two emoji (`😀` = surrogate pair, 2 UTF-16 units each).
+    // The cap at 8192 would otherwise cut between the HIGH and LOW surrogate
+    // of the first emoji, leaving a lone high surrogate (D83D) at the tail.
+    const payload = 'x'.repeat(8191) + '\u{1F600}\u{1F600}';   // length = 8191 + 4 = 8195
+    [m] = runtime.update(m, { type: 'fabric_form_key', key: 'paste', seq: payload });
+    const text = m.modal.fabricForm.fields[0].text;
+    assert(text.length <= 8192, `text within cap, got ${text.length}`);
+    const last = text.charCodeAt(text.length - 1);
+    assert(!(last >= 0xD800 && last <= 0xDBFF),
+      `tail must not be a lone HIGH surrogate (got 0x${last.toString(16)}) — the guard stepped back one unit`);
+  });
+
   it('caps a field text at 8192 UTF-16 code units on paste and sustained typing (WAL / replay bound)', () => {
     let m = freshModel();
     [m] = runtime.update(m, { type: 'fabric_form_enter', fields: fieldsFor(), pendingAction: PENDING });
@@ -363,6 +378,66 @@ describe('[fabric-form] outside the mode', () => {
       const [same] = runtime.update(m, { type, seq: 'x' });
       assert(same === m, `${type} returns identity`);
     }
+  });
+});
+
+// ---- [10] key-PATH integration — Tab / Shift-Tab actually move focus ----
+//
+// Round 4 Fork 2 (terminal-emulator quirks) caught a SHIPPING BLOCKER: an
+// earlier draft of the dispatch handler tested `key === 'tab'`, but `input.js`
+// never emits that symbolic name. A bare Tab byte arrives at the handler as
+// (key='\t', seq='\t'), and Shift-Tab (\x1b[Z) was DROPPED as unknown_escape
+// before any handler saw it. The reducer-level cases above all pass Msgs
+// directly, which hides this class of wiring bug — the reducer worked, but
+// the user could never reach it with the keyboard. These cases drive the
+// FULL key path through `_dispatchToken` so the string-name typo cannot
+// recur silently.
+
+describe('[fabric-form] KEY path integration — Tab / Shift-Tab reach the reducer', () => {
+  const { _dispatchToken } = require('../dispatch/control/input');
+  const store = require('../model/store');
+  function open() {
+    let m = freshModel();
+    [m] = runtime.update(m, { type: 'fabric_form_enter', fields: fieldsFor(), pendingAction: PENDING });
+    store.setModel(m);                  // the dispatch loop reads live model via getModel
+    return m;
+  }
+
+  it('a bare Tab byte advances focus (seq === "\\t" path)', () => {
+    open();
+    _dispatchToken('\t');
+    const after = store.getModel();
+    eq(after.modal.fabricForm.focusIdx, 1, 'Tab moved focus to the second field');
+  });
+
+  it('Shift-Tab (\\x1b[Z) retreats focus (backtab path)', () => {
+    open();
+    _dispatchToken('\x1b[Z');
+    const after = store.getModel();
+    // focus wraps from 0 → last field via focus_prev
+    eq(after.modal.fabricForm.focusIdx, after.modal.fabricForm.fields.length - 1,
+      'Shift-Tab wrapped focus to the last field');
+  });
+
+  it('Esc still cancels via the symbolic-name path', () => {
+    open();
+    _dispatchToken('\x1b');
+    const after = store.getModel();
+    assert(!after.modes.fabricFormMode, 'Esc closed the form');
+  });
+
+  it('Enter still submits via the symbolic-name path', () => {
+    open();
+    _dispatchToken('\r');
+    const after = store.getModel();
+    assert(!after.modes.fabricFormMode, 'Enter closed the form');
+  });
+
+  it('a printable key still edits the focused field (full key-path)', () => {
+    open();
+    _dispatchToken('n');
+    const after = store.getModel();
+    eq(after.modal.fabricForm.fields[0].text, 'n', 'typed char landed on the focused field');
   });
 });
 

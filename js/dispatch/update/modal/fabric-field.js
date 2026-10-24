@@ -60,7 +60,12 @@ function update(model, msg) {
       } else if (msg.seq && msg.seq.length === 1 && msg.seq.charCodeAt(0) >= 32 && msg.seq.charCodeAt(0) < 127) {
         text += msg.seq;
       }
-      if (text.length > MAX_FIELD_TEXT) text = text.slice(0, MAX_FIELD_TEXT);
+      if (text.length > MAX_FIELD_TEXT) {
+        text = text.slice(0, MAX_FIELD_TEXT);
+        // Surrogate split guard — see fabric-form.js's cap comment for rationale.
+        const last = text.charCodeAt(text.length - 1);
+        if (last >= 0xD800 && last <= 0xDBFF) text = text.slice(0, -1);
+      }
       if (text === f.text) return [model, []];
       return [withModal(model, { fabricField: { ...f, text } }), []];
     }

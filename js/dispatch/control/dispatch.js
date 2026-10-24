@@ -1020,12 +1020,19 @@ const _modeHandlers = {
   // are intentionally NOT bound in this slice — Ctrl+U already covers
   // clear-to-empty via fabric_form_key; a dedicated hotkey using an unambiguous
   // leader is a follow-up slice.
+  //
+  // The Tab test is `seq === '\t'` because `input.js` routes a bare Tab byte
+  // through `handleKey(tok, tok)` → key='\t', seq='\t'; NOT the symbolic
+  // name `'tab'`. Shift-Tab arrives as `key === 'backtab'` from the dedicated
+  // `\x1b[Z → handleKey('backtab')` ladder entry added in the same pre-release
+  // review (round 4). An earlier draft here tested `key === 'tab'` which was
+  // dead code — the string-name typo class, same as the `[inverse]` →
+  // `[reverse]` caret bug caught in round 3.
   fabricFormMode:      (key, seq) => {
     if      (key === 'escape')             applyMsg({ type: 'fabric_form_cancel' });
     else if (key === 'return')             applyMsg({ type: 'fabric_form_submit' });
-    else if (key === 'tab')                applyMsg({ type: 'fabric_form_focus_next' });
-    else if (key === 'backtab'
-          || key === 'shift+tab')          applyMsg({ type: 'fabric_form_focus_prev' });
+    else if (seq === '\t')                 applyMsg({ type: 'fabric_form_focus_next' });
+    else if (key === 'backtab')            applyMsg({ type: 'fabric_form_focus_prev' });
     else                                   applyMsg({ type: 'fabric_form_key', key, seq });
   },
   paneMenuMode:        (key, seq) => handlePaneMenuKey(key, seq),

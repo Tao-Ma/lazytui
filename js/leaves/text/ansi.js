@@ -420,7 +420,19 @@ function stripControls(s) {
     // (already swept above); DEL (0x7f). This sweeps \r (would reset
     // cursor to col 0, wiping panel borders), \b (corrupts preceding
     // cell), \x07 (BEL — beeps the host), stray NULs, etc.
-    .replace(/[\x00-\x08\x0b-\x1a\x1c-\x1f\x7f]/g, '');
+    .replace(/[\x00-\x08\x0b-\x1a\x1c-\x1f\x7f]/g, '')
+    // Unicode bidi overrides (U+202A LRE, U+202B RLE, U+202C PDF,
+    // U+202D LRO, U+202E RLO) + isolates (U+2066 LRI, U+2067 RLI,
+    // U+2068 FSI, U+2069 PDI). CVE-2021-42574 "trojan source" class —
+    // a desc or value containing `‮` reorders display so the user
+    // reads something different from what runs on the shell. The fabric
+    // overlays (fabric-field / fabric-form) now surface port values
+    // prominently for review, which is exactly the attack vector these
+    // chars target. Strip them at the esc()/stripControls boundary so
+    // every content path (viewer, overlay, pane) is covered uniformly.
+    // (Slice-1 pre-release review round 4 Fork 4 Finding 1 — shared
+    // class, not fabric-form-specific.)
+    .replace(/[‪-‮⁦-⁩]/g, '');
   // Restore parked SGR.
   s = s.replace(/(\d+);/g, (_, i) => sgrs[+i]);
   return s;

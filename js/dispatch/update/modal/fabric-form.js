@@ -178,7 +178,17 @@ function update(model, msg) {
       // Cap total field size — paste or sustained typing can't bloat WAL beyond
       // this. Shrinking paths (backspace / Ctrl+U) bypass the cap by taking the
       // `slice` or `''` branch first.
-      if (text.length > MAX_FIELD_TEXT) text = text.slice(0, MAX_FIELD_TEXT);
+      if (text.length > MAX_FIELD_TEXT) {
+        text = text.slice(0, MAX_FIELD_TEXT);
+        // Surrogate split guard — if the cap landed on the HIGH surrogate of a
+        // supplementary-plane char (emoji ≥ U+10000), step back one unit so we
+        // never leave a lone high surrogate at the tail. Lone surrogates are
+        // technically-valid UTF-16 but trip `visibleLen` (counts +1 for the
+        // orphan) and render as a replacement glyph, which drifts one column
+        // against the painted midW. (Round 4 Fork 4 Finding 2.)
+        const last = text.charCodeAt(text.length - 1);
+        if (last >= 0xD800 && last <= 0xDBFF) text = text.slice(0, -1);
+      }
       const nextFields = _editCurrent(f.fields, f.focusIdx, text);
       if (nextFields === f.fields) return [model, []];
       return [withModal(model, { fabricForm: { ...f, fields: nextFields } }), []];
