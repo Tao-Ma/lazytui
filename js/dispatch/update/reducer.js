@@ -413,7 +413,7 @@ function update(model, msg) {
       const nextModes = { ...model.modes, fabricFormMode: false, fabricFieldMode: false };
       const nextModal = {
         ...model.modal,
-        fabricForm: { fields: [], focusIdx: 0, pendingAction: null },
+        fabricForm: { ...require('./modal/fabric-form').CLOSED },  // config_swap reset — spreading CLOSED keeps slice-2's picking + requestSeq from drifting
         fabricField: { paneId: null, addr: null, text: '', pendingAction: null },
       };
       const next = {

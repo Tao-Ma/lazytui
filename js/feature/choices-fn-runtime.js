@@ -152,9 +152,14 @@ function registerFetchChoicesEffect(registerEffect) {
         truncated: !!payload.truncated,  // R1B-BUG1 — items cap affordance
       });
     };
+    // R3E-SMELL2: `host.releaseKey` is unconditionally defined on the host
+    // because the fetch_choices Cmd always carries a `key` (effects.js attaches
+    // releaseKey only when eff.key is truthy, and the fabric-form reducer
+    // always sets it). The pre-R3 `if (host.releaseKey)` guards were dead
+    // defensive code — simplified to bare calls.
     if (!fn) {
       dispatchResolved({ items: [], labels: null, error: `unknown choices_fn: ${eff.ref}`, truncated: false });
-      if (host.releaseKey) host.releaseKey();
+      host.releaseKey();
       return;
     }
     let raw;
@@ -167,7 +172,7 @@ function registerFetchChoicesEffect(registerEffect) {
       });
     } catch (e) {
       dispatchResolved({ items: [], labels: null, error: String((e && e.message) || e), truncated: false });
-      if (host.releaseKey) host.releaseKey();
+      host.releaseKey();
       return;
     }
     Promise.resolve(raw).then(
@@ -177,19 +182,19 @@ function registerFetchChoicesEffect(registerEffect) {
         // msg by requestId. We still dispatch so the live-session frames stay
         // predictable (never silently swallow a resolved value).
         if (host.signal && host.signal.aborted) {
-          if (host.releaseKey) host.releaseKey();
+          host.releaseKey();
           return;   // abort — don't touch the WAL with stale data
         }
         dispatchResolved(normalizeResult(value));
-        if (host.releaseKey) host.releaseKey();
+        host.releaseKey();
       },
       (err) => {
         if (host.signal && host.signal.aborted) {
-          if (host.releaseKey) host.releaseKey();
+          host.releaseKey();
           return;
         }
         dispatchResolved({ items: [], labels: null, error: String((err && err.message) || err), truncated: false });
-        if (host.releaseKey) host.releaseKey();
+        host.releaseKey();
       }
     );
   });

@@ -189,7 +189,9 @@ function init() {
       // required, default, desc}); `focusIdx` points at the active field; submit
       // writes one-shot injects for each modified field + re-dispatches the pending
       // run. Transient UI, WAL-replayable.
-      fabricForm: { fields: [], focusIdx: 0, pendingAction: null },
+      // Shape pinned by test-slice-initial-shape.js against fabric-form.CLOSED
+      // (dispatch/update/modal/fabric-form). Keep the two in sync.
+      fabricForm: { fields: [], focusIdx: 0, pendingAction: null, picking: null, requestSeq: 0 },
     },
     // Framework-level state: parsed config, paths, leader-mode buffers,
     // misc flags. The layout struct + freeConfig state + viewMode + focus

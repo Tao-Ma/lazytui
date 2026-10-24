@@ -620,4 +620,8 @@ function update(model, msg) {
   }
 }
 
-module.exports = { TYPES, update, _depsHash, _depValuesForField };
+// CLOSED is the full initial-state shape — exported so model/store.js (initial
+// model) and reducer.js (config_swap reset) spread it instead of hand-copying
+// the keys. Pre-fix those two sites were missing `picking` + `requestSeq`,
+// which was a latent drift risk whenever a new field was added here (R3B-SMELL1).
+module.exports = { TYPES, update, CLOSED };

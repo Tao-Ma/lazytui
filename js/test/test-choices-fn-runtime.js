@@ -134,7 +134,7 @@ describe('[choices-fn-runtime] normalizeResult', () => {
 
 describe('[choices-fn-runtime] fetch_choices handler — sync', () => {
   it('unknown ref → error payload + releaseKey', () => {
-    api._resetChoicesFns();
+    api.__resetChoicesFns();
     const handler = makeHandler();
     const { dispatched, released, host } = makeHost();
     handler({ type: 'fetch_choices', ref: 'nope.missing', port: 'p', requestId: 1,
@@ -149,7 +149,7 @@ describe('[choices-fn-runtime] fetch_choices handler — sync', () => {
   });
 
   it('fn returns string[] synchronously → dispatched items match', async () => {
-    api._resetChoicesFns();
+    api.__resetChoicesFns();
     api.registerChoicesFn('mock', { fn: () => ['x', 'y'] });
     const handler = makeHandler();
     const { dispatched, released, host } = makeHost();
@@ -165,7 +165,7 @@ describe('[choices-fn-runtime] fetch_choices handler — sync', () => {
   });
 
   it('fn throws → error payload + releaseKey', () => {
-    api._resetChoicesFns();
+    api.__resetChoicesFns();
     api.registerChoicesFn('mock', { fn: () => { throw new Error('boom'); } });
     const handler = makeHandler();
     const { dispatched, released, host } = makeHost();
@@ -180,7 +180,7 @@ describe('[choices-fn-runtime] fetch_choices handler — sync', () => {
 
 describe('[choices-fn-runtime] fetch_choices handler — async', () => {
   it('fn returns Promise<string[]> → msg lands after settle', async () => {
-    api._resetChoicesFns();
+    api.__resetChoicesFns();
     api.registerChoicesFn('mock', { fn: async () => ['a1', 'a2'] });
     const handler = makeHandler();
     const { dispatched, released, host } = makeHost();
@@ -195,7 +195,7 @@ describe('[choices-fn-runtime] fetch_choices handler — async', () => {
   });
 
   it('fn rejects → error payload', async () => {
-    api._resetChoicesFns();
+    api.__resetChoicesFns();
     api.registerChoicesFn('mock', { fn: async () => { throw new Error('async-fail'); } });
     const handler = makeHandler();
     const { dispatched, released, host } = makeHost();
@@ -209,7 +209,7 @@ describe('[choices-fn-runtime] fetch_choices handler — async', () => {
   });
 
   it('abort already fired before resolve → NO dispatch, releaseKey still called', async () => {
-    api._resetChoicesFns();
+    api.__resetChoicesFns();
     let externalResolve;
     const pending = new Promise((r) => { externalResolve = r; });
     api.registerChoicesFn('mock', { fn: () => pending });
@@ -237,7 +237,7 @@ describe('[choices-fn-runtime] R1F-SMELL6 — effect registry supersedes same-ke
     const effects = require('../dispatch/runtime/effects');
     effects._clearInflight();
     runtime.setRegistryHost({ getChoicesFn: api.getChoicesFn });
-    api._resetChoicesFns();
+    api.__resetChoicesFns();
 
     // Install the real fetch_choices effect handler on a fresh registry.
     // We can't easily install the hub twice — just re-call installBuiltins

@@ -692,9 +692,11 @@ function getChoicesFn(ref) {
 }
 
 // Test-only accessor — the register table itself. Used by test-fixture resets
-// (`_resetChoicesFns`) so a suite's leaked registration doesn't bleed into the
-// next describe block. Not part of the Component-facing contract.
-function _resetChoicesFns() { choicesFnRegistry.clear(); }
+// so a suite's leaked registration doesn't bleed into the next describe block.
+// Not part of the Component-facing contract. R3F-SMELL2: double-underscore
+// prefix matches the codebase's test-only convention and makes it harder for a
+// plugin / dev-console session to accidentally blank the production registry.
+function __resetChoicesFns() { choicesFnRegistry.clear(); }
 
 /**
  * Canonical "what actions exist for this group?" accessor.
@@ -783,7 +785,7 @@ module.exports = {
   // --- Component registry / lifecycle ---
   // dispatchMsg / dispatchKeyToFocused / setInstanceReconciler relocated to
   // dispatch/runtime/loop.js (B/S6 — the runtime lives in the dispatch layer now).
-  registerComponent, registerGroupActionPlugin, registerChoicesFn, getChoicesFn, _resetChoicesFns,
+  registerComponent, registerGroupActionPlugin, registerChoicesFn, getChoicesFn, __resetChoicesFns,
   registerEffect, wrap,
   _components: _componentsMap,  // v0.6.3 Phase B — internal use by initState + fanout
   getComponent, getComponentOwningPanel, getFocus,

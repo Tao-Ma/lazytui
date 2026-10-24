@@ -26,14 +26,14 @@ const api = require('../panel/api');
 
 describe('[choices-fn-registry] registerChoicesFn + getChoicesFn', () => {
   it('register + lookup round-trip', () => {
-    api._resetChoicesFns();
+    api.__resetChoicesFns();
     const fn = () => ['a', 'b'];
     api.registerChoicesFn('edit', { sections_of: fn });
     eq(api.getChoicesFn('edit.sections_of'), fn, 'exact fn identity returned');
   });
 
   it('unknown ref returns null', () => {
-    api._resetChoicesFns();
+    api.__resetChoicesFns();
     eq(api.getChoicesFn('nope.missing'), null, 'null for unregistered ref');
     eq(api.getChoicesFn(''), null, 'null for empty ref');
     eq(api.getChoicesFn(null), null, 'null for null ref');
@@ -41,7 +41,7 @@ describe('[choices-fn-registry] registerChoicesFn + getChoicesFn', () => {
   });
 
   it('re-registration is last-write-wins', () => {
-    api._resetChoicesFns();
+    api.__resetChoicesFns();
     const first = () => ['a'];
     const second = () => ['b'];
     api.registerChoicesFn('edit', { sections_of: first });
@@ -50,7 +50,7 @@ describe('[choices-fn-registry] registerChoicesFn + getChoicesFn', () => {
   });
 
   it('bad inputs are no-ops', () => {
-    api._resetChoicesFns();
+    api.__resetChoicesFns();
     api.registerChoicesFn('', { foo: () => [] });
     eq(api.getChoicesFn('.foo'), null, 'empty component name — nothing registered');
     api.registerChoicesFn('mod', null);
@@ -62,7 +62,7 @@ describe('[choices-fn-registry] registerChoicesFn + getChoicesFn', () => {
   });
 
   it('feature plugin choicesFns registered via registerGroupActionPlugin', () => {
-    api._resetChoicesFns();
+    api.__resetChoicesFns();
     const fn = async () => ['x', 'y'];
     const plugin = {
       name: 'mock-feature',
