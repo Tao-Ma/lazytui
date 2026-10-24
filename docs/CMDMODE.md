@@ -138,38 +138,22 @@ The user's YAML extends the registry **passively**. Every action defined under
 `groups.*.actions.*` is automatically a `:` candidate; its `desc` field
 becomes the dropdown help line. No new schema.
 
-### Positional args
+### Positional args (CLI / cmdline)
 
 The cmdline buffer splits at the first whitespace: the leading token
 fuzzy-matches a registry entry; everything past it becomes positional
-args. Both YAML actions and Component commands receive them — actions
-via `sh -c "$script" -- arg1 arg2 ...` (so script bodies use `$1`,
-`$@`, `${1:-default}`); Component commands via the documented
-`run(args)`.
+args, forwarded to the action via `sh -c "$script" -- arg1 arg2 ...`
+(so script bodies use `$1`, `$@`, `${1:-default}`). Component commands
+receive them via the documented `run(args)`.
 
-```yaml
-tail:
-  script: docker logs --tail "${1:-20}" tui-test-running
-  type: run
-  label: Tail logs
-  args: "[lines]"     # display annotation in actions panel
-```
+Whitespace-split only — no shell-style quoting. Use the script body to
+recombine if you need spaces inside a single argument.
 
-`:tail` → 20 lines (default). `:tail 100` → 100 lines.
-
-Whitespace-split only — no shell-style quoting in v1. Use the script
-body to recombine if you need spaces inside a single argument.
-
-**Two entry paths** for an `args:`-declared action:
-
-- `:` cmdline — args ride inline (`:tail 50`)
-- Actions panel + Enter — opens a prompt overlay (see `prompt.js`); the
-  `args:` field is shown as the input spec, Enter submits the parsed
-  list, Esc cancels. Same parsing rule (whitespace-split).
-
-Empty submit (Enter with no input in the prompt) behaves like `:tail`
-with no args — the script gets called with `$#=0`, so use
-`${1:-default}` if you want a default value.
+For interactive input, declare named typed inputs via `ports.in`
+(see [`action-ports-guide.md`](action-ports-guide.md)) and the
+invoke-time popup collects them. The old `args: "[lines]"` string +
+prompt overlay was retired in v0.6.30 — a config carrying `args:` is
+now rejected at load.
 
 Out of scope for v1 (deferred until a real use case shows up):
 - Top-level `commands:` block in the user's YAML for project-wide

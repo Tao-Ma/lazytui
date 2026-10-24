@@ -363,8 +363,11 @@ data, replay-safe.
 The single-string `args: '<hint>'` schema field and its `prompt_enter / prompt_key /
 prompt_submit / prompt_cancel` Msg family were retired in the args→ports P3
 cleanup. Invoke-time args collection is now the fabric-field modal with a
-`pendingAction` context (see **5.X `fabric-field` — invoke-time prompt (P2)**
-below, and `test-shell-action-prompt.js` for the reducer contract).
+`pendingAction` context for actions with a single declared port
+(see **§5.10 `fabric-field`** below) and the fabric-form modal for actions
+with 2+ declared ports (see **§5.10a `fabric-form`**). The reducer contract
+is pinned by `test-shell-action-prompt.js` (1-port) and `test-fabric-form.js`
+(multi-port).
 
 ### 5.3 `copy` (`modal/copy.js`) — copy menu (content thunks stay module-held)
 

@@ -56,14 +56,16 @@ Each entry in `ports.in` is `{ name: { ...decl } }` where `name` is a strict ide
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
-| `type` | string | required | The port's typed value — `string`, `number`, `path`, or a domain type like `pg.lsn`. Used by the resolver for wire compatibility and by the form to pick an input widget later. |
-| `required` | bool | `true` | If true, the action can't run until this is resolved; the form blocks Enter on missing required. |
-| `default` | any | — | Pre-fills the field; resolver falls back to it when no inject/wire supplies a value. Honored only if the type permits the literal. |
+| `type` | string | required | The port's declared type — `string`, `number`, `path`, or a domain tag like `pg.lsn`. **Advisory in slice 1** — the resolver treats the value as a string (bind-parameter model); `type` is author documentation + a hook for wire-compatibility checks and form widgets planned in a later slice. |
+| `required` | bool | `true` | If false, resolution can complete without this value and the shell receives an unset env var; if true, running the action without a resolved value re-opens the invoke-time popup. The form does not block Enter on an empty required field — submit emits do_run and the resolver re-triggers the prompt. |
+| `default` | string \| number | — | Pre-fills the field in the form and lets the resolver fall back when nothing upstream supplies the value. **Not type-checked in slice 1** — the raw literal is stringified and used as-is. |
 | `desc` | string | `''` | One-line hint. Rendered under the field name in the form; keep it ≤ 60 chars for narrow terminals. |
 | `choices` | list | — | (planned, not shipped in slice 1) Enum of allowed values; renders as inline cycle or popover depending on list length. |
 | `section` | string | — | (planned) Logical grouping for actions with 10+ ports. |
 
-All other keys are rejected at config load.
+Unknown port-level keys are **not** rejected at config load today — they're
+silently ignored by the reducer. Future validation will enforce the schema; for
+now, typos pass through quietly, so proofread.
 
 ---
 

@@ -6,6 +6,33 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Scroll-follows-focus in the multi-field form.** Tabbing past the viewport
+  edge on an action with 8+ ports used to move the caret below the painted
+  box, so the user typed blind. The overlay now computes a scroll offset per
+  frame so the focused row is always visible, with 2 rows of look-ahead
+  context below it; the scrollbar thumb moves with the scroll.
+- **`[modified]` chip alignment on an overflowing input.** A row whose typed
+  value overflowed the input area painted its chip one column left of
+  sibling rows, breaking the right-anchored column. One-char math fix.
+
+### Security / hardening
+
+- **A port VALUE can no longer override `PATH` / `SHELL` / `LD_PRELOAD` /
+  `LD_LIBRARY_PATH` / `LD_AUDIT` / `DYLD_INSERT_LIBRARIES` /
+  `DYLD_LIBRARY_PATH` / `DYLD_FORCE_FLAT_NAMESPACE` on a shell action.** A
+  port named one of these — whether set by the author or typed into the
+  invoke-time form — is dropped before `opts.env` is built, and a dim
+  `[warning]` surfaces in the viewer. The parent env still passes through
+  unchanged, so a well-behaved YAML keeps working.
+- **Field text cap (8 KiB per field).** Pastes and sustained typing can't
+  bloat a field beyond 8 KiB — a WAL-rider bound that applies to both the
+  multi-field form and the single-port fabric-field. Shrinking paths
+  (backspace, Ctrl+U) bypass the cap.
+- **Overlay titles are `esc()`'d** in both fabric-field and fabric-form so
+  a YAML `label: "[reverse]EVIL[/]"` renders as a literal, not a style run.
+
 ### Added
 
 - **Multi-field invoke-time popup for actions with 2+ declared `ports.in`.**
