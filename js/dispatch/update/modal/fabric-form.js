@@ -43,6 +43,12 @@ const TYPES = [
   'fabric_form_focus_next', 'fabric_form_focus_prev',
   'fabric_form_reset_default', 'fabric_form_clear',
   'fabric_form_submit', 'fabric_form_cancel',
+  // Args→ports slice 2 (`choices_fn:`): computed-choices lifecycle. The
+  // fetch_choices effect's reply, a user pick from the choices popover, and
+  // the pre-fetch state write a reducer uses when a request is kicked off.
+  // Placeholder arms in commit 2 — the real reducer body lands in commit 3.
+  'fabric_form_choices_request', 'fabric_form_choices_resolved',
+  'fabric_form_choices_pick',
 ];
 
 const CLOSED = { fields: [], focusIdx: 0, pendingAction: null };
@@ -261,6 +267,14 @@ function update(model, msg) {
       if (!model.modes.fabricFormMode) return [model, []];
       // Nothing to undo — submit is atomic, so an open form has written no injects yet.
       return [withModalMode(model, { fabricFormMode: false }, { fabricForm: { ...CLOSED } }), []];
+    // Args→ports slice 2 placeholder arms — the real bodies land in commit 3
+    // (fabric_form choices_request/resolved/pick). Keeping them here as no-ops
+    // means the msg-routing invariant (test-msg-routing) stays satisfied as
+    // the runtime handler lands in commit 2.
+    case 'fabric_form_choices_request':
+    case 'fabric_form_choices_resolved':
+    case 'fabric_form_choices_pick':
+      return [model, []];
     default:
       return [model, []];
   }

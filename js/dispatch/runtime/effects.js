@@ -592,6 +592,17 @@ function installBuiltins() {
     }
   };
   registerEffect('nav_restore', navRestoreEff);
+
+  // fetch_choices (args→ports slice 2): a port with `choices_fn:` requests
+  // its choices list. The runtime handler lives in feature/choices-fn-runtime.js
+  // and dispatches `fabric_form_choices_resolved` on completion. Keyed effect
+  // (`key: 'choices_fn:<actionKey>.<port>'`) so a dependency change aborts the
+  // prior fetch's AbortSignal. The host-side registry (panel/api) is injected
+  // here because feature/ sits below panel/ in the layer DAG — same seam pattern
+  // the fabric/feature-host pair uses.
+  const choicesRuntime = require('../../feature/choices-fn-runtime');
+  choicesRuntime.setRegistryHost({ getChoicesFn: api.getChoicesFn });
+  choicesRuntime.registerFetchChoicesEffect(registerEffect);
 }
 
 // Exposed so boot-wired subscription handlers that AREN'T started by an effect
