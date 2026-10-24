@@ -150,6 +150,27 @@ function helpLines() {
     }
   }
 
+  // R2D-SMELL2 — the invoke-time multi-field form had no help entry; a user
+  // who hit `?` while the form was open got a literal `?` typed into the
+  // focused field (fabricFormMode consumes the key as a chain-active modal),
+  // and even opening help OUTSIDE the form showed nothing about the form's
+  // keys. Help is a static viewer tab so this section documents the keys
+  // regardless of whether the form is open right now.
+  lines.push('', '[dim]Invoke-time form (opens on an action with 2+ ports)[/]',
+    '  Tab / Shift-Tab    Move focus between fields',
+    '  Enter              Submit (runs the action with the current values)',
+    '  Esc                Cancel the whole form',
+    '  Backspace          Delete char in focused field',
+    `  ${esc('Ctrl+U')}             Clear focused field`,
+    '',
+    '[dim]Invoke-time form — computed choices (fields with `choices_fn:`)[/]',
+    '  Space              Open the choices popover on the focused field',
+    '  Up / Down          Navigate the choices list',
+    '  Enter              Pick the highlighted value',
+    '  Esc                Close the popover (form stays open; Esc again closes form)',
+    '  (free-type)        Any value you type binds — choices are a shortcut, not a constraint',
+  );
+
   lines.push('', '[dim]Panels[/]');
   for (const p of allPanels()) {
     if (p.hotkey) lines.push(`  ${esc(`[${p.hotkey}]`)} ${esc(p.title)}`);

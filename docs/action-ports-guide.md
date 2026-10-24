@@ -391,7 +391,8 @@ A few rules the parser enforces (warn+drop, not throw — your YAML keeps loadin
 - `choices_fn` must be a dotted ref `<component>.<fnName>`. A bare name or anything else is dropped at load.
 - `depends_on` must be a list of sibling port names. Entries that aren't strings, aren't declared, or reference the port itself are dropped.
 - An unknown ref at run time paints `[error]` on the field with a message pointing to the unregistered name.
-- The returned list is capped at 1024 items — anything past that is dropped and the popover paints a `[+more…]` row so you know the cap applied.
+- The returned list is capped at 1024 items on **landing** (anything past that is dropped from the WAL + overlay) and the popover paints a `[+more…]` row so you know the cap applied. The cap doesn't limit how much your fn *allocates* — if your fn builds a 10M-item array before returning it, you still pay that cost in your own code; the cap only prevents the overlay/replay-log blowup. Design your fn to short-circuit if the enumeration is unbounded.
+- Row-breaking characters (`\n`, `\t`, `\r`) are replaced with a single space in items, labels, and the error text. The overlay is one-row-per-item, so a raw newline would otherwise corrupt the paint. If you need multi-line error context, log it elsewhere and return a one-line summary.
 
 Three things worth knowing before you ship a `choices_fn`:
 
@@ -406,6 +407,15 @@ Replay stays deterministic. The fn is a side effect — the first live invocatio
 - Static list, same for every invocation → `choices: [a, b, c]` (slice 3).
 - List depends on another port's value, or on live state (fs, process, db) → `choices_fn: component.fnName` + `depends_on: [...]`.
 - Need both a static list and dynamic enrichment → use `choices_fn:` and have the fn return a static array.
+
+## Known limitations
+
+Two cases where slice 2's computed-choices surface currently falls short — both are planned work for later slices, documented here so you can design around them:
+
+- **Sticky-filled forms never open.** If every required port is already filled by a sticky inject (from a prior invocation's ports-pane edit) or a wire, the resolver reports `ready: true` and the form never opens — so the user can't reach the choices popover for a port that *would* have one. The `[a] edit args` keybind (listed under "Looking ahead" below) will open the form on demand even when every port is resolved; until it ships, a user who wants fresh choices has to clear the sticky inject via the ports pane first.
+- **Wire-fed deps don't retrigger `choices_fn` on new producer output.** The form snapshots a dep's text at open time; if a producer streams a fresh value to a wired dep after the form is up, the computed field keeps serving choices derived from the opened-at value. No reactive refetch fires until the user tabs through the dep (which, for a wire-fed field, they rarely do). A `wire_updated` subscription arm would fix this; it isn't in slice 2.
+
+Neither case corrupts data — the submit path binds whatever's currently in the field — but both can leave the user looking at stale choices.
 
 ## Looking ahead
 
