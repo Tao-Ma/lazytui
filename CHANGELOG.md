@@ -6,6 +6,8 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.34] — 2026-10-24
+
 ### Fixed
 
 - **Tab + Shift-Tab in the invoke-time form actually move focus now.** The
