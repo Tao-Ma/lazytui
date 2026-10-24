@@ -244,4 +244,170 @@ describe('[fabric-form-choices] fabric_form_choices_pick', () => {
   });
 });
 
+// R1F-SMELL3 — the "free-type still wins; choices_fn is not a hard constraint"
+// claim in the docs is now pinned by a reducer-level test: a user types a
+// value that ISN'T in the choices list and the form submits with that value
+// as a one-shot inject, exactly like a plain port.
+describe('[fabric-form-choices] R1F-SMELL3 — free-type still wins', () => {
+  it('typing a non-choice value then submitting binds that value', () => {
+    let m = openForm();
+    // Simulate the request + resolved so items has ['intro','body'].
+    [m] = runtime.update(m, { type: 'fabric_form_choices_request', port: 'section' });
+    [m] = runtime.update(m, {
+      type: 'fabric_form_choices_resolved', port: 'section', requestId: 1,
+      items: ['intro', 'body'], labels: null, error: null,
+    });
+    // Fill the file field (required) + focus to section + type a NON-choice.
+    [m] = runtime.update(m, { type: 'fabric_form_key', seq: '/' });
+    [m] = runtime.update(m, { type: 'fabric_form_key', seq: 't' });
+    [m] = runtime.update(m, { type: 'fabric_form_focus_next' });   // → section
+    for (const ch of 'off_menu') [m] = runtime.update(m, { type: 'fabric_form_key', seq: ch });
+    // Submit.
+    const [after, cmds] = runtime.update(m, { type: 'fabric_form_submit' });
+    const injectAddr = `edit-section.section`;
+    const injects = (after.fabric && after.fabric.injects && after.fabric.injects.g) || {};
+    assert(injects[injectAddr], `inject written for section, got: ${JSON.stringify(Object.keys(injects))}`);
+    eq(injects[injectAddr].value, 'off_menu', 'the free-typed value binds, not any choice');
+    assert(cmds.some((c) => c.type === 'do_run'),
+      `do_run emitted — form submits with the free-type, got: ${JSON.stringify(cmds)}`);
+  });
+});
+
+// R1C — cross-form stale-reply via actionKey mismatch. Form-1 (actionKey='A')
+// has an in-flight fetch at requestId=1. Form-1 cancels. Form-2 (actionKey=
+// 'B') opens with a port of the same name; its requestSeq resets to 0, so
+// its first request also lands at requestId=1. Form-1's resolved reply then
+// arrives with actionKey='A' + requestId=1 — must be dropped.
+describe('[fabric-form-choices] R1C — cross-form stale-reply dropped on actionKey mismatch', () => {
+  it('a resolved reply with the wrong actionKey is dropped', () => {
+    // Form-1 at actionKey='A': open, kick a request so requestId lands at 1.
+    let m = openForm();   // openForm uses actionKey 'edit-section' as PENDING
+    [m] = runtime.update(m, { type: 'fabric_form_choices_request', port: 'section' });
+    // Cancel form-1.
+    [m] = runtime.update(m, { type: 'fabric_form_cancel' });
+    // Open form-2 with a DIFFERENT actionKey but a port of the same name.
+    const form2Fields = [
+      { port: 'section', text: '', required: true, default: null, desc: 'section',
+        choicesFnRef: 'other.sections_of', dependsOn: [] },
+    ];
+    [m] = runtime.update(m, {
+      type: 'fabric_form_enter', fields: form2Fields,
+      pendingAction: { actionKey: 'OTHER_ACTION', action: {} },
+    });
+    // Form-2 fires its own initial request → requestId=1 (requestSeq reset
+    // on enter), bumping to its own computed slot.
+    // Simulate the stale resolved reply from form-1 (wrong actionKey).
+    const before = m;
+    const [after] = runtime.update(m, {
+      type: 'fabric_form_choices_resolved',
+      port: 'section', actionKey: 'edit-section',   // STALE — form-1's actionKey
+      requestId: 1,
+      items: ['stale'], labels: null, error: null,
+    });
+    eq(after, before, 'stale cross-form reply dropped — model identity preserved');
+    const section = after.modal.fabricForm.fields.find((x) => x.port === 'section');
+    assert(section.computed.state !== 'ok' || section.computed.items.length === 0,
+      `section did NOT get populated by the stale reply, got: ${JSON.stringify(section.computed)}`);
+  });
+
+  it('a resolved reply WITHOUT actionKey still lands (back-compat with pre-R1C callers)', () => {
+    // Tests built before R1C stamped actionKey; the arm tolerates omission.
+    let m = openForm();
+    [m] = runtime.update(m, { type: 'fabric_form_choices_request', port: 'section' });
+    const requestId = m.modal.fabricForm.fields.find((x) => x.port === 'section').computed.requestId;
+    const [after] = runtime.update(m, {
+      type: 'fabric_form_choices_resolved',
+      port: 'section', requestId,
+      items: ['intro'], labels: null, error: null,
+      // actionKey intentionally absent
+    });
+    const section = after.modal.fabricForm.fields.find((x) => x.port === 'section');
+    eq(section.computed.items, ['intro'], 'reply landed');
+  });
+});
+
+// R1A-BUG1 regression — resolved arm clamps picking.idx when items shrinks.
+describe('[fabric-form-choices] R1A-BUG1 — picking.idx clamped on items shrink', () => {
+  it('refetch returning fewer items than idx clamps idx to last valid', () => {
+    let m = openForm();
+    [m] = runtime.update(m, { type: 'fabric_form_choices_request', port: 'section' });
+    const rid1 = m.modal.fabricForm.fields.find((x) => x.port === 'section').computed.requestId;
+    [m] = runtime.update(m, {
+      type: 'fabric_form_choices_resolved',
+      port: 'section', requestId: rid1,
+      items: ['a', 'b', 'c', 'd', 'e'], labels: null, error: null,
+    });
+    [m] = runtime.update(m, { type: 'fabric_form_choices_open', port: 'section' });
+    // Nav to idx 4.
+    for (let i = 0; i < 4; i++) {
+      [m] = runtime.update(m, { type: 'fabric_form_choices_nav', dir: 1 });
+    }
+    eq(m.modal.fabricForm.picking.idx, 4);
+    // A refetch returns only 2 items.
+    [m] = runtime.update(m, { type: 'fabric_form_choices_request', port: 'section' });
+    const rid2 = m.modal.fabricForm.fields.find((x) => x.port === 'section').computed.requestId;
+    [m] = runtime.update(m, {
+      type: 'fabric_form_choices_resolved',
+      port: 'section', requestId: rid2,
+      items: ['x', 'y'], labels: null, error: null,
+    });
+    eq(m.modal.fabricForm.picking.idx, 1, 'clamped to items.length - 1');
+  });
+
+  it('refetch returning empty items clamps idx to 0', () => {
+    let m = openForm();
+    [m] = runtime.update(m, { type: 'fabric_form_choices_request', port: 'section' });
+    const rid1 = m.modal.fabricForm.fields.find((x) => x.port === 'section').computed.requestId;
+    [m] = runtime.update(m, {
+      type: 'fabric_form_choices_resolved', port: 'section', requestId: rid1,
+      items: ['a', 'b', 'c'], labels: null, error: null,
+    });
+    [m] = runtime.update(m, { type: 'fabric_form_choices_open', port: 'section' });
+    [m] = runtime.update(m, { type: 'fabric_form_choices_nav', dir: 1 });
+    [m] = runtime.update(m, { type: 'fabric_form_choices_nav', dir: 1 });
+    [m] = runtime.update(m, { type: 'fabric_form_choices_request', port: 'section' });
+    const rid2 = m.modal.fabricForm.fields.find((x) => x.port === 'section').computed.requestId;
+    [m] = runtime.update(m, {
+      type: 'fabric_form_choices_resolved', port: 'section', requestId: rid2,
+      items: [], labels: null, error: null,
+    });
+    eq(m.modal.fabricForm.picking.idx, 0);
+  });
+});
+
+// R1A-BUG2 regression — focus arms reset a pending field whose deps got
+// emptied + emit cancel_effect so the in-flight fetch is aborted.
+describe('[fabric-form-choices] R1A-BUG2 — pending resets when deps get emptied', () => {
+  it('tabbing away from an emptied dep resets pending + emits cancel_effect', () => {
+    let m = openForm();
+    // Fill file so initial request fires.
+    [m] = runtime.update(m, { type: 'fabric_form_key', seq: '/' });
+    [m] = runtime.update(m, { type: 'fabric_form_key', seq: 'x' });
+    // Simulate kicking a request + waiting.
+    [m] = runtime.update(m, { type: 'fabric_form_choices_request', port: 'section' });
+    const section = m.modal.fabricForm.fields.find((x) => x.port === 'section');
+    eq(section.computed.state, 'pending');
+    // Clear the file dep via Ctrl-U.
+    [m] = runtime.update(m, { type: 'fabric_form_key', seq: '\x15' });
+    // Tab away — pending should flip to idle + cancel_effect emitted.
+    const [after, cmds] = runtime.update(m, { type: 'fabric_form_focus_next' });
+    const next = after.modal.fabricForm.fields.find((x) => x.port === 'section');
+    eq(next.computed.state, 'idle', 'pending reset to idle (chip no longer stuck [fetching…])');
+    eq(next.computed.requestId, 0, 'requestId cleared → stale resolve dropped');
+    assert(cmds.some((c) => c.type === 'cancel_effect' && /choices_fn:edit-section\.section$/.test(c.key)),
+      `cancel_effect emitted, got: ${JSON.stringify(cmds)}`);
+  });
+});
+
+// R1B-SMELL1 — cancel emits cancel_effect for every pending fetch.
+describe('[fabric-form-choices] R1B-SMELL1 — cancel aborts in-flight fetches', () => {
+  it('fabric_form_cancel emits cancel_effect per pending field', () => {
+    let m = openForm();
+    [m] = runtime.update(m, { type: 'fabric_form_choices_request', port: 'section' });
+    const [, cmds] = runtime.update(m, { type: 'fabric_form_cancel' });
+    assert(cmds.some((c) => c.type === 'cancel_effect' && /choices_fn:edit-section\.section$/.test(c.key)),
+      `cancel_effect emitted on form cancel, got: ${JSON.stringify(cmds)}`);
+  });
+});
+
 report();

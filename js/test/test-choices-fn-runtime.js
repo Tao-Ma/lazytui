@@ -212,4 +212,69 @@ describe('[choices-fn-runtime] fetch_choices handler — async', () => {
   });
 });
 
+// R1F-SMELL6 — the "C5 inflight registry aborts the prior fetch's AbortSignal
+// when a newer same-key effect lands" claim (ports-and-wires.md) is exercised
+// here through the real effects registry, not the handler in isolation. Drive
+// fetch_choices via runEffects with two same-keyed calls back-to-back and
+// observe the first fetch's abort via `signal.aborted` from inside the fn.
+describe('[choices-fn-runtime] R1F-SMELL6 — effect registry supersedes same-key fetch', () => {
+  it('a second fetch_choices with the same key aborts the first fetch\'s signal', async () => {
+    const effects = require('../dispatch/runtime/effects');
+    effects._clearInflight();
+    runtime.setRegistryHost({ getChoicesFn: api.getChoicesFn });
+    api._resetChoicesFns();
+
+    // Install the real fetch_choices effect handler on a fresh registry.
+    // We can't easily install the hub twice — just re-call installBuiltins
+    // isn't idempotent for this purpose. Instead reach into the module's
+    // registerFetchChoicesEffect and route through runEffects + a captured
+    // handler reference, same style as the sync/async tests above.
+    const captured = [];
+    const slowSignals = [];
+    let slowResolve;
+    const slowPromise = new Promise((r) => { slowResolve = r; });
+
+    api.registerChoicesFn('mock', {
+      slow: ({ signal }) => { slowSignals.push(signal); return slowPromise; },
+      fast: () => ['fast-item'],
+    });
+
+    // Collect all applyMsg calls across both runs so we can assert ordering.
+    const applied = [];
+    const origApplyMsg = require('../dispatch/control/dispatch').applyMsg;
+    require('../dispatch/control/dispatch').applyMsg = (m) => applied.push(m);
+    try {
+      // Fire the slow one (keyed) — stays in inflight.
+      effects.runEffects([{
+        type: 'fetch_choices',
+        key: 'choices_fn:a.p',
+        ref: 'mock.slow', port: 'p', requestId: 1,
+        values: {}, actionKey: 'a', group: 'g',
+      }]);
+      eq(slowSignals.length, 1, 'slow fn was called');
+      eq(slowSignals[0].aborted, false, 'first signal starts un-aborted');
+      // Fire the fast one with the SAME key — C5 should abort slow's signal.
+      effects.runEffects([{
+        type: 'fetch_choices',
+        key: 'choices_fn:a.p',
+        ref: 'mock.fast', port: 'p', requestId: 2,
+        values: {}, actionKey: 'a', group: 'g',
+      }]);
+      eq(slowSignals[0].aborted, true, 'first signal aborted by the same-key supersede');
+      // Release the slow fetch — it must drop its late reply.
+      slowResolve(['stale']);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      // Only the fast reply should have been dispatched.
+      const resolves = applied.filter((m) => m.type === 'fabric_form_choices_resolved');
+      eq(resolves.length, 1, 'only the fast fetch dispatched a resolved Msg');
+      eq(resolves[0].items, ['fast-item']);
+    } finally {
+      require('../dispatch/control/dispatch').applyMsg = origApplyMsg;
+      effects._clearInflight();
+    }
+  });
+});
+
 report();

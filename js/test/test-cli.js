@@ -277,4 +277,70 @@ groups:
   });
 });
 
+// R1F-BUG2 — slice-2 CLI parity. The resolver "stays stupid" claim is that
+// `choices_fn:` is a FORM-time concern; CLI mode never opens the form, so a
+// port that declares it must behave exactly like a plain port in `--exec` and
+// `--list`. The parser carries the key through; the runtime registry is
+// never installed; the fn is never called.
+describe('[choices_fn] CLI parity — port with choices_fn behaves like a plain port in CLI mode', () => {
+  const CF_PATH = path.join(TMP, 'choices-fn.yml');
+  fs.writeFileSync(CF_PATH, `project_dir: .
+
+groups:
+  g:
+    label: G
+    actions:
+      edit_section:
+        script: 'printf "%s|%s" "$file" "$section"'
+        type: run
+        label: Edit section
+        ports:
+          in:
+            file:
+              type: string
+              required: true
+            section:
+              type: string
+              required: true
+              choices_fn: edit.sections_of
+              depends_on: [file]
+`);
+
+  function runWith(...args) {
+    return spawnSync(process.execPath, [TUI, CF_PATH, '--exec', ...args], {
+      encoding: 'utf8', timeout: 5000,
+    });
+  }
+
+  it('--exec with positional values binds + runs, choices_fn never consulted', () => {
+    const r = runWith('g:edit_section', '/tmp/x.md', 'body');
+    eq(r.status, 0, `rc 0 (plain positional binding), got ${r.status}, stderr=${r.stderr}`);
+    eq(r.stdout, '/tmp/x.md|body', 'positional args bound as $file / $section');
+    // The fetch_choices effect handler is installed only by the TUI boot's
+    // installBuiltins; CLI mode never installs it. Any attempt to invoke
+    // choices_fn in CLI mode would print "unknown choices_fn" or similar —
+    // this stderr check pins the "resolver stays stupid" claim.
+    assert(!/choices_fn|fetch_choices|unknown choices/i.test(r.stderr),
+      `CLI never consults choices_fn, got stderr: ${JSON.stringify(r.stderr)}`);
+  });
+
+  it('--exec with a missing required port errors cleanly (no choices_fn fallback attempt)', () => {
+    const r = runWith('g:edit_section', '/tmp/x.md');   // missing section
+    assert(r.status !== 0, 'non-zero rc on missing required');
+    assert(/section/i.test(r.stderr), `stderr names the missing port, got: ${JSON.stringify(r.stderr)}`);
+    assert(!/choices_fn|fetch_choices/i.test(r.stderr),
+      `no mention of choices_fn in CLI error path, got: ${JSON.stringify(r.stderr)}`);
+  });
+
+  it('--list g includes the action without touching choices_fn', () => {
+    const r = spawnSync(process.execPath, [TUI, CF_PATH, '--list', 'g'], {
+      encoding: 'utf8', timeout: 5000,
+    });
+    eq(r.status, 0);
+    assert(/edit_section/.test(r.stdout), '--list shows the action');
+    assert(!/choices_fn|fetch_choices/i.test(r.stderr),
+      `--list never consults choices_fn, got stderr: ${JSON.stringify(r.stderr)}`);
+  });
+});
+
 report();

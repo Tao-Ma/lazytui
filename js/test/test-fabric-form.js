@@ -524,6 +524,67 @@ describe('[fabric-form] KEY path integration — choices popover (slice 2)', () 
     eq(section.text, '', 'no value picked — section stays empty');
     assert(store.getModel().modes.fabricFormMode, 'form itself is still open — Esc closed the popover, not the form');
   });
+
+  // R1E test-gap additions — key-path cases round-1 flagged as unpinned.
+
+  it('Space twice toggles the popover open then closed', () => {
+    openPopover();
+    _dispatchToken(' ');           // open
+    assert(store.getModel().modal.fabricForm.picking, 'open after first space');
+    _dispatchToken(' ');           // close
+    eq(store.getModel().modal.fabricForm.picking, null, 'closed after second space');
+  });
+
+  it('Space on a computed field in state=error still opens the popover (error row renders)', () => {
+    let m = freshModel();
+    [m] = runtime.update(m, {
+      type: 'fabric_form_enter', fields: cfFields(),
+      pendingAction: { actionKey: 'edit-section', action: CF_ACTION },
+    });
+    [m] = runtime.update(m, { type: 'fabric_form_focus_next' });   // → section
+    [m] = runtime.update(m, { type: 'fabric_form_choices_request', port: 'section', requestId: 1 });
+    [m] = runtime.update(m, {
+      type: 'fabric_form_choices_resolved', port: 'section', requestId: 1,
+      items: [], labels: null, error: 'file not found',
+    });
+    store.setModel(m);
+    _dispatchToken(' ');
+    const after = store.getModel().modal.fabricForm;
+    assert(after.picking, 'popover opens on error state too — overlay paints the error row');
+    eq(after.picking.port, 'section');
+  });
+
+  it('Enter in picker with empty items (ok state) closes without picking', () => {
+    let m = freshModel();
+    [m] = runtime.update(m, {
+      type: 'fabric_form_enter', fields: cfFields(),
+      pendingAction: { actionKey: 'edit-section', action: CF_ACTION },
+    });
+    [m] = runtime.update(m, { type: 'fabric_form_focus_next' });
+    [m] = runtime.update(m, { type: 'fabric_form_choices_request', port: 'section', requestId: 2 });
+    [m] = runtime.update(m, {
+      type: 'fabric_form_choices_resolved', port: 'section', requestId: 2,
+      items: [], labels: null, error: null,
+    });
+    store.setModel(m);
+    _dispatchToken(' ');           // open
+    assert(store.getModel().modal.fabricForm.picking, 'open');
+    _dispatchToken('\r');          // Enter with no items[0] to pick
+    const after = store.getModel().modal.fabricForm;
+    eq(after.picking, null, 'popover closed on Enter-with-empty-items');
+    const section = after.fields.find((x) => x.port === 'section');
+    eq(section.text, '', 'nothing picked — section stays empty');
+  });
+
+  it('printable key while picking closes popover + types the char into the field', () => {
+    openPopover(['a', 'b']);
+    _dispatchToken(' ');                        // open
+    _dispatchToken('n');                        // non-nav printable
+    const after = store.getModel().modal.fabricForm;
+    eq(after.picking, null, 'popover closed by non-nav key');
+    const section = after.fields.find((x) => x.port === 'section');
+    eq(section.text, 'n', 'char landed in section text (fall-through to field editor)');
+  });
 });
 
 report();
