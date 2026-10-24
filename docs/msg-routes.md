@@ -23,6 +23,9 @@
 > - **§5 — the sub-reducer table** (`_SUBREDUCER_BY_TYPE`, ex-`_MODAL_BY_TYPE`) now
 >   holds **10 modals + 1 fabric-state delegate**: added `fabric-field` (§5.10)
 >   and the fabric injects/output/wires store (§5.11).
+> - **2026-10-24 — added `fabric-form` (§5.10a)**: the invoke-time multi-field
+>   popup for actions with 2+ declared `ports.in` (args→ports slice 1). Modal
+>   count is now 11; the fabric-state delegate still stands alone.
 > - **§7 — the `viewer`/`detail` Component was dissolved (U2f)**; §7.4 is kept as a
 >   dated RETIRED record. The content slot is now the `info` / `text-view` /
 >   `agent` / `terminal` panes (**new §7.10**), all sharing the `tvu` reducer
@@ -334,8 +337,9 @@ Msg stamping (exception C) — none survive in a reducer arm.
 
 `reducer.update` checks `_SUBREDUCER_BY_TYPE` (ex-`_MODAL_BY_TYPE`) first; a hit
 delegates the whole arm to that sub-reducer's `update(model, msg) → [model, cmds]`
-over its own `model.modal.<name>` buffer + mode flag. The table holds **10 modal
-sub-reducers** (§5.1–§5.10) **plus the `fabric` state sub-reducer** (§5.11 — not
+over its own `model.modal.<name>` buffer + mode flag. The table holds **11 modal
+sub-reducers** (§5.1–§5.10, plus §5.10a added 2026-10-24 for the args→ports
+multi-field form) **plus the `fabric` state sub-reducer** (§5.11 — not
 a modal, but delegated by the same mechanism; it writes `model.fabric.*`). Shared
 write helpers (`withModes` / `withModal` / `withModalMode`) live in `model-ops.js`
 (pure, zero imports). Each close/commit arm **guards on its mode flag** so a stale
@@ -512,6 +516,41 @@ the two paths differ only by the `pendingAction` context carried on `enter`.
   required port is still missing, `_promptMissing` opens the next prompt; if
   ready, `_consumeOneShotInjects` clears the one-shot entries whose source was
   `inject` and the action spawns.
+
+### 5.10a `fabric-form` (`modal/fabric-form.js`) — invoke-time multi-field popup (args→ports slice 1)
+
+The 2+-port invoke-time lane. `_promptMissing` picks `fabric-form` over
+`fabric-field` when `action.ports.in` has ≥2 declared ports, materializing every
+declared port as a form field (not just the missing ones), pre-filled from the
+current resolve. Required fields render first, then optional; chips are derived
+from `(text, default)` on every edit so they can't drift from the state they
+describe. Submit is atomic — one one-shot inject per MODIFIED field, then one
+`do_run`. See [`docs/action-ports-guide.md`](action-ports-guide.md) for the
+author-facing view and [`docs/ports-and-wires.md`](ports-and-wires.md) for the
+dataflow mechanics.
+
+| Msg | Writes | Emits | Purity |
+|---|---|---|---|
+| `fabric_form_enter{fields,pendingAction?}` | `modes.fabricFormMode→true`, `modal.fabricForm={fields,focusIdx:0,pendingAction}`; sorts fields required-first and recomputes `isDefault`/`isModified` per row from `(text, default)` | — | shell¹ |
+| `fabric_form_key{seq,key}` | `modal.fabricForm.fields[focusIdx].text` (type/backspace/Ctrl+U/paste) + the row's chip flags; sibling fields unchanged (guarded) | — | ✓ |
+| `fabric_form_focus_next` / `fabric_form_focus_prev` | `modal.fabricForm.focusIdx` wraps modulo `fields.length` (guarded; identity on single-field edge) | — | ✓ |
+| `fabric_form_reset_default` | focused field: `text←default` (or `''` if no default); chips re-derived (guarded) | — | ✓ |
+| `fabric_form_clear` | focused field: `text←''`; chips re-derived (guarded) | — | ✓ |
+| `fabric_form_submit` | writes a ONE-SHOT inject per MODIFIED field via chained `applyInject(…, {oneShot:true})` + closes (guarded) | `pendingAction` set → `[{type:'do_run', actionKey, action}]`; else `[]` | ✓² |
+| `fabric_form_cancel` | closes (guarded); no injects to roll back — submit is atomic by construction | — | ✓ |
+
+¹ Won't open over a live modal (`isChainActive` guard). Opens only via
+  `_promptMissing` in `js/dispatch/runtime/action-runner.js` — the handler
+  resolves the action's `ports.in` once, builds `fields[]` from the resolve,
+  and dispatches `fabric_form_enter`. Non-array `fields` or empty → no-op.
+
+² Submit chains `applyInject` across all modified fields in field order
+  (declaration order within each required/optional partition), each returning
+  a new model. `_consumeOneShotInjects` in action-runner clears them after a
+  successful spawn (same lifecycle as the 1-port fabric-field path, §5.10).
+  Reset/clear Msgs stay in `TYPES` so a future overlay affordance (clickable
+  chip) can drive them; slice 1 dispatches them from no keyboard binding (a
+  bare `d`/`c` would steal typing — a dedicated hotkey is a follow-up).
 
 ### 5.11 `fabric` (`update/fabric.js`) — the dataflow-fabric state store (NOT a modal)
 

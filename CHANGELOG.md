@@ -6,6 +6,34 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Multi-field invoke-time popup for actions with 2+ declared `ports.in`.**
+  When you invoke an action whose required inputs aren't all resolved and the
+  action declares two or more ports, the TUI now opens one popup with every
+  declared port as a labeled field — required ones first, then optional —
+  pre-filled from whatever the resolver already settled (sticky inject, wire,
+  or declared default). Each row shows a `[default]` / `[modified]` / `[unset]`
+  chip derived from the current text and the port's declared default, so you
+  can see at a glance which fields will carry their default through, which
+  you've touched, and which are left blank. Tab / Shift-Tab move focus;
+  Ctrl+U clears the focused field; Enter submits every modified field as a
+  one-shot inject in a single atomic reduction and runs the action; Esc
+  discards without touching the model. An action with exactly ONE declared
+  port keeps the pre-slice-1 lean single-line popup — this slice is strictly
+  additive. First slice of a planned arc; the deferred follow-ups (enum
+  `choices:`, pre-run review page, hotkey-driven reset-to-default, section
+  grouping for 10+ ports) stay documented in `docs/action-ports-guide.md`.
+
+### Docs
+
+- **New `docs/action-ports-guide.md`** — a how-to for component authors
+  (humans and AI) that explains how a port's `type` / `required` / `default` /
+  `desc` keys shape its row in the new form, with naming rules, worked
+  examples, common patterns, and anti-patterns. Cross-referenced from
+  `docs/ports-and-wires.md` and the new `fabric-form` entry in
+  `docs/msg-routes.md` (§5.10a).
+
 ## [0.6.33] — 2026-10-23
 
 ### Fixed

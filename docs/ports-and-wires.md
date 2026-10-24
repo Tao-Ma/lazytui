@@ -275,18 +275,27 @@ The pre-fabric "args surface" (a single string `args: '<hint>'` + a bespoke
   references `$name` and the kernel delivers the value as a literal env entry
   regardless of its bytes. One schema, two execution flavors.
 - **Interactive collection**: when the resolver reports a required input missing
-  AND no wire exists AND no sticky inject is set, the action-runner opens the
-  **`fabric-field` modal** over the first missing required port, carrying a
-  `pendingAction = {actionKey, action}` and `paneId: null`. The render splits by
-  paneId — ports-pane manual edits (non-null) stay **in-grid** inside the ports
-  pane's render function; invoke-time (null) paints a centered overlay via
-  `js/overlay/fabric-field.js` (title = the action label, addr, port desc, edit
-  buffer, enter/esc footer). On submit the modal writes a **one-shot** inject
-  (`port_inject` with `oneShot: true` — not sticky, consumed by the next
-  resolve) and emits a `do_run` cmd that re-enters `doRun`. The re-entry re-
-  resolves and either opens the next prompt (per-port loop) or runs; on run,
-  `_consumeOneShotInjects` clears the one-shot entries whose source was `inject`
-  so they don't persist.
+  AND no wire exists AND no sticky inject is set, the action-runner opens an
+  invoke-time popup. Which popup is a port-count decision:
+  - **1 declared port** → the pre-slice-1 lane: the **`fabric-field` modal** over
+    the one missing required port. Render in `js/overlay/fabric-field.js` (title
+    = action label, addr, port desc, edit buffer, enter/esc footer).
+  - **2+ declared ports** → the args→ports slice-1 lane: the **`fabric-form`
+    modal** showing EVERY declared port materialized as a labeled field, pre-
+    filled from the current resolve. Required fields render first, then optional,
+    with `[default]` / `[modified]` / `[unset]` chips derived from `(text,
+    default)`. Render in `js/overlay/fabric-form.js`. See
+    [`action-ports-guide.md`](action-ports-guide.md) for the component-author
+    view of how a port's declaration shapes its row.
+  Both carry `pendingAction = {actionKey, action}`. The fabric-field path uses
+  `paneId: null` to distinguish the invoke-time entry from the ports-pane in-grid
+  edit (non-null — stays in-grid inside the ports pane's render function). On
+  submit, both lanes write **one-shot** injects (`port_inject` with `oneShot:
+  true` — not sticky, consumed by the next resolve) and emit a `do_run` cmd that
+  re-enters `doRun`. The 1-port lane loops per-port on re-dispatch (one popup
+  per missing port in sequence); the 2+-port form submits atomically (one popup
+  for the whole action). On run, `_consumeOneShotInjects` clears the one-shot
+  entries whose source was `inject` so they don't persist.
 - **Cancel**: `fabric_field_cancel` drops the `pendingAction` without emitting a
   cmd. Previously-collected one-shot injects from the same chain stay until a
   later invocation consumes them (resume-friendly).
@@ -298,11 +307,15 @@ The pre-fabric "args surface" (a single string `args: '<hint>'` + a bespoke
   errors with a usage hint. Actions without `ports.in` keep the POSIX `$@` path.
 
 Insertion points: `_resolvePortsForAction` (shared with `doRunFabric`),
-`_promptMissing` (opens the modal), `_consumeOneShotInjects` (clears post-
-resolve) in `js/dispatch/runtime/action-runner.js`; the `pendingAction` branch of
-`fabric_field_submit` in `js/dispatch/update/modal/fabric-field.js`. Reducer
-contract pinned by `test-shell-action-prompt.js`; action-runner wiring pinned by
-`test-action-runner-prompt.js`; shell env binding by `test-shell-action-ports.js`.
+`_promptMissing` (picks lane + opens the modal), `_consumeOneShotInjects`
+(clears post-resolve) in `js/dispatch/runtime/action-runner.js`; the
+`pendingAction` branch of `fabric_field_submit` in
+`js/dispatch/update/modal/fabric-field.js`; the atomic multi-port submit in
+`js/dispatch/update/modal/fabric-form.js`. Reducer contract pinned by
+`test-shell-action-prompt.js` (1-port lane) + `test-fabric-form.js` (2+-port
+lane); action-runner wiring pinned by `test-action-runner-prompt.js` (lane
+split); shell env binding by `test-shell-action-ports.js`; overlay rendering by
+`test-fabric-field-overlay.js` + `test-fabric-form-overlay.js`.
 
 ## Discovery
 
