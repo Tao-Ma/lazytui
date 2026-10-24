@@ -91,6 +91,11 @@ function _diagError(code, message) {
 // wording is a landing cap, not a production cap.
 const MAX_CHOICES = 1024;
 
+// R3E-SMELL3 — the empty-resolve shape in literal form repeated 5× across
+// the handler's error paths. Hoisted so a schema change (e.g., adding a
+// future `source` field) lands in one place.
+const EMPTY_RESOLVE = { items: [], labels: null, error: null, truncated: false };
+
 // Replace control chars that would break single-row rendering with a single
 // space. `stripControls` (ansi.js) PRESERVES `\n` and `\t` by design — fine
 // for streamed action output, lethal for the popover where every row is one
@@ -111,22 +116,26 @@ function _stripRowBreaks(s) {
 // MAX_CHOICES items — the overlay renders a trailing `[+N more]` row so the
 // user knows the cap applied.
 function normalizeResult(raw) {
-  if (raw == null) return { items: [], labels: null, error: null, truncated: false };
+  if (raw == null) return { ...EMPTY_RESOLVE };
   let items, labels, error;
   if (Array.isArray(raw)) {
-    items = raw.filter((v) => typeof v === 'string').map(_stripRowBreaks);
+    // R3C-SMELL1 — drop empty-string items. An item renders as one popover
+    // row, so a `''` is a blank row with nothing to pick — confusing UX.
+    // Authors can filter upstream; this is defense-in-depth. Row-break-strip
+    // runs FIRST so `'\n'` collapses to `' '` (one-space row, meaningful).
+    items = raw.filter((v) => typeof v === 'string').map(_stripRowBreaks).filter((v) => v !== '');
     labels = null;
     error = null;
   } else if (typeof raw === 'object') {
     items = Array.isArray(raw.items)
-      ? raw.items.filter((v) => typeof v === 'string').map(_stripRowBreaks)
+      ? raw.items.filter((v) => typeof v === 'string').map(_stripRowBreaks).filter((v) => v !== '')
       : [];
     labels = Array.isArray(raw.labels)
       ? raw.labels.slice(0, items.length).map((v) => _stripRowBreaks(typeof v === 'string' ? v : ''))
       : null;
     error = typeof raw.error === 'string' && raw.error ? _stripRowBreaks(raw.error) : null;
   } else {
-    return { items: [], labels: null, error: 'choices_fn returned an unsupported value', truncated: false };
+    return { ...EMPTY_RESOLVE, error: 'choices_fn returned an unsupported value' };
   }
   let truncated = false;
   if (items.length > MAX_CHOICES) {
@@ -175,7 +184,7 @@ function registerFetchChoicesEffect(registerEffect) {
     if (!fn) {
       const msg = `unknown choices_fn: ${eff.ref} (registered via api.registerChoicesFn? component plugin loaded?)`;
       _diagError('choices_fn.unknown_ref', msg);
-      dispatchResolved({ items: [], labels: null, error: msg, truncated: false });
+      dispatchResolved({ ...EMPTY_RESOLVE, error: msg });
       host.releaseKey();
       return;
     }
@@ -190,7 +199,7 @@ function registerFetchChoicesEffect(registerEffect) {
     } catch (e) {
       const em = String((e && e.message) || e);
       _diagError('choices_fn.sync_throw', `${eff.ref} (${eff.actionKey}.${eff.port}): ${em}`);
-      dispatchResolved({ items: [], labels: null, error: em, truncated: false });
+      dispatchResolved({ ...EMPTY_RESOLVE, error: em });
       host.releaseKey();
       return;
     }
@@ -204,7 +213,18 @@ function registerFetchChoicesEffect(registerEffect) {
           host.releaseKey();
           return;   // abort — don't touch the WAL with stale data
         }
-        dispatchResolved(normalizeResult(value));
+        const normalized = normalizeResult(value);
+        // R3D-SMELL1 — a non-empty return array that NORMALIZED to zero
+        // items means every entry was either non-string or empty after the
+        // row-break strip. A common authoring mistake (returning numbers,
+        // objects, or a per-char split). One diag entry per occurrence so
+        // the author can trace it in `:diag` instead of staring at a silent
+        // "(no choices)" popover.
+        if (Array.isArray(value) && value.length > 0 && normalized.items.length === 0 && !normalized.error) {
+          _diagError('choices_fn.dropped_items',
+            `${eff.ref} (${eff.actionKey}.${eff.port}): returned ${value.length} entries, 0 survived string+non-empty filter`);
+        }
+        dispatchResolved(normalized);
         host.releaseKey();
       },
       (err) => {
@@ -214,7 +234,7 @@ function registerFetchChoicesEffect(registerEffect) {
         }
         const em = String((err && err.message) || err);
         _diagError('choices_fn.rejected', `${eff.ref} (${eff.actionKey}.${eff.port}): ${em}`);
-        dispatchResolved({ items: [], labels: null, error: em, truncated: false });
+        dispatchResolved({ ...EMPTY_RESOLVE, error: em });
         host.releaseKey();
       }
     );

@@ -111,6 +111,22 @@ describe('[choices-fn-runtime] normalizeResult', () => {
     }
   });
 
+  it('R3C-SMELL1 — empty-string items are dropped', () => {
+    const r = runtime.normalizeResult(['', 'a', '', 'b', '']);
+    eq(r.items, ['a', 'b'], 'empty-string items dropped as defensive UX');
+  });
+
+  it('R3E-SMELL3 — null / undefined / unsupported land identical empty shape', () => {
+    const nullR = runtime.normalizeResult(null);
+    const undefR = runtime.normalizeResult(undefined);
+    eq(nullR, undefR, 'EMPTY_RESOLVE spread yields identical shape');
+    const badR = runtime.normalizeResult(42);
+    eq(badR.items, []);
+    eq(badR.labels, null);
+    eq(badR.truncated, false);
+    assert(typeof badR.error === 'string' && badR.error.length > 0, 'error payload set for non-null non-object');
+  });
+
   it('labels also capped when items were capped', () => {
     const big = Array(5000).fill('x');
     const bigLabels = Array(5000).fill('L');

@@ -387,6 +387,18 @@ describe('[fabric-schema] slice-2 choices_fn + depends_on', () => {
     eq(cfg.groups.pg.actions['edit-section'].ports.in.section.depends_on, ['file']);
   });
 
+  it('R1B-SMELL2 — WARNS + DROPS a `choices_fn` naming a reserved identifier', () => {
+    for (const ref of ['__proto__.foo', 'edit.constructor', 'prototype.list', 'constructor.x']) {
+      const w = [];
+      const cfg = cfgWith({ choices_fn: ref });
+      validate(cfg, undefined, w);
+      assert(w.some((x) => x.code === 'port.reserved_choices_fn'),
+        `expected port.reserved_choices_fn for ${JSON.stringify(ref)}, got: ${JSON.stringify(w)}`);
+      assert(!('choices_fn' in cfg.groups.pg.actions['edit-section'].ports.in.section),
+        `reserved choices_fn dropped (${ref})`);
+    }
+  });
+
   it('upgrade-safe — a pre-existing config with legacy keys continues to load', () => {
     // No choices_fn, no depends_on, no new rules trigger. Mirrors the round-5
     // backward-compat posture: slice-2 validation must never make a load fail.

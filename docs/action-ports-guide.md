@@ -399,6 +399,7 @@ Three things worth knowing before you ship a `choices_fn`:
 - **SPACE on a plain port is still a literal space.** The space-opens-popover affordance fires only when the focused field has a `choices_fn:`; any other port treats the key as text input, preserving pre-slice-2 behavior.
 - **The returned strings pass through to the overlay AS-IS.** `esc()` neutralizes bracket markup like `[reverse]`, but raw ANSI SGR escape bytes (`\x1b[31m…`) are preserved and render colored in the popover. Treat return values as display content you own — if the fn's upstream is untrusted, strip SGR before returning.
 - **The fn is a shortcut, not a hard constraint.** The user can always free-type a value that isn't in the choices list, and that value binds like any other port value at submit time.
+- **A port can carry both a `choices_fn:` and an incoming wire.** The wire pre-fills the form field at open, and the user's choice overrides via a one-shot inject (`inject > wire > default` resolution precedence). The source badge on the ports pane shows the wire; the form doesn't surface it, so a user who picks from choices doesn't see the wire they're shadowing. Avoid this combination unless the override is intentional.
 
 Replay stays deterministic. The fn is a side effect — the first live invocation goes through the `fetch_choices` effect channel; its *result* lands as a reducer arm whose payload is captured in the WAL. Replay reproduces frames from the recorded payload without re-executing the fn, so a fn that touches the fs or spawns a child is safe to use.
 

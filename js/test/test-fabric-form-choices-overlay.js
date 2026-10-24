@@ -207,7 +207,7 @@ describe('[fabric-form-choices-overlay] popover', () => {
     assert(out.includes('outro'), 'outro row visible');
     assert(out.includes('[up/down] move'),  'picker help: nav keys');
     assert(out.includes('[enter] pick'),    'picker help: enter picks');
-    assert(out.includes('[esc] close'),     'picker help: esc closes');
+    assert(out.includes('[esc] close popover'), 'picker help: esc closes POPOVER (not form) — disambiguates');
     assert(!out.includes('[tab] next'),     'regular help line hidden while picking');
   });
 

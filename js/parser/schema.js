@@ -1154,11 +1154,21 @@ function validateActionPorts(aname, ports, ctx, warnings) {
           const ref = pdef.choices_fn;
           const ok = typeof ref === 'string' &&
                      /^[A-Za-z_][A-Za-z0-9_-]*\.[A-Za-z_][A-Za-z0-9_]*$/.test(ref);
-          if (!ok) {
+          // R1B-SMELL2 — defense-in-depth: reject refs whose component or fn
+          // name is `__proto__` / `constructor` / `prototype`. The runtime
+          // registry is Map-backed (prototype-safe), so these are already
+          // non-exploitable; this check keeps a confused author from naming
+          // a legitimate fn after a reserved identifier and getting silent
+          // null-lookups at run time.
+          const reservedRef = typeof ref === 'string' &&
+            /(^|\.)(__proto__|constructor|prototype)(\.|$)/.test(ref);
+          if (!ok || reservedRef) {
             if (warnings) {
               warnings.push({
-                code: 'port.bad_choices_fn',
-                message: `${pctx}: 'choices_fn' must be a dotted ref '<component>.<fnName>' (got ${JSON.stringify(ref)}) — dropped`,
+                code: reservedRef ? 'port.reserved_choices_fn' : 'port.bad_choices_fn',
+                message: reservedRef
+                  ? `${pctx}: 'choices_fn' names a reserved identifier (${JSON.stringify(ref)}) — dropped`
+                  : `${pctx}: 'choices_fn' must be a dotted ref '<component>.<fnName>' (got ${JSON.stringify(ref)}) — dropped`,
               });
             }
             delete pdef.choices_fn;

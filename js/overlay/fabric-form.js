@@ -282,7 +282,9 @@ function renderFabricFormOverlay() {
   // computed-choices field advertises `[space] choices` so the affordance is
   // discoverable without reading docs.
   if (picking) {
-    rows.push('[dim]\\[up/down] move   \\[enter] pick   \\[esc] close[/]');
+    // R2B-SMELL8 — "close popover" disambiguates against the next-up Esc,
+    // which closes the form.
+    rows.push('[dim]\\[up/down] move   \\[enter] pick   \\[esc] close popover[/]');
   } else {
     const focused = f.fields[f.focusIdx];
     const hasChoices = focused && focused.choicesFnRef;
