@@ -358,9 +358,24 @@ function update(model, msg) {
       const f = model.modal.fabricForm;
       const pending = f.pendingAction;
       const actionKey = pending && pending.actionKey;
+      // R2B-BUG1 — abort any in-flight choices fetches before submitting.
+      // Without this, a submit-while-fetching lets the OLD fetch's `.then`
+      // dispatch its resolved msg AFTER do_run reopens the form (via
+      // _promptMissing — same actionKey, requestSeq reset to 0, fresh
+      // requestId 1): actionKey matches, requestId matches, stale items
+      // populate the NEW form's field. Symmetric with the slice-1 cancel
+      // arm which already emits cancel_effect per pending field.
+      const cancelCmds = [];
+      if (actionKey) {
+        for (const field of f.fields) {
+          if (field.computed && field.computed.state === 'pending') {
+            cancelCmds.push({ type: 'cancel_effect', key: `choices_fn:${actionKey}.${field.port}` });
+          }
+        }
+      }
       if (!pending || !actionKey) {
         // No pending action is a degenerate state — just close.
-        return [withModalMode(model, { fabricFormMode: false }, { fabricForm: { ...CLOSED } }), []];
+        return [withModalMode(model, { fabricFormMode: false }, { fabricForm: { ...CLOSED } }), cancelCmds];
       }
       // Write a one-shot inject for every modified field, in field order. Each
       // applyInject returns a new model; chain them. `_consumeOneShotInjects`
@@ -388,7 +403,10 @@ function update(model, msg) {
         next = applyInject(next, addr, field.text, { oneShot: true });
       }
       const closed = withModalMode(next, { fabricFormMode: false }, { fabricForm: { ...CLOSED } });
-      return [closed, [{ type: 'do_run', actionKey, action: pending.action }]];
+      // cancel_effect Cmds first so inflight entries clear before the
+      // do_run → _promptMissing → fabric_form_enter sequence re-fires
+      // initial requests under the same keys.
+      return [closed, [...cancelCmds, { type: 'do_run', actionKey, action: pending.action }]];
     }
     case 'fabric_form_cancel': {
       if (!model.modes.fabricFormMode) return [model, []];
@@ -480,8 +498,12 @@ function update(model, msg) {
       const f = model.modal.fabricForm;
       // R1C: cross-form actionKey match. msg.actionKey can be absent (older
       // dispatchers / tests built before this guard) — tolerate by skipping
-      // the match when it's not present.
-      if (msg.actionKey && f.pendingAction && f.pendingAction.actionKey !== msg.actionKey) {
+      // the match when it's not present. R2A-SMELL2: when msg.actionKey IS
+      // present, a null pendingAction is treated as "any actionKey mismatches"
+      // instead of letting the guard silently fall through. Production never
+      // writes a null pendingAction (action-runner always passes one), but
+      // a hand-built test Msg would bypass the guard — tighten defense.
+      if (msg.actionKey && (!f.pendingAction || f.pendingAction.actionKey !== msg.actionKey)) {
         return [model, []];
       }
       const idx = f.fields.findIndex((x) => x.port === msg.port);

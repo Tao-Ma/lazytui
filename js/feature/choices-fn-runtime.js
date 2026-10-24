@@ -68,7 +68,26 @@ function _getChoicesFn(ref) { return _lookup ? _lookup(ref) : null; }
 // is the fn's RETURN SIZE, not keystroke paste. 1024 covers "list every
 // branch in a large monorepo" / "every table in a mid-sized db" with room
 // to spare; past that the overlay would be unusable anyway. R1B-BUG1.
+//
+// Note (R2A-SMELL1): the cap trims on LANDING, not on allocation — the fn's
+// return value is already materialized by the time we see it. A fn that
+// allocates 10M items still spends that memory in author code; the cap only
+// prevents it from reaching the WAL / overlay. The guide's "capped at 1024"
+// wording is a landing cap, not a production cap.
 const MAX_CHOICES = 1024;
+
+// Replace control chars that would break single-row rendering with a single
+// space. `stripControls` (ansi.js) PRESERVES `\n` and `\t` by design — fine
+// for streamed action output, lethal for the popover where every row is one
+// line AND a `\n` emits a cursor-move escape that re-anchors subsequent
+// paint at a wrong row/column (R2C-BUG1 — breaks the overlay geometry +
+// bleeds items into the next field). Also strips `\r` so a Windows-line-
+// ending'd item (`'intro\r'`) doesn't paint a hidden carriage return.
+// Applied at normalizeResult so the WAL stores the already-cleaned payload
+// (single source of truth; paint can trust what it reads).
+function _stripRowBreaks(s) {
+  return typeof s === 'string' ? s.replace(/[\r\n\t]+/g, ' ') : s;
+}
 
 // Normalize a (possibly-async) fn return into the resolved-arm payload shape.
 // Pure, no I/O; callable from unit tests without the effect wrapper.
@@ -80,15 +99,17 @@ function normalizeResult(raw) {
   if (raw == null) return { items: [], labels: null, error: null, truncated: false };
   let items, labels, error;
   if (Array.isArray(raw)) {
-    items = raw.filter((v) => typeof v === 'string');
+    items = raw.filter((v) => typeof v === 'string').map(_stripRowBreaks);
     labels = null;
     error = null;
   } else if (typeof raw === 'object') {
-    items = Array.isArray(raw.items) ? raw.items.filter((v) => typeof v === 'string') : [];
+    items = Array.isArray(raw.items)
+      ? raw.items.filter((v) => typeof v === 'string').map(_stripRowBreaks)
+      : [];
     labels = Array.isArray(raw.labels)
-      ? raw.labels.slice(0, items.length).map((v) => (typeof v === 'string' ? v : ''))
+      ? raw.labels.slice(0, items.length).map((v) => _stripRowBreaks(typeof v === 'string' ? v : ''))
       : null;
-    error = typeof raw.error === 'string' && raw.error ? raw.error : null;
+    error = typeof raw.error === 'string' && raw.error ? _stripRowBreaks(raw.error) : null;
   } else {
     return { items: [], labels: null, error: 'choices_fn returned an unsupported value', truncated: false };
   }

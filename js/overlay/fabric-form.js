@@ -231,7 +231,12 @@ function renderFabricFormOverlay() {
           rows.push(`${' '.repeat(leftW)}[dim](no choices)[/]`);
         } else {
           for (let i = 0; i < c.items.length; i++) {
-            const label = c.labels && c.labels[i] ? c.labels[i] : c.items[i];
+            // R2C-SMELL1 — `labels[i]` was truthy-checked, which treated an
+            // explicit empty-string label as "no label" and fell back to the
+            // raw item. An author passing `labels: ['', 'Beta']` wanted blank
+            // for the first row, not the item. Compare against null|undefined
+            // instead so the empty string survives.
+            const label = (c.labels && c.labels[i] != null) ? c.labels[i] : c.items[i];
             if (i === picking.idx) pickingLineIdx = rows.length;
             const painted = i === picking.idx
               ? `[reverse]${esc(label)}[/]`

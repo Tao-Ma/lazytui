@@ -96,6 +96,21 @@ describe('[choices-fn-runtime] normalizeResult', () => {
     eq(r.truncated, true);
   });
 
+  it('R2C-BUG1 — strips \\n / \\r / \\t from items, labels, error', () => {
+    const r = runtime.normalizeResult({
+      items:  ['one\ntwo', 'tab\there', 'crlf\r\n'],
+      labels: ['L1\n', 'L2',       'L3\t'],
+      error:  'stack\nframe\n',
+    });
+    // Each row-break run collapses to a single space; no raw \n/\r/\t survives.
+    eq(r.items, ['one two', 'tab here', 'crlf '], 'items stripped');
+    eq(r.labels, ['L1 ', 'L2', 'L3 '], 'labels stripped');
+    eq(r.error, 'stack frame ', 'error stripped');
+    for (const s of [...r.items, ...r.labels, r.error]) {
+      assert(!/[\r\n\t]/.test(s), `no raw \\r/\\n/\\t survives in: ${JSON.stringify(s)}`);
+    }
+  });
+
   it('labels also capped when items were capped', () => {
     const big = Array(5000).fill('x');
     const bigLabels = Array(5000).fill('L');

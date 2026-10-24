@@ -410,4 +410,53 @@ describe('[fabric-form-choices] R1B-SMELL1 — cancel aborts in-flight fetches',
   });
 });
 
+// R2B-BUG1 — submit also emits cancel_effect per pending fetch. Without it,
+// submit-while-fetching lets the OLD fetch resolve AFTER do_run → _promptMissing
+// re-opens the form (same actionKey, requestSeq reset to 0, fresh requestId=1):
+// actionKey matches, requestId matches, stale items populate the new form.
+describe('[fabric-form-choices] R2B-BUG1 — submit aborts in-flight fetches', () => {
+  it('fabric_form_submit emits cancel_effect per pending field BEFORE do_run', () => {
+    let m = openForm();
+    [m] = runtime.update(m, { type: 'fabric_form_choices_request', port: 'section' });
+    const [, cmds] = runtime.update(m, { type: 'fabric_form_submit' });
+    const cancels = cmds.filter((c) => c.type === 'cancel_effect');
+    const doRuns = cmds.filter((c) => c.type === 'do_run');
+    assert(cancels.length >= 1 && /choices_fn:edit-section\.section$/.test(cancels[0].key),
+      `cancel_effect emitted on submit, got: ${JSON.stringify(cmds)}`);
+    assert(doRuns.length === 1, 'do_run still emitted');
+    // Ordering matters: cancel_effect first so the key is cleared before the
+    // re-opened form's initial request lands under the same key.
+    const cancelIdx = cmds.findIndex((c) => c.type === 'cancel_effect');
+    const doRunIdx = cmds.findIndex((c) => c.type === 'do_run');
+    assert(cancelIdx < doRunIdx, 'cancel_effect precedes do_run in the Cmd list');
+  });
+});
+
+// R2A-SMELL2 — the actionKey cross-form guard now tightened to drop a resolved
+// Msg carrying an actionKey whenever pendingAction is null (previously the
+// guard silently fell through).
+describe('[fabric-form-choices] R2A-SMELL2 — actionKey guard with null pendingAction', () => {
+  it('resolved Msg with actionKey is dropped when pendingAction is null', () => {
+    let m = freshModel();
+    // Hand-build a form state with pendingAction=null (unreachable from prod
+    // but defense-in-depth) + a computed field.
+    const fields = [
+      { port: 'section', text: '', required: true, default: null, desc: 'section',
+        choicesFnRef: 'edit.sections_of', dependsOn: [] },
+    ];
+    [m] = runtime.update(m, { type: 'fabric_form_enter', fields, pendingAction: null });
+    [m] = runtime.update(m, { type: 'fabric_form_choices_request', port: 'section' });
+    const requestId = m.modal.fabricForm.fields.find((x) => x.port === 'section').computed.requestId;
+    const before = m;
+    // Resolved msg carries an actionKey (as live code always does) — must be
+    // dropped because pendingAction is null → no actionKey to match against.
+    const [after] = runtime.update(m, {
+      type: 'fabric_form_choices_resolved',
+      port: 'section', actionKey: 'any-key', requestId,
+      items: ['x'], labels: null, error: null,
+    });
+    eq(after, before, 'reply dropped when pendingAction is null and actionKey is set');
+  });
+});
+
 report();
