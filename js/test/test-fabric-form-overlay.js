@@ -15,7 +15,7 @@
  */
 'use strict';
 
-const { describe, it, assert, report } = require('./test-runner');
+const { describe, it, assert, eq, report } = require('./test-runner');
 const runtime = require('../app/runtime');
 const store = require('../model/store');
 const term = require('../io/term');
@@ -182,6 +182,93 @@ describe('[fabric-form-overlay] paints a bordered popup with required+optional s
     assert(/tab/i.test(out), `tab hint absent — got: ${JSON.stringify(out)}`);
     assert(/enter/i.test(out), `enter hint absent — got: ${JSON.stringify(out)}`);
     assert(/esc/i.test(out), `esc hint absent — got: ${JSON.stringify(out)}`);
+  });
+
+  // ---- F1 — scroll-follows-focus (pre-release review Fork 3) ----
+
+  it('a many-field form keeps the focused row inside the viewport (scroll-follows-focus)', () => {
+    // Build a 15-port action: more fields+descs than fit on a 24-row terminal.
+    const fields = [];
+    for (let i = 0; i < 15; i++) {
+      fields.push({ port: `port${i}`, text: '',
+                    required: i < 5, default: null, desc: `desc for port${i}` });
+    }
+    const PENDING_LONG = { actionKey: 'longact', action: { label: 'Long action', ports: { in: {} } } };
+    let m = freshModel();
+    process.stdout.rows = 24;
+    term.refreshSize();
+    [m] = runtime.update(m, { type: 'fabric_form_enter', fields, pendingAction: PENDING_LONG });
+    // Tab 10 times → focusIdx = 10. That field is deep in the Optional section;
+    // without scroll-follows-focus, it would be rendered below the viewport and
+    // its [modified]/[unset]/caret glyphs would be clipped away.
+    for (let i = 0; i < 10; i++) {
+      [m] = runtime.update(m, { type: 'fabric_form_focus_next' });
+    }
+    const raw = captureRaw(m, () => renderFabricFormOverlay());
+    const rows = decodeRows(raw);
+    assert(rows.length > 0, 'something was painted');
+    // The focused field is `port10`. On a non-scrolling renderer, port10 would
+    // not appear in the frame (truncated past innerH). With scroll-follows-focus,
+    // port10's row must be in the painted output.
+    const painted = rows.map((r) => r.text).join('|');
+    assert(painted.includes('port10'), `focused port10 absent from paint — got: ${JSON.stringify(painted)}`);
+    // And the earlier required-section ports (port0..4) should have scrolled OFF
+    // (we moved past them). port0's row is content line 1 (right after "Required"
+    // header). With innerH=20 and scrollOffset≥1, port0 falls off the top.
+    assert(!painted.includes('port0 '), `port0 should have scrolled off, but got: ${JSON.stringify(painted)}`);
+    // Restore
+    process.stdout.rows = 30; term.refreshSize();
+  });
+
+  it('scroll stays at 0 when the whole form fits (no spurious scrolling)', () => {
+    // A 3-port action easily fits a 30-row terminal.
+    const fields = [
+      { port: 'host', text: '',       required: true,  default: null,     desc: 'target' },
+      { port: 'role', text: 'worker', required: true,  default: 'worker', desc: 'role'   },
+      { port: 'port', text: '22',     required: false, default: '22',     desc: 'ssh'    },
+    ];
+    const SMALL = { actionKey: 'small', action: { label: 'Small', ports: { in: {} } } };
+    let m = freshModel();
+    [m] = runtime.update(m, { type: 'fabric_form_enter', fields, pendingAction: SMALL });
+    [m] = runtime.update(m, { type: 'fabric_form_focus_next' });
+    const raw = captureRaw(m, () => renderFabricFormOverlay());
+    const rows = decodeRows(raw);
+    // Every field should be present AND the required section header.
+    const painted = rows.map((r) => r.text).join('|');
+    for (const name of ['host', 'role', 'port', 'Required', 'Optional']) {
+      assert(painted.includes(name), `${name} absent — got: ${JSON.stringify(painted)}`);
+    }
+  });
+
+  it('_scrollFor pure helper: focus near end clamps to maxScroll; near start → 0', () => {
+    const { _scrollFor } = require('../overlay/fabric-form');
+    eq(_scrollFor(0, 10, 20), 0, 'small form → 0');
+    eq(_scrollFor(5, 20, 10), 0, 'focus=5 fits in [0,9] window → 0');
+    eq(_scrollFor(15, 30, 10), 8, 'focus=15, want bottom-context=2 → scroll 8');
+    eq(_scrollFor(29, 30, 10), 20, 'focus at last row → clamp to maxScroll=20');
+    eq(_scrollFor(0, 100, 20), 0, 'focus at line 0 → scroll 0');
+  });
+
+  // ---- F2 — chip stays right-anchored when input overflows midW ----
+
+  it('[modified] chip right-column stays aligned when input text overflows the input area', () => {
+    // Two fields: one short, one with long text that forces truncate+ellipsis.
+    const fields = [
+      { port: 'short', text: 'x',                            required: true, default: null, desc: '' },
+      { port: 'long',  text: 'x'.repeat(200),                required: true, default: null, desc: '' },
+    ];
+    const PENDING2 = { actionKey: 'two', action: { label: 'Two-field', ports: { in: {} } } };
+    let m = freshModel();
+    [m] = runtime.update(m, { type: 'fabric_form_enter', fields, pendingAction: PENDING2 });
+    const raw = captureRaw(m, () => renderFabricFormOverlay());
+    const rows = decodeRows(raw).filter((r) => r.text.includes('[modified]'));
+    assert(rows.length === 2, `expected 2 [modified] chips, got ${rows.length}`);
+    // Both chips should land at the SAME end-column — right-anchored. (End-col =
+    // row.c + visLen - 1.) The pre-fix bug paints the overflow row's chip one
+    // column left.
+    const endA = rows[0].c + rows[0].visLen;
+    const endB = rows[1].c + rows[1].visLen;
+    eq(endA, endB, `chip columns must match: short ends ${endA}, long ends ${endB} → ${JSON.stringify(rows.map((r) => r.text))}`);
   });
 
   it('narrow terminal (40 cols) clamps the box so no row overflows the terminal', () => {

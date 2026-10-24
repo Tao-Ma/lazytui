@@ -1,5 +1,6 @@
 /**
- * Fabric multi-field FORM overlay (args→ports slice 1 commit 2).
+ * Fabric multi-field FORM overlay (args→ports slice 1 commit 2 + pre-release
+ * review fixes).
  *
  * Paints `model.modal.fabricForm` as a bordered popup with N labeled port
  * fields grouped Required-first. Each row shows name, prefix (`>` on the
@@ -7,6 +8,13 @@
  * right-anchored chip (`[default]` / `[modified]` / `[unset]`). The port's
  * `desc` renders dim below the input row — omitted when the port carries no
  * desc, so vertical space stays tight.
+ *
+ * Scroll-follows-focus (slice 1 pre-release review Fork 3 F1): on an action
+ * with more fields than fit in the viewport, Tab-ing past the viewport edge
+ * scrolls the box so the focused row stays visible. The reducer only tracks
+ * `focusIdx`; scroll is a pure function of (lines array, focused line index,
+ * inner height) computed per render — no model state for scroll, so there is
+ * no stale-scroll edge case.
  *
  * The companion `fabric-field` overlay (invoke-time single-port popup, ports-
  * pane in-grid edit) stays unchanged — the action-runner picks the lane in
@@ -32,6 +40,10 @@ const MAX_WIDTH = 72;
 // Longest chip label is `[modified]` (10 visible cells). Reserve one trailing
 // space before the chip for breathing room; renderPanel adds the right border.
 const CHIP_SLOT = 11;
+// How many rows of context to keep BELOW the focused row when scroll-follows-
+// focus kicks in. 2 is enough to see the dim desc of the next field (if any)
+// so the user has forward look-ahead while Tab-ing.
+const SCROLL_BOTTOM_CONTEXT = 2;
 
 function _chipMarkup(f) {
   if (f.isDefault) return '[dim]\\[default][/]';
@@ -56,14 +68,16 @@ function _inputRow(f, focused, name, pad, leftW, midW, chip) {
     const padEnd = ' '.repeat(midW - textVis - caretVis);
     mid = `${esc(f.text)}${caret}${padEnd}`;
   } else {
-    // Overflow — truncate text to leave room for the ellipsis; caret rides inside
-    // the inverse-tag at the end, becoming visible when text was shorter than midW,
-    // suppressed when the ellipsis itself replaced the tail.
-    const budget = Math.max(0, midW - 1);                           // 1 for the `…`
+    // Overflow — truncate text to leave room for the ellipsis; caret is
+    // dropped (ellipsis takes the slot). `truncate` returns a string whose
+    // visibleLen ALREADY INCLUDES the trailing `…`, so pad to midW directly;
+    // the earlier `- 1` here was a copy-paste holdover that misaligned the
+    // chip by one cell (pre-release review Fork 3 F2).
+    const budget = Math.max(0, midW);
     const t = truncate(esc(f.text), budget);
     const tv = visibleLen(t);
-    const padEnd = ' '.repeat(Math.max(0, midW - tv - 1));          // -1 for `…`
-    mid = `${t}${padEnd}`;                                          // caret dropped on overflow (ellipsis takes the slot)
+    const padEnd = ' '.repeat(Math.max(0, midW - tv));
+    mid = `${t}${padEnd}`;
   }
   const chipPart = chip ? ` ${chip}` : ' '.repeat(CHIP_SLOT + 1);   // reserve the slot so rows align
   return `${left}${mid}${chipPart}`;
@@ -79,6 +93,22 @@ function _descRow(desc, leftW) {
 
 function _sectionHeader(label) {
   return `  [bold][dim]${esc(label)}[/][/]`;
+}
+
+// Compute scrollOffset so the focused row stays visible, with a bit of
+// bottom-context so the user can see the next field while Tab-ing forward.
+// Pure function of (focusLineIdx, totalLines, innerH); no reducer state.
+function _scrollFor(focusLineIdx, totalLines, innerH) {
+  if (totalLines <= innerH) return 0;
+  const maxScroll = totalLines - innerH;
+  // Keep SCROLL_BOTTOM_CONTEXT rows below the focus if possible — unless the
+  // focus is near the end of the list, in which case the clamp against
+  // maxScroll takes over and shows the tail.
+  const wantBottom = focusLineIdx + SCROLL_BOTTOM_CONTEXT;
+  const scroll = Math.max(0, Math.min(wantBottom - (innerH - 1), maxScroll));
+  // Never scroll so far that the focus row goes above the viewport.
+  if (focusLineIdx < scroll) return focusLineIdx;
+  return scroll;
 }
 
 function renderFabricFormOverlay() {
@@ -102,45 +132,58 @@ function renderFabricFormOverlay() {
 
   // overlayBox will clamp menuW to min(MAX_WIDTH, COLS-2); mirror that here so
   // the midW budget matches what the panel actually paints. +2 is the border.
-  const menuW = Math.min(MAX_WIDTH, Math.max(0, viewportDims().cols - 2));
+  const vp = viewportDims();
+  const menuW = Math.min(MAX_WIDTH, Math.max(0, vp.cols - 2));
   const innerW = Math.max(0, menuW - 2);
   // `midW` is the input area. Reserve the chip slot (chip + 1-cell gap)
   // regardless of whether this row has a chip, so chips across rows line up
   // AND an unchipped row's input doesn't visually bleed into the slot.
   const midW = Math.max(0, innerW - leftW - CHIP_SLOT - 1);
 
-  // Walk partitioned fields -> markup rows. For each field: one input row,
-  // plus one dim desc row if a desc is present.
-  const findFocus = (field) => f.fields.indexOf(field) === f.focusIdx;
-  function pushField(acc, field) {
+  // Walk partitioned fields → markup rows, tracking which line the focused
+  // row lands on so scroll-follows-focus can land that row inside the viewport.
+  const focusField = f.fields[f.focusIdx] || null;
+  const findFocus = (field) => field === focusField;
+  let focusLineIdx = -1;
+  const rows = [];
+  function pushField(field) {
     const name = esc(field.port);
     const pad = ' '.repeat(Math.max(0, maxNameVis - visibleLen(name)));
     const chip = _chipMarkup(field);
-    acc.push(_inputRow(field, findFocus(field), name, pad, leftW, midW, chip));
-    if (field.desc) acc.push(_descRow(field.desc, leftW));
+    if (findFocus(field)) focusLineIdx = rows.length;
+    rows.push(_inputRow(field, findFocus(field), name, pad, leftW, midW, chip));
+    if (field.desc) rows.push(_descRow(field.desc, leftW));
   }
 
-  const rows = [];
   if (required.length) {
     rows.push(_sectionHeader('Required'));
-    for (const field of required) pushField(rows, field);
+    for (const field of required) pushField(field);
   }
   if (required.length && optional.length) rows.push('');  // separator
   if (optional.length) {
     rows.push(_sectionHeader('Optional'));
-    for (const field of optional) pushField(rows, field);
+    for (const field of optional) pushField(field);
   }
   rows.push('');
   rows.push('[dim]\\[tab] next   \\[shift-tab] prev   \\[enter] run   \\[esc] cancel[/]');
 
   // Title — the action's label (friendlier than its key), falling back to
-  // the actionKey, falling back to "Input" like fabric-field does.
+  // the actionKey, falling back to "Input" like fabric-field does. esc() the
+  // title so a YAML `label: "[reverse]EVIL[/]"` lands as a 20-cell literal in
+  // the top border, not styled markup (pre-release review Fork 2 Finding 1,
+  // shared with fabric-field).
   const pa = f.pendingAction;
-  const title = (pa && pa.action && typeof pa.action.label === 'string' && pa.action.label)
+  const rawTitle = (pa && pa.action && typeof pa.action.label === 'string' && pa.action.label)
     ? pa.action.label
     : (pa && typeof pa.actionKey === 'string' && pa.actionKey) || 'Input';
+  const title = esc(rawTitle);
 
-  renderOverlay({ lines: rows, title, maxWidth: MAX_WIDTH });
+  // Scroll — innerH matches renderPanel's: menuH-2, menuH = min(rows+2, ROWS-2).
+  const menuH = Math.min(rows.length + 2, Math.max(0, vp.rows - 2));
+  const innerH = Math.max(1, menuH - 2);
+  const scrollOffset = focusLineIdx < 0 ? 0 : _scrollFor(focusLineIdx, rows.length, innerH);
+
+  renderOverlay({ lines: rows, title, maxWidth: MAX_WIDTH, scrollOffset });
 }
 
-module.exports = { renderFabricFormOverlay };
+module.exports = { renderFabricFormOverlay, _scrollFor };
