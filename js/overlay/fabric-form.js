@@ -54,9 +54,22 @@ function _chipMarkup(f) {
 
 // Build the input row for one field. `leftW` is the fixed left column (indent
 // + name-pad + gutter + prefix); `midW` is the input area; chip (if any) is
-// right-anchored with a 1-cell gap. If the input + caret overflow midW, text
-// is truncated via `truncate` (adds `…`); the caret rides along in markup so
-// its byte-level `[inverse] [/]` tag survives truncation (zero visible width).
+// right-anchored inside a CHIP_SLOT-wide reserve so chips of different widths
+// ([default]=9, [modified]=10, [unset]=7) all END at the same column — the
+// right-anchoring the docstring originally claimed, now actually enforced
+// (slice-1 pre-release review round 2 Finding 3). If the input + caret
+// overflow midW, text is truncated via `truncate` (adds `…`); the caret rides
+// along in markup so its byte-level `[inverse] [/]` tag survives truncation
+// (zero visible width).
+//
+// Narrow-terminal fallback: when `midW` collapses to 0 (COLS ≈ 20 — menuW=18,
+// innerW=16, leftW ≈ 9, CHIP_SLOT+1 = 12 → midW = max(0, 16-9-12) = 0), the
+// input area is a zero-width placeholder AND the chip reserve would push the
+// row past innerW, so renderPanel truncates with `…` and the chip disappears
+// mid-glyph. Drop the chip reserve in that case so the name and prefix
+// survive; chip is omitted for the frame — the user still sees the field
+// name, which is more useful than a mangled chip (slice-1 pre-release review
+// round 2 UX Fork Finding 2).
 function _inputRow(f, focused, name, pad, leftW, midW, chip) {
   const prefix = focused ? '[accent]>[/] ' : '  ';
   const left = `  ${focused ? '[accent]' + name + '[/]' : name}${pad} ${prefix}`;
@@ -70,16 +83,28 @@ function _inputRow(f, focused, name, pad, leftW, midW, chip) {
   } else {
     // Overflow — truncate text to leave room for the ellipsis; caret is
     // dropped (ellipsis takes the slot). `truncate` returns a string whose
-    // visibleLen ALREADY INCLUDES the trailing `…`, so pad to midW directly;
-    // the earlier `- 1` here was a copy-paste holdover that misaligned the
-    // chip by one cell (pre-release review Fork 3 F2).
+    // visibleLen ALREADY INCLUDES the trailing `…`, so pad to midW directly.
     const budget = Math.max(0, midW);
     const t = truncate(esc(f.text), budget);
     const tv = visibleLen(t);
     const padEnd = ' '.repeat(Math.max(0, midW - tv));
     mid = `${t}${padEnd}`;
   }
-  const chipPart = chip ? ` ${chip}` : ' '.repeat(CHIP_SLOT + 1);   // reserve the slot so rows align
+  let chipPart;
+  if (midW <= 0) {
+    // Narrow-terminal fallback: no room for the chip reserve, so drop it.
+    chipPart = '';
+  } else if (chip) {
+    // Right-anchor the chip inside the CHIP_SLOT reserve so chips of
+    // different widths all end at the same column.
+    const chipVis = visibleLen(chip);
+    const lead = ' '.repeat(Math.max(0, CHIP_SLOT - chipVis));
+    chipPart = ` ${lead}${chip}`;
+  } else {
+    // No chip for this row, but reserve the slot so sibling rows' chips
+    // land in the same column.
+    chipPart = ' '.repeat(CHIP_SLOT + 1);
+  }
   return `${left}${mid}${chipPart}`;
 }
 

@@ -21,17 +21,34 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 - **A port VALUE can no longer override `PATH` / `SHELL` / `LD_PRELOAD` /
   `LD_LIBRARY_PATH` / `LD_AUDIT` / `DYLD_INSERT_LIBRARIES` /
-  `DYLD_LIBRARY_PATH` / `DYLD_FORCE_FLAT_NAMESPACE` on a shell action.** A
-  port named one of these — whether set by the author or typed into the
-  invoke-time form — is dropped before `opts.env` is built, and a dim
-  `[warning]` surfaces in the viewer. The parent env still passes through
-  unchanged, so a well-behaved YAML keeps working.
-- **Field text cap (8 KiB per field).** Pastes and sustained typing can't
-  bloat a field beyond 8 KiB — a WAL-rider bound that applies to both the
-  multi-field form and the single-port fabric-field. Shrinking paths
-  (backspace, Ctrl+U) bypass the cap.
+  `DYLD_LIBRARY_PATH` / `DYLD_FORCE_FLAT_NAMESPACE` / `BASH_ENV` / `ENV` /
+  `BASH_FUNC_*` on a shell action.** A port named one of these — whether set
+  by the author or typed into the invoke-time form — is dropped before
+  `opts.env` is built, and a dim `[warning]` surfaces in the viewer. The
+  parent env still passes through unchanged, so a well-behaved YAML keeps
+  working. `BASH_ENV` / `ENV` / `BASH_FUNC_*` close a shellshock-class RCE
+  path on systems where `/bin/sh` is actually bash (macOS, RHEL, Alpine with
+  bash) — bash sources `$BASH_ENV` BEFORE executing a non-interactive
+  `-c`-flagged script.
+- **Field text cap (8 192 UTF-16 code units per field, ≈ 8 KiB on ASCII,
+  up to 32 KiB on all-emoji).** Pastes and sustained typing can't bloat a
+  field beyond this — a WAL-rider bound that applies to both the multi-field
+  form and the single-port fabric-field. Shrinking paths (backspace, Ctrl+U)
+  bypass the cap.
 - **Overlay titles are `esc()`'d** in both fabric-field and fabric-form so
   a YAML `label: "[reverse]EVIL[/]"` renders as a literal, not a style run.
+- **Config reload clears the invoke-time popup.** `set_config` now drops any
+  live `fabricForm` / `fabricField` state so an open popup carrying a
+  `pendingAction` reference can't survive the config swap and dispatch
+  `do_run` for an action that was removed or redefined. Boot-time path
+  today; hot-reload-safe for the future.
+- **Chips in the multi-field form are now actually right-anchored** —
+  `[default]` / `[modified]` / `[unset]` all end at the same column
+  regardless of label length. Matches what the docstring claimed from the
+  start.
+- **Very narrow terminals** (COLS ≤ ~22) drop the chip reserve so the field
+  name and prefix survive instead of being clipped by the chip overflowing
+  the inner width.
 
 ### Added
 

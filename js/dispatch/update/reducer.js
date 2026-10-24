@@ -401,11 +401,28 @@ function update(model, msg) {
     // v0.6.3 Phase D3 — boot-time root writes routed through Msgs. loadConfig
     // parses + dispatches set_config; initState dispatches set_register.
     case 'set_config': {
+      // Defensive clear of invoke-time popup state (slice-1 pre-release review
+      // round 2 Fork 3 Finding 1). set_config is a boot-time path today, but
+      // if a runtime hot-reload Msg lands on this arm in a future slice, the
+      // open fabric-form / fabric-field's `pendingAction.action` would still
+      // reference the OLD action object — submit would then dispatch do_run
+      // for an action that may have been removed or redefined. Clearing the
+      // modal state inside the config swap keeps that invariant explicit even
+      // today; on boot the clear is a no-op (initial model has every flag off
+      // and the modal buffers empty).
+      const nextModes = { ...model.modes, fabricFormMode: false, fabricFieldMode: false };
+      const nextModal = {
+        ...model.modal,
+        fabricForm: { fields: [], focusIdx: 0, pendingAction: null },
+        fabricField: { paneId: null, addr: null, text: '', pendingAction: null },
+      };
       const next = {
         ...model,
         config: msg.config,
         projectDir: (msg.config && msg.config.project_dir) || '.',
         configPath: msg.configPath || model.configPath,
+        modes: nextModes,
+        modal: nextModal,
       };
       // Fan set_config out to config-status, the only Component that snapshots
       // config (files / projectDir) onto its slice for reducer-pure reads.

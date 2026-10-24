@@ -263,12 +263,65 @@ describe('[fabric-form-overlay] paints a bordered popup with required+optional s
     const raw = captureRaw(m, () => renderFabricFormOverlay());
     const rows = decodeRows(raw).filter((r) => r.text.includes('[modified]'));
     assert(rows.length === 2, `expected 2 [modified] chips, got ${rows.length}`);
-    // Both chips should land at the SAME end-column — right-anchored. (End-col =
-    // row.c + visLen - 1.) The pre-fix bug paints the overflow row's chip one
-    // column left.
-    const endA = rows[0].c + rows[0].visLen;
-    const endB = rows[1].c + rows[1].visLen;
+    // Both chips should land their `]` at the same string position — compare
+    // via lastIndexOf since visibleLen misreads the SGR-stripped `[modified]`
+    // as a Rich-markup tag (0-width) and would make a longer chip look shorter.
+    const endA = rows[0].c + rows[0].text.lastIndexOf(']');
+    const endB = rows[1].c + rows[1].text.lastIndexOf(']');
     eq(endA, endB, `chip columns must match: short ends ${endA}, long ends ${endB} → ${JSON.stringify(rows.map((r) => r.text))}`);
+  });
+
+  it('chips of DIFFERENT widths all end at the same column (right-anchored, round 2 Fork 1 Finding 3)', () => {
+    // Three fields, each with a different chip width:
+    //   host → text='' + no default → [unset] (7 cells)
+    //   role → text='worker' + default='worker' → [default] (9 cells)
+    //   port → text='2222' + default='22' → [modified] (10 cells)
+    const fields = [
+      { port: 'host', text: '',       required: true,  default: null,     desc: '' },
+      { port: 'role', text: 'worker', required: true,  default: 'worker', desc: '' },
+      { port: 'port', text: '2222',   required: true,  default: '22',     desc: '' },
+    ];
+    const PENDING_MIX = { actionKey: 'mix', action: { label: 'Mixed', ports: { in: {} } } };
+    let m = freshModel();
+    [m] = runtime.update(m, { type: 'fabric_form_enter', fields, pendingAction: PENDING_MIX });
+    const raw = captureRaw(m, () => renderFabricFormOverlay());
+    // Decode and find the three rows carrying the chips. Each row's end-col is
+    // (row.c + row.visLen - 1) excluding the right border; the chip's rightmost
+    // visible glyph should land at the SAME column across all three rows.
+    const rows = decodeRows(raw);
+    const chipRows = rows.filter((r) => /\[(unset|default|modified)\]/.test(r.text));
+    assert(chipRows.length === 3, `expected 3 chip-bearing rows, got ${chipRows.length}`);
+    // The chip's end col = r.c + stringPositionOf(']') because the SGR-stripped
+    // body contains the chip label as literal characters (no wide-char,
+    // no further markup, no additional SGR between row start and `]`). Using
+    // `visibleLen(slice)` would miscount: visibleLen treats a bare `[unset]`
+    // in a stripped string as a Rich-markup tag (0-width), so a longer chip
+    // label like `[modified]` would look shorter — exactly the misdiagnosis
+    // the first version of this test triggered. The raw string position is
+    // the correct comparison.
+    const endCols = chipRows.map((r) => r.c + r.text.lastIndexOf(']'));
+    const allSame = endCols.every((c) => c === endCols[0]);
+    assert(allSame, `chip end-columns must match (right-anchored): got ${JSON.stringify(endCols)} on rows: ${JSON.stringify(chipRows.map((r) => r.text))}`);
+  });
+
+  it('very narrow terminal (COLS=20) drops the chip reserve so the field name survives', () => {
+    const m = freshModel();
+    process.stdout.columns = 20; process.stdout.rows = 24;
+    term.refreshSize();
+    const fields = [
+      { port: 'host', text: 'node-7.lan', required: true, default: null, desc: '' },
+    ];
+    const PENDING_TINY = { actionKey: 'tiny', action: { label: 'T', ports: { in: {} } } };
+    const [opened] = runtime.update(m, { type: 'fabric_form_enter', fields, pendingAction: PENDING_TINY });
+    const raw = captureRaw(opened, () => renderFabricFormOverlay());
+    const rows = decodeRows(raw);
+    assert(rows.length > 0, 'something was painted on COLS=20');
+    // The input row should contain 'host' (name survived) — the chip may be
+    // omitted since midW is 0. The fallback must not break the row structure.
+    const painted = rows.map((r) => r.text).join('|');
+    assert(painted.includes('host'), `port name "host" absent on COLS=20 — got: ${JSON.stringify(painted)}`);
+    // Restore
+    process.stdout.columns = 120; process.stdout.rows = 30; term.refreshSize();
   });
 
   it('narrow terminal (40 cols) clamps the box so no row overflows the terminal', () => {

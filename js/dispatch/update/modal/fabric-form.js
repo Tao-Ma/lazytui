@@ -47,13 +47,22 @@ const TYPES = [
 
 const CLOSED = { fields: [], focusIdx: 0, pendingAction: null };
 
-// Per-field text size ceiling. A field is a prompt input — a KB or two is
-// generous for anything a human types; a paste much larger than this is
-// almost certainly either an accidental dump of logs/binary content or an
-// unbounded WAL-rider attempt (every keystroke rides the WAL, so N 10MB
-// fields would bloat replay checkpoints). The cap is enforced on every
-// text-growing path (typed append + paste); backspace / Ctrl-U are unlimited
-// as always (shrinking is fine). Slice-1 pre-release review Fork 2 Finding 6.
+// Per-field text size ceiling, in JS String code units (UTF-16; NOT bytes —
+// 8192 code units can be anywhere from 8 KiB on all-ASCII to 32 KiB when the
+// field is all 4-byte emoji). A field is a prompt input — a thousand or two
+// code units is generous for anything a human types; a paste much larger
+// than this is almost certainly either an accidental dump of logs/binary
+// content or an unbounded WAL-rider attempt (every keystroke rides the WAL,
+// so N 10MB fields would bloat replay checkpoints). The cap is enforced on
+// every text-growing path (typed append + paste); backspace / Ctrl-U are
+// unlimited as always (shrinking is fine). Slice-1 pre-release review Fork 2
+// Finding 6 + round 2 wording cleanup.
+//
+// The cap is applied via `text.slice(0, MAX_FIELD_TEXT)`, which can split a
+// surrogate pair at the boundary. The resulting unmatched surrogate is still
+// valid JS (JSON.stringify round-trips it, markup rendering treats it as a
+// replacement glyph) — and the user controls what they typed, so a mid-paste
+// cut lands wherever they stopped reading. No special handling needed.
 const MAX_FIELD_TEXT = 8192;
 
 // Classify a (text, default) pair into the chip flags the submit path reads.

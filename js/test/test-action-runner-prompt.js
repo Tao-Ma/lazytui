@@ -190,6 +190,21 @@ describe('[action-runner-prompt] _envWithShadowGuard refuses to let a port VALUE
     eq(env.PATH, process.env.PATH, "parent's PATH preserved");
   });
 
+  it('rejects BASH_ENV / ENV / BASH_FUNC_* — shellshock-class injection paths (round 2 Fork 1 Finding 1)', () => {
+    const env = runner._envWithShadowGuard('bad', {
+      BASH_ENV: '/tmp/evil.sh',
+      ENV: '/tmp/evil-env.sh',
+      BASH_FUNC_f: '() { :;}; /bin/evil',           // shellshock-class exported fn
+      'BASH_FUNC_x%%': '() { :;}; echo evil',       // the GNU bash-5+ encoded form
+      HOST: 'node-7.lan',
+    });
+    assert(!('BASH_ENV' in env) || env.BASH_ENV === process.env.BASH_ENV, 'BASH_ENV refused');
+    assert(!('ENV' in env) || env.ENV === process.env.ENV, 'ENV refused');
+    assert(!('BASH_FUNC_f' in env), 'BASH_FUNC_<name> refused by prefix match');
+    assert(!('BASH_FUNC_x%%' in env), 'BASH_FUNC_<name>%% refused by prefix match (bash-5 encoding)');
+    eq(env.HOST, 'node-7.lan', 'non-shadowing values still passed');
+  });
+
   it('a port named PATH / LD_PRELOAD / etc is DROPPED unconditionally', () => {
     const origPath = process.env.PATH;
     const origSh = process.env.SHELL;

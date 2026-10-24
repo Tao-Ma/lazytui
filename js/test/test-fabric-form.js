@@ -147,7 +147,22 @@ describe('[fabric-form] enter + field materialization', () => {
     assert(!next.modes.fabricFormMode, 'no modal opened when all fields are garbage');
   });
 
-  it('caps a field text at 8KB on paste and sustained typing (WAL / replay bound)', () => {
+  it('set_config clears a live fabric-form (round 2 Fork 3 Finding 1 — stale pendingAction guard)', () => {
+    let m = freshModel();
+    [m] = runtime.update(m, { type: 'fabric_form_enter', fields: fieldsFor(), pendingAction: PENDING });
+    assert(m.modes.fabricFormMode, 'form open before set_config');
+    assert(m.modal.fabricForm.pendingAction, 'pendingAction stored');
+    // Swap config — the arm must drop the modal state so a stale pendingAction
+    // can never fire do_run against an action removed from the new config.
+    const [after] = runtime.update(m, { type: 'set_config',
+      config: { groups: {}, project_dir: '.', theme: 'monokai', register: {}, files: [], plugins: {} } });
+    assert(!after.modes.fabricFormMode, 'form closed by set_config');
+    eq(after.modal.fabricForm.fields.length, 0, 'fields cleared');
+    eq(after.modal.fabricForm.pendingAction, null, 'pendingAction dropped');
+    assert(!after.modes.fabricFieldMode, 'fabric-field also cleared (same arm, same class)');
+  });
+
+  it('caps a field text at 8192 UTF-16 code units on paste and sustained typing (WAL / replay bound)', () => {
     let m = freshModel();
     [m] = runtime.update(m, { type: 'fabric_form_enter', fields: fieldsFor(), pendingAction: PENDING });
     // Paste 100KB → capped to 8KB.

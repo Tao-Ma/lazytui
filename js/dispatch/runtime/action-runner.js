@@ -279,18 +279,33 @@ function doRun(actionKey, action, args = []) {
 }
 
 // Env vars we refuse to let a port VALUE override — overriding any of these
-// substantively changes which binary runs or what libraries it loads, so a
-// malicious or careless action YAML could use them to redirect the shell /
-// hijack the child process. The port NAME check is a cheap guard against a
-// badly-named port shadowing a sensitive variable the parent env sets; we
-// skip the override but keep the parent's value, and tell the user in the
-// viewer so the config bug is visible. The real trust boundary is still the
-// `script:` field — a malicious YAML author has bigger weapons — but this is
-// cheap defense-in-depth (slice-1 pre-release review Fork 2 Finding 4).
+// substantively changes which binary runs, which libraries it loads, or what
+// code runs BEFORE the script does, so a malicious or careless action YAML
+// could use them to redirect the shell / hijack the child process. The port
+// NAME check is a cheap guard against a badly-named port shadowing a
+// sensitive variable; we skip the override but keep the parent's value, and
+// tell the user in the viewer so the config bug is visible. The real trust
+// boundary is still the `script:` field — a malicious YAML author has bigger
+// weapons — but this is cheap defense-in-depth (slice-1 pre-release reviews
+// Fork 2 Finding 4 + Fork 1 round 2 Finding 1).
+//
+// Set members (literal names + a `BASH_FUNC_` prefix check below):
+//   PATH / SHELL — redirect which binary runs.
+//   LD_* / DYLD_* — redirect which libraries load (preload hijack class).
+//   BASH_ENV / ENV — sourced BY bash/sh at non-interactive startup, so a
+//     user-controlled file runs BEFORE the `script:` even gets to its first
+//     line. Shell is spawned via `spawn('sh', ['-c', …])` (stream.js), and on
+//     distros where `/bin/sh` is bash (macOS, RHEL, Alpine with bash), these
+//     are honored. On dash this is dead letter; the guard stays — being
+//     consistent across the distro axis beats being conditional.
+//   BASH_FUNC_* — the shellshock-class exported-function path. Rejected via
+//     prefix match below, not via Set membership, because the suffix is
+//     arbitrary.
 const _ENV_SHADOW_DENY = new Set([
   'PATH', 'SHELL',
   'LD_PRELOAD', 'LD_LIBRARY_PATH', 'LD_AUDIT',
   'DYLD_INSERT_LIBRARIES', 'DYLD_LIBRARY_PATH', 'DYLD_FORCE_FLAT_NAMESPACE',
+  'BASH_ENV', 'ENV',
 ]);
 function _envWithShadowGuard(actionKey, values) {
   const safe = {};
@@ -299,7 +314,7 @@ function _envWithShadowGuard(actionKey, values) {
     // Refuse unconditionally — if the parent env doesn't carry it, a port
     // value would INJECT it into the child (worse than shadowing an existing
     // value), so the parent-env check was wrong.
-    if (_ENV_SHADOW_DENY.has(k)) {
+    if (_ENV_SHADOW_DENY.has(k) || k.startsWith('BASH_FUNC_')) {
       shadowed.push(k);
       continue;
     }

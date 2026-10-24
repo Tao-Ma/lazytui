@@ -23,6 +23,8 @@ const TYPES = ['fabric_field_enter', 'fabric_field_key', 'fabric_field_submit', 
 const CLOSED = { paneId: null, addr: null, text: '', pendingAction: null };
 
 // Mirror of fabric-form.js's MAX_FIELD_TEXT — same reason, same behavior.
+// 8192 JS String code units (UTF-16; not bytes). See fabric-form.js's cap
+// comment for the full rationale, incl. the mid-surrogate-split behavior.
 // (slice-1 pre-release review Fork 2 Finding 6; shared class.)
 const MAX_FIELD_TEXT = 8192;
 
