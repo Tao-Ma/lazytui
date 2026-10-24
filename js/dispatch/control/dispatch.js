@@ -1035,7 +1035,12 @@ const _modeHandlers = {
     // the regular form (closing the popover first) so the user can keep moving
     // between fields. Any other key falls through to the field editor after
     // closing — a type-ahead search is a planned follow-up slice.
-    const f = getModel().modal && getModel().modal.fabricForm;
+    //
+    // R1E-SMELL5: single getModel() read per entry. R1E-BUG1: after a
+    // fallthrough-close dispatch, re-read model so the regular-form branch
+    // doesn't route against stale picking state.
+    let m = getModel();
+    const f = m.modal && m.modal.fabricForm;
     if (f && f.picking) {
       if      (key === 'up')               { applyMsg({ type: 'fabric_form_choices_nav', dir: -1 }); return; }
       else if (key === 'down')             { applyMsg({ type: 'fabric_form_choices_nav', dir:  1 }); return; }
@@ -1053,8 +1058,11 @@ const _modeHandlers = {
       }
       // Tab / Shift-Tab + anything else: close the popover, then fall through
       // to the regular form routing below so the user's intent still lands.
+      // Re-read model after the close so `fFresh` below sees `picking: null`.
       applyMsg({ type: 'fabric_form_choices_close' });
+      m = getModel();
     }
+    const fFresh = m.modal && m.modal.fabricForm;
     if      (key === 'escape')             applyMsg({ type: 'fabric_form_cancel' });
     else if (key === 'return')             applyMsg({ type: 'fabric_form_submit' });
     else if (seq === '\t')                 applyMsg({ type: 'fabric_form_focus_next' });
@@ -1064,7 +1072,7 @@ const _modeHandlers = {
       // other field it falls through to the field-key edit (= a literal space
       // in the text), which preserves pre-slice-2 behavior for ports without
       // `choices_fn:`.
-      const focused = f && f.fields[f.focusIdx];
+      const focused = fFresh && fFresh.fields[fFresh.focusIdx];
       if (focused && focused.choicesFnRef) {
         applyMsg({ type: 'fabric_form_choices_open', port: focused.port });
       } else {

@@ -70,7 +70,11 @@ function _depValuesForField(fields, dependsOn) {
   const dv = {};
   for (const name of dependsOn || []) {
     const f = fields.find((x) => x.port === name);
-    if (f && typeof f.text === 'string') dv[name] = f.text;
+    // R1A-SMELL2: default to '' so a missing/undefined-text dep hashes the
+    // same way as an explicitly-empty one. Pre-fix, a hand-built field with
+    // `text: undefined` dropped the dep from the hash — which collided with
+    // the "dep not in form at all" hash.
+    dv[name] = (f && typeof f.text === 'string') ? f.text : '';
   }
   return dv;
 }
@@ -129,6 +133,10 @@ const EMPTY_COMPUTED = { state: 'idle', requestId: 0, inputsHash: null,
 // `_promptMissing`) already stringifies; this is belt-and-suspenders.
 function _normalize(raw) {
   const port = String(raw && raw.port || '');
+  // Defense-in-depth (R1A-SMELL2): a hand-built field decl with `text:
+  // undefined` would make `_depValuesForField` omit the port from the hash,
+  // which hashes identically to a port that doesn't exist in the form. Seed
+  // text to '' so an unedited field hashes consistently with other callers.
   const text = raw && typeof raw.text === 'string' ? raw.text : '';
   const required = raw && raw.required !== false;                 // default true
   const def = raw && raw.default != null && typeof raw.default !== 'object'
@@ -526,6 +534,12 @@ function update(model, msg) {
       // msg moves it. If the computed state is still 'pending', the popover
       // opens empty — the renderer paints an "awaiting choices…" row — so
       // the user has a visible affordance that the fetch is in flight.
+      //
+      // The fabricFormMode guard IS the chain-active check for this Msg —
+      // fabricFormMode is itself a chain-active mode, so the open fires only
+      // while the form is live. (R1E-SMELL4 raised a chain-active guard; it
+      // doesn't apply here because the picker lives INSIDE fabricFormMode,
+      // not alongside it.)
       if (!model.modes.fabricFormMode) return [model, []];
       const f = model.modal.fabricForm;
       const idx = f.fields.findIndex((x) => x.port === msg.port);

@@ -49,13 +49,16 @@ const SCROLL_BOTTOM_CONTEXT = 2;
 
 function _chipMarkup(f) {
   // Computed-choices chip variants (args→ports slice 2) take precedence while
-  // the fetch is pending or errored. Once state === 'ok' and the user hasn't
-  // picked / typed yet, the chip reads `[N choices]` so the affordance is
-  // visible before the user presses space to open the popover.
+  // the fetch is pending or errored. Once state === 'ok' AND the user hasn't
+  // picked / typed over the pre-fill, the chip reads `[N choices]` so the
+  // affordance stays visible even when the port has a default (R1D-SMELL1:
+  // slice-2 originally gated the chip on `default == null`, which hid the
+  // affordance from the most common case — a computed port with a sensible
+  // default). An actively modified field flips to `[modified]`, as before.
   if (f.computed) {
     if (f.computed.state === 'pending') return '[dim]\\[fetching…][/]';
     if (f.computed.state === 'error')   return '[error]\\[error][/]';
-    if (f.computed.state === 'ok' && f.text === '' && f.default == null) {
+    if (f.computed.state === 'ok' && !f.isModified) {
       const n = f.computed.items.length;
       return `[dim]\\[${n} choice${n === 1 ? '' : 's'}][/]`;
     }

@@ -132,6 +132,29 @@ describe('[fabric-form-choices-overlay] chips', () => {
     assert(out.includes('[1 choice]'), `expected [1 choice] (singular), got:\n${out}`);
   });
 
+  it('R1D-SMELL1 — [N choices] chip paints even when the port has a default', () => {
+    // Pre-fix _chipMarkup gated the chip on `text === '' && default == null`,
+    // so a computed port with a default showed `[default]` and no choice
+    // affordance — the most common configuration lost discoverability.
+    let m = freshModel();
+    const fields = [
+      { port: 'file',    text: '/tmp/x.md', required: true, default: null, desc: 'target file' },
+      { port: 'section', text: 'body',      required: true, default: 'body', desc: 'section',
+        choicesFnRef: 'edit.sections_of', dependsOn: ['file'] },
+    ];
+    [m] = runtime.update(m, { type: 'fabric_form_enter', fields,
+      pendingAction: { actionKey: 'edit-section', action: PENDING.action } });
+    [m] = runtime.update(m, { type: 'fabric_form_focus_next' });   // focus section
+    [m] = runtime.update(m, { type: 'fabric_form_choices_request', port: 'section', requestId: 10 });
+    [m] = runtime.update(m, {
+      type: 'fabric_form_choices_resolved', port: 'section', requestId: 10,
+      items: ['intro', 'body'], labels: null, error: null,
+    });
+    const out = captureStripped(m, () => renderFabricFormOverlay());
+    assert(out.includes('[2 choices]'),
+      `expected [2 choices] chip even with default='body', got:\n${out}`);
+  });
+
   it('[default]/[modified] chip survives once user picks', () => {
     let m = openFormWithSectionFocused();
     [m] = runtime.update(m, { type: 'fabric_form_choices_request', port: 'section', requestId: 5 });
