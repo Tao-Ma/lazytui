@@ -46,9 +46,15 @@
  *   msg that lands after abort would still be dropped by the requestId guard.
  *
  * Test hook:
- *   `__setChoicesFn(ref, fn)` writes directly into the api registry — unit
- *   tests mock a fn without going through YAML + feature-plugin boot. Same
- *   discipline as every other test shim in the codebase (prefix `__`).
+ *   Tests register fns via `api.registerChoicesFn('<ns>', { fnName: fn })`
+ *   and reset between describe blocks with `api.__resetChoicesFns()`. See
+ *   test-choices-fn-registry.js + test-choices-fn-runtime.js for the pattern.
+ *
+ * Observability (R3D-SMELL2):
+ *   Every error path — unknown ref, fn sync-throw, fn Promise rejection,
+ *   normalizeResult failure — also writes a `diag-log.error('choices_fn', …)`
+ *   entry so an author can see the problem in the `:diag` view, not just as
+ *   an [error] chip in the popover. The chip is UX; diag-log is the trail.
  */
 'use strict';
 
@@ -59,6 +65,15 @@
 let _lookup = null;
 function setRegistryHost(host) { _lookup = host && host.getChoicesFn; }
 function _getChoicesFn(ref) { return _lookup ? _lookup(ref) : null; }
+
+// Diagnostic sink for error paths (R3D-SMELL2). Lazy-require so the runtime
+// stays loadable without io/ wired up (same discipline as effects.js's
+// `require('../../io/event-log')` call site). Silent swallow if diag-log is
+// unavailable — this is a secondary sink, not the primary error channel.
+function _diagError(code, message) {
+  try { require('../io/diag-log').error(code, message); }
+  catch (_) { /* diag-log unavailable (CLI mode, early boot) — chip is primary */ }
+}
 
 // Hard ceiling on the choices list — a buggy or hostile fn returning e.g.
 // Array(10_000_000).fill('x') would bloat `model.modal.fabricForm.fields[i].
@@ -158,7 +173,9 @@ function registerFetchChoicesEffect(registerEffect) {
     // always sets it). The pre-R3 `if (host.releaseKey)` guards were dead
     // defensive code — simplified to bare calls.
     if (!fn) {
-      dispatchResolved({ items: [], labels: null, error: `unknown choices_fn: ${eff.ref}`, truncated: false });
+      const msg = `unknown choices_fn: ${eff.ref} (registered via api.registerChoicesFn? component plugin loaded?)`;
+      _diagError('choices_fn.unknown_ref', msg);
+      dispatchResolved({ items: [], labels: null, error: msg, truncated: false });
       host.releaseKey();
       return;
     }
@@ -171,7 +188,9 @@ function registerFetchChoicesEffect(registerEffect) {
         signal: host.signal,
       });
     } catch (e) {
-      dispatchResolved({ items: [], labels: null, error: String((e && e.message) || e), truncated: false });
+      const em = String((e && e.message) || e);
+      _diagError('choices_fn.sync_throw', `${eff.ref} (${eff.actionKey}.${eff.port}): ${em}`);
+      dispatchResolved({ items: [], labels: null, error: em, truncated: false });
       host.releaseKey();
       return;
     }
@@ -193,7 +212,9 @@ function registerFetchChoicesEffect(registerEffect) {
           host.releaseKey();
           return;
         }
-        dispatchResolved({ items: [], labels: null, error: String((err && err.message) || err), truncated: false });
+        const em = String((err && err.message) || err);
+        _diagError('choices_fn.rejected', `${eff.ref} (${eff.actionKey}.${eff.port}): ${em}`);
+        dispatchResolved({ items: [], labels: null, error: em, truncated: false });
         host.releaseKey();
       }
     );
