@@ -317,6 +317,60 @@ lane); action-runner wiring pinned by `test-action-runner-prompt.js` (lane
 split); shell env binding by `test-shell-action-ports.js`; overlay rendering by
 `test-fabric-field-overlay.js` + `test-fabric-form-overlay.js`.
 
+### Computed choices — `choices_fn:` (args→ports slice 2)
+
+A port can derive its valid-values list at invoke time from code the component
+ships, instead of a static YAML list. The resolver stays stupid — the
+compute surface is a form-only concern:
+
+- **Schema**: `choices_fn: '<component>.<fnName>'` (dotted ref) + optional
+  `depends_on: [<sibling-port>...]`. Parser validates with warn-and-drop
+  (not throw) per [[feedback_backcompat_on_new_validations]]; a pre-existing
+  YAML without these keys loads unchanged.
+- **Registration**: a Component or feature plugin exposes `choicesFns:
+  { <name>: fn }`. `panel/api.registerComponent` + `registerGroupActionPlugin`
+  harvest the map and `panel/api.registerChoicesFn('<component>', fns)` registers
+  each ref `<component>.<name>` in a Map-backed registry. The runtime lookup is
+  INJECTED into `js/feature/choices-fn-runtime.js` from `effects.js`'s
+  `installBuiltins` (feature/ sits below panel/ in the layer DAG, so the direct
+  require would invert layering — same seam pattern as `fabric-host`).
+- **Fetch**: when the form opens, the `fabric_form_enter` arm emits a
+  `fabric_form_choices_request` Cmd (wrapped in `msg`) for every computed field
+  whose depended-on ports already carry non-empty text. `focus_next/_prev`
+  emit the same Cmd for any dependent whose dep-hash CHANGED since its last
+  request (reactive refetch on blur; unchanged deps are a no-op → no flicker).
+  The reducer bumps a per-form `requestSeq`, writes `computed.{state:pending,
+  requestId}`, and emits a `fetch_choices` effect keyed on
+  `'choices_fn:<actionKey>.<port>'` — the C5 inflight registry aborts the prior
+  fetch's `AbortSignal` when a newer same-key effect lands.
+- **Resolve**: the handler in `js/feature/choices-fn-runtime.js` calls the fn
+  with `{ values, actionKey, group, signal }`, awaits (accepts sync or
+  Promise), normalizes `string[]` or `{ items, labels?, error? }` into a
+  structured payload, and dispatches `fabric_form_choices_resolved`. The arm
+  drops the reply if `requestId !== field.computed.requestId` (stale-reply
+  guard, defense-in-depth against the handler's internal state).
+- **UX**: form chips cycle `[fetching…]` → `[N choices]` / `[error]`. SPACE
+  on a focused computed field opens an inline popover below the row;
+  Up/Down nav, Enter picks, Esc closes. A free-typed value still wins —
+  the fn is a shortcut, never a hard constraint.
+- **Replay-determinism**: the fetch is a side effect (effect channel is
+  skipped under replay); its RESULT is a WAL-captured reducer arm. Replay
+  reproduces frames from the recorded payload WITHOUT re-executing the fn,
+  so a fn that touches the fs or spawns a child is safe to use — same
+  discipline as the `stream.js` output path.
+
+Insertion points: `_promptMissing` in `js/dispatch/runtime/action-runner.js`
+carries `choicesFnRef` + `dependsOn` through to the field snapshots; the
+runtime handler in `js/feature/choices-fn-runtime.js`; the choices arms +
+`_depsHash` / `_depValuesForField` helpers in
+`js/dispatch/update/modal/fabric-form.js`; the chip + popover render in
+`js/overlay/fabric-form.js`; the picker key-interception in `fabricFormMode`
+within `js/dispatch/control/dispatch.js`. Reducer arms pinned by
+`test-fabric-form-choices.js`; runtime handler by
+`test-choices-fn-runtime.js`; registry by `test-choices-fn-registry.js`;
+overlay by `test-fabric-form-choices-overlay.js`; action-runner wiring by
+`test-action-runner-choices.js`; parser by `test-fabric-schema.js`.
+
 ## Discovery
 
 - `listPorts()` → `[{ component, port, dir, type, desc }]`

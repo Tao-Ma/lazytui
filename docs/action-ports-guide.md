@@ -1,6 +1,6 @@
 # Action ports — a guide for component authors (humans and AI)
 
-**Status:** shipped — slice 1 (`[Unreleased]`). The multi-field form is live for any action with 2+ declared `ports.in`; actions with a single port keep the pre-slice-1 one-field popup. `choices:` + the review page + section grouping are planned follow-ups and are flagged inline below.
+**Status:** shipped — slice 1 (v0.6.34) + slice 2 (`[Unreleased]`). The multi-field form is live for any action with 2+ declared `ports.in`; actions with a single port keep the pre-slice-1 one-field popup. **Computed choices (`choices_fn:` + `depends_on:`)** ship in slice 2 — see the "Computed choices" section below. Static `choices: [...]` + the review page + section grouping are planned follow-ups and are flagged inline below.
 
 **For:** anyone writing a lazytui component or shell action — including AI assistants generating them. If you declare `ports.in` on an action, this doc tells you how your choices will render in the invoke-time form and how they'll bind at run time. The authoritative reference for the dataflow mechanics stays in [`docs/ports-and-wires.md`](ports-and-wires.md).
 
@@ -60,7 +60,9 @@ Each entry in `ports.in` is `{ name: { ...decl } }` where `name` is a strict ide
 | `required` | bool | `true` | If false, resolution can complete without this value and the shell receives an unset env var; if true, running the action without a resolved value re-opens the invoke-time popup. The form does not block Enter on an empty required field — submit emits do_run and the resolver re-triggers the prompt. |
 | `default` | string \| number | — | Pre-fills the field in the form and lets the resolver fall back when nothing upstream supplies the value. **Not type-checked in slice 1** — the raw literal is stringified and used as-is. |
 | `desc` | string | `''` | One-line hint. Rendered under the field name in the form; keep it ≤ 60 chars for narrow terminals. |
-| `choices` | list | — | (planned, not shipped in slice 1) Enum of allowed values; renders as inline cycle or popover depending on list length. |
+| `choices` | list | — | (planned) Static enum of allowed values; renders as inline cycle or popover depending on list length. |
+| `choices_fn` | string | — | Dotted ref `<component>.<fnName>` to a registered function the component ships; the fn returns the choices list at invoke time. See "Computed choices" below. |
+| `depends_on` | list | — | Sibling port names this port's `choices_fn` reads. Edits to a depended-on port, on blur, trigger a reactive refetch. |
 | `section` | string | — | (planned) Logical grouping for actions with 10+ ports. |
 
 Unknown port-level keys are **not** rejected at config load today — they're
@@ -198,7 +200,7 @@ role: { type: string, required: true,
         desc: "node role (worker | control | storage)" }
 ```
 
-Once `choices:` ships (slice 2), `desc` stops carrying the enum list — the UI shows it. For now, carry it in `desc`.
+Once static `choices:` ships (slice 3), `desc` stops carrying the enum list — the UI shows it. For now, carry it in `desc`. (If the enum is dynamic, see "Computed choices" below — `choices_fn:` already handles it.)
 
 ---
 
@@ -326,11 +328,80 @@ A port with no `desc` renders a blank line under the input — the user has to g
 
 ---
 
+## Computed choices — `choices_fn:` + `depends_on:`
+
+Some port values are enumerable but the author can't hard-code the list. The valid section names of an edit target depend on which file. The valid branches of a repo depend on which repo. The valid tables of a database depend on which connection. The list belongs *in code*, computed per invocation.
+
+Declare it like this:
+
+```yaml
+edit-section:
+  type: run
+  script: |
+    sed -i "/^## $section/,/^## /c\\$new_body" "$file"
+  ports:
+    in:
+      file:
+        type: path
+        required: true
+        desc: target markdown file
+      section:
+        type: string
+        required: true
+        desc: section heading to replace
+        choices_fn: edit.sections_of     # ← dotted ref: <component>.<fnName>
+        depends_on: [file]                # ← ports this fn's result depends on
+      new_body:
+        type: string
+        required: true
+```
+
+Then in the component (any Component or feature plugin that ships `name:`):
+
+```js
+module.exports = {
+  name: 'edit',
+  groupActions: { /* ... */ },
+  choicesFns: {
+    // ctx: { values, actionKey, group, signal }
+    //   values   — resolved values of the depended-on ports
+    //   signal   — AbortSignal; a dep change / form close aborts you
+    // return  : string[]  OR  { items: string[], labels?: string[], error?: string }
+    //           sync, or a Promise of the same
+    sections_of: async ({ values, signal }) => {
+      const src = await fs.promises.readFile(values.file, 'utf8');
+      if (signal.aborted) return [];
+      return src.split('\n').filter(l => l.startsWith('## ')).map(l => l.slice(3));
+    },
+  },
+};
+```
+
+What the user sees:
+
+1. Open the form — the computed field's chip reads `[fetching…]` while the fn is in flight; `[N choices]` once ok; `[error]` if the fn threw or rejected.
+2. `[space]` on the focused computed field opens an inline popover under the row. Up/Down highlight; Enter picks; Esc closes without picking. The user can also type freely — the choices are a shortcut, never a hard constraint.
+3. Tab away from a depended-on port after editing it — the computed field refetches on blur. Tabbing away without editing the dep is a no-op (no flicker).
+
+A few rules the parser enforces (warn+drop, not throw — your YAML keeps loading on upgrade):
+
+- `choices_fn` must be a dotted ref `<component>.<fnName>`. A bare name or anything else is dropped at load.
+- `depends_on` must be a list of sibling port names. Entries that aren't strings, aren't declared, or reference the port itself are dropped.
+- An unknown ref at run time paints `[error]` on the field with a message pointing to the unregistered name.
+
+Replay stays deterministic. The fn is a side effect — the first live invocation goes through the `fetch_choices` effect channel; its *result* lands as a reducer arm whose payload is captured in the WAL. Replay reproduces frames from the recorded payload without re-executing the fn, so a fn that touches the fs or spawns a child is safe to use.
+
+### When to pick `choices_fn` vs a static `choices:` (planned)
+
+- Static list, same for every invocation → `choices: [a, b, c]` (slice 3).
+- List depends on another port's value, or on live state (fs, process, db) → `choices_fn: component.fnName` + `depends_on: [...]`.
+- Need both a static list and dynamic enrichment → use `choices_fn:` and have the fn return a static array.
+
 ## Looking ahead
 
 Slices after this one add the following, in rough order. All are purely additive — nothing in this doc goes stale.
 
-- `choices: [...]` — enum ports render as inline-cycle (short list) or anchored popover (long list).
+- `choices: [...]` — static enum ports render as inline-cycle (short list) or anchored popover (long list), reusing slice-2's chip + popover rendering as the degenerate case.
 - A review page before run — Enter from the form opens a read-only "about to run" screen with the resolved argv/env.
 - A `[a] edit args` keybind on actions — opens the form even when nothing's missing, so the user can tweak defaults on a one-shot run.
 - `section: '…'` — opt-in grouping key for 10+ port actions.

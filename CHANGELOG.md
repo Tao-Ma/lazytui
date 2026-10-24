@@ -6,6 +6,39 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Computed port choices (`choices_fn:`).** An action port can now derive its
+  valid-values list at invoke time from code the component ships, instead of
+  (or in addition to) a static list the YAML author has to maintain. A port
+  decl says:
+
+      ports:
+        in:
+          file:    { type: path,   required: true }
+          section:
+            type: string
+            required: true
+            choices_fn: edit.sections_of
+            depends_on: [file]
+
+  The component registers `choicesFns: { sections_of: fn }` and the fn is
+  called at form-open time with the resolved values of the depended-on ports
+  (and an `AbortSignal`), returning either `string[]` or
+  `{ items, labels?, error? }`, sync or `Promise`-wrapped. The invoke-time
+  form shows `[fetching…]` / `[error]` / `[N choices]` chips while the fetch
+  runs; `[space]` opens an inline popover under the field; Up/Down navigate;
+  Enter picks; Esc closes. A dependency edit on blur triggers a reactive
+  refetch; an unchanged dep hash is a no-op (no flicker). Replay stays
+  deterministic — the fetch rides the effect channel (skipped on replay),
+  its result lands as a WAL-captured reducer arm, and replay reproduces
+  frames from the captured payload without re-executing the fn.
+- **Parser warnings for the two new keys.** `choices_fn` must be a dotted
+  ref `<component>.<fnName>`; `depends_on` must be an array of sibling port
+  names. Malformed values on either are WARN+DROP (not throw) per the
+  v0.6.34 round-5 backward-compat posture — a pre-existing config without
+  these keys continues to load unchanged.
+
 ## [0.6.34] — 2026-10-24
 
 ### Fixed
