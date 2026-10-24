@@ -7,7 +7,7 @@
  * Harness mirrors test-fabric-field-overlay.js: route draw.setWriter at
  * term.stdout.write, install the model via store.setModel(), patch term's
  * write to intercept, strip ANSI/OSC to assert content substrings. Markup
- * (`[default]` chip, cursor as `[inverse] [/]`) is Rich → ANSI → stripped at
+ * (`[default]` chip, cursor as `[reverse] [/]`) is Rich → ANSI → stripped at
  * capture, so we assert on the visible characters: the bracketed chip labels,
  * section headers, port names, descs.
  *
@@ -302,6 +302,22 @@ describe('[fabric-form-overlay] paints a bordered popup with required+optional s
     const endCols = chipRows.map((r) => r.c + r.text.lastIndexOf(']'));
     const allSame = endCols.every((c) => c === endCols[0]);
     assert(allSame, `chip end-columns must match (right-anchored): got ${JSON.stringify(endCols)} on rows: ${JSON.stringify(chipRows.map((r) => r.text))}`);
+  });
+
+  it('focused row paints a REAL reverse-video caret (SGR 7), not a stripped-out `[inverse]` placeholder', () => {
+    // Round 3 theme fork Finding 1: `[inverse]` isn't a legal Rich attribute
+    // token (`js/leaves/text/ansi.js` _ATTRS = {bold, dim, reverse}); the
+    // original slice-1 code wrote `[inverse]` which compiled to a bare reset
+    // and the caret glyph was invisible on every theme. Pin the fix: capture
+    // raw (don't strip SGR) and assert `\x1b[7m` appears in the frame.
+    let m = freshModel();
+    [m] = runtime.update(m, { type: 'fabric_form_enter', fields: fieldsMixed(), pendingAction: PENDING_MIXED });
+    const raw = captureRaw(m, () => renderFabricFormOverlay());
+    assert(raw.includes('\x1b[7m'), 'focused row must emit SGR 7 (reverse video) for the caret glyph');
+    // Belt-and-suspenders: a bare `[inverse]` would compile to `\x1b[0m \x1b[0m`
+    // for the caret, which is zero-length visible. Assert no stripped-out literal.
+    assert(!/\x1b\[0m \x1b\[0m/.test(raw.slice(raw.indexOf('> '))),
+      'the caret glyph must not degrade to reset-space-reset');
   });
 
   it('very narrow terminal (COLS=20) drops the chip reserve so the field name survives', () => {

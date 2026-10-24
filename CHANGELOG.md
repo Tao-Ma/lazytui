@@ -8,6 +8,14 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The invoke-time popup's caret glyph now actually shows.** Both the single-
+  port fabric-field (shipped v0.6.30) and the multi-field fabric-form used
+  `[reverse]`'s mis-spelled sibling `[inverse]` for the in-buffer caret —
+  which isn't a declared Rich attribute (`_ATTRS = {bold, dim, reverse}` in
+  `js/leaves/text/ansi.js`). The compiler silently emitted a reset instead of
+  SGR 7, so the caret has been an invisible space on every theme since v0.6.30
+  and nobody noticed because the typed text itself already told the user
+  roughly where focus was. Now a real reverse-video block cursor paints.
 - **Scroll-follows-focus in the multi-field form.** Tabbing past the viewport
   edge on an action with 8+ ports used to move the caret below the painted
   box, so the user typed blind. The overlay now computes a scroll offset per

@@ -59,7 +59,7 @@ function _chipMarkup(f) {
 // right-anchoring the docstring originally claimed, now actually enforced
 // (slice-1 pre-release review round 2 Finding 3). If the input + caret
 // overflow midW, text is truncated via `truncate` (adds `…`); the caret rides
-// along in markup so its byte-level `[inverse] [/]` tag survives truncation
+// along in markup so its byte-level `[reverse] [/]` tag survives truncation
 // (zero visible width).
 //
 // Narrow-terminal fallback: when `midW` collapses to 0 (COLS ≈ 20 — menuW=18,
@@ -73,7 +73,7 @@ function _chipMarkup(f) {
 function _inputRow(f, focused, name, pad, leftW, midW, chip) {
   const prefix = focused ? '[accent]>[/] ' : '  ';
   const left = `  ${focused ? '[accent]' + name + '[/]' : name}${pad} ${prefix}`;
-  const caret = focused ? '[inverse] [/]' : '';
+  const caret = focused ? '[reverse] [/]' : '';
   const textVis = visibleLen(esc(f.text));
   const caretVis = focused ? 1 : 0;
   let mid;
@@ -117,7 +117,12 @@ function _descRow(desc, leftW) {
 }
 
 function _sectionHeader(label) {
-  return `  [bold][dim]${esc(label)}[/][/]`;
+  // Rich `[/]` is a FULL reset (not a style-stack pop), so a `[bold][dim]…[/]`
+  // reads as "bold+dim combined" which many terminals render as JUST dim
+  // (bold weight suppressed by the dim attribute). Section headers want
+  // visual prominence, not de-emphasis — pick BOLD alone. (slice-1 round 3
+  // theme fork Finding 3.)
+  return `  [bold]${esc(label)}[/]`;
 }
 
 // Compute scrollOffset so the focused row stays visible, with a bit of

@@ -62,7 +62,7 @@ function renderFabricFieldOverlay() {
   // Caret in-buffer: inverse space right after the typed text. Keeps the
   // paint.js cursor-visibility bitmap untouched (terminalMode/cmdMode only).
   const text = String(f.text || '');
-  const buffer = `> ${esc(text)}[inverse] [/]`;
+  const buffer = `> ${esc(text)}[reverse] [/]`;
 
   const lines = [`[accent]${esc(addr)}[/]`];
   if (desc) lines.push(`[dim]${esc(desc)}[/]`);
