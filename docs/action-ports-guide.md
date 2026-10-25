@@ -99,7 +99,7 @@ The form groups fields by requiredness, required first:
 - The port's `name` is the left-column label — pick names that read well there. `source_url` beats `src`.
 - `desc` is a dim one-liner under the input. Users scan it; don't repeat the port name.
 - Chips: `[default]` when text equals the declared default; `[modified]` when edited; `[unset]` when empty and no default.
-- An action with **exactly one** declared port opens the lean single-field `fabric-field` popup instead — no form chrome. Design one-port actions with that in mind: a long `desc` has room to breathe. **Exception:** a one-port action whose port declares `choices_fn:` or `choices_cmd:` opens the (one-field) form instead so the choices chip and `[space]` popover are reachable — the lean popup has no choices machinery.
+- An action with **exactly one** declared port opens the lean single-field `fabric-field` popup instead — no form chrome. Design one-port actions with that in mind: a long `desc` has room to breathe. **Exception:** a one-port action whose port declares `choices_fn:` or `choices_cmd:` opens the (one-field) form instead so the choices chip and `[space]` popover are reachable — the lean popup has no choices machinery. The fetch fires on invoke-time form-open, so `confirm:` + `choices_cmd:` on a 1-port action still runs the choices command between the confirm accept and the script spawn (see "Shells at form-open time: `confirm:` does NOT gate `choices_cmd:`" below).
 
 ---
 

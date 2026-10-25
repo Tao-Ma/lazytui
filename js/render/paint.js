@@ -959,9 +959,10 @@ function render(model) {
   // so position next to confirmMode is safe.
   if (md.fabricFieldMode) require('../overlay/fabric-field').renderFabricFieldOverlay();
   // Fabric multi-field FORM (args→ports slice 1) — invoke-time popup for an
-  // action with 2+ `ports.in`. Mutually exclusive with fabricFieldMode via the
-  // modeChain. Order is modeChain-equivalent: fabric-field (1-port) immediately
-  // before fabric-form (N-port); only one is ever active in a given frame.
+  // action with 2+ `ports.in`, OR a 1-port action whose port declares
+  // `choices_fn:`/`choices_cmd:` (slice-3 follow-up: the lean popup has no
+  // choices machinery, so 1-port + choices routes here). Mutually exclusive
+  // with fabricFieldMode via the modeChain; only one is ever active in a frame.
   if (md.fabricFormMode) require('../overlay/fabric-form').renderFabricFormOverlay();
   if (md.registerPopupMode) renderRegisterPopup();
   if (md.prefixMode)  renderWhichKey();

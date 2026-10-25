@@ -21,7 +21,13 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   Routing fix only: `_promptMissing` now takes the form lane when any
   declared port carries `choices_fn:` or `choices_cmd:`. 1-port
   actions **without** choices keep the lean popup unchanged — pre-
-  slice-1 behavior.
+  slice-1 behavior. **Behavior shift to be aware of**: the fetch now
+  fires on invoke-time form-open — same timing as 2+-port cases have
+  used since v0.6.36. `confirm:` still gates the ACTION script (as
+  before), but does NOT gate the `choices_cmd:` fetch (documented
+  pitfall carried forward from v0.6.36); a 1-port + `confirm:` +
+  `choices_cmd:` action now runs the choices command between the
+  confirm accept and the script's spawn.
 
 ## [0.6.37] — 2026-10-25
 
