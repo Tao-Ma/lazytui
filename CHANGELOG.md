@@ -6,6 +6,8 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.38] — 2026-10-25
+
 ### Fixed
 
 - **Choices popover now caps its displayed items so the help line + required-
