@@ -6,6 +6,126 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.36] — 2026-10-25
+
+### Added
+
+- **Shell-backed port choices (`choices_cmd:`).** The YAML-reachable sibling
+  of `choices_fn:` (slice 2). A port decl says `choices_cmd:` with a shell
+  one-liner, and the invoke-time form fills the choices popover from the
+  command's stdout — same effect channel, same `[fetching…]` /
+  `[N choices]` / `[error]` chips, same free-type-always-wins guarantee.
+  Trust parity with action `script:`: if you can author the YAML you
+  already have arbitrary shell. Closes the gap where pure-YAML components
+  (no JS plugin loader) couldn't declare computed choices.
+
+      ports:
+        in:
+          container:
+            type: string
+            required: true
+            choices_cmd: "docker ps --format '{{.Names}}'"
+
+- **`choices_labeled: true` opt-in** for value/label split. Each line is
+  split on the FIRST `\t` into `value\tlabel`; the overlay shows the label
+  and submits the value. A labeled line without a tab means label=value
+  (mixed lists are not punished). Opt-in via the boolean knob — no
+  auto-detect, because any honest command that emits `\t` would be
+  silently misread.
+- **`choices_timeout:` per-port override** (ms, default 5000, max 60000).
+  Expiry sends `SIGTERM` to the whole process group (so `sh` wrapping a
+  slow binary dies with it) and lands as `[timeout]` on the chip.
+- **`depends_on:` env binding for `choices_cmd:`.** A dep port's resolved
+  value is bound onto the child env with the port name as the env var,
+  verbatim (`$repo`, `$branch`, …). No new `{{…}}` templating; the
+  binding/quoting model is the one `script:` already uses. The v0.6.34
+  env-shadow denylist is enforced on the child env the same way — an
+  uppercase `PATH` port warns at config load (`port.env_shadow`) and the
+  binding is dropped at spawn, so the snake_case recommendation quietly
+  does security work.
+- **`fabric_form_choices_resolved` arm handles both channels** (fn and
+  cmd) uniformly — the reducer reads `computed.state` without a channel
+  discriminator, so chip rendering, picker open, resolver cap, abort
+  propagation, and the submit-while-fetching guard all compose for free
+  from slice 2.
+
+### Changed
+
+- **`[space] choices` affordance** and the space-key picker open now
+  trigger on `choicesFnRef || choicesCmd` (previously fn-only), so users
+  focused on a `choices_cmd:` field see the same hint and get the same
+  key behavior as fn-channel fields.
+
+### Security
+
+- **Env-shadow denylist composed over `choices_cmd:`.** The v0.6.34
+  denylist (literal set: `PATH`, `SHELL`, `LD_PRELOAD`, `LD_LIBRARY_PATH`,
+  `LD_AUDIT`, `DYLD_INSERT_LIBRARIES`, `DYLD_LIBRARY_PATH`,
+  `DYLD_FORCE_FLAT_NAMESPACE`, `BASH_ENV`, `ENV` — plus a `BASH_FUNC_`
+  prefix match for the shellshock exported-function class) is enforced
+  on the child env for `choices_cmd:` through the same shared leaf as
+  `script:`. Parser warning at config load (`port.env_shadow`) + runtime
+  drop at spawn — the same defense-in-depth pair the action-runner uses.
+- **Stdout cap** of 1 MiB on the child's output — a runaway command
+  (`cat /dev/urandom`) gets `SIGTERM`'d and lands as an `[error]` chip
+  rather than pinning memory.
+- **`choices_cmd` + `choices_fn` collision = hard parse error.** The
+  combination never existed before this slice, so no previously-valid
+  config is being newly rejected. Loud failure prevents silent
+  precedence surprises.
+
+### Parser warnings
+
+- `port.bad_choices_cmd` — not a non-empty string.
+- `port.bad_choices_labeled` — not a boolean.
+- `port.bad_choices_timeout` — not a positive integer ms ≤ 60000.
+- `port.dangling_choices_labeled` / `port.dangling_choices_timeout` —
+  modifier key with no `choices_cmd` on the port.
+
+### Design decisions (recorded; no behavior change)
+
+- **Cap: 32 items** (vs. 1024 for `choices_fn:`). Humans realistically
+  scan ≤ ~32; past that the author must narrow at the shell (`grep`,
+  `head`, filter). The cap is a signal to the *author* to tighten the
+  command, not an invitation for the user to scroll. The reducer-arm
+  cap is now channel-aware (32 for `choicesCmd` fields, 1024 for
+  `choicesFnRef` fields) so a hand-built or future-Component Msg can't
+  bypass the UX invariant. `choices_fn:`'s 1024 cap is unchanged for
+  backcompat; alignment is on a future ticket.
+- **No `{{port}}` textual templating** — env binding reuses `script:`'s
+  model with zero new quoting rules.
+- **No JSON output auto-detect** — a command whose honest output starts
+  with `[` would be silently misparsed; opt-in `choices_labeled:` beats
+  auto-detect for the same reason.
+- **No global timeout knob** — per-port `choices_timeout:` only; the
+  global comes later if a real operator need surfaces.
+- **No project-level JS plugin loader** — `choices_cmd:` covers every
+  foreseen YAML-only case; child-process arm's length is a better trade
+  than arbitrary in-process JS.
+
+### Deferred (explicit)
+
+- `wire_updated` retrigger for `choices_fn:` / `choices_cmd:` on
+  wire-fed deps (shared limitation; separate train).
+- Project-level JS plugin loader.
+- Alignment of `choices_fn:`'s 1024 cap to `choices_cmd:`'s 32.
+- Fuzzy filter inside the choices popover (today the popover is
+  up/down + enter only; a `type-to-filter` keybind is a separate UX
+  arc that would apply to both channels at once).
+- Expanding the env-shadow denylist to cover language-runtime hijack
+  vars (`NODE_OPTIONS`, `PYTHONPATH`, `PYTHONSTARTUP`, `PERL5LIB`,
+  `RUBYOPT`, `JAVA_TOOL_OPTIONS`). Slice 3 widens the surface by
+  making shell env binding reachable from pure-YAML authors; the
+  denylist today covers only shell-level hijacks. Documented in the
+  guide so authors know to prefer snake_case for dep ports that would
+  land on one of those variables.
+- Author-visible transcript line for `choices_cmd:` executions (today
+  only failures reach the diag log; successful fetches are silent —
+  asymmetric with `script:` which echoes to the viewer).
+- `setsid`/`disown`/`(cmd &)` escape from the SIGTERM-reachable
+  process group. Low-practical-risk; documented in the guide as an
+  author pitfall.
+
 ## [0.6.35] — 2026-10-24
 
 ### Added
@@ -3861,7 +3981,8 @@ release tarballs. Full pre-squash development history is preserved
 on the internal gitea mirror under the `backup/main-history` branch
 and the `v0.1.0-pre-squash` tag.
 
-[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.32...HEAD
+[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.36...HEAD
+[0.6.36]: https://github.com/Tao-Ma/lazytui/compare/v0.6.35...v0.6.36
 [0.6.32]: https://github.com/Tao-Ma/lazytui/compare/v0.6.31...v0.6.32
 [0.6.31]: https://github.com/Tao-Ma/lazytui/compare/v0.6.30...v0.6.31
 [0.6.30]: https://github.com/Tao-Ma/lazytui/compare/v0.6.29...v0.6.30
