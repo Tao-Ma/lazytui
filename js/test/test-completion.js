@@ -522,6 +522,62 @@ groups:
 });
 
 // -----------------------------------------------------------------------
+// v0.6.40 — TERM is TRAPPABLE. If a `choices_cmd:` ignores TERM
+// (`trap "" TERM; sleep 10; …`), the pre-v0.6.40 completion sent TERM at
+// timeout and resolved immediately — node exited, the pending timer that
+// would have followed with SIGKILL got cancelled with the event loop, and
+// the detached sh child orphaned to PID 1 to finish its sleep. Post-fix:
+// _spawnAndCapture does TERM → 250ms grace → SIGKILL → settle. Settle
+// doesn't fire before SIGKILL, so node keeps the loop alive long enough
+// to actually deliver the hard kill.
+//
+// Shape mirrors the Z-BUG1 test above but uses a trap-ignore child +
+// post-sleep sentinel. Pre-fix: sentinel is touched after ~2s (the sleep
+// completed in the orphaned pgroup); post-fix: SIGKILL hits before the
+// sleep finishes and nothing is touched.
+// -----------------------------------------------------------------------
+
+describe('[completion] TERM-trap choices_cmd — SIGKILL cascade actually dies the child', () => {
+  it('`trap "" TERM; sleep 2; touch SENTINEL` — sentinel NEVER touched', () => {
+    const sentinel = `/tmp/completion-term-trap-sentinel-${process.pid}-${Date.now()}`;
+    const cfgPath = path.join(tmpDir, 'termtrap.yml');
+    fs.writeFileSync(cfgPath, `
+groups:
+  g:
+    label: G
+    actions:
+      slow:
+        label: Slow
+        type: run
+        script: echo ok
+        ports:
+          in:
+            x:
+              type: string
+              required: true
+              choices_cmd: 'trap "" TERM; sleep 2 && touch ${sentinel} && printf done\\n'
+              choices_timeout: 300
+`);
+    try { fs.unlinkSync(sentinel); } catch (_) { /* didn't exist */ }
+    const wrapper = `
+      node ${TUI} ${cfgPath} --complete 3 -- do g slow '' >/dev/null 2>&1
+      sleep 2.5
+      if [ -f ${sentinel} ]; then
+        echo REGRESSION
+        exit 1
+      fi
+      echo OK
+    `;
+    const r = spawnSync('bash', ['-c', wrapper], { encoding: 'utf8', timeout: 10000 });
+    try { fs.unlinkSync(sentinel); } catch (_) { /* best-effort */ }
+    eq(r.status, 0,
+      `TERM-trap regression: sentinel was created — the detached sh child trapped SIGTERM and survived to complete its sleep. Post-fix should SIGKILL the pgroup after 250ms grace. stdout=${r.stdout.trim()} stderr=${r.stderr.trim()}`);
+    assert(r.stdout.includes('OK'),
+      `expected 'OK' marker in wrapper output, got: stdout=${JSON.stringify(r.stdout)} stderr=${JSON.stringify(r.stderr)}`);
+  });
+});
+
+// -----------------------------------------------------------------------
 // Teardown
 // -----------------------------------------------------------------------
 

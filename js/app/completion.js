@@ -318,11 +318,12 @@ function _spawnAndCapture({ cmd, cwd, env, timeoutMs, labeled }) {
     const MAX_STDOUT = 1024 * 1024;           // 1 MiB defensive cap (same as choices-cmd-runtime)
     let settled = false;
     let timedOut = false;
+    let killTimer = null;
 
-    const killGroup = () => {
-      try { process.kill(-child.pid, 'SIGTERM'); }
+    const sendSignal = (sig) => {
+      try { process.kill(-child.pid, sig); }
       catch (_) {
-        try { child.kill('SIGTERM'); } catch (__) { /* already gone */ }
+        try { child.kill(sig); } catch (__) { /* already gone */ }
       }
     };
 
@@ -330,6 +331,7 @@ function _spawnAndCapture({ cmd, cwd, env, timeoutMs, labeled }) {
       if (settled) return;
       settled = true;
       clearTimeout(alarm);
+      if (killTimer) { clearTimeout(killTimer); killTimer = null; }
       // Clear only if this call's child is still the active one. (A test
       // might race multiple spawns in sequence; this guard keeps the
       // module-level ref honest.)
@@ -340,15 +342,33 @@ function _spawnAndCapture({ cmd, cwd, env, timeoutMs, labeled }) {
     const alarm = setTimeout(() => {
       if (settled) return;
       timedOut = true;
-      killGroup();
-      // Give the kill a moment to propagate; if 'close' doesn't fire soon
-      // we still want to return. Resolve now — empty on timeout.
-      settle({ items: [], labels: null });
+      // SIGTERM is trappable. If `choices_cmd:` traps or ignores it the
+      // child survives. We MUST NOT resolve before SIGKILL goes out —
+      // node exits as soon as the Promise resolves and the event loop is
+      // empty, which cancels any pending setTimeout and leaks the child
+      // to PID 1. So: TERM, keep the loop alive 250ms, KILL, then settle.
+      // Worst-case TAB latency goes 2.5s → 2.75s; still fine for an
+      // interactive completion.
+      sendSignal('SIGTERM');
+      killTimer = setTimeout(() => {
+        killTimer = null;
+        sendSignal('SIGKILL');
+        settle({ items: [], labels: null });
+      }, 250);
     }, timeoutMs);
 
     child.stdout.on('data', (buf) => {
       if (stdoutBytes + buf.length > MAX_STDOUT) {
-        killGroup();
+        // Same cascade as the timeout path: TERM now, KILL after a grace,
+        // then let the close handler settle naturally (settle guards
+        // against double-resolve).
+        if (!killTimer) {
+          sendSignal('SIGTERM');
+          killTimer = setTimeout(() => {
+            killTimer = null;
+            sendSignal('SIGKILL');
+          }, 250);
+        }
         return;
       }
       stdoutBytes += buf.length;
@@ -396,14 +416,30 @@ async function runCompletion(configPath, cword, words) {
   // the active child's pgroup first, THEN exit with the standard
   // signal rc. Install `once` so we don't fire twice on repeated
   // Ctrl-Cs. (Z-BUG1 — pre-release hard-review.)
+  //
+  // Cascade: TERM is trappable (a `trap "" TERM; sleep 10` choices_cmd
+  // would survive it). We send TERM first (polite), wait 250ms, then
+  // SIGKILL (hard), then exit. If we called process.exit immediately
+  // after TERM, the child would orphan to PID 1 on any trap. The 250ms
+  // grace is bounded worst-case latency on Ctrl-C; the common case
+  // (well-behaved choices_cmd) sees the child die to TERM in <10ms and
+  // close fires before KILL is needed — but we send KILL unconditionally
+  // because we can't observe close from this handler.
   const _onSignal = (sig) => {
-    if (_currentChild) {
-      try { process.kill(-_currentChild.pid, 'SIGTERM'); }
+    const rc = sig === 'SIGINT' ? 130 : 143;
+    if (!_currentChild) { process.exit(rc); return; }
+    const pid = _currentChild.pid;
+    const sendTo = (s) => {
+      try { process.kill(-pid, s); }
       catch (_) {
-        try { _currentChild.kill('SIGTERM'); } catch (__) { /* already gone */ }
+        try { _currentChild && _currentChild.kill(s); } catch (__) { /* already gone */ }
       }
-    }
-    process.exit(sig === 'SIGINT' ? 130 : 143);
+    };
+    sendTo('SIGTERM');
+    setTimeout(() => {
+      sendTo('SIGKILL');
+      process.exit(rc);
+    }, 250);
   };
   process.once('SIGINT', () => _onSignal('SIGINT'));
   process.once('SIGTERM', () => _onSignal('SIGTERM'));

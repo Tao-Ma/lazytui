@@ -8,6 +8,37 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`choices_cmd:` runtime (TUI) and shell completion helper (CLI) —
+  trappable SIGTERM let a hostile or stubborn command orphan the
+  child.** Both runtimes used `detached: true` + `process.kill(-pid,
+  'SIGTERM')` as the sole kill signal on timeout / abort / overflow /
+  Ctrl-C. SIGTERM is trappable: a `choices_cmd:` that runs
+  `trap "" TERM; sleep 10` (or exec's a binary with its own TERM
+  handler) would swallow the signal and keep running. In the TUI,
+  `close` would never fire, `settle` would never run, and the C5 slot
+  would wedge indefinitely. In the CLI helper, `settle` resolved
+  immediately after TERM — but node then exits as soon as the Promise
+  resolves and the event loop is empty, which cancels any pending
+  setTimeout; the detached sh child orphans to PID 1 and finishes its
+  work out-of-band. Fix:
+  - **TUI** (`js/feature/choices-cmd-runtime.js`): every SIGTERM now
+    schedules a SIGKILL on the pgroup 500ms later. The hard kill
+    forces `close` → `settle` → `host.releaseKey()`. Cleared on
+    normal settle so a well-behaved child that died to TERM doesn't
+    receive a redundant KILL.
+  - **CLI helper** (`js/app/completion.js`): timeout and overflow
+    paths now send TERM, keep the event loop alive 250ms, send
+    SIGKILL, THEN settle. The SIGINT/SIGTERM handler does the same
+    cascade before `process.exit`. Worst-case TAB latency goes
+    `choices_timeout + 250ms` instead of `choices_timeout + 0`;
+    acceptable floor for correctness.
+  - Regression tests: both runtimes get a `trap "" TERM; sleep 10`
+    child + sentinel/pgroup assertion. Pre-fix: TUI test fails
+    (`dispatched.length === 0`, slot wedged); CLI test fails
+    (`REGRESSION`, sentinel touched after orphan completed). Post-fix:
+    both pass; pgroup is gone after `process.kill(-pid, 0)` throws
+    ESRCH.
+
 - **Shell completion — pre-release hard-review found two shippable BUGs
   on the completion feature + doc gaps.** Fixed before release.
   1. **cmdName shell-injection in `generateScript`**: `--cmd` is

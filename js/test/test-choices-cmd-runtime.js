@@ -372,5 +372,62 @@ async function waitFor(predicate, timeoutMs) {
   // dispatcher wiring but not add CMD-channel coverage beyond what the two
   // tests above already pin.
 
+  // ---------------------------------------------------------------- TERM-trap
+  // v0.6.40 — SIGTERM is TRAPPABLE. A `choices_cmd:` that ignores TERM
+  // (`trap "" TERM; sleep 10`) would survive the timeout kill and keep
+  // running; close would never fire; settle would never run; the C5 slot
+  // would wedge. Pre-fix behavior: dispatched.length stayed 0 forever.
+  // Post-fix: killGroup('SIGTERM') schedules a 500ms SIGKILL on the pgroup
+  // which forces close → settle → releaseKey.
+  //
+  // Verification shape: capture the sh child's pid via a side-channel
+  // (the child writes its own `$$` to a tempfile BEFORE sleeping), then
+  // after the handler settles, confirm `process.kill(-pid, 0)` throws
+  // ESRCH — meaning the whole pgroup is gone.
+  section('[choices-cmd-runtime] TERM-trap child — SIGKILL cascade dies the pgroup');
+  {
+    const pidFile = path.join(os.tmpdir(), `ccrkill-${process.pid}-${Date.now()}.pid`);
+    try { fs.unlinkSync(pidFile); } catch (_) { /* ok */ }
+    // trap "" TERM = ignore SIGTERM (the shell is immune); sleep 10 = the
+    // thing we need SIGKILL to actually clear. $$ is the shell's own pid
+    // which is the pgid (because detached:true makes child.pid === pgid).
+    const cmd = `echo $$ > ${pidFile}; trap "" TERM; sleep 10`;
+    const start = Date.now();
+    const { dispatched, released, host } = makeHost();
+    handler({
+      type: 'fetch_choices_cmd', key: 'choices_cmd:a.p',
+      cmd,
+      labeled: false, timeout: 150, env: {},
+      port: 'p', requestId: 17, actionKey: 'a', group: 'g',
+    }, host);
+    // Timeout fires at 150ms, grace is 500ms, close + settle fire shortly
+    // after KILL — a 2s poll leaves generous slack.
+    await waitFor(() => dispatched.length, 2000);
+    const elapsed = Date.now() - start;
+    eq(dispatched.length, 1, 'settled once even though TERM was trapped (pre-fix: 0 — close never fires, slot wedges)');
+    if (dispatched.length) {
+      assert(/timed out/.test(dispatched[0].error || ''),
+        `error mentions timeout, got: ${dispatched[0].error}`);
+      eq(released.length, 1, 'releaseKey called — slot cleared, no wedge');
+      assert(elapsed < 1500, `settle happens within TERM + 500ms grace + overhead; took ${elapsed}ms`);
+    }
+
+    // Read the pid the shell wrote before trapping. If the file never
+    // appeared the shell hadn't started yet when we checked — unlikely but
+    // we skip the pgroup assertion rather than false-fail.
+    let shellPid = null;
+    try { shellPid = parseInt(fs.readFileSync(pidFile, 'utf8').trim(), 10); }
+    catch (_) { /* best-effort */ }
+    if (shellPid && Number.isFinite(shellPid)) {
+      // Give kernel reaping an extra beat beyond close.
+      await wait(100);
+      let alive = true;
+      try { process.kill(-shellPid, 0); }
+      catch (e) { if (e.code === 'ESRCH') alive = false; }
+      assert(!alive, `pgroup -${shellPid} should be gone after SIGKILL cascade`);
+    }
+    try { fs.unlinkSync(pidFile); } catch (_) { /* ok */ }
+  }
+
   report();
 })();

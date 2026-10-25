@@ -183,15 +183,34 @@ function registerFetchChoicesCmdEffect(registerEffect) {
     let settled = false;
     let timedOut = false;
     let overflowed = false;
+    let killTimer = null;
 
     // Kill the whole process group so grand-children (`sh` → `sleep`) die too.
     // Falls back to a direct child.kill if group-signal throws (ESRCH on
-    // already-exited groups).
+    // already-exited groups). SIGTERM is TRAPPABLE — a `choices_cmd:` that
+    // runs `trap "" TERM; sleep 10` would swallow it and the child would
+    // keep running until it chose to exit; close never fires → settle never
+    // runs → `host.releaseKey()` wedges the slot. So after a SIGTERM we
+    // schedule a SIGKILL on the pgroup 500ms later as a hard floor. Cleared
+    // in settle so a child that DID die to TERM doesn't get a redundant kill
+    // signal after close has already fired.
+    const scheduleHardKill = () => {
+      if (killTimer || settled) return;
+      killTimer = setTimeout(() => {
+        killTimer = null;
+        if (settled) return;
+        try { process.kill(-child.pid, 'SIGKILL'); }
+        catch (_) {
+          try { child.kill('SIGKILL'); } catch (__) { /* already gone */ }
+        }
+      }, 500);
+    };
     const killGroup = (sig) => {
       try { process.kill(-child.pid, sig); }
       catch (_) {
         try { child.kill(sig); } catch (__) { /* already gone */ }
       }
+      if (sig === 'SIGTERM') scheduleHardKill();
     };
 
     // AbortSignal from the effect host (C5 keyed-effects). A dep change / form
@@ -224,6 +243,7 @@ function registerFetchChoicesCmdEffect(registerEffect) {
       if (settled) return;
       settled = true;
       clearTimeout(timeoutHandle);
+      if (killTimer) { clearTimeout(killTimer); killTimer = null; }
       if (host.signal && !host.signal.aborted) {
         try { host.signal.removeEventListener('abort', onAbort); } catch (_) { /* no-op */ }
       }
