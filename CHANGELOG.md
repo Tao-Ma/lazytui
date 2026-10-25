@@ -6,6 +6,25 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Fabric-form choices popover: closing (or shrinking) the picker now
+  forces a full repaint** so the outgoing LARGER overlay border's cells
+  get cleared. Previously, opening the popover grew the overlay (items
+  rendered as rows), and closing it shrank the overlay back — but the
+  cell-diff cache kept the outgoing larger border's cells, leaving the
+  OLD border visibly lingering around the new smaller overlay. User-
+  caught in v0.6.38. The fabric-form overlay stays open across the
+  popover transition (`fabricFormMode` remains true), so the existing
+  mode-flag-drop force-full check couldn't catch it. Mirror of the
+  menu-items-replaced-in-place force trigger: paint.js tracks a
+  per-frame signature of the picker state (port + items count); any
+  transition — close, resolver-reply with different count, mid-flight
+  shrink — forces a full repaint on the next render. Opening the
+  popover does NOT force-full (overlay grows → the enlarged render
+  covers everything within the new border cleanly; forcing would waste
+  a frame on every open).
+
 ## [0.6.38] — 2026-10-25
 
 ### Fixed

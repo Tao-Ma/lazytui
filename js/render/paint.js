@@ -257,6 +257,12 @@ const _frame = {
   // repaint on that swap so the outgoing menu's pixels are wiped. Menu NAV (j/k)
   // preserves the items identity, so it still cell-diffs (no flicker).
   prevMenuItems:    null,
+  // Fabric-form popover signature from the previous frame ('' when no picker).
+  // The popover opens/closes/items-change INSIDE the fabricFormMode overlay —
+  // the flag-set check misses it (mode stays set) and the cell-diff cache keeps
+  // the outgoing LARGER border's cells when the overlay shrinks. See the
+  // forceFull trigger below for the sig shape + reasoning.
+  prevFabricPickingSig: '',
   // PTY-overlay force-state is NOT here — it moved per-session (U2d P0a). With
   // N visible terminal panes there is no single "last overlay": each session
   // tracks its own displayed dims (session.prevW/prevH) + viewport
@@ -837,6 +843,28 @@ function render(model) {
   const menuItemsNow = (md.menuOpen && model.modal.menu) ? model.modal.menu.items : null;
   if (menuItemsNow && _frame.prevMenuItems && menuItemsNow !== _frame.prevMenuItems) _frame.forceFull = true;
   _frame.prevMenuItems = menuItemsNow;
+  // Fabric-form popover close/resize: the fabric-form overlay stays open
+  // (fabricFormMode remains true), but opening the popover grows the overlay
+  // (items added as rows), and closing or shrinking the item list shrinks it.
+  // The flag-set check can't catch it (same mode), the cell-diff cache keeps
+  // the outgoing LARGER border's cells, so after close/shrink the old border
+  // visibly lingers around the new smaller overlay. User-caught v0.6.38:
+  // "popover close doesn't clean the larger old border." Signature: picking
+  // field + its items count; any transition forces a full repaint so the old
+  // border's cells get cleared. Mirrors the menuItemsNow pattern above.
+  let pickingSig = '';
+  if (md.fabricFormMode && model.modal.fabricForm && model.modal.fabricForm.picking) {
+    const picking = model.modal.fabricForm.picking;
+    const pickedField = model.modal.fabricForm.fields
+      && model.modal.fabricForm.fields.find((x) => x.port === picking.port);
+    const itemCount = (pickedField && pickedField.computed
+      && Array.isArray(pickedField.computed.items)) ? pickedField.computed.items.length : 0;
+    pickingSig = `${picking.port}#${itemCount}`;
+  }
+  if (_frame.prevFabricPickingSig && _frame.prevFabricPickingSig !== pickingSig) {
+    _frame.forceFull = true;
+  }
+  _frame.prevFabricPickingSig = pickingSig;
   // v0.6.6 replay arc — the replay-control pane is module-flagged (not in
   // model.modes), so track its view state here. full/mini/hidden cover different
   // regions, so ANY transition (incl. exit → no pane) must force a full repaint
