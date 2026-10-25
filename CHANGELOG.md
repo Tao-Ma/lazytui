@@ -6,6 +6,8 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.40] — 2026-10-26
+
 ### Fixed
 
 - **`choices_cmd:` runtime (TUI) and shell completion helper (CLI) —
