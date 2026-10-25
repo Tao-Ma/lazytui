@@ -98,4 +98,70 @@ describe('[fabric-form-popover-repaint] close/shrink forces a full repaint', () 
   });
 });
 
+// -------------------------------------------------------------------------
+// Reusable harness: `assertOverlayShrinkForcesRepaint` — any new or existing
+// overlay that can grow/shrink within a single mode flag can pin this
+// invariant with a few lines. Rationale: the fabric-form popover bug
+// (user-caught v0.6.38) is one instance of a bug class. Other candidate
+// overlays with variable size within a stable mode flag include: `menu`
+// (replaced items — already pinned by the `prevMenuItems` tracker in
+// paint.js:837), `diagLog` (variable rows — unpinned), `jobs` (variable
+// rows — unpinned), `replayScrubber` (view mode — already pinned by
+// `prevReplayView`), and anything a future overlay author introduces.
+//
+// Why a MECHANISM test (FULL_CLEAR), not a SYMPTOM test (visible residue
+// in a captured frame): the test harness captures per-render stdout
+// deltas, not accumulated terminal state. In the real terminal, residue
+// happens because the shrink delta doesn't emit "clear these cells"
+// instructions — the terminal still shows the old overlay cells from
+// previous frames. A test that captures just one render's output can't
+// catch this because the "residue" lives in the terminal's retained
+// state, not in the delta. Catching it would require a terminal-state
+// emulator (significant investment). Instead, pin the mechanism: force-
+// full-repaint on shrink is what BOTH clears residue AND is testable
+// without a terminal emulator.
+// -------------------------------------------------------------------------
+
+function assertOverlayShrinkForcesRepaint({ overlayName, grow, shrink }) {
+  // Capture at steady state after the grow stimulus so the "before"
+  // reference is a stable larger overlay.
+  grow();
+  sm.capture(sm.render);                              // paint the grown state
+  sm.capture(sm.render);                              // and reach diff-steady
+
+  shrink();
+  const out = sm.capture(sm.render).raw;
+  assert(out.includes(FULL_CLEAR),
+    `RESIDUE RISK for ${overlayName}: shrink/close did NOT emit a full-repaint. Without it, the outgoing LARGER overlay's cells linger in the terminal because the cell-diff ONLY tracks the main-frame content layer — overlays paint directly to stdout bypassing newRows, so the diff can't emit "clear these cells". Fix: track a per-frame signature of this overlay's state in paint.js and set _frame.forceFull=true on any shrink transition. See the fabric-form popover sig tracker (paint.js, 'prevFabricPickingSig') and the menu-items-replaced trigger ('prevMenuItems') for templates.`);
+}
+
+describe('[overlay-shrink-invariant] generic harness pins each variable-size overlay', () => {
+  // Reset state for a clean harness run (previous describe block mutated it).
+  sm.applyMsg({ type: 'fabric_form_choices_close' });
+  sm.applyMsg({ type: 'fabric_form_choices_request', port: 'name', requestId: 100 });
+  sm.applyMsg({
+    type: 'fabric_form_choices_resolved', port: 'name', actionKey: 'pick', requestId: 100,
+    items: ['alpha', 'bravo', 'charlie'], labels: null, error: null,
+  });
+  sm.capture(sm.render);                       // settle
+
+  it('fabric-form choices popover: close forces repaint', () => {
+    assertOverlayShrinkForcesRepaint({
+      overlayName: 'fabric-form choices popover',
+      grow: () => sm.applyMsg({ type: 'fabric_form_choices_open', port: 'name' }),
+      shrink: () => sm.applyMsg({ type: 'fabric_form_choices_close' }),
+    });
+  });
+
+  // Future variable-size overlays go here. Each is one block ≈ 6 lines.
+  //
+  // When adding a new overlay that can change size while its mode flag
+  // stays set, add an `it()` block here with its grow/shrink stimuli.
+  // That exercise forces the author to think about residue before
+  // merging — same discipline as [[feedback_render_test_new_overlays]].
+  // The harness fails with a specific, actionable message pointing at
+  // the two template implementations in paint.js (prevFabricPickingSig
+  // + prevMenuItems).
+});
+
 report();
