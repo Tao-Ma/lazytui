@@ -11,13 +11,18 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 - **Choices popover now caps its displayed items so the help line + required-
   missing footer stay visible on long lists.** Previously, a choices_cmd that
   returned ≥~viewport-rows items grew the popover unbounded and swallowed the
-  bottom chrome; items past the viewport also required scrolling into unseen
-  rows. The popover now shows a sliding window centered on `picking.idx`
-  (default budget: viewport rows − 10 for chrome; minimum 5) and prints a
+  bottom chrome. The popover now shows a sliding window centered on
+  `picking.idx` sized to the viewport MINUS the actual chrome rows for THIS
+  form (section headers, every field's input + desc, section separator,
+  required-missing line, help line, overflow indicator) and prints a
   `[N of M — up/down to scroll]` indicator at the bottom. Users press Up/Down
   past the window edge and the slice follows. The runtime's `[+more…]`
   truncation suffix (`choices_cmd` cap of 32 items / `choices_fn` cap of
-  1024) now folds into the overflow indicator as `M+` when applicable.
+  1024) now folds into the overflow indicator as `M+` when applicable. Fix
+  initially shipped with a static chrome reserve of 10 rows (correct for
+  1-field forms, wrong for 2+-field forms — the hint line was still pushed
+  off at vp.rows=24 under `cert-reissue` / `kubectl-exec` shapes); replaced
+  with a dynamic per-form calculation so every form shape fits.
 
 - **1-port actions with `choices_fn:` / `choices_cmd:` now open the form
   so the choices chip + `[space]` popover are reachable.** The lean

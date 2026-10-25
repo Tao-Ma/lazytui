@@ -199,6 +199,46 @@ describe('[fabric-form-choices-cmd-overlay] popover overflow cap — hint + foot
       `no overflow indicator for 10 items on 30-row, got:\n${out}`);
     assert(out.includes('item10'), 'all 10 items visible');
   });
+
+  // R-II-3-BUG1: static CHROME_RESERVE=10 was wrong for 2+field forms with
+  // longer chrome; the hint line still got pushed off at modest terminal
+  // sizes under cert-reissue/kubectl-exec shapes. Verify the dynamic
+  // calculation keeps the hint visible for a 3-field form picking the
+  // first field with a resolved 20-item result.
+  it('3-field form picking field 1 with 20 items at vp.rows=30: hint + footer visible', () => {
+    let m = freshModel();
+    const fields3 = [
+      { port: 'ca',      text: '', required: true, default: null, desc: 'CA name',
+        choicesCmd: "printf 'ca1\\nca2\\n'", choicesLabeled: false, choicesTimeout: null, dependsOn: [] },
+      { port: 'subject', text: '', required: true, default: null, desc: 'CN subject' },
+      { port: 'days',    text: '365', required: false, default: '365', desc: 'validity days' },
+    ];
+    const pending3 = { actionKey: 'cert-reissue',
+      action: { label: 'Reissue cert', type: 'run', script: 'step ca sign',
+        ports: { in: {
+          ca:      { type: 'string', required: true, choices_cmd: "printf 'ca1\\n'" },
+          subject: { type: 'string', required: true },
+          days:    { type: 'string', required: false, default: '365' },
+        } } } };
+    const items = Array.from({ length: 20 }, (_, i) => `ca_${String(i + 1).padStart(2, '0')}`);
+    [m] = runtime.update(m, { type: 'fabric_form_enter', fields: fields3, pendingAction: pending3 });
+    [m] = runtime.update(m, { type: 'fabric_form_choices_request', port: 'ca', requestId: 1 });
+    [m] = runtime.update(m, {
+      type: 'fabric_form_choices_resolved', port: 'ca', actionKey: 'cert-reissue', requestId: 1,
+      items, labels: null, error: null,
+    });
+    [m] = runtime.update(m, { type: 'fabric_form_choices_open', port: 'ca' });
+    const out = captureStripped(m, () => renderFabricFormOverlay());
+    assert(out.includes('[up/down] move'),
+      `3-field form (chrome ≈ 11): help line must stay visible, got:\n${out}`);
+    assert(out.includes('required inputs still missing:'),
+      `required-missing footer must stay visible, got:\n${out}`);
+    assert(out.includes('subject'), 'sibling required field (subject) still rendered');
+    assert(out.includes('days'), 'sibling optional field (days) still rendered');
+    assert(out.includes('Optional'), 'Optional section header rendered');
+    assert(/\[\d+ of 20 — up\/down to scroll\]/.test(out),
+      `overflow indicator paints with 20 items in a tight budget, got:\n${out}`);
+  });
 });
 
 describe('[fabric-form-choices-cmd-overlay] 1-field form paints chip + help without chrome drops', () => {

@@ -208,6 +208,26 @@ function renderFabricFormOverlay() {
   let pickingLineIdx = -1;
   const rows = [];
   const picking = f.picking;
+
+  // Pre-compute stillMissing + chrome row count so the popover's item slice
+  // can size itself to the ACTUAL chrome, not a constant guess. R-II-3-BUG1:
+  // a static CHROME_RESERVE=10 was calibrated for 1-field forms (chrome ≈ 7)
+  // and pushed the help line + required-missing footer off screen for
+  // 2+field forms (chrome 11-15), re-manifesting R2-BUG2 under cert-reissue /
+  // kubectl-exec shapes at vp.rows=24. Dynamic count below walks the actual
+  // form state. Border rows (2) are NOT in rows[] but still eat viewport —
+  // `innerH = vp.rows - 4` because `menuH = min(rows+2, vp.rows-2)`.
+  const stillMissing = f.fields
+    .filter((x) => x.required && x.text === '' && x.default == null)
+    .map((x) => x.port);
+  const chromeRows =
+    (required.length ? 1 : 0) +                                   // Required header
+    (optional.length ? 1 : 0) +                                   // Optional header
+    (required.length && optional.length ? 1 : 0) +                // req/opt separator
+    f.fields.reduce((n, x) => n + 1 + (x.desc ? 1 : 0), 0) +      // every field's input + desc
+    1 +                                                           // '' separator before still-missing
+    (stillMissing.length ? 1 : 0) +
+    1;                                                            // help line
   function pushField(field) {
     const name = esc(field.port);
     const pad = ' '.repeat(Math.max(0, maxNameVis - visibleLen(name)));
@@ -232,14 +252,17 @@ function renderFabricFormOverlay() {
         } else {
           // Cap displayed items so the help line + required-missing footer
           // stay visible on tall-choices lists (R2-BUG2: items ≥~viewport
-          // rows otherwise swallowed the hint). Reserve ~10 rows for all
-          // chrome (border + section headers + any sibling fields' rows +
-          // still-missing hint + help). Minimum budget is 5 so even on a
-          // tiny terminal the picker is still usable. The slice follows
-          // `picking.idx` — user presses Down past the window and the
-          // slice shifts, so overflow is navigable, not hidden.
-          const CHROME_RESERVE = 10;
-          const budget = Math.max(5, (vp.rows || 24) - CHROME_RESERVE);
+          // rows otherwise swallowed the hint). `chromeRows` computed above
+          // walks the actual form state (section headers, every field's
+          // input+desc, separator, still-missing, help), so a 1-field form
+          // and a 5-field form get the right budget each. −4 is the border
+          // (menuH compensates by 2 + innerH compensates by another 2) −
+          // another 1 reserved for the overflow indicator row. Minimum
+          // budget is 3 so the picker stays usable even on tiny terminals;
+          // on terminals too small for chrome + 3 items + indicator, the
+          // overlay viewport scrolls (acceptable — vp.rows ≤ 13 is extreme).
+          const availableRows = (vp.rows || 24) - 4 - chromeRows - 1;
+          const budget = Math.max(3, availableRows);
           const total = c.items.length;
           const willOverflow = total > budget;
           let sliceStart = 0;
@@ -300,10 +323,8 @@ function renderFabricFormOverlay() {
   // required was unresolved) AND on reopen (after a submit-with-empty bounced
   // off the resolver and reopened the form). Without this hint, a user whose
   // submit silently reopened the same form would think the TUI was wedged.
-  // (Slice-1 pre-release review round 4 Fork 1 S3.)
-  const stillMissing = f.fields
-    .filter((x) => x.required && x.text === '' && x.default == null)
-    .map((x) => x.port);
+  // (Slice-1 pre-release review round 4 Fork 1 S3.) `stillMissing` was
+  // hoisted up for the chrome-budget calc — reuse it here, don't recompute.
   rows.push('');
   if (stillMissing.length) {
     rows.push(`[warning]required inputs still missing: ${esc(stillMissing.join(', '))}[/]`);
