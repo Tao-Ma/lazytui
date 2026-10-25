@@ -275,9 +275,32 @@ describe('[completion] --completion script generation', () => {
       { encoding: 'utf8' });
     eq(r.status, 0);
     assert(r.stdout.includes('./do --complete'), `bash script must call ./do --complete, got:\n${r.stdout}`);
-    assert(r.stdout.includes('complete -F '), 'bash script must register with `complete -F`');
+    assert(r.stdout.includes('complete -o default -F '),
+      `bash script must register with 'complete -o default -F' so ports without choices fall back to filename completion, got:\n${r.stdout}`);
     assert(!/\/root\/|\/usr\/|\/home\//.test(r.stdout),
       `bash script leaked an absolute path:\n${r.stdout}`);
+  });
+
+  it('bash: uses `while IFS= read -r` (bash-3.2-portable), NOT `mapfile` (bash 4+ only)', () => {
+    // macOS /bin/bash is 3.2.57; mapfile is bash 4+. Every TAB on macOS
+    // would error. v0.6.40 dev9 QA bug.
+    const r = spawnSync('node', [TUI, '--completion', 'bash', '--cmd', './do'],
+      { encoding: 'utf8' });
+    assert(r.stdout.includes('while IFS= read -r'),
+      `bash script must use 'while IFS= read -r' for bash-3.2 compat, got:\n${r.stdout}`);
+    assert(!/\bmapfile\b/.test(r.stdout),
+      `bash script must NOT use mapfile (bash 4+; macOS ships 3.2.57), got:\n${r.stdout}`);
+  });
+
+  it('bash: filters candidates against the typed prefix (COMPREPLY is NOT raw-assigned)', () => {
+    // Raw COMPREPLY=("${candidates[@]}") doesn't filter against the typed
+    // word — menu-cycling would replace the typed prefix with unrelated
+    // candidates. The script must prefix-filter with a case/glob (or
+    // compgen -W). v0.6.40 dev9 QA bug.
+    const r = spawnSync('node', [TUI, '--completion', 'bash', '--cmd', './do'],
+      { encoding: 'utf8' });
+    assert(/case\s+\$line\s+in\s+"\$cur"\*/.test(r.stdout),
+      `bash script must prefix-filter candidates against $cur (COMP_WORDS[COMP_CWORD]), got:\n${r.stdout}`);
   });
 
   it('zsh: contains --complete callback via --cmd name, no absolute paths', () => {
@@ -290,6 +313,19 @@ describe('[completion] --completion script generation', () => {
       `zsh script leaked an absolute path:\n${r.stdout}`);
   });
 
+  it('zsh: empty-helper-output guard + _default fallthrough', () => {
+    // "${(@f)""}" produces [""] — a one-element array containing the empty
+    // string, so compadd -- "" would offer an empty candidate. Guard with
+    // -z check + _default fallthrough so filename completion kicks in for
+    // ports without choices. v0.6.40 dev9 QA bug.
+    const r = spawnSync('node', [TUI, '--completion', 'zsh', '--cmd', './do'],
+      { encoding: 'utf8' });
+    assert(/if\s+\[\s+-z\s+"\$raw"\s+\]/.test(r.stdout),
+      `zsh script must guard against empty helper output BEFORE "${'$'}{(@f)raw}" split, got:\n${r.stdout}`);
+    assert(/\b_default\b/.test(r.stdout),
+      `zsh script must call _default on empty helper output so filename completion kicks in, got:\n${r.stdout}`);
+  });
+
   it('byte-stable across two invocations (deterministic script)', () => {
     const r1 = spawnSync('node', [TUI, '--completion', 'bash', '--cmd', './do'], { encoding: 'utf8' }).stdout;
     const r2 = spawnSync('node', [TUI, '--completion', 'bash', '--cmd', './do'], { encoding: 'utf8' }).stdout;
@@ -300,6 +336,95 @@ describe('[completion] --completion script generation', () => {
     const r = spawnSync('node', [TUI, '--completion', 'fish'], { encoding: 'utf8' });
     eq(r.status, 1);
     assert(/unsupported shell/.test(r.stderr), `expected "unsupported shell" in stderr, got: ${r.stderr}`);
+  });
+});
+
+// -----------------------------------------------------------------------
+// Behavioral test: source the generated bash script in a bash -c harness,
+// set COMP_WORDS / COMP_CWORD, invoke the function, inspect COMPREPLY.
+// Catches the three dev9-QA bugs end-to-end — no interactive readline
+// needed. Pins the prefix-filtering contract (bug 1) and the no-mapfile
+// contract (bug 2 — fails under `bash --posix` on bash 5 if mapfile is
+// used). The -o default contract (bug 3) is covered by content assert
+// above since it's a line of the script, not runtime behavior.
+// -----------------------------------------------------------------------
+
+describe('[completion] bash function behavioral — prefix filter, no mapfile, candidates visible', () => {
+  // Driver: source the generated script in a bash subshell, set COMP_WORDS
+  // + COMP_CWORD, invoke the completion function, print COMPREPLY.
+  // The script's inner function references the --cmd name verbatim; we
+  // override that word so our test completion function points at the
+  // real --complete helper driving the fixture.
+  function driveBash({ prefix, group, action, extras = [] }) {
+    // Build the COMP_WORDS array around the input.
+    // For a group completion: COMP_WORDS=(fake prefix), COMP_CWORD=1
+    // For an action completion: COMP_WORDS=(fake group prefix), COMP_CWORD=2
+    // For a positional: COMP_WORDS=(fake group action ...extras prefix), COMP_CWORD=3+N
+    const words = ['_fakecmd_', group, action, ...extras, prefix].filter((w) => w !== undefined);
+    const cword = words.length - 1;
+    const wordsForBash = words.map((w) => `'${w.replace(/'/g, "'\\''")}'`).join(' ');
+    // Shim _fakecmd_ to call the real completion helper against the fixture.
+    const realCmd = `node ${TUI} ${fixturePath}`;
+    const script = `
+      _fakecmd_() { ${realCmd} "$@"; }
+      eval "$(node ${TUI} --completion bash --cmd _fakecmd_)"
+      COMP_WORDS=(${wordsForBash})
+      COMP_CWORD=${cword}
+      _lazytui_complete__fakecmd_
+      # Print one per line so test can split cleanly.
+      for c in "\${COMPREPLY[@]}"; do echo "$c"; done
+    `;
+    const r = spawnSync('bash', ['-c', script], { encoding: 'utf8', timeout: 10000 });
+    return { stdout: r.stdout.trim(), stderr: r.stderr.trim(), status: r.status };
+  }
+
+  it('prefix "sv" at cword=1 matches only groups starting with "sv"', () => {
+    const r = driveBash({ prefix: 'sv' });
+    eq(r.status, 0, `bash subshell failed, stderr=${r.stderr}`);
+    const got = lines(r.stdout);
+    assert(got.includes('svc'), `expected "svc" in filtered output, got ${JSON.stringify(got)}`);
+    // service.vpnclient starts with "se", NOT "sv" — correctly filtered out
+    assert(!got.includes('service.vpnclient'),
+      `prefix filter failed — "service.vpnclient" should NOT match prefix "sv", got ${JSON.stringify(got)}`);
+    assert(!got.includes('tool'),
+      `prefix filter failed — "tool" should NOT match prefix "sv", got ${JSON.stringify(got)}`);
+  });
+
+  it('empty prefix at cword=1 returns all groups', () => {
+    const r = driveBash({ prefix: '' });
+    eq(r.status, 0);
+    const got = lines(r.stdout);
+    assert(got.includes('svc') && got.includes('service.vpnclient'),
+      `empty prefix should match all groups in fixture (svc + service.vpnclient), got ${JSON.stringify(got)}`);
+  });
+
+  it('prefix "ser" at cword=1 matches ONLY the dotted subgroup', () => {
+    const r = driveBash({ prefix: 'ser' });
+    eq(r.status, 0);
+    const got = lines(r.stdout);
+    eq(got, ['service.vpnclient']);
+  });
+
+  it('cword=3 with no prefix returns all positional choices (bash: unfiltered)', () => {
+    const r = driveBash({ group: 'svc', action: 'restart', prefix: '' });
+    eq(r.status, 0);
+    const got = lines(r.stdout);
+    assert(got.includes('nginx') && got.includes('sshd'),
+      `expected nginx+sshd for svc:restart first positional, got ${JSON.stringify(got)}`);
+  });
+
+  it('cword=3 with prefix "ng" returns only matching choices', () => {
+    const r = driveBash({ group: 'svc', action: 'restart', prefix: 'ng' });
+    eq(r.status, 0);
+    const got = lines(r.stdout);
+    eq(got, ['nginx'], `prefix "ng" should filter to only nginx, got ${JSON.stringify(got)}`);
+  });
+
+  it('port with no choices_cmd → COMPREPLY empty (shell will fall back to -o default)', () => {
+    // svc:exec third port `extra` has no choices.
+    const r = driveBash({ group: 'svc', action: 'exec', extras: ['alpha', 'ls-alpha'], prefix: '' });
+    eq(r.status, 0);
+    eq(r.stdout, '', `expected empty COMPREPLY (shell falls back via -o default), got ${JSON.stringify(r.stdout)}`);
   });
 });
 

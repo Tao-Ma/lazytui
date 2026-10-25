@@ -6,6 +6,39 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Generated bash completion script — three bugs caught by first-
+  consumer QA (dev9-env):**
+  1. **No prefix filtering**: raw `COMPREPLY=("${candidates[@]}")`
+     bypassed bash's native filter — typing `./do sec<TAB>` with 16
+     candidates let menu-cycling replace the typed `sec` with
+     unrelated groups. Now filters in the loop with
+     `case $line in "$cur"*)`.
+  2. **`mapfile` on macOS**: Apple ships `/bin/bash` 3.2.57 (last
+     GPLv2 release); `mapfile` is bash 4+. Every TAB on macOS
+     errored with `mapfile: command not found`. Replaced with
+     `while IFS= read -r` (the bash-3.2-portable form the brief
+     originally specified for the quoting reason).
+  3. **No `-o default` fallback**: `complete -F` without `-o default`
+     made empty COMPREPLY = no completion at all. The guide claimed
+     "ports without choices fall back to filename completion" — now
+     true. Added `-o default` to the `complete` line.
+
+  Also tightens the zsh script: guards against `${(@f)""}` producing
+  a one-element array containing the empty string (which would offer
+  `""` as a candidate), and calls `_default` on empty helper output
+  so filename completion kicks in for ports without choices and
+  legacy `$@` actions.
+
+  Behavioral test added — sources the generated bash script in a
+  `bash -c` subshell, sets `COMP_WORDS` / `COMP_CWORD`, invokes the
+  completion function, and inspects `COMPREPLY`. Pins all three fixes
+  end-to-end without an interactive readline. Script-content tests
+  pin that `mapfile` is NOT emitted, that `case $line in "$cur"*` is
+  present, that `complete -o default` is on the register line, and
+  that the zsh script has the `-z "$raw"` guard + `_default` call.
+
 ## [0.6.39] — 2026-10-25
 
 ### Added
