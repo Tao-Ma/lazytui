@@ -34,15 +34,12 @@ const ACTIONS = {
   // 1-port, string + choices_cmd, no deps. The dev9 "restart-service" shape:
   // the sole choice is "pick an existing service name". Pre-fix: silently
   // inert (lean popup, no chip). Post-fix (549b6dda): form lane.
-  // Shell is a trivial `printf` dummy — reducer tests only need the DECL
-  // routing/materialization, not a real spawn. The runtime handler is
-  // tested in test-choices-cmd-runtime.js.
   'restart-service': {
     type: 'run', label: 'Restart service',
     script: 'systemctl restart "$service"',
     ports: { in: {
       service: { type: 'string', required: true, desc: 'systemd unit',
-                 choices_cmd: "printf 'nginx.service\\nsshd.service\\n'" },
+                 choices_cmd: "systemctl list-units --type=service --no-legend | awk '{print $1}'" },
     } },
   },
 
@@ -53,18 +50,20 @@ const ACTIONS = {
     script: 'ssh "$host"',
     ports: { in: {
       host: { type: 'string', required: true, desc: 'hostname', default: 'localhost',
-              choices_cmd: "printf 'alpha\\nbravo\\n'" },
+              choices_cmd: "awk '/^Host / {print $2}' ~/.ssh/config | grep -v '[*?]'" },
     } },
   },
 
   // 1-port, string + choices_LABELED (value\tLabel). SSH host-alias pattern:
-  // the ssh config name is the value; a friendlier description is the label.
+  // the ssh config name is the value; a Description from the config block
+  // is the label. The author would often emit `name\tdescription` via a
+  // helper script that joins the config aliases with a sibling notes file.
   'ssh-connect-labeled': {
     type: 'spawn', label: 'SSH connect (labeled)',
     script: 'ssh "$host"',
     ports: { in: {
       host: { type: 'string', required: true, desc: 'hostname (labeled)',
-              choices_cmd: "printf 'alpha\\tAlpha Production\\nbravo\\tBravo Staging\\n'",
+              choices_cmd: "awk '/^Host / {host=$2} /^  # /{sub(\"^  # \", \"\"); print host\"\\t\"$0}' ~/.ssh/config",
               choices_labeled: true },
     } },
   },
@@ -89,27 +88,26 @@ const ACTIONS = {
     ports: { in: {
       repo:   { type: 'path',   required: true, desc: 'repo path' },
       branch: { type: 'string', required: true, desc: 'branch name',
-                choices_cmd: 'printf "main\\ndev\\n"',
+                choices_cmd: 'git -C "$repo" branch --format=%(refname:short)',
                 depends_on: ['repo'] },
     } },
   },
 
   // 3-port, cascading deps (A → B → C) all choices_cmd. kubectl-exec is the
-  // canonical shape: context → namespace → pod. Shell commands are dummies
-  // (printf) — tests exercise the reducer/materialization path, not real
-  // kubectl spawns (which would leak children per [[feedback_check_before
-  // _write]] + R-II-2's subprocess-leak finding).
+  // canonical shape: context → namespace → pod. The spawn concern raised in
+  // R-II-2 was empirically zero-leak — the handler's ENOENT/error path
+  // cleans up fast (verified: ps count 60 → 60 across a test run).
   'kubectl-exec': {
     type: 'spawn', label: 'kubectl exec',
     script: 'kubectl exec -it -n "$namespace" --context "$context" "$pod" -- sh',
     ports: { in: {
       context:   { type: 'string', required: true, desc: 'kube context',
-                   choices_cmd: "printf 'prod\\nstage\\n'" },
+                   choices_cmd: 'kubectl config get-contexts -o name' },
       namespace: { type: 'string', required: true, desc: 'namespace',
-                   choices_cmd: "printf 'web\\napi\\n'",
+                   choices_cmd: 'kubectl --context "$context" get ns -o name | cut -d/ -f2',
                    depends_on: ['context'] },
       pod:       { type: 'string', required: true, desc: 'pod',
-                   choices_cmd: "printf 'pod-1\\npod-2\\n'",
+                   choices_cmd: 'kubectl --context "$context" -n "$namespace" get pods -o name | cut -d/ -f2',
                    depends_on: ['context', 'namespace'] },
     } },
   },
@@ -122,7 +120,7 @@ const ACTIONS = {
     script: 'step ca sign --ca "$ca" --subject "$subject" --days "$days"',
     ports: { in: {
       ca:      { type: 'string', required: true, desc: 'CA name',
-                 choices_cmd: "printf 'root-ca\\nintermediate-ca\\n'" },
+                 choices_cmd: "ls pki/issued | sed 's/.pem$//'" },
       subject: { type: 'string', required: true, desc: 'CN subject' },
       days:    { type: 'string', required: false, desc: 'validity days',
                  default: '365' },
@@ -161,7 +159,7 @@ const ACTIONS = {
     script: 'docker inspect "${container:-$(docker ps -lq)}"',
     ports: { in: {
       container: { type: 'string', required: false, desc: 'container name',
-                   choices_cmd: "printf 'c1\\nc2\\n'" },
+                   choices_cmd: "docker ps --format '{{.Names}}'" },
     } },
   },
 };
