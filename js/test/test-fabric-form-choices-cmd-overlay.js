@@ -1,0 +1,131 @@
+/**
+ * Fabric multi-field FORM overlay — `choices_cmd:` chip + hint variants
+ * (args→ports slice 3). Mirrors test-fabric-form-choices-overlay.js's
+ * harness; verifies the overlay rendering reads the channel-agnostic
+ * `computed` slot (same `[fetching…]` / `[N choices]` / `[error]` chips)
+ * AND that the `[space] choices` hint fires for a focused choicesCmd
+ * field (gated on `choicesFnRef || choicesCmd` in js/overlay/fabric-form.js
+ * and js/dispatch/control/dispatch.js).
+ *
+ * Run: node js/test/test-fabric-form-choices-cmd-overlay.js
+ */
+'use strict';
+
+const { describe, it, assert, report } = require('./test-runner');
+const runtime = require('../app/runtime');
+const store = require('../model/store');
+const term = require('../io/term');
+const draw = require('../leaves/render/draw');
+const { renderFabricFormOverlay } = require('../overlay/fabric-form');
+
+// Mute OSC-52 noise.
+const _origWrite = term.stdout.write.bind(term.stdout);
+term.stdout.write = (chunk, ...rest) => {
+  const s = typeof chunk === 'string' ? chunk : '';
+  if (s.startsWith('\x1b]52;')) return true;
+  return _origWrite(chunk, ...rest);
+};
+draw.setWriter((s) => term.stdout.write(s));
+draw.setDimsProvider(() => ({
+  cols: process.stdout.columns || 80,
+  rows: process.stdout.rows || 24,
+}));
+
+function freshModel() {
+  const m = runtime.init();
+  m.currentGroup = 'g';
+  m.register = { history: [], cap: 10 };
+  process.stdout.columns = 120; process.stdout.rows = 30;
+  term.refreshSize();
+  return m;
+}
+function captureRaw(m, fn) {
+  store.setModel(m);
+  const chunks = [];
+  const orig = term.stdout.write;
+  term.stdout.write = (s) => { chunks.push(String(s)); return true; };
+  try { fn(); } finally { term.stdout.write = orig; }
+  return chunks.join('');
+}
+function captureStripped(m, fn) {
+  return captureRaw(m, fn).replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/\x1b\][^\x07]*\x07/g, '');
+}
+
+const PENDING = {
+  actionKey: 'worktree-add',
+  action: { label: 'Add worktree', type: 'run', script: 'wtadd "$repo" "$branch"',
+    ports: { in: {
+      repo:   { type: 'path',   required: true, desc: 'repo path' },
+      branch: { type: 'string', required: true, desc: 'branch',
+                choices_cmd: 'git -C "$repo" branch --format=%(refname:short)',
+                depends_on: ['repo'] },
+    } } },
+};
+
+function fieldsFor() {
+  return [
+    { port: 'repo',   text: '/some/repo', required: true, default: null, desc: 'repo path' },
+    { port: 'branch', text: '',           required: true, default: null, desc: 'branch',
+      choicesCmd: 'git -C "$repo" branch --format=%(refname:short)',
+      choicesLabeled: false, choicesTimeout: 3000,
+      dependsOn: ['repo'] },
+  ];
+}
+
+function openFormWithBranchFocused() {
+  let m = freshModel();
+  [m] = runtime.update(m, { type: 'fabric_form_enter', fields: fieldsFor(), pendingAction: PENDING });
+  [m] = runtime.update(m, { type: 'fabric_form_focus_next' });    // branch
+  return m;
+}
+
+describe('[fabric-form-choices-cmd-overlay] chips (channel-agnostic)', () => {
+  it('[fetching…] while pending (shared with fn path)', () => {
+    let m = openFormWithBranchFocused();
+    [m] = runtime.update(m, { type: 'fabric_form_choices_request', port: 'branch', requestId: 1 });
+    const out = captureStripped(m, () => renderFabricFormOverlay());
+    assert(out.includes('[fetching…]'), `expected [fetching…] chip, got:\n${out}`);
+  });
+
+  it('[N choices] after a resolved reply with N items', () => {
+    let m = openFormWithBranchFocused();
+    [m] = runtime.update(m, { type: 'fabric_form_choices_request', port: 'branch', requestId: 2 });
+    [m] = runtime.update(m, {
+      type: 'fabric_form_choices_resolved', port: 'branch', requestId: 2,
+      items: ['main', 'dev', 'feature-x'], labels: null, error: null,
+    });
+    const out = captureStripped(m, () => renderFabricFormOverlay());
+    assert(out.includes('[3 choices]'), `expected [3 choices], got:\n${out}`);
+  });
+
+  it('[error] when the command exited non-zero', () => {
+    let m = openFormWithBranchFocused();
+    [m] = runtime.update(m, { type: 'fabric_form_choices_request', port: 'branch', requestId: 3 });
+    [m] = runtime.update(m, {
+      type: 'fabric_form_choices_resolved', port: 'branch', requestId: 3,
+      items: [], labels: null, error: 'exit=128: not a git repo',
+    });
+    const out = captureStripped(m, () => renderFabricFormOverlay());
+    assert(out.includes('[error]'), `expected [error] chip, got:\n${out}`);
+  });
+});
+
+describe('[fabric-form-choices-cmd-overlay] [space] choices hint', () => {
+  it('shows [space] choices when a choicesCmd field is focused', () => {
+    const m = openFormWithBranchFocused();
+    const out = captureStripped(m, () => renderFabricFormOverlay());
+    assert(out.includes('[space] choices'),
+      `focused choicesCmd field must advertise [space] choices, got:\n${out}`);
+  });
+
+  it('does NOT show the hint when focused on the plain repo field', () => {
+    let m = freshModel();
+    [m] = runtime.update(m, { type: 'fabric_form_enter', fields: fieldsFor(), pendingAction: PENDING });
+    // repo focused by default
+    const out = captureStripped(m, () => renderFabricFormOverlay());
+    assert(!out.includes('[space] choices'),
+      `plain focused field should NOT advertise [space] choices, got:\n${out}`);
+  });
+});
+
+report();

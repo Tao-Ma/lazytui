@@ -287,7 +287,7 @@ function renderFabricFormOverlay() {
     rows.push('[dim]\\[up/down] move   \\[enter] pick   \\[esc] close popover[/]');
   } else {
     const focused = f.fields[f.focusIdx];
-    const hasChoices = focused && focused.choicesFnRef;
+    const hasChoices = focused && (focused.choicesFnRef || focused.choicesCmd);
     const spaceHint = hasChoices ? '   \\[space] choices' : '';
     rows.push(`[dim]\\[tab] next   \\[shift-tab] prev${spaceHint}   \\[enter] run   \\[esc] cancel[/]`);
   }

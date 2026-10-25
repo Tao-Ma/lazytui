@@ -1,6 +1,6 @@
 # Action ports — a guide for component authors (humans and AI)
 
-**Status:** shipped — slice 1 (v0.6.34) + slice 2 (`[Unreleased]`). The multi-field form is live for any action with 2+ declared `ports.in`; actions with a single port keep the pre-slice-1 one-field popup. **Computed choices (`choices_fn:` + `depends_on:`)** ship in slice 2 — see the "Computed choices" section below. Static `choices: [...]` + the review page + section grouping are planned follow-ups and are flagged inline below.
+**Status:** shipped — slice 1 (v0.6.34) + slice 2 (v0.6.35) + slice 3 (`[Unreleased]`). The multi-field form is live for any action with 2+ declared `ports.in`; actions with a single port keep the pre-slice-1 one-field popup. **Computed choices (`choices_fn:` + `depends_on:`)** ship in slice 2 — see the "Computed choices" section. **Shell-backed choices (`choices_cmd:` + `choices_labeled:` + `choices_timeout:`)** ship in slice 3 — see the "Shell-backed choices" section (the YAML-reachable sibling of `choices_fn:`). Static `choices: [...]` + the review page + section grouping are planned follow-ups and are flagged inline below.
 
 **For:** anyone writing a lazytui component or shell action — including AI assistants generating them. If you declare `ports.in` on an action, this doc tells you how your choices will render in the invoke-time form and how they'll bind at run time. The authoritative reference for the dataflow mechanics stays in [`docs/ports-and-wires.md`](ports-and-wires.md).
 
@@ -61,8 +61,11 @@ Each entry in `ports.in` is `{ name: { ...decl } }` where `name` is a strict ide
 | `default` | string \| number | — | Pre-fills the field in the form and lets the resolver fall back when nothing upstream supplies the value. **Not type-checked in slice 1** — the raw literal is stringified and used as-is. |
 | `desc` | string | `''` | One-line hint. Rendered under the field name in the form; keep it ≤ 60 chars for narrow terminals. |
 | `choices` | list | — | (planned) Static enum of allowed values; renders as inline cycle or popover depending on list length. |
-| `choices_fn` | string | — | Dotted ref `<component>.<fnName>` to a registered function the component ships; the fn returns the choices list at invoke time. See "Computed choices" below. |
-| `depends_on` | list | — | Sibling port names this port's `choices_fn` reads. Edits to a depended-on port, on blur, trigger a reactive refetch. |
+| `choices_fn` | string | — | Dotted ref `<component>.<fnName>` to a registered function the component ships; the fn returns the choices list at invoke time. Reachable only from Components / feature plugins (JS). See "Computed choices" below. |
+| `choices_cmd` | string | — | Shell command whose stdout provides the choices list at invoke time (one choice per line). Reachable from pure YAML. Mutually exclusive with `choices_fn:` — setting both is a parse error. See "Shell-backed choices" below. |
+| `choices_labeled` | bool | `false` | Only with `choices_cmd:`. When `true`, each output line is split on the first `\t` into `value\tlabel`; the overlay shows `label`, submits `value`. |
+| `choices_timeout` | int (ms) | `5000` | Only with `choices_cmd:`. Hard timeout for the shell command; SIGTERM at expiry → `[timeout]` chip. Max 60000. |
+| `depends_on` | list | — | Sibling port names this port's `choices_fn:` / `choices_cmd:` reads. Edits to a depended-on port, on blur, trigger a reactive refetch. For `choices_cmd:`, dep values are bound onto the child env (port name → env var, verbatim). |
 | `section` | string | — | (planned) Logical grouping for actions with 10+ ports. |
 
 Unknown port-level keys are **not** rejected at config load today — they're
@@ -200,7 +203,7 @@ role: { type: string, required: true,
         desc: "node role (worker | control | storage)" }
 ```
 
-Once static `choices:` ships (slice 3), `desc` stops carrying the enum list — the UI shows it. For now, carry it in `desc`. (If the enum is dynamic, see "Computed choices" below — `choices_fn:` already handles it.)
+Once static `choices:` ships (a later slice), `desc` stops carrying the enum list — the UI shows it. For now, carry it in `desc`. (If the enum is dynamic, see "Computed choices" or "Shell-backed choices" below — `choices_fn:` and `choices_cmd:` already handle that.)
 
 ---
 
@@ -405,16 +408,154 @@ Replay stays deterministic. The fn is a side effect — the first live invocatio
 
 ### When to pick `choices_fn` vs a static `choices:` (planned)
 
-- Static list, same for every invocation → `choices: [a, b, c]` (slice 3).
-- List depends on another port's value, or on live state (fs, process, db) → `choices_fn: component.fnName` + `depends_on: [...]`.
+- Static list, same for every invocation → `choices: [a, b, c]` (planned).
+- List depends on another port's value, or on live state (fs, process, db), reachable from JS → `choices_fn: component.fnName` + `depends_on: [...]`.
+- Same, but you're writing pure YAML (no Component) → `choices_cmd:` (next section).
 - Need both a static list and dynamic enrichment → use `choices_fn:` and have the fn return a static array.
+
+## Shell-backed choices — `choices_cmd:` + `choices_labeled:` + `choices_timeout:`
+
+The YAML-reachable sibling of `choices_fn:`. Instead of registering a JS function on a Component, declare a shell command whose stdout feeds the choices list — same effect channel, same `[fetching…]` / `[N choices]` / `[error]` / `[timeout]` chips, same popover (with a trailing `[+more…]` row if the result overflows the cap), same free-type-always-wins guarantee. Use this when you're writing pure YAML components (no project JS plugin loader exists).
+
+```yaml
+actions:
+  inspect:
+    label: Inspect container
+    script: docker exec -it "$container" sh
+    ports:
+      in:
+        container:
+          type: string
+          required: true
+          choices_cmd: "docker ps --format '{{.Names}}'"
+```
+
+Open the form, chip reads `[fetching…]` while `docker ps` runs, then `[N choices]` once the list arrives. `[space]` opens the popover.
+
+### Trust and shell binding
+
+`choices_cmd:` runs through `sh -c <cmd>` at the same trust bar as action `script:` — if you can author the YAML you already have arbitrary shell. There is no sandbox. Design your commands as you would an action's `script:`.
+
+Dependent ports are bound onto the child env with the **port name as the env var name, verbatim**. The brief's worktree-branch recipe is the pattern:
+
+```yaml
+ports:
+  in:
+    repo:
+      type: path
+      required: true
+      choices_cmd: "jq -r '.repos[].path' sessions.json"
+    branch:
+      type: string
+      required: true
+      choices_cmd: 'git -C "$repo" branch --format=%(refname:short)'
+      depends_on: [repo]
+```
+
+The command sees `$repo` as a plain env var — no `{{repo}}` templating, no new quoting rules. Change `repo` in the form, tab away, and `branch` refetches with the new value.
+
+### Env-shadow composition (why we recommend snake_case)
+
+Port names that would shadow a security-sensitive env var (`PATH`, `SHELL`, `LD_PRELOAD`, `BASH_FUNC_*`, …) go through the same two-layer defense the run path uses: the parser warns at config load (`port.env_shadow`) and the runtime drops the binding at spawn. In practice: a lowercase `path` port binds harmlessly to `$path`; an uppercase `PATH` port warns on load and never reaches the child env. The snake_case recommendation is already in this doc; with `choices_cmd:` the convention quietly does security work for free — no new rule to learn.
+
+The denylist today covers shell-level hijacks (`PATH`, `SHELL`, `LD_*`, `DYLD_*`, `BASH_ENV`, `ENV`, `BASH_FUNC_*`). It does **not** yet cover language-runtime hijack vars (`NODE_OPTIONS`, `PYTHONPATH`, `PYTHONSTARTUP`, `PERL5LIB`, `RUBYOPT`, `JAVA_TOOL_OPTIONS`). If your `choices_cmd:` or `script:` ever shells out to `node` / `python` / `perl` / `ruby` / `java`, prefer the lowercase convention or an explicit `_` suffix for dep ports whose names would land on one of those variables. Expanding the denylist to cover language runtimes is a planned follow-up.
+
+### Output format
+
+Default (`choices_labeled: false`): one line = one choice. CRLF normalized; blank lines dropped; literal tabs flattened to a single space (the overlay is one row per item, and a `\t` would emit a horizontal-tab escape that misaligns the next cell).
+
+With `choices_labeled: true`: split each line on the FIRST `\t` into `value\tlabel`. The overlay shows `label`, submits `value`. A line without a tab means label falls back to value — convenient for mixed lists where some entries don't need a long label.
+
+The popover is up/down + enter today (no filter). If you expect to add one later, keep the value text inside the label so a filter you'd want to type (`foo`) matches a visible label (`foo (expires 2027-01)`) rather than an invisible value.
+
+### Cap: 32 items
+
+`choices_cmd:` caps the choices list at **32 items** on landing (anything past is dropped and the popover paints a trailing `[+more…]` row). This is lower than `choices_fn:`'s cap (1024) for a reason: humans realistically scan ≤ ~32 items; past that the author's command is mis-shaped and should narrow at the shell (`grep`, `head`, filter) rather than lean on the overlay. The cap is a signal to the *author* to tighten the command, not an invitation for the user to scroll.
+
+If your command regularly returns > 32 items, add filtering at the command — the four dev9 recipes (`docker ps` names, cert CNs, session nodes, `.ovpn` basenames) all fit comfortably because the shell owns the narrowing.
+
+### Timeout: 5s default, per-port override
+
+A `choices_cmd:` command gets 5 seconds by default; declare `choices_timeout:` (ms) on the port to override. Expiry sends SIGTERM to the whole process group (so `sh` wrapping `sleep` dies too) and shows `[timeout]` on the chip. Free-type always works.
+
+Tune up for commands that legitimately run slow on a loaded host (`docker ps` on a dev-swarm, `kubectl get` with a slow API) — the fetch is async behind `[fetching…]`, so a generous timeout costs the user nothing. Keep it tight for commands that should return instantly (local fs globs, `jq` over a small file).
+
+**Author warning — `setsid` / `disown` / `nohup &` escape the process group.** The timeout + abort path kills the SIGTERM-reachable process group, which covers `sh -c 'sleep 10'` and anything the shell spawns normally. A command that explicitly detaches (`setsid longthing &`, `nohup longthing &`, `(cmd &)` with its own session) escapes into a new session that SIGTERM cannot follow. The leak is low-practical-risk (realistic recipes don't detach) but a careless `setsid`/`nohup` leaves an orphan the user won't notice. If you need to invoke something that forks a long-lived helper, do it from an action `script:` with a kill lifecycle you control, not from `choices_cmd:`.
+
+**Process-group kill is POSIX-only.** The handler uses `process.kill(-child.pid, SIGTERM)` to reach grand-children (shell-wrapped binaries). On Windows that call throws `EINVAL` and the fallback sends SIGTERM to just the shell — same propagation gap as before the fix. lazytui's declared targets are Linux/macOS; Windows is best-effort.
+
+### Four recipes
+
+```yaml
+# 1. docker ps — zero deps, output set changes between invocations
+inspect:
+  script: docker exec -it "$container" sh
+  ports: { in: { container: { type: string, required: true,
+    choices_cmd: "docker ps --format '{{.Names}}'" } } }
+
+# 2. Session node name — one command reused by six actions via YAML anchors
+#    (declare the anchor on the first consumer, then reference it from the rest).
+enable:
+  script: 'session_ctl enable "$node"'
+  ports:
+    in:
+      node: &node
+        type: string
+        required: true
+        choices_cmd: "jq -r '.nodes[].name' sessions.json"
+disable: { script: 'session_ctl disable "$node"', ports: { in: { node: *node } } }
+remove:  { script: 'session_ctl remove  "$node"', ports: { in: { node: *node } } }
+# …and so on for cmd / worktree-rm / worktree.repo — one anchor, six consumers.
+
+# 3. Reissue CN — the command owns the filtering (the CA cert must not appear)
+reissue:
+  script: 'pki reissue "$cn"'
+  ports:
+    in:
+      cn:
+        type: string
+        required: true
+        choices_cmd: |
+          ls pki/issued/ \
+            | sed 's/\.crt$//' \
+            | grep -v '^ca$'
+
+# 4. .ovpn basenames — simplest fs-glob case
+use:
+  script: 'openvpn --config "client/$cert_name.ovpn"'
+  ports:
+    in:
+      cert_name:
+        type: string
+        required: true
+        choices_cmd: 'cd client && ls *.ovpn | sed "s/\.ovpn$//"'
+```
+
+### Error paths
+
+Four ways `choices_cmd:` can land in a non-OK state:
+
+- **Non-zero exit** → `[error]` chip with the exit code + up to 4 KiB of stderr in the diag log.
+- **Timeout** → `[timeout]` chip; SIGTERM to the process group.
+- **Overflow** → stdout past 1 MiB kills the child and lands as an `[error]` chip. Defensive against a runaway command (`cat /dev/urandom`) — well above anything a realistic choices command needs.
+- **Spawn failure** (EACCES on an exec-forbidden mount, resource limits) → `[error]` chip with the spawn error message.
+
+All error paths also write a `diag-log.error('choices_cmd', …)` entry; chip is UX, diag-log is the trail. See `:diag` in the TUI. Diag entries can contain stderr fragments that echo dep values back — if a port carries anything secret-shaped, be aware that error entries persist.
+
+### A `choices_cmd:` port and a `[default]` chip
+
+A port with a `default:` AND a `choices_cmd:` paints `[N choices]` (or `[fetching…]` / `[error]`) in preference to `[default]`, even when the field's text equals the declared default. The choices chip is more useful (shows the picker is live) but the author loses the "this is pre-filled from `default:`" affordance. If you need to label the default, carry it in `desc:` as the "default: …" hint.
+
+### Shells at form-open time: `confirm:` does NOT gate `choices_cmd:`
+
+Action `confirm:` gates the action's `script:` — not the choices_cmd that fires at form-open. If a user tabs to an action with `confirm: true`, the form opens and any choicesCmd on a required port runs immediately (same as `choices_fn:`'s behavior). Author trust bar is already "YAML write = full shell"; the asymmetry is worth noting so you don't put side-effecting shells in `choices_cmd:` and assume `confirm:` fences them off. If the choices command has a cost (an API call, a slow query), consider adding `depends_on:` on a cheap sibling port so the fetch doesn't fire until the user actually interacts.
 
 ## Known limitations
 
-Two cases where slice 2's computed-choices surface currently falls short — both are planned work for later slices, documented here so you can design around them:
+Two cases where the computed-choices surface currently falls short — both apply to `choices_fn:` AND `choices_cmd:`, and both are planned work for later slices, documented here so you can design around them:
 
 - **Sticky-filled forms never open.** If every required port is already filled by a sticky inject (from a prior invocation's ports-pane edit) or a wire, the resolver reports `ready: true` and the form never opens — so the user can't reach the choices popover for a port that *would* have one. The `[a] edit args` keybind (listed under "Looking ahead" below) will open the form on demand even when every port is resolved; until it ships, a user who wants fresh choices has to clear the sticky inject via the ports pane first.
-- **Wire-fed deps don't retrigger `choices_fn` on new producer output.** The form snapshots a dep's text at open time; if a producer streams a fresh value to a wired dep after the form is up, the computed field keeps serving choices derived from the opened-at value. No reactive refetch fires until the user tabs through the dep (which, for a wire-fed field, they rarely do). A `wire_updated` subscription arm would fix this; it isn't in slice 2.
+- **Wire-fed deps don't retrigger `choices_fn:` / `choices_cmd:` on new producer output.** The form snapshots a dep's text at open time; if a producer streams a fresh value to a wired dep after the form is up, the computed field keeps serving choices derived from the opened-at value. No reactive refetch fires until the user tabs through the dep (which, for a wire-fed field, they rarely do). A `wire_updated` subscription arm would fix this; it isn't in slice 3 either.
 
 Neither case corrupts data — the submit path binds whatever's currently in the field — but both can leave the user looking at stale choices.
 
@@ -422,7 +563,7 @@ Neither case corrupts data — the submit path binds whatever's currently in the
 
 Slices after this one add the following, in rough order. All are purely additive — nothing in this doc goes stale.
 
-- `choices: [...]` — static enum ports render as inline-cycle (short list) or anchored popover (long list), reusing slice-2's chip + popover rendering as the degenerate case.
+- `choices: [...]` — static enum ports render as inline-cycle (short list) or anchored popover (long list), reusing the choices chip + popover rendering (now channel-agnostic) as the degenerate case.
 - A review page before run — Enter from the form opens a read-only "about to run" screen with the resolved argv/env.
 - A `[a] edit args` keybind on actions — opens the form even when nothing's missing, so the user can tweak defaults on a one-shot run.
 - `section: '…'` — opt-in grouping key for 10+ port actions.

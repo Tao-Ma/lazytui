@@ -406,6 +406,15 @@ function _promptMissing(actionKey, action, resolved) {
       // initial requests for fields with resolved deps.
       const choicesFnRef = typeof decl.choices_fn === 'string' && decl.choices_fn
         ? decl.choices_fn : null;
+      // args→ports slice 3: `choices_cmd:` shell-backed sibling + its two
+      // modifier keys. The parser already enforces mutual exclusion with
+      // `choices_fn:` (hard error) and clamps types.
+      const choicesCmd = typeof decl.choices_cmd === 'string' && decl.choices_cmd
+        ? decl.choices_cmd : null;
+      const choicesLabeled = decl.choices_labeled === true;
+      const choicesTimeout = typeof decl.choices_timeout === 'number'
+        && Number.isFinite(decl.choices_timeout) && decl.choices_timeout > 0
+        ? Math.floor(decl.choices_timeout) : null;
       const dependsOn = Array.isArray(decl.depends_on)
         ? decl.depends_on.filter((n) => typeof n === 'string' && n) : [];
       return {
@@ -415,6 +424,9 @@ function _promptMissing(actionKey, action, resolved) {
         default: def,
         desc: typeof decl.desc === 'string' ? decl.desc : '',
         choicesFnRef,
+        choicesCmd,
+        choicesLabeled,
+        choicesTimeout,
         dependsOn,
       };
     });

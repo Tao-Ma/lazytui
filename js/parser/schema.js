@@ -1174,6 +1174,90 @@ function validateActionPorts(aname, ports, ctx, warnings) {
             delete pdef.choices_fn;
           }
         }
+        // args→ports slice 3 — `choices_cmd:` + `choices_labeled:` + `choices_timeout:`.
+        // `choices_cmd:` is a shell-backed sibling of `choices_fn:` — a shell
+        // command whose stdout is split into choices through the same effect
+        // channel. Trust parity with action `script:` (if you can author the
+        // YAML you already have arbitrary shell). The env-shadow name check
+        // above (line ~1142) covers both arms uniformly — a port named `PATH`
+        // can't shadow regardless of which choices mechanism is used.
+        //
+        // Collision rule: `choices_cmd` + `choices_fn` on the same port is a
+        // HARD parse error (not warn-drop). The combination couldn't exist
+        // before this slice, so [[feedback_backcompat_on_new_validations]]
+        // doesn't apply — no previously-valid config is being newly rejected.
+        // Loud failure prevents silent precedence surprises.
+        if ('choices_cmd' in pdef) {
+          if ('choices_fn' in pdef) {
+            throw new SchemaError(
+              "'choices_cmd' and 'choices_fn' are both set on this port — pick one",
+              { context: pctx });
+          }
+          const cmd = pdef.choices_cmd;
+          if (typeof cmd !== 'string' || !cmd.trim()) {
+            if (warnings) {
+              warnings.push({
+                code: 'port.bad_choices_cmd',
+                message: `${pctx}: 'choices_cmd' must be a non-empty string — dropped`,
+              });
+            }
+            delete pdef.choices_cmd;
+          }
+        }
+        if ('choices_labeled' in pdef) {
+          if (typeof pdef.choices_labeled !== 'boolean') {
+            if (warnings) {
+              warnings.push({
+                code: 'port.bad_choices_labeled',
+                message: `${pctx}: 'choices_labeled' must be a boolean — dropped`,
+              });
+            }
+            delete pdef.choices_labeled;
+          }
+        }
+        if ('choices_timeout' in pdef) {
+          const t = pdef.choices_timeout;
+          const MAX_CHOICES_TIMEOUT = 60000;
+          const bad = typeof t !== 'number' || !Number.isFinite(t) || t <= 0
+            || t > MAX_CHOICES_TIMEOUT || Math.floor(t) !== t;
+          if (bad) {
+            if (warnings) {
+              warnings.push({
+                code: 'port.bad_choices_timeout',
+                message: `${pctx}: 'choices_timeout' must be a positive integer ms ≤ ${MAX_CHOICES_TIMEOUT} — dropped`,
+              });
+            }
+            delete pdef.choices_timeout;
+          }
+        }
+        // Dangling keys — `choices_labeled` / `choices_timeout` with neither
+        // `choices_cmd` nor `choices_fn` set is a no-op; warn-drop so the
+        // author sees the typo without a broken load. (For `choices_fn:`
+        // these keys also do nothing; the author presumably intended them
+        // for `choices_cmd:` and misspelled or lost a key.)
+        //
+        // ORDER MATTERS: these two checks run AFTER the type checks above
+        // that may `delete pdef.choices_cmd`. A bad `choices_cmd` is dropped
+        // first, then any lingering `choices_labeled`/`choices_timeout` fires
+        // dangling. Re-ordering the blocks silently breaks this.
+        if ('choices_labeled' in pdef && !('choices_cmd' in pdef)) {
+          if (warnings) {
+            warnings.push({
+              code: 'port.dangling_choices_labeled',
+              message: `${pctx}: 'choices_labeled' has no effect without 'choices_cmd' — dropped`,
+            });
+          }
+          delete pdef.choices_labeled;
+        }
+        if ('choices_timeout' in pdef && !('choices_cmd' in pdef)) {
+          if (warnings) {
+            warnings.push({
+              code: 'port.dangling_choices_timeout',
+              message: `${pctx}: 'choices_timeout' has no effect without 'choices_cmd' — dropped`,
+            });
+          }
+          delete pdef.choices_timeout;
+        }
         if ('depends_on' in pdef) {
           const raw = pdef.depends_on;
           if (!Array.isArray(raw)) {

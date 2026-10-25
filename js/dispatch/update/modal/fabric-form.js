@@ -80,6 +80,20 @@ function _depValuesForField(fields, dependsOn) {
   return dv;
 }
 
+// Cancel-effect key for an in-flight fetch tied to a field. Mirrors the key
+// the request arm attached when it emitted the fetch Cmd — different prefix
+// per channel so the two keyed-effect registries don't collide, and so the
+// right handler's AbortController fires.
+//
+// INVARIANT: this fn and the `fabric_form_choices_request` arm must tie-break
+// identically on fields that somehow carry BOTH channel keys (parser rejects
+// this at config load, but a hand-built Msg could bypass). Both pick cmd when
+// present; if you edit one branch, edit the other.
+function _cancelKeyForField(field, actionKey) {
+  const prefix = field.choicesCmd ? 'choices_cmd' : 'choices_fn';
+  return `${prefix}:${actionKey}.${field.port}`;
+}
+
 // Per-field text size ceiling, in JS String code units (UTF-16; NOT bytes —
 // 8192 code units can be anywhere from 8 KiB on all-ASCII to 32 KiB when the
 // field is all 4-byte emoji). A field is a prompt input — a thousand or two
@@ -146,10 +160,21 @@ function _normalize(raw) {
   const desc = raw && typeof raw.desc === 'string' ? raw.desc : '';
   const choicesFnRef = raw && typeof raw.choicesFnRef === 'string' && raw.choicesFnRef
     ? raw.choicesFnRef : null;
+  // args→ports slice 3 — `choices_cmd:` sibling. Mutually exclusive with
+  // `choicesFnRef` at the parser level (hard parse error if both set); the
+  // reducer treats either as "this field has a choices mechanism" via the
+  // `computed` slot.
+  const choicesCmd = raw && typeof raw.choicesCmd === 'string' && raw.choicesCmd
+    ? raw.choicesCmd : null;
+  const choicesLabeled = !!(raw && raw.choicesLabeled);
+  const choicesTimeout = raw && typeof raw.choicesTimeout === 'number'
+    && Number.isFinite(raw.choicesTimeout) && raw.choicesTimeout > 0
+    ? Math.floor(raw.choicesTimeout) : null;        // null → runtime default (5000)
   const dependsOn = raw && Array.isArray(raw.dependsOn)
     ? raw.dependsOn.filter((n) => typeof n === 'string' && n) : [];
-  const computed = choicesFnRef ? { ...EMPTY_COMPUTED } : null;
-  return { port, text, required, default: def, desc, choicesFnRef, dependsOn,
+  const computed = (choicesFnRef || choicesCmd) ? { ...EMPTY_COMPUTED } : null;
+  return { port, text, required, default: def, desc, choicesFnRef,
+           choicesCmd, choicesLabeled, choicesTimeout, dependsOn,
            computed, ..._chip(text, def) };
 }
 
@@ -218,7 +243,7 @@ function update(model, msg) {
       // and the fetch fires once the user tabs to a dep and provides a value.
       const initialRequests = [];
       for (const field of fields) {
-        if (!field.choicesFnRef) continue;
+        if (!field.choicesFnRef && !field.choicesCmd) continue;
         const deps = field.dependsOn || [];
         // Only fire when ALL deps have non-empty text — a request against
         // partially-resolved deps is almost always wasted (`choices_fn` for
@@ -308,7 +333,7 @@ function update(model, msg) {
         const actionKey = pending && pending.actionKey;
         for (let i = 0; i < f.fields.length; i++) {
           const field = f.fields[i];
-          if (!field.choicesFnRef) continue;
+          if (!field.choicesFnRef && !field.choicesCmd) continue;
           if (!(field.dependsOn || []).includes(blurredPort)) continue;
           const dv = _depValuesForField(f.fields, field.dependsOn);
           const allDepsSet = (field.dependsOn || []).every((n) => dv[n] && dv[n] !== '');
@@ -322,7 +347,7 @@ function update(model, msg) {
                 ...EMPTY_COMPUTED, state: 'idle', requestId: 0, inputsHash: null,
               }};
               if (actionKey) {
-                cancelCmds.push({ type: 'cancel_effect', key: `choices_fn:${actionKey}.${field.port}` });
+                cancelCmds.push({ type: 'cancel_effect', key: _cancelKeyForField(field, actionKey) });
               }
             }
             continue;
@@ -375,7 +400,7 @@ function update(model, msg) {
       if (actionKey) {
         for (const field of f.fields) {
           if (field.computed && field.computed.state === 'pending') {
-            cancelCmds.push({ type: 'cancel_effect', key: `choices_fn:${actionKey}.${field.port}` });
+            cancelCmds.push({ type: 'cancel_effect', key: _cancelKeyForField(field, actionKey) });
           }
         }
       }
@@ -429,7 +454,7 @@ function update(model, msg) {
       if (actionKey) {
         for (const field of f.fields) {
           if (field.computed && field.computed.state === 'pending') {
-            cancelCmds.push({ type: 'cancel_effect', key: `choices_fn:${actionKey}.${field.port}` });
+            cancelCmds.push({ type: 'cancel_effect', key: _cancelKeyForField(field, actionKey) });
           }
         }
       }
@@ -455,7 +480,7 @@ function update(model, msg) {
       const idx = f.fields.findIndex((x) => x.port === msg.port);
       if (idx < 0) return [model, []];
       const cur = f.fields[idx];
-      if (!cur.choicesFnRef) return [model, []];
+      if (!cur.choicesFnRef && !cur.choicesCmd) return [model, []];
       const depValues = msg.depValues !== undefined
         ? msg.depValues
         : _depValuesForField(f.fields, cur.dependsOn);
@@ -474,9 +499,21 @@ function update(model, msg) {
       }};
       const pending = f.pendingAction;
       const actionKey = pending && pending.actionKey;
-      return [withModal(model, { fabricForm: {
-        ...f, fields: nextFields, requestSeq: nextSeq,
-      } }), [{
+      // Branch on the channel the port declared. The two Cmds use different
+      // keyed-effect prefixes so same-port fetches on different channels
+      // don't collide, and `_cancelKeyForField` reads the same discriminator.
+      const fetchCmd = cur.choicesCmd ? {
+        type: 'fetch_choices_cmd',
+        key: `choices_cmd:${actionKey}.${cur.port}`,
+        cmd: cur.choicesCmd,
+        labeled: !!cur.choicesLabeled,
+        timeout: cur.choicesTimeout,            // null → runtime default
+        env: depValues,                         // port name → value, bound verbatim
+        port: cur.port,
+        requestId,
+        actionKey,
+        group: model.currentGroup || null,
+      } : {
         type: 'fetch_choices',
         key: `choices_fn:${actionKey}.${cur.port}`,
         ref: cur.choicesFnRef,
@@ -485,7 +522,10 @@ function update(model, msg) {
         requestId,
         actionKey,
         group: model.currentGroup || null,
-      }]];
+      };
+      return [withModal(model, { fabricForm: {
+        ...f, fields: nextFields, requestSeq: nextSeq,
+      } }), [fetchCmd]];
     }
     case 'fabric_form_choices_resolved': {
       // `{ port, actionKey?, requestId, items, labels, error, truncated? }` —
@@ -523,14 +563,20 @@ function update(model, msg) {
       const error = typeof msg.error === 'string' && msg.error ? msg.error : null;
       let truncated = !!msg.truncated;
       // R3F-BUG1 — belt-and-suspenders items cap. The MAX_CHOICES cap in
-      // choices-fn-runtime.js fires only for live fetches; a resolved Msg can
-      // reach this arm from THREE other paths that bypass the runtime: (1)
-      // replay fold of a pre-R1 WAL where the recorded payload is un-capped;
-      // (2) a future Component dispatching the Msg directly with its own
-      // items; (3) tests building hand-crafted payloads. Re-apply the cap
-      // here so the model NEVER holds more than MAX_CHOICES items regardless
-      // of entry path — single invariant to reason about on paint + replay.
-      const MAX_CHOICES_ARM = 1024;
+      // choices-fn-runtime.js / choices-cmd-runtime.js fires only for live
+      // fetches; a resolved Msg can reach this arm from THREE other paths that
+      // bypass the runtime: (1) replay fold of a pre-R1 WAL where the recorded
+      // payload is un-capped; (2) a future Component dispatching the Msg
+      // directly with its own items; (3) tests building hand-crafted payloads.
+      // Re-apply the cap here so the model NEVER holds more items than the UX
+      // invariant for the port's channel allows — single invariant to reason
+      // about on paint + replay.
+      //
+      // Slice-3 (choices_cmd:) tightens the cap to 32 per the "humans scan ≤32,
+      // past that the author must narrow at the shell" rationale (see guide).
+      // Slice-2 (choices_fn:) stays at 1024 for backcompat. Alignment is on a
+      // separate ticket.
+      const MAX_CHOICES_ARM = cur.choicesCmd ? 32 : 1024;
       if (items.length > MAX_CHOICES_ARM) {
         items = items.slice(0, MAX_CHOICES_ARM);
         if (labels) labels = labels.slice(0, MAX_CHOICES_ARM);
@@ -587,7 +633,7 @@ function update(model, msg) {
       const idx = f.fields.findIndex((x) => x.port === msg.port);
       if (idx < 0) return [model, []];
       const field = f.fields[idx];
-      if (!field.choicesFnRef) return [model, []];
+      if (!field.choicesFnRef && !field.choicesCmd) return [model, []];
       if (f.picking && f.picking.port === msg.port) return [model, []];   // idempotent
       return [withModal(model, { fabricForm: { ...f, picking: { port: msg.port, idx: 0 } } }), []];
     }

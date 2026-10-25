@@ -1071,9 +1071,9 @@ const _modeHandlers = {
       // Space on a focused computed-choices field opens the popover; on any
       // other field it falls through to the field-key edit (= a literal space
       // in the text), which preserves pre-slice-2 behavior for ports without
-      // `choices_fn:`.
+      // `choices_fn:` / `choices_cmd:`.
       const focused = fFresh && fFresh.fields[fFresh.focusIdx];
-      if (focused && focused.choicesFnRef) {
+      if (focused && (focused.choicesFnRef || focused.choicesCmd)) {
         applyMsg({ type: 'fabric_form_choices_open', port: focused.port });
       } else {
         applyMsg({ type: 'fabric_form_key', key, seq });

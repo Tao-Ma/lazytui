@@ -31,6 +31,13 @@
 >   `fetch_choices` Cmd + the C5-keyed runtime handler at
 >   `js/feature/choices-fn-runtime.js`. Replay-safe: fetch rides the effect
 >   channel, result lands as a WAL-captured reducer arm.
+> - **2026-10-25 — slice-3 (`choices_cmd:`) added a sibling Cmd channel**:
+>   same `fabric_form_choices_*` arms (now branch on `choicesFnRef ||
+>   choicesCmd`), new `fetch_choices_cmd` Cmd + runtime handler at
+>   `js/feature/choices-cmd-runtime.js`. Replay-safe (same mechanism —
+>   effect skipped on replay; recorded `fabric_form_choices_resolved` arm
+>   is the single truth). C5 keys use the `choices_cmd:` prefix so the two
+>   channels' keyed-effect registries can't collide.
 > - **§7 — the `viewer`/`detail` Component was dissolved (U2f)**; §7.4 is kept as a
 >   dated RETIRED record. The content slot is now the `info` / `text-view` /
 >   `agent` / `terminal` panes (**new §7.10**), all sharing the `tvu` reducer
@@ -546,10 +553,10 @@ dataflow mechanics.
 | `fabric_form_clear` | focused field: `text←''`; chips re-derived (guarded) | — | ✓ |
 | `fabric_form_submit` | writes a ONE-SHOT inject per MODIFIED field via chained `applyInject(…, {oneShot:true})` + closes (guarded) | `pendingAction` set → `[{type:'do_run', actionKey, action}]`; else `[]` | ✓² |
 | `fabric_form_cancel` | closes (guarded); no injects to roll back — submit is atomic by construction | `{type:'cancel_effect', key}` for every pending choices fetch (slice 2 — stops a slow fn from retaining `host.applyMsg` and writing a dead resolved Msg to the WAL) | ✓ |
-| `fabric_form_choices_request{port,requestId?,inputsHash?,depValues?}` | marks `fields[port].computed.state='pending'` + bumps `requestSeq` + stamps `computed.requestId`/`inputsHash` (missing fields auto-computed from form state) | `[{type:'fetch_choices', key:'choices_fn:<actionKey>.<port>', ref, port, values, requestId, actionKey, group}]`; no-op when port missing or has no `choicesFnRef` | ✓³ |
+| `fabric_form_choices_request{port,requestId?,inputsHash?,depValues?}` | marks `fields[port].computed.state='pending'` + bumps `requestSeq` + stamps `computed.requestId`/`inputsHash` (missing fields auto-computed from form state) | branches on field channel: `choicesFnRef` → `[{type:'fetch_choices', key:'choices_fn:<actionKey>.<port>', ref, port, values, requestId, actionKey, group}]`; `choicesCmd` → `[{type:'fetch_choices_cmd', key:'choices_cmd:<actionKey>.<port>', cmd, labeled, timeout, env, port, requestId, actionKey, group}]`; no-op when port missing or has neither channel | ✓³ |
 | `fabric_form_choices_resolved{port,actionKey?,requestId,items,labels?,error?,truncated?}` | triple stale-reply guard: fabricFormMode, `actionKey` matches `pendingAction.actionKey` (cross-form), AND `computed.requestId === msg.requestId`; writes `computed.{state,items,labels,error,truncated}` + clamps `picking.idx` if items[] shrunk below it | — | ✓ |
 | `fabric_form_choices_pick{port,value}` | writes `fields[port].text←value` via `_editCurrent` (chips recomputed) + clears `picking` | — | ✓ |
-| `fabric_form_choices_open{port}` | sets `picking={port, idx:0}` (guarded: field must have `choicesFnRef`; idempotent on same-port) | — | ✓ |
+| `fabric_form_choices_open{port}` | sets `picking={port, idx:0}` (guarded: field must have `choicesFnRef` or `choicesCmd`; idempotent on same-port) | — | ✓ |
 | `fabric_form_choices_close` | clears `picking` (identity-preserve when already closed) | — | ✓ |
 | `fabric_form_choices_nav{dir:-1|1}` | moves `picking.idx` within the current items (clamped, no wrap; identity-preserve at edges or when `state !== 'ok'`) | — | ✓ |
 
@@ -572,15 +579,21 @@ dataflow mechanics.
   chip) can drive them; slice 1 dispatches them from no keyboard binding (a
   bare `d`/`c` would steal typing — a dedicated hotkey is a follow-up).
 
-³ Replay-determinism (slice 2): the `fetch_choices` Cmd rides the effect
-  channel (`runEffects` early-returns under replay); the handler lives in
-  `js/feature/choices-fn-runtime.js` and dispatches the resolved payload back
-  as `fabric_form_choices_resolved`. That reducer arm's payload is captured in
-  the WAL, so a replay reproduces frames from the recorded reply WITHOUT
-  re-executing the component's fn — same discipline as the stream.js output
-  path. The C5 inflight registry keys the Cmd on
-  `'choices_fn:<actionKey>.<port>'`, so a dep-blur refetch aborts the prior
-  fetch's `AbortSignal` before the handler dispatches its reply.
+³ Replay-determinism (slice 2 + slice 3): the `fetch_choices` / `fetch_choices_cmd`
+  Cmd rides the effect channel (`runEffects` early-returns under replay); the
+  handlers live in `js/feature/choices-fn-runtime.js` and
+  `js/feature/choices-cmd-runtime.js` respectively and both dispatch the
+  resolved payload back as the SAME `fabric_form_choices_resolved` Msg (one
+  reducer arm, two source channels — no `source:` discriminator needed because
+  the arm reads only `items`/`labels`/`error`/`truncated`). That arm's payload
+  is captured in the WAL, so a replay reproduces frames from the recorded reply
+  WITHOUT re-executing the fn or re-spawning the shell — same discipline as the
+  stream.js output path. The C5 inflight registry keys the Cmds on
+  `'choices_fn:<actionKey>.<port>'` and `'choices_cmd:<actionKey>.<port>'`,
+  so a dep-blur refetch aborts the prior fetch's `AbortSignal` (fn path) or
+  the prior spawn's process group (cmd path) before the handler dispatches
+  its reply. The two prefixes also prevent the registries colliding if the
+  same port name is used across channels in different actions.
 
 ### 5.11 `fabric` (`update/fabric.js`) — the dataflow-fabric state store (NOT a modal)
 

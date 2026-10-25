@@ -604,6 +604,16 @@ function installBuiltins() {
   choicesRuntime.setRegistryHost({ getChoicesFn: api.getChoicesFn });
   choicesRuntime.registerFetchChoicesEffect(registerEffect);
 
+  // fetch_choices_cmd (args→ports slice 3): shell-backed sibling of
+  // fetch_choices. Spawns `sh -c <cmd>` with depends_on values bound onto
+  // the child env (same env-shadow denylist as action script:); dispatches
+  // the same `fabric_form_choices_resolved` arm the fn path uses. Keyed
+  // (`choices_cmd:<actionKey>.<port>`) so the C5 registry can abort an
+  // in-flight spawn on dep change / form cancel / submit, same shape as
+  // the fn arm's keying.
+  const choicesCmdRuntime = require('../../feature/choices-cmd-runtime');
+  choicesCmdRuntime.registerFetchChoicesCmdEffect(registerEffect);
+
   // cancel_effect: reducer-emitted abort for an in-flight keyed effect.
   // Reducers that know a side effect is no longer wanted (fabric_form_cancel
   // aborting pending choices fetches; a future "cancel a running job"
