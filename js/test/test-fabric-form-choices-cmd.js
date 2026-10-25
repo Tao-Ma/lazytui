@@ -121,11 +121,45 @@ describe('[fabric-form-choices-cmd] fabric_form_choices_request — emits fetch_
     eq(c.labeled, false);
     eq(c.timeout, 3000);
     eq(c.env, { repo: '/some/repo' });
+    eq(c.cwd, '.', 'cwd stamped from model.projectDir — parity with script:');
     eq(c.port, 'branch');
     eq(c.requestId, 7);
     eq(c.actionKey, 'worktree-add');
     eq(c.group, 'g');
     assert(!('ref' in c), 'no `ref` field — this is the cmd channel');
+  });
+
+  it('cwd tracks model.projectDir (parity with script: spawnOpts)', () => {
+    const m = openForm();
+    m.projectDir = '/opt/project';
+    const [, cmds] = runtime.update(m, {
+      type: 'fabric_form_choices_request', port: 'branch',
+      depValues: { repo: '/x' }, requestId: 1, inputsHash: 'h',
+    });
+    eq(cmds[0].cwd, '/opt/project');
+  });
+
+  it('fn-channel effect payload has NO cwd key (channel-asymmetric)', () => {
+    // Set up a fn-channel sibling form inline so we assert the branching
+    // reducer's fn arm is unchanged by this fix. The fn Cmd has `ref`, not
+    // `cwd` — choices_fn runs in-process and resolves paths via require/fs
+    // from the component author's perspective, not from projectDir.
+    const m = freshModel();
+    const fnFields = [
+      { port: 'file', text: '/tmp/x.md', required: true, default: null, desc: 'file' },
+      { port: 'section', text: '', required: true, default: null, desc: 'section',
+        choicesFnRef: 'edit.sections_of', dependsOn: ['file'] },
+    ];
+    const [withForm] = runtime.update(m, {
+      type: 'fabric_form_enter', fields: fnFields,
+      pendingAction: { actionKey: 'edit-section', action: { label: 'Edit', type: 'run' } },
+    });
+    const [, cmds] = runtime.update(withForm, {
+      type: 'fabric_form_choices_request', port: 'section',
+      depValues: { file: '/tmp/x.md' }, requestId: 1, inputsHash: 'h',
+    });
+    eq(cmds[0].type, 'fetch_choices');
+    assert(!('cwd' in cmds[0]), 'fn channel does NOT carry cwd — in-process, not spawned');
   });
 
   it('a port with no choicesCmd AND no choicesFnRef is invisible to request', () => {

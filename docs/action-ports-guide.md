@@ -436,6 +436,8 @@ Open the form, chip reads `[fetching…]` while `docker ps` runs, then `[N choic
 
 `choices_cmd:` runs through `sh -c <cmd>` at the same trust bar as action `script:` — if you can author the YAML you already have arbitrary shell. There is no sandbox. Design your commands as you would an action's `script:`.
 
+The command runs in the component's `project_dir` (same cwd as the action's `script:`), so project-relative paths behave identically in both. The four recipes above assume this — e.g. `jq -r '.repos[].path' sessions.json` reads `sessions.json` from the component directory, same as if the action's script did it.
+
 Dependent ports are bound onto the child env with the **port name as the env var name, verbatim**. The brief's worktree-branch recipe is the pattern:
 
 ```yaml

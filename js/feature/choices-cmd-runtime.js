@@ -88,7 +88,7 @@ function _diagError(code, message) {
  * `fetch_choices` registration.
  *
  * eff shape (built in the reducer, consumed here):
- *   { type: 'fetch_choices_cmd', key, cmd, labeled, timeout, env,
+ *   { type: 'fetch_choices_cmd', key, cmd, labeled, timeout, env, cwd,
  *     port, requestId, actionKey, group }
  */
 function registerFetchChoicesCmdEffect(registerEffect) {
@@ -146,6 +146,12 @@ function registerFetchChoicesCmdEffect(registerEffect) {
 
     const labeled = !!eff.labeled;
 
+    // cwd parity with script: (stream.js:339 / action-runner.js:239) — project-
+    // relative paths in choices_cmd resolve the same way they do in the action
+    // the port belongs to. Non-string / empty → inherit (pre-fix behavior; also
+    // keeps old WALs' payload shape harmless).
+    const cwd = typeof eff.cwd === 'string' && eff.cwd ? eff.cwd : undefined;
+
     let child;
     try {
       // `detached: true` puts the child in its own process group (pgid === pid).
@@ -160,6 +166,7 @@ function registerFetchChoicesCmdEffect(registerEffect) {
         env: childEnv,
         stdio: ['ignore', 'pipe', 'pipe'],
         detached: true,
+        ...(cwd ? { cwd } : {}),
       });
     } catch (e) {
       const em = String((e && e.message) || e);

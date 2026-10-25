@@ -24,6 +24,9 @@
  */
 'use strict';
 
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { section, assert, eq, report } = require('./test-runner');
 const runtime = require('../feature/choices-cmd-runtime');
 
@@ -289,6 +292,71 @@ async function waitFor(predicate, timeoutMs) {
     eq(dispatched[0].items.length, 32);
     eq(dispatched[0].labels.length, 32);
     eq(dispatched[0].truncated, true);
+  }
+
+  // ---------------------------------------------------------------- cwd set
+  section('[choices-cmd-runtime] cwd set — pwd resolves inside eff.cwd');
+  {
+    // Fresh tempdir so there's no risk of inheriting the process cwd by
+    // accident. `fs.realpathSync` on both sides so macOS /tmp→/private/tmp
+    // symlink wouldn't fail equality (CI is Linux but keep portable).
+    const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ccrcwd-')));
+    try {
+      const { dispatched, host } = makeHost();
+      handler({
+        type: 'fetch_choices_cmd', key: 'choices_cmd:a.p',
+        cmd: 'pwd',
+        labeled: false, timeout: 5000, env: {},
+        cwd: tmp,
+        port: 'p', requestId: 14, actionKey: 'a', group: 'g',
+      }, host);
+      await waitFor(() => dispatched.length, 3000);
+      eq(dispatched.length, 1);
+      eq(dispatched[0].error, null);
+      eq(fs.realpathSync(dispatched[0].items[0]), tmp, 'pwd printed eff.cwd');
+    } finally {
+      try { fs.rmdirSync(tmp); } catch (_) { /* best-effort */ }
+    }
+  }
+
+  // ---------------------------------------------------------------- cwd absent
+  section('[choices-cmd-runtime] cwd absent — spawn inherits process cwd');
+  {
+    const { dispatched, host } = makeHost();
+    handler({
+      type: 'fetch_choices_cmd', key: 'choices_cmd:a.p',
+      cmd: 'pwd',
+      labeled: false, timeout: 5000, env: {},
+      // cwd omitted — pre-fix behavior (inherit)
+      port: 'p', requestId: 15, actionKey: 'a', group: 'g',
+    }, host);
+    await waitFor(() => dispatched.length, 3000);
+    eq(dispatched.length, 1);
+    eq(dispatched[0].error, null);
+    eq(fs.realpathSync(dispatched[0].items[0]), fs.realpathSync(process.cwd()),
+      'pwd matches process.cwd when eff.cwd omitted');
+  }
+
+  // ---------------------------------------------------------------- cwd bad
+  section('[choices-cmd-runtime] cwd nonexistent → error payload, releaseKey, no hang');
+  {
+    const { dispatched, released, host } = makeHost();
+    // Node's spawn with a bad cwd emits ENOENT via the async `error` event
+    // (verified: NOT a synchronous throw), so this exercises the handler's
+    // `child.on('error', ...)` branch, not the try/catch around spawn.
+    handler({
+      type: 'fetch_choices_cmd', key: 'choices_cmd:a.p',
+      cmd: 'echo hi',
+      labeled: false, timeout: 5000, env: {},
+      cwd: '/nonexistent-xyz-choices-cmd-cwd-test',
+      port: 'p', requestId: 16, actionKey: 'a', group: 'g',
+    }, host);
+    await waitFor(() => dispatched.length, 3000);
+    eq(dispatched.length, 1, 'settled once');
+    eq(dispatched[0].items, []);
+    assert(/ENOENT/.test(dispatched[0].error || ''),
+      `error carries ENOENT, got: ${dispatched[0].error}`);
+    eq(released.length, 1, 'releaseKey called so the C5 inflight entry clears');
   }
 
   // ---------------------------------------------------------------- supersede

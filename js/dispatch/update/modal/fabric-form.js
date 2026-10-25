@@ -509,6 +509,7 @@ function update(model, msg) {
         labeled: !!cur.choicesLabeled,
         timeout: cur.choicesTimeout,            // null → runtime default
         env: depValues,                         // port name → value, bound verbatim
+        cwd: model.projectDir || null,          // parity with script: (stream.js spawnOpts / action-runner bg)
         port: cur.port,
         requestId,
         actionKey,

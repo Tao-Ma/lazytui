@@ -6,6 +6,20 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`choices_cmd:` now runs in the component's `project_dir`.** Parity with
+  action `script:` (which already spawns under `getModel().projectDir` in
+  `stream.js` / `action-runner.js`): project-relative paths in a
+  `choices_cmd:` recipe resolve identically whether the fetch is firing or
+  the action is running. Previously the choices child inherited the TUI
+  process cwd — so the guide's own project-relative recipes (`ls
+  pki/issued/`, `jq -r '…' sessions.json`, `cd client && ls *.ovpn`) only
+  worked when the TUI was launched from the project root and painted
+  `[error]` / empty from anywhere else. Configs with `project_dir: '.'`
+  (the default) are byte-identical to before — `cwd: '.'` resolves against
+  the process cwd exactly as the pre-fix inherit did.
+
 ## [0.6.36] — 2026-10-25
 
 ### Added
