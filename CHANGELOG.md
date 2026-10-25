@@ -6,6 +6,8 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.39] — 2026-10-25
+
 ### Added
 
 - **Shell tab-completion from the YAML port schema** (`--completion` /
