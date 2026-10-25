@@ -143,6 +143,64 @@ function fieldsFor1() {
   ];
 }
 
+describe('[fabric-form-choices-cmd-overlay] popover overflow cap — hint + footer stay visible', () => {
+  // R2-BUG2: at ≥~rows items the popover used to grow unbounded, swallowing
+  // the help line and required-missing footer. Fix caps displayed items so
+  // chrome always fits; slice follows picking.idx; overflow indicator shows
+  // "N of M — up/down to scroll".
+  // Shared helper: open form, fire request + resolved so items populate,
+  // open popover. runtime.update doesn't process chained Msgs, so request
+  // and resolved are explicit.
+  function openWithItems(items) {
+    let m = freshModel();
+    [m] = runtime.update(m, { type: 'fabric_form_enter', fields: fieldsFor1(), pendingAction: PENDING_1 });
+    [m] = runtime.update(m, { type: 'fabric_form_choices_request', port: 'name', requestId: 1 });
+    [m] = runtime.update(m, {
+      type: 'fabric_form_choices_resolved', port: 'name', actionKey: 'pick', requestId: 1,
+      items, labels: null, error: null,
+    });
+    [m] = runtime.update(m, { type: 'fabric_form_choices_open', port: 'name' });
+    return m;
+  }
+
+  it('30 items on a 30-row terminal: popover caps, hint line + footer visible, indicator paints', () => {
+    const bigItems = Array.from({ length: 30 }, (_, i) => `item${i + 1}`);
+    const m = openWithItems(bigItems);
+    const out = captureStripped(m, () => renderFabricFormOverlay());
+    assert(/\[\d+ of 30 — up\/down to scroll\]/.test(out),
+      `expected "[N of 30 — up/down to scroll]" indicator, got:\n${out}`);
+    assert(out.includes('[up/down] move'),
+      `help line must stay visible with cap applied, got:\n${out}`);
+    assert(out.includes('required inputs still missing: name'),
+      `footer must stay visible with cap applied, got:\n${out}`);
+    // The slice is centered on picking.idx (0 at open), so item1 shows but
+    // item30 does NOT (would require scroll).
+    assert(out.includes('item1'), 'item1 (near picking.idx) visible');
+    assert(!out.includes('item30'), 'item30 (past window) NOT visible without scroll');
+  });
+
+  it('30 items + picking advanced to idx 25: window shifts to show item 25', () => {
+    const bigItems = Array.from({ length: 30 }, (_, i) => `item${i + 1}`);
+    let m = openWithItems(bigItems);
+    // Press Down 25 times to advance picking.idx to 25.
+    for (let i = 0; i < 25; i++) {
+      [m] = runtime.update(m, { type: 'fabric_form_choices_nav', dir: 1 });
+    }
+    const out = captureStripped(m, () => renderFabricFormOverlay());
+    assert(out.includes('item25'), `item25 (focus) visible after scroll, got:\n${out}`);
+    assert(out.includes('[up/down] move'), 'help line still pinned');
+  });
+
+  it('10 items on 30-row terminal: no cap applied, no overflow indicator', () => {
+    const smallItems = Array.from({ length: 10 }, (_, i) => `item${i + 1}`);
+    const m = openWithItems(smallItems);
+    const out = captureStripped(m, () => renderFabricFormOverlay());
+    assert(!out.includes('— up/down to scroll'),
+      `no overflow indicator for 10 items on 30-row, got:\n${out}`);
+    assert(out.includes('item10'), 'all 10 items visible');
+  });
+});
+
 describe('[fabric-form-choices-cmd-overlay] 1-field form paints chip + help without chrome drops', () => {
   it('[fetching…] chip paints and [space] choices hint shows on the sole field', () => {
     let m = freshModel();

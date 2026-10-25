@@ -230,7 +230,31 @@ function renderFabricFormOverlay() {
         if (c.items.length === 0) {
           rows.push(`${' '.repeat(leftW)}[dim](no choices)[/]`);
         } else {
-          for (let i = 0; i < c.items.length; i++) {
+          // Cap displayed items so the help line + required-missing footer
+          // stay visible on tall-choices lists (R2-BUG2: items ≥~viewport
+          // rows otherwise swallowed the hint). Reserve ~10 rows for all
+          // chrome (border + section headers + any sibling fields' rows +
+          // still-missing hint + help). Minimum budget is 5 so even on a
+          // tiny terminal the picker is still usable. The slice follows
+          // `picking.idx` — user presses Down past the window and the
+          // slice shifts, so overflow is navigable, not hidden.
+          const CHROME_RESERVE = 10;
+          const budget = Math.max(5, (vp.rows || 24) - CHROME_RESERVE);
+          const total = c.items.length;
+          const willOverflow = total > budget;
+          let sliceStart = 0;
+          let sliceEnd = total;
+          if (willOverflow) {
+            // Reserve one row for the "N of M" indicator at the bottom.
+            const windowSize = budget - 1;
+            const half = Math.floor(windowSize / 2);
+            sliceStart = Math.max(0, picking.idx - half);
+            sliceEnd = Math.min(total, sliceStart + windowSize);
+            // If the picking.idx is near the end, pull sliceStart back so
+            // we still show `windowSize` items (not fewer).
+            sliceStart = Math.max(0, sliceEnd - windowSize);
+          }
+          for (let i = sliceStart; i < sliceEnd; i++) {
             // R2C-SMELL1 — `labels[i]` was truthy-checked, which treated an
             // explicit empty-string label as "no label" and fell back to the
             // raw item. An author passing `labels: ['', 'Beta']` wanted blank
@@ -243,12 +267,18 @@ function renderFabricFormOverlay() {
               : esc(label);
             rows.push(`${' '.repeat(leftW)}${painted}`);
           }
-          // R1B-BUG1: choices runtime caps items at MAX_CHOICES; the overlay
-          // tells the user the fn's return was longer than the cap so they
-          // know what they're not seeing.
-          if (c.truncated) {
-            // Escape the leading `[` so Rich doesn't try to parse `[+more…]`
-            // as a markup tag (same discipline as the chip strings).
+          if (willOverflow) {
+            // "N of M" + the `+` suffix means "the fn also returned MORE
+            // than M that we had already dropped at the cap" (R1B-BUG1's
+            // original `[+more…]` cue, merged into this one line).
+            const shown = sliceEnd - sliceStart;
+            const totalLabel = `${total}${c.truncated ? '+' : ''}`;
+            rows.push(`${' '.repeat(leftW)}[dim]\\[${shown} of ${totalLabel} — up/down to scroll][/]`);
+          } else if (c.truncated) {
+            // R1B-BUG1: choices runtime caps items at MAX_CHOICES; the overlay
+            // tells the user the fn's return was longer than the cap so they
+            // know what they're not seeing. Escape the leading `[` so Rich
+            // doesn't try to parse `[+more…]` as a markup tag.
             rows.push(`${' '.repeat(leftW)}[dim]\\[+more…][/]`);
           }
         }

@@ -8,6 +8,17 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Choices popover now caps its displayed items so the help line + required-
+  missing footer stay visible on long lists.** Previously, a choices_cmd that
+  returned ≥~viewport-rows items grew the popover unbounded and swallowed the
+  bottom chrome; items past the viewport also required scrolling into unseen
+  rows. The popover now shows a sliding window centered on `picking.idx`
+  (default budget: viewport rows − 10 for chrome; minimum 5) and prints a
+  `[N of M — up/down to scroll]` indicator at the bottom. Users press Up/Down
+  past the window edge and the slice follows. The runtime's `[+more…]`
+  truncation suffix (`choices_cmd` cap of 32 items / `choices_fn` cap of
+  1024) now folds into the overflow indicator as `M+` when applicable.
+
 - **1-port actions with `choices_fn:` / `choices_cmd:` now open the form
   so the choices chip + `[space]` popover are reachable.** The lean
   single-field `fabric-field` popup has no choices machinery (computed
