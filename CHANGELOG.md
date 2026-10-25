@@ -6,6 +6,23 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **1-port actions with `choices_fn:` / `choices_cmd:` now open the form
+  so the choices chip + `[space]` popover are reachable.** The lean
+  single-field `fabric-field` popup has no choices machinery (computed
+  slot, fetch arms, popover live only in `fabric-form`), so a 1-port
+  action that declared a choices channel was silently inert in the TUI
+  — the parser accepted the keys, the CLI was unaffected, but the
+  prompt opened the lean popup, no fetch fired, and `[space]` inserted
+  a literal space. First consumer hit this immediately (6 of their 12
+  `choices_cmd:` declarations are single-port — arguably the best
+  choice cases: pick an existing node/container/cert from a list).
+  Routing fix only: `_promptMissing` now takes the form lane when any
+  declared port carries `choices_fn:` or `choices_cmd:`. 1-port
+  actions **without** choices keep the lean popup unchanged — pre-
+  slice-1 behavior.
+
 ## [0.6.37] — 2026-10-25
 
 ### Fixed

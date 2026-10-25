@@ -99,7 +99,7 @@ The form groups fields by requiredness, required first:
 - The port's `name` is the left-column label — pick names that read well there. `source_url` beats `src`.
 - `desc` is a dim one-liner under the input. Users scan it; don't repeat the port name.
 - Chips: `[default]` when text equals the declared default; `[modified]` when edited; `[unset]` when empty and no default.
-- An action with **exactly one** declared port opens the lean single-field `fabric-field` popup instead — no form chrome. Design one-port actions with that in mind: a long `desc` has room to breathe.
+- An action with **exactly one** declared port opens the lean single-field `fabric-field` popup instead — no form chrome. Design one-port actions with that in mind: a long `desc` has room to breathe. **Exception:** a one-port action whose port declares `choices_fn:` or `choices_cmd:` opens the (one-field) form instead so the choices chip and `[space]` popover are reachable — the lean popup has no choices machinery.
 
 ---
 
@@ -430,7 +430,7 @@ actions:
           choices_cmd: "docker ps --format '{{.Names}}'"
 ```
 
-Open the form, chip reads `[fetching…]` while `docker ps` runs, then `[N choices]` once the list arrives. `[space]` opens the popover.
+Open the form, chip reads `[fetching…]` while `docker ps` runs, then `[N choices]` once the list arrives. `[space]` opens the popover. This recipe is a **one-port** action — the lane rule above routes it through the (one-field) form so the chip + popover are reachable; `choices_cmd:` works on single-port actions and multi-port actions the same way.
 
 ### Trust and shell binding
 

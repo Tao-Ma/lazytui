@@ -70,12 +70,15 @@ describe('[action-runner-prompt] _promptMissing: 1-port lane opens fabric-field'
     assert(typeof runner._consumeOneShotInjects === 'function', '_consumeOneShotInjects exported');
   });
 
-  it('a 1-port action with a required missing opens fabric-field (not the form)', () => {
+  it('a 1-port action WITHOUT choices and a required missing opens fabric-field (not the form)', () => {
+    // Pre-slice-1 regression — ACTION_REQUIRED has no choices_fn:/choices_cmd:,
+    // so the lean single-line popup is still the right lane. The lane-choice
+    // test for 1-port + choices lives in the EXCEPTION describe below.
     boot();
     const opened = runner._promptMissing('verify', ACTION_REQUIRED, resolved([{ port: 'file', reason: 'x' }]));
     assert(opened === true, 'returns true to signal "modal opened; do not run"');
     assert(getModel().modes.fabricFieldMode === true, 'fabric-field modal opened');
-    assert(!getModel().modes.fabricFormMode, 'FORM did NOT open — 1-port stays on the lean single-line popup');
+    assert(!getModel().modes.fabricFormMode, 'FORM did NOT open — 1-port no-choices stays on the lean single-line popup');
     eq(getModel().modal.fabricField.addr, 'verify.file', 'addr is `actionKey.portName`');
     const pa = getModel().modal.fabricField.pendingAction;
     assert(pa != null, 'pendingAction stored on modal state');
@@ -89,6 +92,52 @@ describe('[action-runner-prompt] _promptMissing: 1-port lane opens fabric-field'
     assert(opened === false, 'returns false — nothing required to prompt');
     assert(!getModel().modes.fabricFieldMode, 'no modal was opened');
     assert(!getModel().modes.fabricFormMode, 'no form opened either');
+  });
+});
+
+describe('[action-runner-prompt] _promptMissing: 1-port EXCEPTION — choices → form lane', () => {
+  // The lean fabric-field popup has no choices machinery (computed slot,
+  // fetch arms, [space] popover live only in fabric-form). A 1-port action
+  // that declares choices_fn:/choices_cmd: would silently drop the
+  // affordance — chip never paints, popover unreachable. The exception:
+  // route such actions through the form so the one-field form carries the
+  // chip + popover the decl asked for.
+
+  it('1 port + choices_cmd → fabric-FORM, initial fetch fires at open (dep-less port)', () => {
+    const ACTION_CMD = {
+      type: 'run', script: 'echo "$name"',
+      ports: { in: { name: { type: 'string', required: true, choices_cmd: "printf 'a\\nb\\n'" } } },
+    };
+    boot();
+    const opened = runner._promptMissing('pick', ACTION_CMD, resolved([{ port: 'name', reason: 'x' }]));
+    assert(opened === true);
+    assert(getModel().modes.fabricFormMode === true, 'fabric-FORM opened (not fabric-field)');
+    assert(!getModel().modes.fabricFieldMode, 'fabric-field did NOT open');
+    const f = getModel().modal.fabricForm;
+    eq(f.fields.length, 1, 'one-field form');
+    eq(f.fields[0].port, 'name');
+    eq(f.fields[0].choicesCmd, "printf 'a\\nb\\n'");
+    eq(f.fields[0].computed.state, 'pending', 'dep-less choicesCmd field fetches at open');
+  });
+
+  it('1 port + choices_fn → fabric-FORM carries choicesFnRef on the field', () => {
+    const ACTION_FN = {
+      type: 'run', script: 'echo "$name"',
+      ports: { in: { name: { type: 'string', required: true, choices_fn: 'pick.names' } } },
+    };
+    boot();
+    const opened = runner._promptMissing('pickfn', ACTION_FN, resolved([{ port: 'name', reason: 'x' }]));
+    assert(opened === true);
+    assert(getModel().modes.fabricFormMode === true, 'fabric-FORM opened for choices_fn too');
+    const f = getModel().modal.fabricForm;
+    eq(f.fields.length, 1);
+    eq(f.fields[0].choicesFnRef, 'pick.names');
+    // State varies: choices_fn runs in-process synchronously, so an
+    // unregistered ref resolves to 'error' by the end of the dispatch
+    // chain; a registered ref would reach 'ready'. The routing contract
+    // is that choicesFnRef is CARRIED on the field (field.computed slot
+    // exists), not any specific final state.
+    assert(f.fields[0].computed, 'computed slot allocated for the choicesFn field');
   });
 });
 

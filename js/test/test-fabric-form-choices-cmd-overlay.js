@@ -128,4 +128,48 @@ describe('[fabric-form-choices-cmd-overlay] [space] choices hint', () => {
   });
 });
 
+// --- 1-field form render (slice-3 follow-up: 1-port actions with choices now
+//     route through the form; verify the one-field variant paints the chip,
+//     field label, and [space] help without crashing or dropping chrome.) ---
+
+const PENDING_1 = { actionKey: 'pick',
+  action: { label: 'Pick', type: 'run', script: 'echo "$name"',
+    ports: { in: { name: { type: 'string', required: true,
+                           choices_cmd: "printf 'a\\nb\\n'" } } } } };
+function fieldsFor1() {
+  return [
+    { port: 'name', text: '', required: true, default: null, desc: 'name',
+      choicesCmd: "printf 'a\\nb\\n'", choicesLabeled: false, choicesTimeout: null, dependsOn: [] },
+  ];
+}
+
+describe('[fabric-form-choices-cmd-overlay] 1-field form paints chip + help without chrome drops', () => {
+  it('[fetching…] chip paints and [space] choices hint shows on the sole field', () => {
+    let m = freshModel();
+    [m] = runtime.update(m, { type: 'fabric_form_enter', fields: fieldsFor1(), pendingAction: PENDING_1 });
+    // runtime.update doesn't process chained Msg Cmds — fire the request
+    // explicitly (the real dispatch loop would do this on enter for a
+    // dep-less computed field).
+    [m] = runtime.update(m, { type: 'fabric_form_choices_request', port: 'name', requestId: 1 });
+    const out = captureStripped(m, () => renderFabricFormOverlay());
+    assert(out.includes('name'), `field label present, got:\n${out}`);
+    assert(out.includes('[fetching…]'), `expected [fetching…] on 1-field form, got:\n${out}`);
+    assert(out.includes('[space] choices'),
+      `[space] choices hint must show (sole field is focused + has choicesCmd), got:\n${out}`);
+  });
+
+  it('[N choices] chip paints after resolved reply on the 1-field form', () => {
+    let m = freshModel();
+    [m] = runtime.update(m, { type: 'fabric_form_enter', fields: fieldsFor1(), pendingAction: PENDING_1 });
+    [m] = runtime.update(m, { type: 'fabric_form_choices_request', port: 'name', requestId: 1 });
+    [m] = runtime.update(m, {
+      type: 'fabric_form_choices_resolved', port: 'name', actionKey: 'pick', requestId: 1,
+      items: ['a', 'b'], labels: null, error: null,
+    });
+    const out = captureStripped(m, () => renderFabricFormOverlay());
+    assert(out.includes('[2 choices]'),
+      `expected [2 choices] after resolve on 1-field form, got:\n${out}`);
+  });
+});
+
 report();

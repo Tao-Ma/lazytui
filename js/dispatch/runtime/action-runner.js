@@ -363,16 +363,22 @@ function _resolvePortsForAction(actionKey, action, model) {
 
 /**
  * P2 — open the invoke-time popup over an action's inputs. Two lanes:
- *   - **2+ declared `ports.in`** → the multi-field `fabric-form` overlay
- *     (args→ports slice 1). All declared ports are materialized as form fields,
- *     pre-filled from `resolved.values` (inject/wire/default) where present,
- *     with their decl's `required`/`default`/`desc` carried through so the
- *     form's chips ([default]/[modified]/[unset]) classify correctly. Submit
- *     writes one one-shot inject per *modified* field + re-emits do_run.
- *   - **1 declared port** → the single-line `fabric-field` overlay (pre-slice-1
- *     behavior). Opens over the one required-missing port; submit writes a
- *     one-shot inject + re-emits do_run; next re-dispatch loops to the next
- *     required missing (there is none for a 1-port action, so it runs).
+ *   - **2+ declared `ports.in` — OR any declared port carrying a choices
+ *     channel (`choices_fn:` / `choices_cmd:`)** → the multi-field
+ *     `fabric-form` overlay (args→ports slice 1). All declared ports are
+ *     materialized as form fields, pre-filled from `resolved.values`
+ *     (inject/wire/default) where present, with their decl's `required`/
+ *     `default`/`desc` carried through so the form's chips
+ *     ([default]/[modified]/[unset]) classify correctly. Submit writes one
+ *     one-shot inject per *modified* field + re-emits do_run. The choices
+ *     machinery (computed slot, fetch arms, chips, popover, cancel wiring)
+ *     is form-lane only, so a 1-port action with a choices channel takes
+ *     this lane too, so the affordance it declared is reachable.
+ *   - **1 declared port, no choices channel** → the single-line
+ *     `fabric-field` overlay (pre-slice-1 behavior). Opens over the one
+ *     required-missing port; submit writes a one-shot inject + re-emits
+ *     do_run; next re-dispatch loops to the next required missing (there
+ *     is none for a 1-port action, so it runs).
  *
  * `resolved` is the `{ready, values, sources, missing}` from `_resolvePortsForAction`;
  * the caller already computed it before deciding to prompt, so we take it as a
@@ -389,7 +395,18 @@ function _promptMissing(actionKey, action, resolved) {
   if (!requiredMissing) return false;
 
   const declNames = Object.keys(inputs);
-  if (declNames.length >= 2) {
+  // Form lane: 2+ ports, OR any declared port carrying a choices channel.
+  // The lean fabric-field popup has no choices machinery (computed slot,
+  // fetch arms, popover are form-lane only), so a 1-port action with
+  // choices_fn:/choices_cmd: routes through the form to get the affordance.
+  // 1-port actions without choices keep the lean popup — pre-slice-1
+  // behavior, unchanged.
+  const anyChoices = declNames.some((p) => {
+    const d = inputs[p] || {};
+    return (typeof d.choices_fn === 'string' && d.choices_fn)
+        || (typeof d.choices_cmd === 'string' && d.choices_cmd);
+  });
+  if (declNames.length >= 2 || anyChoices) {
     // Multi-field form lane. Materialize every declared port — not just the
     // missing ones — so the user sees the whole action's inputs at once with
     // whatever's already resolved pre-filled. A port's `text` is:

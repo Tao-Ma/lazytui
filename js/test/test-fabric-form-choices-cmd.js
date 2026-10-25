@@ -286,4 +286,73 @@ describe('[fabric-form-choices-cmd] dep-blur refetch emits fetch_choices_cmd', (
   });
 });
 
+// --- 1-field form shape (slice-3 follow-up: 1-port actions with choices_cmd:
+//     now route through the form; the form has never opened with exactly one
+//     field before, so pin that Tab/Shift-Tab are harmless no-ops, Enter
+//     submits, and Esc cancels + aborts the in-flight fetch.) ---
+
+const PENDING_1 = { actionKey: 'pick',
+  action: { label: 'Pick', type: 'run', script: 'echo $name',
+    ports: { in: { name: { type: 'string', required: true,
+                           choices_cmd: "printf 'a\\nb\\n'" } } } } };
+function fieldsFor1() {
+  return [
+    { port: 'name', text: '', required: true, default: null, desc: 'name',
+      choicesCmd: "printf 'a\\nb\\n'", choicesLabeled: false, choicesTimeout: null, dependsOn: [] },
+  ];
+}
+function openForm1() {
+  const m = freshModel();
+  const [next] = runtime.update(m, {
+    type: 'fabric_form_enter', fields: fieldsFor1(), pendingAction: PENDING_1,
+  });
+  return next;
+}
+
+describe('[fabric-form-choices-cmd] 1-field form — Tab/Shift-Tab wrap to self (not a crash)', () => {
+  it('Tab on a 1-field form leaves focus on the sole field', () => {
+    let m = openForm1();
+    eq(m.modal.fabricForm.focusIdx, 0, 'opens focused on the one field');
+    [m] = runtime.update(m, { type: 'fabric_form_focus_next' });
+    eq(m.modal.fabricForm.focusIdx, 0, 'Tab wraps to self');
+    eq(m.modal.fabricForm.fields.length, 1, 'field count stable');
+  });
+
+  it('Shift-Tab on a 1-field form leaves focus on the sole field', () => {
+    let m = openForm1();
+    [m] = runtime.update(m, { type: 'fabric_form_focus_prev' });
+    eq(m.modal.fabricForm.focusIdx, 0, 'Shift-Tab wraps to self');
+  });
+});
+
+describe('[fabric-form-choices-cmd] 1-field form — submit emits do_run', () => {
+  it('Enter on a filled 1-field form submits and emits do_run', () => {
+    let m = openForm1();
+    [m] = runtime.update(m, { type: 'fabric_form_key', seq: 'x' });
+    const [, cmds] = runtime.update(m, { type: 'fabric_form_submit' });
+    // do_run is a direct Cmd ({type:'do_run', actionKey, action}),
+    // not a wrapped {type:'msg', msg:{type:'do_run'}} — see
+    // fabric-form.js:440 and the sibling 2-field test at line 256.
+    const run = cmds.find((c) => c.type === 'do_run');
+    assert(run, 'do_run emitted');
+    eq(run.actionKey, 'pick');
+  });
+});
+
+describe('[fabric-form-choices-cmd] 1-field form — Esc cancels and aborts in-flight fetch', () => {
+  it('cancel on a 1-field form with a pending choicesCmd fetch emits cancel_effect', () => {
+    // runtime.update doesn't process chained Msg Cmds — the real dispatch
+    // loop would run the initial fetch_choices_cmd request on enter. Fire it
+    // manually here to put the field into 'pending'.
+    let m = openForm1();
+    [m] = runtime.update(m, { type: 'fabric_form_choices_request', port: 'name', requestId: 1 });
+    eq(m.modal.fabricForm.fields[0].computed.state, 'pending', 'manually dispatched request → pending');
+    const [, cmds] = runtime.update(m, { type: 'fabric_form_cancel' });
+    const cancels = cmds.filter((c) => c.type === 'cancel_effect');
+    eq(cancels.length, 1, 'one cancel_effect fired');
+    assert(cancels[0].key.startsWith('choices_cmd:'),
+      `cancel targets the cmd channel, got key=${cancels[0].key}`);
+  });
+});
+
 report();
