@@ -145,6 +145,18 @@ function resolveAction(config, actionPath) {
 }
 
 /**
+ * Compute the action's working directory from configPath + config.project_dir.
+ * Shared with completion.js so `choices_cmd:` fetches during TAB resolve
+ * project-relative paths the same way the invoked action does (v0.6.37
+ * fix: parity with action script:).
+ */
+function projectDirFor(configPath, config) {
+  return (config && config.project_dir)
+    ? path.resolve(path.dirname(configPath), config.project_dir)
+    : path.dirname(path.resolve(configPath));
+}
+
+/**
  * Run an action by qualified path. Returns a Promise that resolves with
  * the subprocess exit code; the caller is expected to call process.exit.
  */
@@ -178,9 +190,7 @@ function runCli(configPath, actionPath, actionArgs) {
     return Promise.resolve(1);
   }
 
-  const cwd = config.project_dir
-    ? path.resolve(path.dirname(configPath), config.project_dir)
-    : path.dirname(path.resolve(configPath));
+  const cwd = projectDirFor(configPath, config);
 
   // Convergence (docs/ports-and-wires.md P1 — shell path): if the action
   // declares `ports.in`, map CLI positional args to port names in declaration
@@ -200,6 +210,33 @@ function runCli(configPath, actionPath, actionArgs) {
       process.stderr.write(
         `tui --exec: missing required port(s): ${missing.join(', ')}\n` +
         `  usage: --exec ${actionPath} ${portNames.map((n) => `<${n}>`).join(' ')}\n`);
+      // Companion to shell-completion (feat): if the FIRST missing port
+      // has a choices_cmd:, resolve it (2s cap) and surface the valid
+      // values on an ADDITIONAL stderr line. Keeps the two lines above
+      // byte-identical for anyone grepping `tui --exec: missing` or
+      // `  usage:`; this is purely additive. Legacy ports / choices_fn /
+      // slow-cmd / spawn failure → silently emit nothing (don't delay
+      // the exit for an unhelpful hint).
+      const firstMissing = missing[0];
+      const firstDecl = portDecls[firstMissing] || {};
+      if (typeof firstDecl.choices_cmd === 'string' && firstDecl.choices_cmd) {
+        const { complete: _complete } = require('./completion');
+        try {
+          // Reuse the same completion helper so the resolve semantics
+          // match TAB exactly: same cwd, same env shadow, same 2.5s cap.
+          // cword points at `firstMissing`'s positional slot; words
+          // reconstruct what the user typed up to the error.
+          const words = ['do', groupPath, actionKey, ...actionArgs];
+          const posIdx = portNames.indexOf(firstMissing);
+          const cword = 3 + posIdx;
+          return _complete(configPath, cword, words).then((candidates) => {
+            if (candidates && candidates.length) {
+              process.stderr.write(`  valid ${firstMissing}: ${candidates.join(', ')}\n`);
+            }
+            return 1;
+          }, () => 1);
+        } catch (_) { /* fall through */ }
+      }
       return Promise.resolve(1);
     }
     childArgs = [];                                      // ports supersede $@
@@ -276,5 +313,10 @@ function runList(configPath, filter) {
 
 module.exports = {
   runCli, runList,
+  // Shared helpers reused by completion.js (shell TAB) — exported here
+  // to avoid a parallel group/action walker (CLI/TUI drift class the
+  // codebase already guards against; see v0.6.29 postmortem).
+  listActions, iterActions, resolveAction, mergeForGroup: _mergeForGroup,
+  projectDirFor,
   FEATURE_PLUGINS,   // the shared feature-plugin list (also registered in the TUI) — for the drift guard
 };

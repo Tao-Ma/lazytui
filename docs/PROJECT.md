@@ -124,7 +124,12 @@ The project provides:
 - **Scripts and data** the actions invoke
 - **A way to invoke `tui.js`** — typically a thin wrapper script in the
   project root (e.g. `./do tui` or `make tui`) that calls
-  `node <path-to-lazytui/js/app/tui.js> <path-to-config.yml>`
+  `node <path-to-lazytui/js/app/tui.js> <path-to-config.yml>`.
+  The wrapper should **forward all extra args** to the entry point via
+  `"$@"` so flags like `--list`, `--exec`, `--completion`, and
+  `--complete` (shell tab-completion, v0.6.39) work through it
+  verbatim. A single `exec … "$@"` line satisfies this; no per-flag
+  passthrough case is needed.
 
 A project that doesn't provide these is just an empty directory the
 framework refuses to start in. The framework is a renderer; the

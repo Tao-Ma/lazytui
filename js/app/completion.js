@@ -1,0 +1,348 @@
+/**
+ * Shell tab-completion from the YAML port schema.
+ *
+ * Two user-facing flags live on the main entry point:
+ *   --completion bash|zsh [--cmd <name>]
+ *       Print a one-shot completion script to stdout. The script collects
+ *       the current words and calls back to --complete for candidates.
+ *       Install:  eval "$(./do --completion zsh --cmd ./do)"
+ *       Or source into ~/.zshrc / ~/.bashrc etc. The script contains NO
+ *       absolute paths — the callback uses `--cmd`'s literal name — so
+ *       the consumer's wrapper handles node/NODE_PATH/config as it does
+ *       for every other invocation.
+ *   --complete <cword> -- <word1> <word2> …
+ *       The dynamic candidate helper. Prints one candidate per line to
+ *       stdout; exits 0 always (any error, timeout, unknown state → empty
+ *       output + exit 0; stderr noise during TAB is a completion-system
+ *       bug). <cword> is 1-based: word 0 is the command itself.
+ *
+ * Completion logic (cword branches):
+ *   cword == 1 → group paths (incl. dotted subgroup paths) that contain
+ *                actions. Reuses listActions traversal — no parallel walk.
+ *   cword == 2 → action keys within the group path in word1.
+ *   cword >= 3 → positional port in the action's `ports.in` declaration
+ *                order. Port has choices_cmd → run it, print normalized
+ *                items. choices_fn → nothing (Components aren't booted in
+ *                CLI mode). No ports.in (legacy `$@`) → nothing.
+ *
+ * choices_cmd execution semantics mirror the TUI fetch, with two
+ * deliberate differences:
+ *   - cwd = projectDirFor(configPath, config) — same as `script:` spawns.
+ *   - Env binding: all earlier positionals bind to port names (not just
+ *     depends_on — the words are already typed; binding them is strictly
+ *     more useful). Shadow-named ports (PATH, LD_PRELOAD, BASH_FUNC_*,
+ *     …) are filtered via filterShadowedPortValues (silently — no stderr
+ *     during TAB).
+ *   - Timeout: min(choices_timeout ?? 5000, 2500) ms. A hung TAB freezes
+ *     the user's prompt — tighter cap than the TUI. SIGTERM to the whole
+ *     process group (detached: true + process.kill(-pid, 'SIGTERM')).
+ *     On timeout: print nothing, exit 0.
+ *   - Normalization: parseChoicesStdout (same leaf the TUI uses) — CRLF,
+ *     blank-line drop, labeled split, 32-item cap on items displayed.
+ *     choices_labeled: true → emit VALUES only; labels are popover UX.
+ *
+ * Pure logic (generateScript / complete) separated from printing so tests
+ * can call it directly.
+ */
+'use strict';
+
+const { spawn } = require('child_process');
+const { loadConfig } = require('./state');
+const { getModel } = require('../model/store');
+const {
+  listActions, iterActions, resolveAction, mergeForGroup, projectDirFor,
+} = require('./cli');
+const { parseChoicesStdout } = require('../leaves/text/choices-lines');
+const { filterShadowedPortValues } = require('../dispatch/runtime/action-runner');
+
+// Timeout cap — tighter than the TUI's 5000 default: a hung TAB freezes
+// the user's prompt. Honors a per-port choices_timeout: UPPER-BOUNDED by
+// this constant; a smaller per-port value still wins.
+const COMPLETION_TIMEOUT_MAX_MS = 2500;
+const COMPLETION_TIMEOUT_DEFAULT_MS = 2500;
+// Same 32 cap the choices_cmd runtime applies — humans realistically scan
+// ≤ ~32 items; past that the author's command is mis-shaped.
+const MAX_COMPLETION_ITEMS = 32;
+
+// -----------------------------------------------------------------------
+// Shell script generation
+// -----------------------------------------------------------------------
+
+/**
+ * Return a bash or zsh completion script string for `cmdName`. The script
+ * is deliberately dumb: it collects the current words via standard shell
+ * mechanisms and calls back to `--complete`. Contains NO absolute paths —
+ * all tool resolution happens through `cmdName` itself, so the consumer's
+ * wrapper handles its own invocation details.
+ */
+function generateScript(shell, cmdName) {
+  if (!cmdName || typeof cmdName !== 'string') cmdName = 'do';
+  if (shell === 'bash') return _bashScript(cmdName);
+  if (shell === 'zsh') return _zshScript(cmdName);
+  throw new Error(`unsupported shell: ${shell} (expected 'bash' or 'zsh')`);
+}
+
+function _bashScript(cmdName) {
+  // Function name must be a valid shell identifier — strip non-alnum from
+  // cmdName, prefix with `_lazytui_complete_` so it won't collide with
+  // generic function names.
+  const fn = `_lazytui_complete_${cmdName.replace(/[^a-zA-Z0-9]/g, '_')}`;
+  // The function:
+  //   1. Delegates to `<cmdName> --complete <cword> -- <words>` for candidates.
+  //   2. Fills COMPREPLY by reading lines (while IFS= read -r); never
+  //      `compgen -W` which word-splits (candidates may contain spaces).
+  //   3. Always exits 0 regardless of callback failure (TAB must not noise).
+  // COMP_CWORD is 0-based in bash (word 0 = command); we pass it as-is and
+  // the complete() receiver treats it as 1-based elsewhere — document that
+  // bash passes 0-based cword and the receiver understands.
+  return `# lazytui bash completion — generated by \`${cmdName} --completion bash\`
+${fn}() {
+  local cword=\${COMP_CWORD}
+  local candidates
+  mapfile -t candidates < <(${cmdName} --complete "$cword" -- "\${COMP_WORDS[@]}" 2>/dev/null)
+  COMPREPLY=("\${candidates[@]}")
+  return 0
+}
+complete -F ${fn} ${cmdName}
+`;
+}
+
+function _zshScript(cmdName) {
+  const fn = `_lazytui_complete_${cmdName.replace(/[^a-zA-Z0-9]/g, '_')}`;
+  // zsh: $CURRENT is 1-based (word 1 = command). We pass CURRENT as-is;
+  // the complete() receiver interprets cword consistently (word 0 = command
+  // for bash's 0-based, word 1 = first after cmd for zsh's 1-based). Pin
+  // the cword normalization: the receiver subtracts 1 from zsh's value in
+  // the wrapper below (so both shells feed the receiver with cword
+  // "positional index relative to the FIRST word AFTER the command").
+  return `# lazytui zsh completion — generated by \`${cmdName} --completion zsh\`
+${fn}() {
+  local -a candidates
+  local cword=$(( CURRENT - 1 ))
+  candidates=("\${(@f)$(${cmdName} --complete "$cword" -- "\${words[@]}" 2>/dev/null)}")
+  compadd -- "\${candidates[@]}"
+}
+compdef ${fn} ${cmdName}
+`;
+}
+
+// -----------------------------------------------------------------------
+// Dynamic completion helper
+// -----------------------------------------------------------------------
+
+/**
+ * Compute candidates for the current cword given the typed words.
+ *   configPath   — path to the YAML config
+ *   cword        — index of the word being completed (0-based: word 0 is
+ *                  the command itself; word 1 is the first positional)
+ *   words        — the full word list, words[0] = command, words[1..] =
+ *                  positionals typed so far
+ * Returns Promise<string[]>. Resolves with an empty array on any error.
+ */
+async function complete(configPath, cword, words) {
+  const safeExit = () => [];
+  if (typeof cword !== 'number' || !Number.isFinite(cword) || cword < 1) return safeExit();
+  if (!Array.isArray(words) || words.length === 0) return safeExit();
+  const config = await _loadSafely(configPath);
+  if (!config) return safeExit();
+
+  // cword == 1 → group paths
+  if (cword === 1) return _completeGroupPaths(config);
+
+  // cword == 2 → action keys within the group path at words[1]
+  if (cword === 2) return _completeActionKeys(config, words[1]);
+
+  // cword >= 3 → positional port
+  return _completePositionalArg(configPath, config, cword, words);
+}
+
+async function _loadSafely(configPath) {
+  try {
+    loadConfig(configPath);
+    const config = getModel().config;
+    return config || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function _completeGroupPaths(config) {
+  // Only emit group paths that have at least one action (the user's TAB
+  // for cword==1 is "pick a group to invoke under" — a group with no
+  // actions can't appear as word 1 of a valid invocation).
+  const seen = new Set();
+  for (const { path } of iterActions(config)) {
+    const groupPath = path.split(':')[0];
+    seen.add(groupPath);
+  }
+  return Array.from(seen).sort();
+}
+
+function _completeActionKeys(config, groupPath) {
+  if (typeof groupPath !== 'string' || !groupPath) return [];
+  const group = (config.groups || {})[groupPath];
+  if (!group) return [];
+  const actions = mergeForGroup(group, groupPath, config);
+  return Object.keys(actions).sort();
+}
+
+async function _completePositionalArg(configPath, config, cword, words) {
+  // words = [cmdName, groupPath, actionKey, posArg0, posArg1, …]
+  // cword points at a positional (cword >= 3). Positional index into
+  // ports.in is cword - 3.
+  const groupPath = words[1];
+  const actionKey = words[2];
+  if (!groupPath || !actionKey) return [];
+  const resolved = resolveAction(config, `${groupPath}:${actionKey}`);
+  if (resolved.error || !resolved.action) return [];
+  const action = resolved.action;
+  const portsIn = action.ports && action.ports.in;
+  if (!portsIn) return [];                              // legacy "$@" action
+  const portNames = Object.keys(portsIn);
+  const portIdx = cword - 3;
+  if (portIdx < 0 || portIdx >= portNames.length) return [];
+  const portName = portNames[portIdx];
+  const portDecl = portsIn[portName];
+  if (!portDecl || typeof portDecl !== 'object') return [];
+  // choices_fn: unsupported in CLI mode — Components aren't booted. Don't
+  // fake candidates; let the shell fall back to default/file completion.
+  if (typeof portDecl.choices_cmd !== 'string' || !portDecl.choices_cmd) return [];
+
+  const cmd = portDecl.choices_cmd;
+  const labeled = portDecl.choices_labeled === true;
+  const timeoutMs = _pickTimeout(portDecl.choices_timeout);
+  const envBindings = _bindEarlierPositionals(words, portNames, portIdx);
+  const cwd = projectDirFor(configPath, config);
+
+  const { items } = await _spawnAndCapture({ cmd, cwd, env: envBindings, timeoutMs, labeled });
+  // Items are already normalized + capped by parseChoicesStdout; apply
+  // belt-and-suspenders cap here in case the leaf's cap drifts (same
+  // defensive-cap discipline as the R3F-BUG1 fix in fabric-form.js).
+  return items.slice(0, MAX_COMPLETION_ITEMS);
+}
+
+function _pickTimeout(portTimeout) {
+  if (typeof portTimeout !== 'number' || !Number.isFinite(portTimeout) || portTimeout <= 0) {
+    return COMPLETION_TIMEOUT_DEFAULT_MS;
+  }
+  return Math.min(portTimeout, COMPLETION_TIMEOUT_MAX_MS);
+}
+
+function _bindEarlierPositionals(words, portNames, portIdx) {
+  // Bind every positional typed so far to its port name (not just
+  // depends_on — the words are sitting right there; binding them is
+  // strictly more useful). words[3..] are positionals; positional i
+  // binds to portNames[i].
+  const raw = {};
+  for (let i = 0; i < portIdx; i++) {
+    const value = words[3 + i];
+    if (typeof value === 'string') {
+      raw[portNames[i]] = value;
+    }
+  }
+  // Shadow filter — silently drop PATH / LD_PRELOAD / BASH_FUNC_* etc.
+  // No stderr noise (completion must stay silent).
+  const { safe } = filterShadowedPortValues(raw);
+  return { ...process.env, ...safe };
+}
+
+function _spawnAndCapture({ cmd, cwd, env, timeoutMs, labeled }) {
+  return new Promise((resolve) => {
+    let child;
+    try {
+      child = spawn('sh', ['-c', cmd], {
+        cwd, env,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        detached: true,                       // own process group so SIGTERM reaches grand-children
+      });
+    } catch (_) {
+      resolve({ items: [], labels: null });
+      return;
+    }
+
+    let stdoutBytes = 0;
+    const stdoutChunks = [];
+    const MAX_STDOUT = 1024 * 1024;           // 1 MiB defensive cap (same as choices-cmd-runtime)
+    let settled = false;
+    let timedOut = false;
+
+    const killGroup = () => {
+      try { process.kill(-child.pid, 'SIGTERM'); }
+      catch (_) {
+        try { child.kill('SIGTERM'); } catch (__) { /* already gone */ }
+      }
+    };
+
+    const settle = (payload) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(alarm);
+      resolve(payload);
+    };
+
+    const alarm = setTimeout(() => {
+      if (settled) return;
+      timedOut = true;
+      killGroup();
+      // Give the kill a moment to propagate; if 'close' doesn't fire soon
+      // we still want to return. Resolve now — empty on timeout.
+      settle({ items: [], labels: null });
+    }, timeoutMs);
+
+    child.stdout.on('data', (buf) => {
+      if (stdoutBytes + buf.length > MAX_STDOUT) {
+        killGroup();
+        return;
+      }
+      stdoutBytes += buf.length;
+      stdoutChunks.push(buf);
+    });
+    // stderr is intentionally ignored — completion must stay silent.
+    child.stderr.on('data', () => {});
+    child.on('error', () => settle({ items: [], labels: null }));
+    child.on('close', (code) => {
+      if (timedOut || settled) return;
+      if (code !== 0) { settle({ items: [], labels: null }); return; }
+      let parsed;
+      try {
+        parsed = parseChoicesStdout(Buffer.concat(stdoutChunks).toString('utf8'), { labeled });
+      } catch (_) {
+        settle({ items: [], labels: null });
+        return;
+      }
+      settle(parsed);
+    });
+  });
+}
+
+// -----------------------------------------------------------------------
+// CLI runners (print + exit — thin wrappers over the pure logic)
+// -----------------------------------------------------------------------
+
+function runGenerateScript(shell, cmdName) {
+  try {
+    const script = generateScript(shell, cmdName);
+    process.stdout.write(script);
+    return Promise.resolve(0);
+  } catch (e) {
+    process.stderr.write(`tui --completion: ${e.message}\n`);
+    return Promise.resolve(1);
+  }
+}
+
+async function runCompletion(configPath, cword, words) {
+  // Any error path returns 0 with empty output — stderr noise during TAB
+  // is a completion-system bug. The one exception: a usage error (missing
+  // config path) is detected by the caller before we reach here.
+  try {
+    const candidates = await complete(configPath, cword, words);
+    for (const c of candidates) process.stdout.write(c + '\n');
+  } catch (_) { /* swallow — silent TAB */ }
+  return 0;
+}
+
+module.exports = {
+  generateScript, complete,
+  runGenerateScript, runCompletion,
+  COMPLETION_TIMEOUT_MAX_MS, COMPLETION_TIMEOUT_DEFAULT_MS, MAX_COMPLETION_ITEMS,
+};

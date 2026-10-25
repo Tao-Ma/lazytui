@@ -432,6 +432,8 @@ actions:
 
 Open the form, chip reads `[fetching…]` while `docker ps` runs, then `[N choices]` once the list arrives. `[space]` opens the popover. This recipe is a **one-port** action — the lane rule above routes it through the (one-field) form so the chip + popover are reachable; `choices_cmd:` works on single-port actions and multi-port actions the same way.
 
+Your `choices_cmd:` also powers CLI tab-completion (v0.6.39): typing `./do inspect <TAB>` runs the same command, same `project_dir` cwd, same env binding, same 32-item cap. Keep it fast (<2.5s — tighter cap than the TUI, since a hung TAB freezes the user's prompt) and side-effect-free (TAB may fire many times before an actual invocation). See [`shell-completion.md`](./shell-completion.md).
+
 ### Trust and shell binding
 
 `choices_cmd:` runs through `sh -c <cmd>` at the same trust bar as action `script:` — if you can author the YAML you already have arbitrary shell. There is no sandbox. Design your commands as you would an action's `script:`.

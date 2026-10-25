@@ -6,6 +6,41 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Shell tab-completion from the YAML port schema** (`--completion` /
+  `--complete`). The YAML already carried everything completion needs:
+  group paths, action keys, port declaration order, and (since v0.6.36)
+  `choices_cmd:` commands that enumerate valid values. Two flags make
+  the CLI an equal citizen with the TUI:
+  - `--completion bash|zsh [--cmd <name>]` — print a completion script
+    to stdout (`eval "$(./do --completion zsh --cmd ./do)"`). Script
+    is deliberately dumb: it collects words and calls back to
+    `--complete`. Contains **no absolute paths** so your wrapper's own
+    `node`/`NODE_PATH`/config resolution handles invocation.
+  - `--complete <cword> -- <words...>` — dynamic candidate helper.
+    `cword=1` → group paths (incl. dotted subgroups: `config.branch`);
+    `cword=2` → action keys; `cword>=3` → positional port's
+    `choices_cmd:` output. Always exits 0 and silent on any error —
+    stderr noise during TAB is a completion-system bug.
+
+  Completion fetch semantics mirror the TUI with two deliberate
+  differences: tighter timeout (`min(choices_timeout, 2500ms)` — a
+  hung TAB freezes the prompt) and all earlier positionals bind to
+  port names (not just `depends_on:` — strictly more useful when the
+  words are already typed). Same `project_dir` cwd (parity with
+  `script:`), same env-shadow denylist (silent drop; no stderr), same
+  32-item cap, same process-group SIGTERM on timeout. `choices_fn:`
+  is not supported in CLI mode (Components aren't booted); the shell
+  falls back to default completion for those ports. See
+  [`docs/shell-completion.md`](docs/shell-completion.md).
+
+- **`--exec` missing-required error now surfaces valid choices** when
+  the first missing port declares `choices_cmd:`. Appends an
+  additional `  valid <port>: a, b, c` stderr line (purely additive —
+  the existing two lines stay byte-identical). Ports without
+  `choices_cmd:` get no extra line. Same 2.5s cap as `--complete`.
+
 ### Fixed
 
 - **Fabric-form choices popover: closing (or shrinking) the picker now

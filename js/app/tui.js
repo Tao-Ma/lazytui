@@ -40,6 +40,16 @@ Options:
                              --json (JSONL of the filtered entries)
   --keymap [config]          Headless: dump the normal-mode keymap (verbs,
                              reserved keys, effective bindings), then exit.
+  --completion bash|zsh      Print a shell completion script to stdout; eval
+    [--cmd <name>]           the output or add to .bashrc/.zshrc. Candidates
+                             come from --complete (below); the script collects
+                             the typed words and calls back. --cmd sets the
+                             target command word (default: do).
+  --complete <cword>         Dynamic completion helper (hidden integration
+    -- <words...>            flag). Prints candidates one per line; always exits
+                             0 and prints nothing on any error/timeout. Groups,
+                             then actions, then positional ports — using the
+                             action's choices_cmd: for the current positional.
   -h, --help                 Show this help, then exit
 
 Examples:
@@ -117,6 +127,10 @@ function main() {
   let execArgs = [];
   let listMode = false;
   let listFilter = null;
+  let completionShell = null;     // 'bash' | 'zsh'
+  let completionCmd = null;       // --cmd <name> for the generated script
+  let completeCword = null;       // dynamic candidate helper: cword
+  let completeWords = null;       // dynamic candidate helper: words (positionals + command)
   let recordLoadFile = null;
   let recordPrintFile = null;
   let recordSaveFile = null;
@@ -175,6 +189,28 @@ function main() {
       if (i + 1 < args.length && !args[i + 1].startsWith('-')) {
         listFilter = args[++i];
       }
+    } else if (a === '--completion') {
+      if (i + 1 >= args.length) { console.error('--completion requires bash|zsh'); process.exit(2); }
+      completionShell = args[++i];
+      // Optional --cmd <name> immediately after (eval'd script's completion
+      // function targets this command word; defaults to 'do').
+      if (i + 2 < args.length && args[i + 1] === '--cmd') {
+        completionCmd = args[i + 2];
+        i += 2;
+      }
+    } else if (a === '--complete') {
+      // --complete <cword> -- <word1> <word2> …
+      // The dynamic candidate helper. cword is the 0-based positional
+      // index into words[]: word 0 is the command, word 1 is the first
+      // positional after it. Everything after `--` is forwarded as words.
+      if (i + 1 >= args.length) { console.error('--complete requires <cword>'); process.exit(2); }
+      const n = parseInt(args[++i], 10);
+      completeCword = Number.isFinite(n) ? n : 0;
+      // Consume the `--` separator if present (zsh/bash wrappers always
+      // emit it; be tolerant if the operator typed by hand without it).
+      if (i + 1 < args.length && args[i + 1] === '--') i += 1;
+      completeWords = args.slice(i + 1);
+      i = args.length;      // consume everything (positionals belong to the completion input)
     } else if (a.startsWith('-')) {
       console.error(`Unknown flag: ${a}`);
       console.error(USAGE);
@@ -204,6 +240,28 @@ function main() {
   if (keymapDump) {
     const { runKeymapDump } = require('./keymap-dump');
     process.exit(runKeymapDump(configArgs[0] || null));
+  }
+
+  // --completion bash|zsh [--cmd <name>] — print a completion script to stdout.
+  // No config needed; the script is static. Takes no TTY, no PTY, no YAML.
+  if (completionShell !== null) {
+    const { runGenerateScript } = require('./completion');
+    runGenerateScript(completionShell, completionCmd)
+      .then((rc) => process.exit(rc))
+      .catch(() => process.exit(1));
+    return;
+  }
+
+  // --complete <cword> -- <word1> <word2> … — dynamic candidate helper.
+  // Needs a config path to resolve groups/actions/choices_cmd. On any error
+  // we print nothing and exit 0 — stderr noise during TAB is a completion-
+  // system bug.
+  if (completeCword !== null) {
+    const { runCompletion } = require('./completion');
+    runCompletion(configArgs[0], completeCword, completeWords || [])
+      .then((rc) => process.exit(rc))
+      .catch(() => process.exit(0));
+    return;
   }
 
   // --record-load takes no config (the recorded WAL carries it); it boots the

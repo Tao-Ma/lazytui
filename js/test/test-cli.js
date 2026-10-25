@@ -343,4 +343,71 @@ groups:
   });
 });
 
+// -----------------------------------------------------------------------
+// Companion to the shell-completion feat: when the first missing required
+// port has choices_cmd:, --exec appends `valid <port>: a, b, c` on an
+// additional stderr line (purely additive — the existing two lines stay
+// byte-identical).
+// -----------------------------------------------------------------------
+
+describe('[cli] --exec missing-required: appends `valid <port>: …` when choices_cmd exists', () => {
+  const CHOICES_CF_PATH = path.join(os.tmpdir(), `test-cli-choices-${Date.now()}.yml`);
+  fs.writeFileSync(CHOICES_CF_PATH, `
+groups:
+  g:
+    label: G
+    actions:
+      pick:
+        label: Pick
+        type: run
+        script: echo "$name"
+        ports:
+          in:
+            name:
+              type: string
+              required: true
+              choices_cmd: "printf 'alpha\\nbravo\\n'"
+      plain:
+        label: Plain
+        type: run
+        script: echo "$x"
+        ports:
+          in:
+            x:
+              type: string
+              required: true
+`);
+
+  function runExec(...args) {
+    return spawnSync(process.execPath, [TUI, CHOICES_CF_PATH, '--exec', ...args], {
+      encoding: 'utf8', timeout: 5000,
+    });
+  }
+
+  it('port with choices_cmd: appends `valid <port>: a, b` on an additional stderr line', () => {
+    const r = runExec('g:pick');
+    assert(r.status !== 0, 'non-zero rc');
+    // Byte-identical existing lines are still present.
+    assert(/^tui --exec: missing required port\(s\): name$/m.test(r.stderr),
+      `original missing-required line preserved, got: ${JSON.stringify(r.stderr)}`);
+    assert(/^  usage: --exec g:pick <name>$/m.test(r.stderr),
+      `original usage line preserved, got: ${JSON.stringify(r.stderr)}`);
+    // New additional line.
+    assert(/^  valid name: alpha, bravo$/m.test(r.stderr),
+      `expected 'valid name: alpha, bravo' additional line, got: ${JSON.stringify(r.stderr)}`);
+  });
+
+  it('port WITHOUT choices_cmd: no additional line (silent)', () => {
+    const r = runExec('g:plain');
+    assert(r.status !== 0, 'non-zero rc');
+    assert(/missing required port\(s\): x/.test(r.stderr), 'original missing-required line present');
+    assert(!/valid x:/.test(r.stderr),
+      `no valid-choices line when the port has no choices_cmd, got: ${JSON.stringify(r.stderr)}`);
+  });
+
+  process.on('exit', () => {
+    try { fs.unlinkSync(CHOICES_CF_PATH); } catch (_) { /* best-effort */ }
+  });
+});
+
 report();
