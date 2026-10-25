@@ -337,6 +337,20 @@ describe('[completion] --completion script generation', () => {
     eq(r.status, 1);
     assert(/unsupported shell/.test(r.stderr), `expected "unsupported shell" in stderr, got: ${r.stderr}`);
   });
+
+  it('cmdName with shell-active chars → rejected (prevents script injection)', () => {
+    // R-c1-BUG: generateScript interpolates cmdName into the `complete …`
+    // register line AND the <(…) subshell verbatim. A crafted --cmd like
+    // `do\nrm -rf /` would land unescaped in the generated script, and
+    // `eval "$(... --cmd "$(cat untrusted)")"` would execute it.
+    // Reject the whole class of shell-active chars at generation time.
+    for (const bad of ['do\nrm', 'do;rm', 'do$(id)', 'do`id`', 'do with spaces', 'do|rm', 'do&bg']) {
+      const r = spawnSync('node', [TUI, '--completion', 'bash', '--cmd', bad], { encoding: 'utf8' });
+      eq(r.status, 1, `expected exit 1 for crafted --cmd ${JSON.stringify(bad)}, got ${r.status}`);
+      assert(/shell-active|unsupported/.test(r.stderr),
+        `expected rejection stderr for ${JSON.stringify(bad)}, got: ${r.stderr}`);
+    }
+  });
 });
 
 // -----------------------------------------------------------------------
@@ -447,6 +461,63 @@ describe('[completion] env-shadow — PATH binding silently dropped', () => {
     // because PATH binding is dropped.
     assert(!got.includes('path=first'),
       `env-shadow leak: typed PATH value "first" reached the child env, got ${JSON.stringify(got)}`);
+  });
+});
+
+// -----------------------------------------------------------------------
+// Z-BUG1: Ctrl-C during a slow TAB must kill the choices_cmd pgroup
+// before node exits. Pre-fix: node exits ~130 but the detached sh child
+// orphans (own pgroup — TTY's SIGINT doesn't reach it). Post-fix:
+// runCompletion's SIGINT handler kills the pgroup via process.kill(-pid)
+// before exit. Driven synchronously via a bash wrapper that spawns node,
+// sends SIGINT after ~400ms, waits for node exit, then waits past the
+// sleep's natural completion window and checks a sentinel file. The
+// sentinel is touched by the choices_cmd AFTER its sleep; if SIGINT
+// correctly killed the pgroup, the touch never fires.
+// -----------------------------------------------------------------------
+
+describe('[completion] Ctrl-C during slow TAB kills choices_cmd pgroup (Z-BUG1)', () => {
+  it('SIGINT to node while choices_cmd is sleeping — child does NOT survive to touch sentinel', () => {
+    const sentinel = `/tmp/completion-sigint-sentinel-${process.pid}-${Date.now()}`;
+    const cfgPath = path.join(tmpDir, 'sigint.yml');
+    fs.writeFileSync(cfgPath, `
+groups:
+  g:
+    label: G
+    actions:
+      slow:
+        label: Slow
+        type: run
+        script: echo ok
+        ports:
+          in:
+            x:
+              type: string
+              required: true
+              choices_cmd: "sleep 1 && touch ${sentinel} && printf 'done\\\\n'"
+              choices_timeout: 5000
+`);
+    // Guard: remove sentinel from a prior run before testing.
+    try { fs.unlinkSync(sentinel); } catch (_) { /* didn't exist */ }
+    const wrapper = `
+      node ${TUI} ${cfgPath} --complete 3 -- do g slow '' &
+      NODE_PID=$!
+      sleep 0.4
+      kill -INT $NODE_PID 2>/dev/null
+      wait $NODE_PID 2>/dev/null
+      sleep 1.5
+      if [ -f ${sentinel} ]; then
+        echo REGRESSION
+        exit 1
+      fi
+      echo OK
+    `;
+    const r = spawnSync('bash', ['-c', wrapper], { encoding: 'utf8', timeout: 10000 });
+    try { fs.unlinkSync(sentinel); } catch (_) { /* best-effort */ }
+    eq(r.status, 0,
+      `Z-BUG1 regression: sentinel was created — the detached sh child survived Ctrl-C to complete its sleep+touch. stdout=${r.stdout.trim()} stderr=${r.stderr.trim()}`);
+    assert(r.stdout.includes('OK'),
+      `expected 'OK' marker in wrapper output, got: stdout=${JSON.stringify(r.stdout)} stderr=${JSON.stringify(r.stderr)}`);
   });
 });
 

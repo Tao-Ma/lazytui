@@ -64,6 +64,17 @@ const COMPLETION_TIMEOUT_DEFAULT_MS = 2500;
 // ≤ ~32 items; past that the author's command is mis-shaped.
 const MAX_COMPLETION_ITEMS = 32;
 
+// Module-level ref so a SIGINT handler installed by runCompletion() can
+// reach the currently-spawned choices_cmd child and kill its pgroup
+// before node exits. Without this, Ctrl-C mid-TAB kills node but leaves
+// the detached child orphaned (Z-BUG1 — the child is in its own pgroup
+// because of `detached: true`, which prevents the TTY's SIGINT from
+// reaching it). Null when no spawn is active. Single-threaded JS event
+// loop → no race between concurrent spawns; completion is one spawn at
+// a time via its _spawnAndCapture → _completePositionalArg → complete()
+// → runCompletion call stack.
+let _currentChild = null;
+
 // -----------------------------------------------------------------------
 // Shell script generation
 // -----------------------------------------------------------------------
@@ -77,6 +88,17 @@ const MAX_COMPLETION_ITEMS = 32;
  */
 function generateScript(shell, cmdName) {
   if (!cmdName || typeof cmdName !== 'string') cmdName = 'do';
+  // Reject cmdName containing shell-active characters that would let a
+  // crafted --cmd value inject arbitrary shell when the user eval's the
+  // generated script. The function-name regex sanitizes the identifier,
+  // but cmdName is ALSO interpolated verbatim into the `complete …`
+  // registration line and the `<(…)` subshell. A hostile value like
+  // `foo\nrm -rf /` would land as `complete -o default -F fn foo\nrm -rf /`,
+  // and `eval "$(... --cmd "$(cat untrusted)")"` would execute it.
+  // Allow conservative shell-safe filename chars only.
+  if (/[\s'"`$\\;|&<>()\n\r\t]/.test(cmdName)) {
+    throw new Error(`--cmd value contains shell-active characters (whitespace, quote, $, \\, ;, |, &, <, >, ...): ${JSON.stringify(cmdName)}`);
+  }
   if (shell === 'bash') return _bashScript(cmdName);
   if (shell === 'zsh') return _zshScript(cmdName);
   throw new Error(`unsupported shell: ${shell} (expected 'bash' or 'zsh')`);
@@ -239,9 +261,10 @@ async function _completePositionalArg(configPath, config, cword, words) {
   const cwd = projectDirFor(configPath, config);
 
   const { items } = await _spawnAndCapture({ cmd, cwd, env: envBindings, timeoutMs, labeled });
-  // Items are already normalized + capped by parseChoicesStdout; apply
-  // belt-and-suspenders cap here in case the leaf's cap drifts (same
-  // defensive-cap discipline as the R3F-BUG1 fix in fabric-form.js).
+  // Load-bearing cap — parseChoicesStdout does NOT cap on its own (the
+  // choices_cmd runtime applies the TUI's 32-cap AFTER calling the leaf;
+  // completion.js is a parallel caller that applies its own cap here).
+  // Same discipline as fabric-form.js's resolver-arm cap (R3F-BUG1).
   return items.slice(0, MAX_COMPLETION_ITEMS);
 }
 
@@ -283,6 +306,12 @@ function _spawnAndCapture({ cmd, cwd, env, timeoutMs, labeled }) {
       resolve({ items: [], labels: null });
       return;
     }
+    // Expose for the SIGINT handler installed by runCompletion. See the
+    // `_currentChild` declaration at module scope for why — short version:
+    // detached:true puts the sh child in its own pgroup, so the TTY's SIGINT
+    // doesn't reach it; runCompletion's handler must kill the pgroup
+    // explicitly before node exits.
+    _currentChild = child;
 
     let stdoutBytes = 0;
     const stdoutChunks = [];
@@ -301,6 +330,10 @@ function _spawnAndCapture({ cmd, cwd, env, timeoutMs, labeled }) {
       if (settled) return;
       settled = true;
       clearTimeout(alarm);
+      // Clear only if this call's child is still the active one. (A test
+      // might race multiple spawns in sequence; this guard keeps the
+      // module-level ref honest.)
+      if (_currentChild === child) _currentChild = null;
       resolve(payload);
     };
 
@@ -355,6 +388,26 @@ function runGenerateScript(shell, cmdName) {
 }
 
 async function runCompletion(configPath, cword, words) {
+  // SIGINT/SIGTERM handler: when the user Ctrl-Cs mid-TAB (choices_cmd
+  // still running), node receives SIGINT but the detached sh child
+  // (own pgroup via `detached: true` in _spawnAndCapture) does NOT —
+  // the TTY's SIGINT only reaches node's pgroup. Default node behavior
+  // then exits ~130 and leaves the sh child orphaned. Override: kill
+  // the active child's pgroup first, THEN exit with the standard
+  // signal rc. Install `once` so we don't fire twice on repeated
+  // Ctrl-Cs. (Z-BUG1 — pre-release hard-review.)
+  const _onSignal = (sig) => {
+    if (_currentChild) {
+      try { process.kill(-_currentChild.pid, 'SIGTERM'); }
+      catch (_) {
+        try { _currentChild.kill('SIGTERM'); } catch (__) { /* already gone */ }
+      }
+    }
+    process.exit(sig === 'SIGINT' ? 130 : 143);
+  };
+  process.once('SIGINT', () => _onSignal('SIGINT'));
+  process.once('SIGTERM', () => _onSignal('SIGTERM'));
+
   // Any error path returns 0 with empty output — stderr noise during TAB
   // is a completion-system bug. The one exception: a usage error (missing
   // config path) is detected by the caller before we reach here.

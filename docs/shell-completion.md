@@ -77,6 +77,18 @@ If completion seems to not work:
 
 Shell completion runs config-declared shell commands — the same trust bar as `--exec` against that config. Someone completing against a config they wouldn't run has already lost: the choices commands have the author's full shell power at the author's chosen `project_dir`. This is intentional — the mechanism is useless without it, and the author's YAML wrote the command.
 
+Three deltas vs `--exec` worth naming before you install completion for a config you didn't write (think: AI-generated configs, templates downloaded from the web, config inherited from a prior maintainer):
+
+- **Firing frequency** — TAB fires on every exploratory press. A `choices_cmd:` with side effects (writes a log, counts an invocation, pings a telemetry endpoint) runs many times during a session, not once per deliberate action.
+- **Pre-commitment** — typing `./do bad-group ba<TAB>` has not committed to running the action; the choices command still fires. An attacker who got their YAML into a user's config can run their payload without the user ever hitting Enter.
+- **Privilege** — `sudo ./do <TAB>` runs completion as root if completion is installed in the invoking shell. The user is already escalated at this point, but it's easy to forget the choices commands now carry root.
+
+If any of those matter for your config, review the YAML's `choices_cmd:` lines before installing completion.
+
+### Process-group escape (`setsid`/`disown`/`nohup`)
+
+Timeouts send `SIGTERM` to the choices_cmd's process group (`detached: true` + `process.kill(-pid)`). Grand-children inherit the group and die with it — EXCEPT when the command explicitly escapes: `setsid long-binary`, `nohup long-cmd &`, `(long-cmd &)`, `disown` all put the child in a different pgroup that the timeout kill can't reach. Those processes orphan to PID 1 and keep running until they finish naturally. Same pitfall as the TUI's `choices_cmd:` runtime; don't `setsid`/`disown` from inside a `choices_cmd:`.
+
 ## Not supported
 
 - **`choices_fn:`** → Components aren't booted in CLI mode (they'd need a full TUI-mode boot). TAB-completion for a `choices_fn:` port emits nothing; the shell falls back to default/file completion. This is documented behavior, not a bug — switch the port to `choices_cmd:` if you want CLI parity.

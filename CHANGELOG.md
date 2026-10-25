@@ -8,6 +8,40 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Shell completion — pre-release hard-review found two shippable BUGs
+  on the completion feature + doc gaps.** Fixed before release.
+  1. **cmdName shell-injection in `generateScript`**: `--cmd` is
+     interpolated verbatim into the generated `complete …` line and
+     the `<(…)` subshell. A crafted `--cmd "do\nrm -rf /"` would land
+     unescaped; `eval "$(... --cmd "$(cat untrusted)")"` would run it.
+     The function-name regex sanitized the identifier but the two
+     other `cmdName` uses were raw. Fix: reject cmdName containing
+     shell-active chars (whitespace, quote, `$`, backslash, `;`, `|`,
+     `&`, `<`, `>`, parens, newlines, tabs) at the top of
+     `generateScript`.
+  2. **Ctrl-C mid-TAB orphans the `sh` child**: the completion spawn
+     uses `detached: true` to own a process group (so `SIGTERM` on
+     timeout reaches grand-children). But that means the TTY's SIGINT
+     doesn't reach the child's pgroup — node exits ~130, the timeout
+     alarm never fires because node is dead, and the `sh` child
+     orphans. Fix: `runCompletion` now installs a `SIGINT`/`SIGTERM`
+     handler that calls `process.kill(-child.pid, 'SIGTERM')` before
+     exiting with the standard signal rc.
+
+  Doc updates in the same commit:
+  - `docs/shell-completion.md` "Trust" section names three deltas
+    vs `--exec` worth considering before installing completion for
+    an unfamiliar config (firing frequency, pre-commitment,
+    `sudo` privilege context) — important for AI-generated or
+    inherited configs.
+  - New "Process-group escape" note in the same doc: `setsid` /
+    `nohup` / `disown` / `(cmd &)` in a `choices_cmd:` escape the
+    pgroup kill. Same pitfall as the TUI runtime; now surfaced
+    where authors read.
+  - Comment at the completion items-cap site rewritten — the cap
+    is load-bearing (parseChoicesStdout doesn't cap on its own),
+    not belt-and-suspenders. Prior comment misled.
+
 - **Generated bash completion script — three bugs caught by first-
   consumer QA (dev9-env):**
   1. **No prefix filtering**: raw `COMPREPLY=("${candidates[@]}")`
