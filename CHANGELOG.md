@@ -6,6 +6,8 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.37] — 2026-10-25
+
 ### Fixed
 
 - **`choices_cmd:` now runs in the component's `project_dir`.** Parity with
