@@ -29,6 +29,7 @@ const os = require('os');
 const path = require('path');
 const { section, assert, eq, report } = require('./test-runner');
 const runtime = require('../feature/choices-cmd-runtime');
+const { makeEffectHost: makeHost } = require('./_helpers/mock-effect-host');
 
 // Extract the registered handler via a tiny registry — mirrors the pattern
 // test-choices-fn-runtime.js uses. Done once; each test re-uses the handler.
@@ -39,22 +40,6 @@ function makeHandler() {
   });
   if (!handler) throw new Error('registerFetchChoicesCmdEffect did not register fetch_choices_cmd');
   return handler;
-}
-
-// Mock effect host — captures dispatched msgs + releaseKey calls, carries a
-// signal (real AbortSignal or a plain `{aborted}` shim).
-function makeHost({ signal } = {}) {
-  const dispatched = [];
-  const released = [];
-  return {
-    dispatched,
-    released,
-    host: {
-      applyMsg: (m) => dispatched.push(m),
-      releaseKey: () => released.push(true),
-      signal: signal || null,
-    },
-  };
 }
 
 // A promise that resolves after `ms` ms via a real setTimeout — the handler

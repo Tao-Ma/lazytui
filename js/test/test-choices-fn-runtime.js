@@ -32,26 +32,11 @@
 const { describe, it, assert, eq, report } = require('./test-runner');
 const api = require('../panel/api');
 const runtime = require('../feature/choices-fn-runtime');
+const { makeEffectHost: makeHost } = require('./_helpers/mock-effect-host');
 
 // Inject the registry lookup the way the live boot does — tests can register
 // via api.registerChoicesFn and the runtime resolves through this seam.
 runtime.setRegistryHost({ getChoicesFn: api.getChoicesFn });
-
-// Mock effect host — captures dispatched msgs + releaseKey calls so the test
-// can observe the handler's outputs without a live reducer.
-function makeHost({ signal } = {}) {
-  const dispatched = [];
-  const released = [];
-  return {
-    dispatched,
-    released,
-    host: {
-      applyMsg: (m) => dispatched.push(m),
-      releaseKey: () => released.push(true),
-      signal: signal || { aborted: false },
-    },
-  };
-}
 
 // Drive the handler by registering it on a tiny effect registry we own, then
 // calling the registered fn directly. That matches how installBuiltins wires it

@@ -28,6 +28,7 @@ const fs = require('fs');
 const os = require('os');
 const { spawnSync, execSync } = require('child_process');
 const { describe, it, eq, assert, report } = require('./test-runner');
+const { makeSentinel, runProbe } = require('./_helpers/behavioral-wrapper');
 
 const TUI = path.resolve(__dirname, '..', 'app', 'tui.js');
 
@@ -478,7 +479,7 @@ describe('[completion] env-shadow — PATH binding silently dropped', () => {
 
 describe('[completion] Ctrl-C during slow TAB kills choices_cmd pgroup (Z-BUG1)', () => {
   it('SIGINT to node while choices_cmd is sleeping — child does NOT survive to touch sentinel', () => {
-    const sentinel = `/tmp/completion-sigint-sentinel-${process.pid}-${Date.now()}`;
+    const sentinel = makeSentinel('sigint');
     const cfgPath = path.join(tmpDir, 'sigint.yml');
     fs.writeFileSync(cfgPath, `
 groups:
@@ -497,23 +498,23 @@ groups:
               choices_cmd: "sleep 1 && touch ${sentinel} && printf 'done\\\\n'"
               choices_timeout: 5000
 `);
-    // Guard: remove sentinel from a prior run before testing.
-    try { fs.unlinkSync(sentinel); } catch (_) { /* didn't exist */ }
-    const wrapper = `
-      node ${TUI} ${cfgPath} --complete 3 -- do g slow '' &
-      NODE_PID=$!
-      sleep 0.4
-      kill -INT $NODE_PID 2>/dev/null
-      wait $NODE_PID 2>/dev/null
-      sleep 1.5
-      if [ -f ${sentinel} ]; then
-        echo REGRESSION
-        exit 1
-      fi
-      echo OK
-    `;
-    const r = spawnSync('bash', ['-c', wrapper], { encoding: 'utf8', timeout: 10000 });
-    try { fs.unlinkSync(sentinel); } catch (_) { /* best-effort */ }
+    const r = runProbe({
+      sentinel,
+      bash: `
+        node ${TUI} ${cfgPath} --complete 3 -- do g slow '' &
+        NODE_PID=$!
+        sleep 0.4
+        kill -INT $NODE_PID 2>/dev/null
+        wait $NODE_PID 2>/dev/null
+        sleep 1.5
+        if [ -f ${sentinel} ]; then
+          echo REGRESSION
+          exit 1
+        fi
+        echo OK
+      `,
+      timeoutMs: 10000,
+    });
     eq(r.status, 0,
       `Z-BUG1 regression: sentinel was created — the detached sh child survived Ctrl-C to complete its sleep+touch. stdout=${r.stdout.trim()} stderr=${r.stderr.trim()}`);
     assert(r.stdout.includes('OK'),
@@ -539,7 +540,7 @@ groups:
 
 describe('[completion] TERM-trap choices_cmd — SIGKILL cascade actually dies the child', () => {
   it('`trap "" TERM; sleep 2; touch SENTINEL` — sentinel NEVER touched', () => {
-    const sentinel = `/tmp/completion-term-trap-sentinel-${process.pid}-${Date.now()}`;
+    const sentinel = makeSentinel('termtrap');
     const cfgPath = path.join(tmpDir, 'termtrap.yml');
     fs.writeFileSync(cfgPath, `
 groups:
@@ -558,18 +559,19 @@ groups:
               choices_cmd: 'trap "" TERM; sleep 2 && touch ${sentinel} && printf done\\n'
               choices_timeout: 300
 `);
-    try { fs.unlinkSync(sentinel); } catch (_) { /* didn't exist */ }
-    const wrapper = `
-      node ${TUI} ${cfgPath} --complete 3 -- do g slow '' >/dev/null 2>&1
-      sleep 2.5
-      if [ -f ${sentinel} ]; then
-        echo REGRESSION
-        exit 1
-      fi
-      echo OK
-    `;
-    const r = spawnSync('bash', ['-c', wrapper], { encoding: 'utf8', timeout: 10000 });
-    try { fs.unlinkSync(sentinel); } catch (_) { /* best-effort */ }
+    const r = runProbe({
+      sentinel,
+      bash: `
+        node ${TUI} ${cfgPath} --complete 3 -- do g slow '' >/dev/null 2>&1
+        sleep 2.5
+        if [ -f ${sentinel} ]; then
+          echo REGRESSION
+          exit 1
+        fi
+        echo OK
+      `,
+      timeoutMs: 10000,
+    });
     eq(r.status, 0,
       `TERM-trap regression: sentinel was created — the detached sh child trapped SIGTERM and survived to complete its sleep. Post-fix should SIGKILL the pgroup after 250ms grace. stdout=${r.stdout.trim()} stderr=${r.stderr.trim()}`);
     assert(r.stdout.includes('OK'),

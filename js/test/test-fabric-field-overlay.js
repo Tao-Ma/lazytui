@@ -20,42 +20,8 @@
 
 const { describe, it, assert, report } = require('./test-runner');
 const runtime = require('../app/runtime');
-const store = require('../model/store');
-const term = require('../io/term');
-const draw = require('../leaves/render/draw');
+const { freshOverlayModel: freshModel, captureOverlay: captureWith } = require('./_helpers/overlay-capture');
 const { renderFabricFieldOverlay } = require('../overlay/fabric-field');
-
-// Mute OSC-52 noise from the register helper (mirrors other overlay tests).
-const _origWrite = term.stdout.write.bind(term.stdout);
-term.stdout.write = (chunk, ...rest) => {
-  const s = typeof chunk === 'string' ? chunk : '';
-  if (s.startsWith('\x1b]52;')) return true;
-  return _origWrite(chunk, ...rest);
-};
-
-// Route renderOverlay's writer at `term.stdout.write` as the production boot does
-// — the capture() helper below patches .write per call to intercept output.
-draw.setWriter((s) => term.stdout.write(s));
-
-function freshModel() {
-  const m = runtime.init();
-  m.currentGroup = 'g';
-  m.register = { history: [], cap: 10 };
-  process.stdout.columns = 120; process.stdout.rows = 30;
-  term.refreshSize();
-  return m;
-}
-
-/** Install `m` as the live model (what getModel() returns) and run `fn()`, capturing stdout. */
-function captureWith(m, fn) {
-  store.setModel(m);
-  const chunks = [];
-  const orig = term.stdout.write;
-  term.stdout.write = (s) => { chunks.push(String(s)); return true; };
-  try { fn(); } finally { term.stdout.write = orig; }
-  // Strip ANSI so assertions match plain content.
-  return chunks.join('').replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/\x1b\][^\x07]*\x07/g, '');
-}
 
 const PENDING = {
   actionKey: 'enable',
