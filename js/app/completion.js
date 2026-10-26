@@ -54,6 +54,8 @@ const {
 } = require('./cli');
 const { parseChoicesStdout } = require('../leaves/text/choices-lines');
 const { filterShadowedPortValues } = require('../dispatch/runtime/action-runner');
+const { cacheKey } = require('../leaves/ports/choices-cache-key');
+const diskCache = require('../leaves/ports/choices-disk-cache');
 
 // Timeout cap — tighter than the TUI's 5000 default: a hung TAB freezes
 // the user's prompt. Honors a per-port choices_timeout: UPPER-BOUNDED by
@@ -273,10 +275,40 @@ async function _completePositionalArg(configPath, config, cword, words) {
   const cmd = portDecl.choices_cmd;
   const labeled = portDecl.choices_labeled === true;
   const timeoutMs = _pickTimeout(portDecl.choices_timeout);
-  const envBindings = _bindEarlierPositionals(words, portNames, portIdx);
+  const { env: envBindings, safe } = _bindEarlierPositionals(words, portNames, portIdx);
   const cwd = projectDirFor(configPath, config);
 
-  const { items } = await _spawnAndCapture({ cmd, cwd, env: envBindings, timeoutMs, labeled });
+  // On-disk TTL cache: a burst of TABs while composing one command line
+  // otherwise respawns `choices_cmd` on every press. The TUI's
+  // model.choicesCache does not apply here (`--complete` is a one-shot
+  // process). Key encodes action + port + cmd + the SHADOW-FILTERED
+  // bindings — that's what actually feeds the spawn, so it's what
+  // determines the output. See js/leaves/ports/choices-disk-cache.js.
+  //
+  // LAZYTUI_COMPLETE_NO_CACHE=1 skips both read AND write for debugging
+  // choices_cmd recipes ("why isn't my edited command running").
+  const cacheDisabled = process.env.LAZYTUI_COMPLETE_NO_CACHE === '1';
+  const key = cacheDisabled ? null : cacheKey(`${groupPath}:${actionKey}`, portName, `cmd:${cmd}`, safe);
+  if (key) {
+    const state = diskCache.readCache(configPath);
+    const hit = diskCache.get(state, key, Date.now(), diskCache.DEFAULT_TTL_MS);
+    if (hit && Array.isArray(hit.items)) {
+      // Cap at READ too — a future cap raise must not resurrect longer
+      // cached lists written by an older version.
+      return hit.items.slice(0, MAX_COMPLETION_ITEMS);
+    }
+  }
+
+  const { items, labels, truncated } = await _spawnAndCapture({ cmd, cwd, env: envBindings, timeoutMs, labeled });
+  // Only persist successful, non-empty results. Timeouts, spawn errors,
+  // and empty item lists return [] from _spawnAndCapture — an empty
+  // result is indistinguishable from a transient failure and caching it
+  // buys nothing.
+  if (key && items && items.length > 0) {
+    const state = diskCache.readCache(configPath) || { entries: {}, order: [] };
+    const next = diskCache.put(state, key, { items, labels: labels || null, truncated: !!truncated }, Date.now(), diskCache.DEFAULT_CAP);
+    diskCache.writeCache(configPath, next);
+  }
   // Load-bearing cap — parseChoicesStdout does NOT cap on its own (the
   // choices_cmd runtime applies the TUI's 32-cap AFTER calling the leaf;
   // completion.js is a parallel caller that applies its own cap here).
@@ -306,7 +338,10 @@ function _bindEarlierPositionals(words, portNames, portIdx) {
   // Shadow filter — silently drop PATH / LD_PRELOAD / BASH_FUNC_* etc.
   // No stderr noise (completion must stay silent).
   const { safe } = filterShadowedPortValues(raw);
-  return { ...process.env, ...safe };
+  // Return BOTH the spawn-ready env (process.env + safe) and the safe
+  // subset — the latter is what the cache key hashes (process.env has
+  // thousands of unrelated keys and would just invalidate every TAB).
+  return { env: { ...process.env, ...safe }, safe };
 }
 
 function _spawnAndCapture({ cmd, cwd, env, timeoutMs, labeled }) {

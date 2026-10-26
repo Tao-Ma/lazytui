@@ -42,6 +42,7 @@ const { isPrintableSeq: _isPrintableSeq } = require('../../../leaves/text/printa
 // same leaf compileCommand uses, so form text and `run:` string templates
 // agree on quoting semantics (no second splitter).
 const { tokenize } = require('../../../fabric/command');
+const sharedKey = require('../../../leaves/ports/choices-cache-key');
 
 const TYPES = [
   'fabric_form_enter', 'fabric_form_key',
@@ -60,14 +61,13 @@ const TYPES = [
 const CLOSED = { fields: [], focusIdx: 0, pendingAction: null, picking: null,
                  requestSeq: 0 };
 
-// Deterministic hash of a port's depended-on values. Order-independent (sorted
-// keys) so a decl rewrite that reorders dependsOn can't invalidate the cache;
-// pure JSON stringify so replay reproduces identical hashes.
-function _depsHash(values) {
-  const keys = Object.keys(values || {}).sort();
-  const pairs = keys.map((k) => [k, values[k]]);
-  return JSON.stringify(pairs);
-}
+// Deterministic hash of a port's depended-on values — delegated to the
+// shared leaf (js/leaves/ports/choices-cache-key.js) so this cache's keys
+// stay byte-identical to the completion helper's on-disk cache keys. The
+// two caches hash different value sets (TUI: depends_on only; completion:
+// all earlier positionals) but share the format so the two caches can't
+// drift. See the leaf's header for the full rationale.
+const _depsHash = sharedKey.depsHash;
 // Build the depValues map for a computed field — just a slice of the form's
 // current field texts, keyed by name. Fields the field doesn't depend on are
 // not included (the fetch handler sees ONLY the deps it needs).
@@ -107,12 +107,12 @@ function _cancelKeyForField(field, actionKey) {
 // keys so one tree's branches can't surface in the other's popover. Fields
 // with no choices channel hash to null (uncacheable — caller skips).
 function _cacheKeyFor(actionKey, field, depValues) {
-  if (!actionKey || !field) return null;
+  if (!field) return null;
   const source = field.choicesCmd
     ? `cmd:${field.choicesCmd}`
     : (field.choicesFnRef ? `fn:${field.choicesFnRef}` : null);
   if (!source) return null;
-  return `${actionKey}|${field.port}|${source}|${_depsHash(depValues)}`;
+  return sharedKey.cacheKey(actionKey, field.port, source, depValues);
 }
 
 // Pure lookup: returns the stored payload shape {items, labels, truncated}

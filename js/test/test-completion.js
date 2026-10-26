@@ -144,6 +144,15 @@ function runComplete(cword, ...words) {
   return { stdout: r.stdout.trim(), stderr: r.stderr.trim(), status: r.status };
 }
 
+// Run the completion helper with explicit extra env (for the on-disk cache
+// tests). The caller passes { XDG_CACHE_HOME, LAZYTUI_COMPLETE_NO_CACHE, … }
+// and a config path (defaults to the main fixture).
+function runCompleteEnv({ cfg = fixturePath, env = {}, cword, words }) {
+  const r = spawnSync('node', [TUI, cfg, '--complete', String(cword), '--', ...words],
+    { encoding: 'utf8', env: { ...process.env, ...env } });
+  return { stdout: r.stdout.trim(), stderr: r.stderr.trim(), status: r.status };
+}
+
 function lines(s) { return s ? s.split('\n') : []; }
 
 // -----------------------------------------------------------------------
@@ -576,6 +585,231 @@ groups:
       `TERM-trap regression: sentinel was created — the detached sh child trapped SIGTERM and survived to complete its sleep. Post-fix should SIGKILL the pgroup after 250ms grace. stdout=${r.stdout.trim()} stderr=${r.stderr.trim()}`);
     assert(r.stdout.includes('OK'),
       `expected 'OK' marker in wrapper output, got: stdout=${JSON.stringify(r.stdout)} stderr=${JSON.stringify(r.stderr)}`);
+  });
+});
+
+// -----------------------------------------------------------------------
+// On-disk TTL cache for choices_cmd candidates (v0.6.43 brief).
+// Covers the 7 scopes the brief lists: miss→spawn+file 0600, hit→no spawn,
+// expired→respawn, different-deps→different key, corrupt JSON→fallthrough,
+// timeout/error/empty→NOT cached, LAZYTUI_COMPLETE_NO_CACHE=1→bypass.
+//
+// Each case uses its own XDG_CACHE_HOME subdir so caches start cold, and
+// its own counter file so the "did we spawn?" question has an easy answer.
+// Fixture YAML is generated per-case so the choices_cmd can embed each
+// case's counter path.
+// -----------------------------------------------------------------------
+
+describe('[completion] on-disk TTL cache', () => {
+  // Build a config whose choices_cmd appends to `counter` on every spawn,
+  // then emits the given items.
+  function buildFixture(counterPath, items) {
+    const spawnBody = `echo hit >> '${counterPath}'; printf '${items.join('\\n')}\n'`;
+    return `
+groups:
+  g:
+    label: G
+    actions:
+      a:
+        label: A
+        type: run
+        script: 'echo $x'
+        ports:
+          in:
+            x:
+              type: string
+              required: true
+              choices_cmd: ${JSON.stringify(spawnBody)}
+`;
+  }
+
+  function newCase(name) {
+    const caseDir = fs.mkdtempSync(path.join(tmpDir, `cache-${name}-`));
+    const xdg = path.join(caseDir, 'xdg');
+    const counter = path.join(caseDir, 'count');
+    const cfg = path.join(caseDir, 'cfg.yml');
+    return { caseDir, xdg, counter, cfg };
+  }
+
+  function spawns(counter) {
+    try { return fs.readFileSync(counter, 'utf8').split('\n').filter(Boolean).length; }
+    catch (_) { return 0; }
+  }
+
+  function cacheFileFor(xdg, cfgPath) {
+    // Mirror of js/leaves/ports/choices-disk-cache.js cachePathForConfig.
+    const crypto = require('crypto');
+    const real = fs.realpathSync(cfgPath);
+    const sha = crypto.createHash('sha1').update(real).digest('hex');
+    return path.join(xdg, 'lazytui', 'complete', `${sha}.json`);
+  }
+
+  it('miss → spawn runs, candidates printed, cache file exists at mode 0600', () => {
+    const c = newCase('miss');
+    fs.writeFileSync(c.cfg, buildFixture(c.counter, ['alpha', 'beta']));
+    const r = runCompleteEnv({ cfg: c.cfg, env: { XDG_CACHE_HOME: c.xdg }, cword: 3, words: ['do', 'g', 'a', ''] });
+    eq(r.status, 0, `rc=${r.status} stderr=${r.stderr}`);
+    eq(lines(r.stdout), ['alpha', 'beta']);
+    eq(spawns(c.counter), 1, 'expected one spawn on first call');
+    const file = cacheFileFor(c.xdg, c.cfg);
+    assert(fs.existsSync(file), `cache file ${file} missing after miss`);
+    const mode = fs.statSync(file).mode & 0o777;
+    eq(mode, 0o600, `expected mode 0600, got ${mode.toString(8)}`);
+  });
+
+  it('hit within TTL → same candidates, counter UNCHANGED (no second spawn)', () => {
+    const c = newCase('hit');
+    fs.writeFileSync(c.cfg, buildFixture(c.counter, ['alpha', 'beta']));
+    const r1 = runCompleteEnv({ cfg: c.cfg, env: { XDG_CACHE_HOME: c.xdg }, cword: 3, words: ['do', 'g', 'a', ''] });
+    eq(lines(r1.stdout), ['alpha', 'beta']);
+    const after1 = spawns(c.counter);
+    const r2 = runCompleteEnv({ cfg: c.cfg, env: { XDG_CACHE_HOME: c.xdg }, cword: 3, words: ['do', 'g', 'a', ''] });
+    eq(lines(r2.stdout), ['alpha', 'beta']);
+    eq(spawns(c.counter), after1, `second call must not respawn (counter was ${after1}, now ${spawns(c.counter)})`);
+  });
+
+  it('expired TTL → respawns, rewrites cache', () => {
+    const c = newCase('expired');
+    fs.writeFileSync(c.cfg, buildFixture(c.counter, ['x']));
+    runCompleteEnv({ cfg: c.cfg, env: { XDG_CACHE_HOME: c.xdg }, cword: 3, words: ['do', 'g', 'a', ''] });
+    eq(spawns(c.counter), 1);
+    // Backdate the entry's `at` far enough that any sane TTL rejects it.
+    const file = cacheFileFor(c.xdg, c.cfg);
+    const state = JSON.parse(fs.readFileSync(file, 'utf8'));
+    for (const k of Object.keys(state.entries)) state.entries[k].at = 1;
+    fs.writeFileSync(file, JSON.stringify(state));
+    const r2 = runCompleteEnv({ cfg: c.cfg, env: { XDG_CACHE_HOME: c.xdg }, cword: 3, words: ['do', 'g', 'a', ''] });
+    eq(lines(r2.stdout), ['x']);
+    eq(spawns(c.counter), 2, 'expired entry must respawn');
+    // And the cache was rewritten with a fresh timestamp.
+    const after = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const freshAt = Object.values(after.entries)[0].at;
+    assert(freshAt > 1, `fresh timestamp expected, got ${freshAt}`);
+  });
+
+  it('different earlier-positional → different key → respawn (no cross-pollination)', () => {
+    // Second port's choices_cmd depends on the first positional's value;
+    // typing different first-positional values must not share a cache entry.
+    const c = newCase('deps');
+    const spawnBody = `echo hit >> '${c.counter}'; printf 'item-%s\\n' "$container"`;
+    fs.writeFileSync(c.cfg, `
+groups:
+  g:
+    label: G
+    actions:
+      exec:
+        label: E
+        type: run
+        script: 'echo "$container $cmd"'
+        ports:
+          in:
+            container:
+              type: string
+              required: true
+              choices_cmd: "printf 'alpha\\nbravo\\n'"
+            cmd:
+              type: string
+              required: true
+              choices_cmd: ${JSON.stringify(spawnBody)}
+              depends_on: [container]
+`);
+    const r1 = runCompleteEnv({ cfg: c.cfg, env: { XDG_CACHE_HOME: c.xdg }, cword: 4, words: ['do', 'g', 'exec', 'alpha', ''] });
+    eq(lines(r1.stdout), ['item-alpha']);
+    eq(spawns(c.counter), 1);
+    const r2 = runCompleteEnv({ cfg: c.cfg, env: { XDG_CACHE_HOME: c.xdg }, cword: 4, words: ['do', 'g', 'exec', 'bravo', ''] });
+    eq(lines(r2.stdout), ['item-bravo']);
+    eq(spawns(c.counter), 2, 'different first-positional must miss cache');
+    // And a repeat of the first binding still hits.
+    const r3 = runCompleteEnv({ cfg: c.cfg, env: { XDG_CACHE_HOME: c.xdg }, cword: 4, words: ['do', 'g', 'exec', 'alpha', ''] });
+    eq(lines(r3.stdout), ['item-alpha']);
+    eq(spawns(c.counter), 2, 'repeat of first binding must hit cache');
+  });
+
+  it('corrupt cache file → silent fallthrough to spawn, file rewritten, rc 0', () => {
+    const c = newCase('corrupt');
+    fs.writeFileSync(c.cfg, buildFixture(c.counter, ['ok']));
+    // Pre-seed the exact cache path with garbage.
+    const file = cacheFileFor(c.xdg, c.cfg);
+    fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(file, '{garbage not json!!!');
+    const r = runCompleteEnv({ cfg: c.cfg, env: { XDG_CACHE_HOME: c.xdg }, cword: 3, words: ['do', 'g', 'a', ''] });
+    eq(r.status, 0, `rc=${r.status} stderr=${r.stderr}`);
+    eq(lines(r.stdout), ['ok']);
+    eq(spawns(c.counter), 1);
+    // File is now valid JSON again.
+    assert(() => JSON.parse(fs.readFileSync(file, 'utf8')),
+      'corrupt file must be rewritten with valid JSON');
+  });
+
+  it('timeout → empty + exit 0, NOT cached (next call respawns)', () => {
+    const c = newCase('timeout');
+    fs.writeFileSync(c.cfg, `
+groups:
+  g:
+    label: G
+    actions:
+      a:
+        label: A
+        type: run
+        script: 'echo $x'
+        ports:
+          in:
+            x:
+              type: string
+              required: true
+              choices_cmd: "echo hit >> '${c.counter}'; sleep 5"
+              choices_timeout: 300
+`);
+    const r1 = runCompleteEnv({ cfg: c.cfg, env: { XDG_CACHE_HOME: c.xdg }, cword: 3, words: ['do', 'g', 'a', ''] });
+    eq(r1.status, 0);
+    eq(r1.stdout, '');
+    const file = cacheFileFor(c.xdg, c.cfg);
+    assert(!fs.existsSync(file),
+      `cache file ${file} must NOT be created on timeout, saw: ${fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''}`);
+    // Next call still respawns (nothing cached).
+    const r2 = runCompleteEnv({ cfg: c.cfg, env: { XDG_CACHE_HOME: c.xdg }, cword: 3, words: ['do', 'g', 'a', ''] });
+    eq(r2.status, 0);
+    assert(spawns(c.counter) >= 2, `timeout result must not be cached (counter=${spawns(c.counter)})`);
+  });
+
+  it('empty stdout → NOT cached', () => {
+    const c = newCase('empty');
+    fs.writeFileSync(c.cfg, `
+groups:
+  g:
+    label: G
+    actions:
+      a:
+        label: A
+        type: run
+        script: 'echo $x'
+        ports:
+          in:
+            x:
+              type: string
+              required: true
+              choices_cmd: "echo hit >> '${c.counter}'; true"
+`);
+    const r1 = runCompleteEnv({ cfg: c.cfg, env: { XDG_CACHE_HOME: c.xdg }, cword: 3, words: ['do', 'g', 'a', ''] });
+    eq(r1.status, 0);
+    eq(r1.stdout, '');
+    const file = cacheFileFor(c.xdg, c.cfg);
+    assert(!fs.existsSync(file), 'empty-result must not create cache file');
+    const r2 = runCompleteEnv({ cfg: c.cfg, env: { XDG_CACHE_HOME: c.xdg }, cword: 3, words: ['do', 'g', 'a', ''] });
+    eq(r2.status, 0);
+    eq(spawns(c.counter), 2, 'empty result must not be cached');
+  });
+
+  it('LAZYTUI_COMPLETE_NO_CACHE=1 → spawns every time, writes nothing', () => {
+    const c = newCase('nocache');
+    fs.writeFileSync(c.cfg, buildFixture(c.counter, ['x', 'y']));
+    const env = { XDG_CACHE_HOME: c.xdg, LAZYTUI_COMPLETE_NO_CACHE: '1' };
+    runCompleteEnv({ cfg: c.cfg, env, cword: 3, words: ['do', 'g', 'a', ''] });
+    runCompleteEnv({ cfg: c.cfg, env, cword: 3, words: ['do', 'g', 'a', ''] });
+    runCompleteEnv({ cfg: c.cfg, env, cword: 3, words: ['do', 'g', 'a', ''] });
+    eq(spawns(c.counter), 3, 'NO_CACHE must respawn every time');
+    const file = cacheFileFor(c.xdg, c.cfg);
+    assert(!fs.existsSync(file), `NO_CACHE must not write — saw ${file}`);
   });
 });
 
