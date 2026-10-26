@@ -1069,12 +1069,18 @@ const _modeHandlers = {
     else if (seq === '\t')                 applyMsg({ type: 'fabric_form_focus_next' });
     else if (key === 'backtab')            applyMsg({ type: 'fabric_form_focus_prev' });
     else if (seq === ' ') {
-      // Space on a focused computed-choices field opens the popover; on any
-      // other field it falls through to the field-key edit (= a literal space
-      // in the text), which preserves pre-slice-2 behavior for ports without
-      // `choices_fn:` / `choices_cmd:`.
+      // Space on a focused field with ANY choices affordance (fn / cmd /
+      // literal) opens the popover; on any other field it falls through to
+      // the field-key edit (= a literal space in the text), which preserves
+      // pre-slice-2 behavior for ports without choices. The single-source
+      // `hasChoices` flag is stamped by fabric-form._normalize via the
+      // shared leaf (js/leaves/ports/has-choices.js) so the three sites —
+      // this branch, the reducer open-guard, and action-runner's lane
+      // predicate — can't drift apart again (Brief 1 of v0.6.43 fix: pre-
+      // fix, literal `choices:` was missed here and the popover never
+      // opened for a literal-only field).
       const focused = fFresh && fFresh.fields[fFresh.focusIdx];
-      if (focused && (focused.choicesFnRef || focused.choicesCmd)) {
+      if (focused && focused.hasChoices) {
         applyMsg({ type: 'fabric_form_choices_open', port: focused.port });
       } else {
         applyMsg({ type: 'fabric_form_key', key, seq });

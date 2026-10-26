@@ -43,6 +43,7 @@ const { isPrintableSeq: _isPrintableSeq } = require('../../../leaves/text/printa
 // agree on quoting semantics (no second splitter).
 const { tokenize } = require('../../../fabric/command');
 const sharedKey = require('../../../leaves/ports/choices-cache-key');
+const { declHasChoices } = require('../../../leaves/ports/has-choices');
 
 const TYPES = [
   'fabric_form_enter', 'fabric_form_key',
@@ -261,9 +262,16 @@ function _normalize(raw) {
   // before injecting the ARRAY. Carry-through only; the chip renderer may
   // read it later to paint `[N items]`.
   const variadic = !!(raw && raw.variadic === true);
+  // Single-source "field has a choices affordance" flag — carried on the
+  // normalized field so the reducer's `fabric_form_choices_open` guard and
+  // dispatch.js's SPACE branch don't need to re-derive it from the per-
+  // channel refs. Pre-fix those two sites checked only choicesFnRef /
+  // choicesCmd and silently dropped literal `choices:` fields; see
+  // js/leaves/ports/has-choices.js for the drift postmortem.
+  const hasChoices = !!(choicesFnRef || choicesCmd || literal);
   return { port, text, required, default: def, desc, choicesFnRef,
            choicesCmd, choicesLabeled, choicesTimeout, dependsOn,
-           variadic, computed, ..._chip(text, def) };
+           variadic, hasChoices, computed, ..._chip(text, def) };
 }
 
 // Defense-in-depth guards on the raw fields array passed on fabric_form_enter:
@@ -815,7 +823,9 @@ function update(model, msg) {
       const idx = f.fields.findIndex((x) => x.port === msg.port);
       if (idx < 0) return [model, []];
       const field = f.fields[idx];
-      if (!field.choicesFnRef && !field.choicesCmd) return [model, []];
+      // Any of the three choices channels (fn, cmd, literal) opens the
+      // popover. The flag is stamped by _normalize via the shared leaf.
+      if (!field.hasChoices) return [model, []];
       if (f.picking && f.picking.port === msg.port) return [model, []];   // idempotent
       return [withModal(model, { fabricForm: { ...f, picking: { port: msg.port, idx: 0 } } }), []];
     }

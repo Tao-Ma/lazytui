@@ -24,6 +24,7 @@ const { resolveInputs } = require('../../fabric/resolve');
 const { compileCommand, fillCommand } = require('../../fabric/command');
 const fabricPorts = require('../../fabric/ports');
 const { findVariadicPortName } = require('../../leaves/ports/variadic');
+const { declHasChoices } = require('../../leaves/ports/has-choices');
 
 // type:spawn uses a real `tmux new-window` ONLY when running under tmux AND we
 // are NOT recording. While recording, force the embedded-PTY path even under
@@ -530,12 +531,7 @@ function _promptMissing(actionKey, action, resolved) {
   // 1-port action with any choices variant routes through the form to get
   // the affordance. 1-port actions without choices keep the lean popup —
   // pre-slice-1 behavior, unchanged.
-  const anyChoices = declNames.some((p) => {
-    const d = inputs[p] || {};
-    return (typeof d.choices_fn === 'string' && d.choices_fn)
-        || (typeof d.choices_cmd === 'string' && d.choices_cmd)
-        || (d.choices && typeof d.choices === 'object' && Array.isArray(d.choices.items));
-  });
+  const anyChoices = declNames.some((p) => declHasChoices(inputs[p]));
   if (declNames.length >= 2 || anyChoices) {
     openPortsForm(actionKey, action, resolved);
     return true;

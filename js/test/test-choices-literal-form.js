@@ -143,4 +143,113 @@ describe('[form] regression — cmd/fn channels still fetch (literal is additive
   });
 });
 
+// --------------------------------------------------------------------------
+// Brief 1 (v0.6.43 BUG fix): literal `choices:` must open the [space] popover.
+// Pre-fix, three sites checked only choicesFnRef/choicesCmd and silently
+// dropped literal fields: the reducer's fabric_form_choices_open guard,
+// dispatch.js's SPACE branch, and (already fixed in v0.6.41 for lane routing
+// but open-coded) action-runner's anyChoices. Single-sourced via
+// field.hasChoices stamped by _normalize + js/leaves/ports/has-choices.js.
+// --------------------------------------------------------------------------
+
+function enterLiteralForm(items, labels = null) {
+  const field = buildField('tunnel', {
+    type: 'string', required: true,
+    choices: { items, labels, truncated: false },
+  });
+  let m = freshOverlayModel();
+  [m] = runtime.update(m, { type: 'fabric_form_enter', fields: [field],
+    pendingAction: { actionKey: 'reissue', action: { label: 'Reissue' } } });
+  return m;
+}
+
+describe('[form] Brief-1 fix — literal `choices:` opens the popover on space', () => {
+  it('hasChoices stamped on literal fields', () => {
+    const m = enterLiteralForm(['--a', '--b']);
+    const f = m.modal.fabricForm.fields[0];
+    eq(f.hasChoices, true, 'literal field must stamp hasChoices');
+    eq(f.choicesFnRef, null, 'and no fn/cmd ref (literal-only)');
+    eq(f.choicesCmd, null);
+  });
+
+  it('fabric_form_choices_open opens the picker on a literal-only field', () => {
+    let m = enterLiteralForm(['--full-tunnel', '--no-full-tunnel']);
+    [m] = runtime.update(m, { type: 'fabric_form_choices_open', port: 'tunnel' });
+    const picking = m.modal.fabricForm.picking;
+    assert(picking, 'picking must be non-null after choices_open on literal field');
+    eq(picking.port, 'tunnel');
+    eq(picking.idx, 0, 'picker opens at idx 0');
+  });
+
+  it('nav clamps within literal items (no wrap past the ends)', () => {
+    let m = enterLiteralForm(['one', 'two', 'three']);
+    [m] = runtime.update(m, { type: 'fabric_form_choices_open', port: 'tunnel' });
+    [m] = runtime.update(m, { type: 'fabric_form_choices_nav', dir: 1 });
+    eq(m.modal.fabricForm.picking.idx, 1);
+    [m] = runtime.update(m, { type: 'fabric_form_choices_nav', dir: 1 });
+    eq(m.modal.fabricForm.picking.idx, 2);
+    [m] = runtime.update(m, { type: 'fabric_form_choices_nav', dir: 1 });
+    eq(m.modal.fabricForm.picking.idx, 2, 'clamp at last — no wrap');
+    [m] = runtime.update(m, { type: 'fabric_form_choices_nav', dir: -1 });
+    [m] = runtime.update(m, { type: 'fabric_form_choices_nav', dir: -1 });
+    [m] = runtime.update(m, { type: 'fabric_form_choices_nav', dir: -1 });
+    eq(m.modal.fabricForm.picking.idx, 0, 'clamp at 0 — no wrap');
+  });
+
+  it('pick commits the VALUE (not the label) into field text, closes picker', () => {
+    let m = enterLiteralForm(
+      ['--full-tunnel', '--no-full-tunnel'],
+      ['all traffic', 'split tunnel'],
+    );
+    [m] = runtime.update(m, { type: 'fabric_form_choices_open', port: 'tunnel' });
+    [m] = runtime.update(m, { type: 'fabric_form_choices_nav', dir: 1 });   // highlight idx 1
+    [m] = runtime.update(m, { type: 'fabric_form_choices_pick', port: 'tunnel',
+      value: '--no-full-tunnel' });
+    const f = m.modal.fabricForm;
+    eq(f.picking, null, 'picker closes after pick');
+    eq(f.fields[0].text, '--no-full-tunnel', 'VALUE commits (NOT the label)');
+  });
+
+  it('overlay paints the popover rows with both labels after space-open', () => {
+    let m = enterLiteralForm(
+      ['--full-tunnel', '--no-full-tunnel'],
+      ['all traffic via VPN', 'split tunnel'],
+    );
+    [m] = runtime.update(m, { type: 'fabric_form_choices_open', port: 'tunnel' });
+    const out = captureOverlay(m, () => renderFabricFormOverlay());
+    assert(out.includes('all traffic via VPN'),
+      `expected label 'all traffic via VPN' in popover frame, got: ${JSON.stringify(out).slice(0, 400)}`);
+    assert(out.includes('split tunnel'),
+      `expected label 'split tunnel' in popover frame, got: ${JSON.stringify(out).slice(0, 400)}`);
+  });
+
+  it('regression — fabric_form_choices_open STILL no-ops on a no-choices field', () => {
+    // Space on a plain field must stay a no-op in the reducer (dispatch
+    // falls through to insert ' '). Previously-correct behavior, pinned.
+    const field = buildField('file', { type: 'path', required: true });
+    let m = freshOverlayModel();
+    [m] = runtime.update(m, { type: 'fabric_form_enter', fields: [field],
+      pendingAction: { actionKey: 'x', action: {} } });
+    eq(m.modal.fabricForm.fields[0].hasChoices, false, 'plain field must NOT stamp hasChoices');
+    const before = m.modal.fabricForm;
+    [m] = runtime.update(m, { type: 'fabric_form_choices_open', port: 'file' });
+    eq(m.modal.fabricForm, before, 'reducer must return the same form state (no picking)');
+    eq(m.modal.fabricForm.picking, null);
+  });
+});
+
+describe('[form] Brief-1 fix — action-runner lane picks literal-only 1-port actions', () => {
+  it('declHasChoices routes a 1-port literal-only action into the form lane', () => {
+    // Direct check of the shared leaf through the pdef shape _promptMissing sees.
+    // The lane split in action-runner.js is `declNames.length >= 2 || anyChoices`,
+    // and anyChoices now goes through declHasChoices. A 1-port literal-only action
+    // must still land in the form lane (not the lean fabric-field popup).
+    const { declHasChoices } = require('../leaves/ports/has-choices');
+    const literalOnly = { type: 'string', required: true,
+                          choices: { items: ['--a', '--b'], labels: null, truncated: false } };
+    eq(declHasChoices(literalOnly), true,
+       'literal-only pdef must say hasChoices → anyChoices → form lane');
+  });
+});
+
 report();
