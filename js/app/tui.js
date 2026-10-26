@@ -26,6 +26,12 @@ Options:
                              Only type: run is supported in CLI mode.
   --list [filter]            Print every YAML action (path, label, desc).
                              Optional substring filters by path.
+  --lint                     Parse config + plugins and report findings on
+                             stdout as \`<severity> <code> <context>: <msg>\`,
+                             plus a summary line on stderr. Exit 0 clean,
+                             1 warnings-only, 2 if any hard error (incl.
+                             config-won't-load). Add --json for a stable
+                             machine-readable array (summary suppressed).
   --spec                     Print the Component authoring spec to stdout
   --record-save <file>       Record this session to <file> from boot (also via
                              the :record-save cmdline verb mid-session).
@@ -127,6 +133,7 @@ function main() {
   let execArgs = [];
   let listMode = false;
   let listFilter = null;
+  let lintMode = false;
   let completionShell = null;     // 'bash' | 'zsh'
   let completionCmd = null;       // --cmd <name> for the generated script
   let completeCword = null;       // dynamic candidate helper: cword
@@ -189,6 +196,8 @@ function main() {
       if (i + 1 < args.length && !args[i + 1].startsWith('-')) {
         listFilter = args[++i];
       }
+    } else if (a === '--lint') {
+      lintMode = true;
     } else if (a === '--completion') {
       if (i + 1 >= args.length) { console.error('--completion requires bash|zsh'); process.exit(2); }
       completionShell = args[++i];
@@ -287,6 +296,15 @@ function main() {
     runList(configArgs[0], listFilter)
       .then((rc) => process.exit(rc))
       .catch((e) => { process.stderr.write(`tui --list: ${e && e.message}\n`); process.exit(1); });
+    return;
+  }
+
+  if (lintMode) {
+    // Shares the `--json` flag with --dev; same semantics ("output as JSON").
+    const { runLint } = require('./cli');
+    runLint(configArgs[0], { json: devJson })
+      .then((rc) => process.exit(rc))
+      .catch((e) => { process.stderr.write(`tui --lint: ${e && e.message}\n`); process.exit(2); });
     return;
   }
 

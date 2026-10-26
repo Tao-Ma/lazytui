@@ -317,8 +317,97 @@ function runList(configPath, filter) {
   return Promise.resolve(0);
 }
 
+/**
+ * `--lint` — parse the config exactly the way --list does, then print every
+ * finding (parser warnings + any thrown parse error) with a CI-friendly rc
+ * contract (0 clean / 1 warnings-only / 2 ≥1 hard error). STDOUT carries one
+ * line per finding; stderr carries a final `N errors, M warnings` summary
+ * (suppressed in --json mode). --json emits the full findings array.
+ *
+ * Context field: parser warning messages carry the pctx-style path inline
+ * (e.g. "group 'g', action 'act', port 'in.PATH': port name 'PATH' …") —
+ * split at the FIRST ": " to separate context from reason. If no ": " is
+ * present, context is empty and the whole message is the reason.
+ *
+ * Parser warning codes are a stable API from this flag's debut forward —
+ * append-only. New lint-only checks (depends_on-undeclared, inert-choices,
+ * dup labels) are deliberate follow-ups; this slice ships parser findings
+ * only.
+ */
+function runLint(configPath, { json = false } = {}) {
+  // Missing-path is a USAGE problem, not a config problem — tui.js top-level
+  // guard catches it with USAGE + rc 1 before this function sees `null`,
+  // same as --list. We assume configPath is set.
+  const findings = [];
+  try {
+    loadConfig(configPath);
+    const cfg = getModel().config;
+    const warnings = Array.isArray(cfg && cfg.warnings) ? cfg.warnings : [];
+    for (const w of warnings) {
+      findings.push(_warningFinding(w));
+    }
+  } catch (e) {
+    findings.push(_errorFinding(e));
+  }
+
+  const nErr = findings.filter((f) => f.severity === 'error').length;
+  const nWarn = findings.filter((f) => f.severity === 'warning').length;
+
+  if (json) {
+    process.stdout.write(JSON.stringify(findings) + '\n');
+  } else {
+    for (const f of findings) {
+      const prefix = f.context
+        ? `${f.severity} ${f.code} ${f.context}: ${f.message}`
+        : `${f.severity} ${f.code}: ${f.message}`;
+      process.stdout.write(prefix + '\n');
+    }
+    process.stderr.write(`${nErr} errors, ${nWarn} warnings\n`);
+  }
+
+  const rc = nErr > 0 ? 2 : (nWarn > 0 ? 1 : 0);
+  return Promise.resolve(rc);
+}
+
+// Split a parser warning's `{code, message}` into the --lint finding shape.
+// pctx-style messages take the form "<ctx>: <reason>"; split at the first
+// ": " and surface the pieces separately. If no ": " is present, context is
+// empty and the whole string is the reason.
+function _warningFinding(w) {
+  const msg = String(w.message || '');
+  const i = msg.indexOf(': ');
+  const context = i > 0 ? msg.slice(0, i) : '';
+  const reason = i > 0 ? msg.slice(i + 2) : msg;
+  return { severity: 'warning', code: w.code || 'unknown', context, message: reason };
+}
+
+// Thrown parse error → finding. ParseError / SchemaError / ResolutionError
+// carry structured `.context` + `.line` already (parser/errors.js), so prefer
+// those over re-parsing e.message.
+function _errorFinding(e) {
+  const name = (e && e.name) || 'Error';
+  const code = name === 'SchemaError' ? 'schema_error'
+    : name === 'ResolutionError' ? 'resolution_error'
+    : name === 'ParseError' ? 'parse_error'
+    : 'error';
+  // ParseError composes `${line N: }${context}: {raw}` into e.message; the raw
+  // tail is what we want as the reason. Reconstruct it by stripping the known
+  // prefixes rather than keyword-splitting a free-form string.
+  let msg = String(e.message || '');
+  if (e && e.line != null) msg = msg.replace(new RegExp(`^line ${e.line}: `), '');
+  if (e && e.context) msg = msg.replace(new RegExp(`^${_escapeRe(e.context)}: `), '');
+  const contextParts = [];
+  if (e && e.line != null) contextParts.push(`line ${e.line}`);
+  if (e && e.context) contextParts.push(e.context);
+  return { severity: 'error', code, context: contextParts.join(', '), message: msg };
+}
+
+function _escapeRe(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 module.exports = {
-  runCli, runList,
+  runCli, runList, runLint,
   // Shared helpers reused by completion.js (shell TAB) — exported here
   // to avoid a parallel group/action walker (CLI/TUI drift class the
   // codebase already guards against; see v0.6.29 postmortem).
