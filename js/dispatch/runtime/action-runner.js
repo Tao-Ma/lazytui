@@ -301,6 +301,16 @@ function doRun(actionKey, action, args = []) {
 //   BASH_FUNC_* — the shellshock-class exported-function path. Rejected via
 //     prefix match below, not via Set membership, because the suffix is
 //     arbitrary.
+//   Interpreter-injection class (NODE_OPTIONS / PYTHONPATH / PYTHONSTARTUP /
+//     PERL5OPT / RUBYOPT / LUA_INIT / JAVA_TOOL_OPTIONS / …) — the shell
+//     one-liner `python3 -c '…'` or `node -e '…'` an action script runs
+//     honors these BEFORE evaluating the inline code, so a port value under
+//     the right name executes attacker code via the interpreter's startup
+//     hook rather than through `script:` directly. Same class, one layer up.
+//     Full enumeration + rationale lives in the shared leaf.
+//   Git exec-class (GIT_SSH_COMMAND / GIT_EXTERNAL_DIFF) — git invokes these
+//     AS COMMANDS, so a value is a command injection into any script that
+//     shells out to git.
 // The env-shadow denylist is a shared leaf — the parser imports the same
 // set to reject these port names at CONFIG LOAD (fail-fast), and we use it
 // here to refuse any that slipped through at SPAWN time (defense-in-depth
