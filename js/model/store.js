@@ -252,6 +252,16 @@ function init() {
     // reading the off-model hub bus live. Seeded {} (no topic until a consumer
     // pane is placed + its first sample lands).
     metrics: {},
+    // Brief 3 — stale-while-refetch cache for computed port choices. Lives on
+    // the MODEL so WAL replay reconstructs it deterministically (same reason
+    // fetched results are WAL-captured today). Keyed by
+    // `${actionKey}|${port}|${source}|${depsHash}` where `source` is either
+    // `fn:<ref>` or `cmd:<cmd>` (dep values in the key keep same-port fetches
+    // for different repos / targets apart). LRU-bounded via `cap`; a long
+    // session can't grow it unbounded. See fabric-form.js _choicesCacheGet /
+    // _choicesCachePut. TUI-only: the completion helper is a one-shot process
+    // and has no cache state to carry.
+    choicesCache: { entries: {}, order: [], cap: 64 },
   };
   return m;
 }

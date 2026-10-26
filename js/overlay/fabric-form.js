@@ -56,11 +56,21 @@ function _chipMarkup(f) {
   // affordance from the most common case — a computed port with a sensible
   // default). An actively modified field flips to `[modified]`, as before.
   if (f.computed) {
+    // Brief 3 — the `⟳` suffix marks items served from the stale-while-
+    // refetch cache: the user sees content immediately on form-open, but
+    // a fresh fetch is in flight (ok+stale) OR failed and we're showing
+    // the last-known list under an error chip (error+stale with items).
+    // The ⟳ clears when the fresh ok settles.
+    const staleMark = f.computed.stale ? ' ⟳' : '';
     if (f.computed.state === 'pending') return '[dim]\\[fetching…][/]';
-    if (f.computed.state === 'error')   return '[error]\\[error][/]';
+    if (f.computed.state === 'error') {
+      // Keep showing stale items under the error chip when the fetch failed
+      // but we have a prior list — brief: "an old list beats an empty popover".
+      return `[error]\\[error${staleMark}][/]`;
+    }
     if (f.computed.state === 'ok' && !f.isModified) {
       const n = f.computed.items.length;
-      return `[dim]\\[${n} choice${n === 1 ? '' : 's'}][/]`;
+      return `[dim]\\[${n} choice${n === 1 ? '' : 's'}${staleMark}][/]`;
     }
   }
   if (f.isDefault) return '[dim]\\[default][/]';

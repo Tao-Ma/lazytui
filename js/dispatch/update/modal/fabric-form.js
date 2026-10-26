@@ -94,6 +94,54 @@ function _cancelKeyForField(field, actionKey) {
   return `${prefix}:${actionKey}.${field.port}`;
 }
 
+// --- Brief 3 — stale-while-refetch cache -------------------------------
+//
+// Cache key encodes the ONLY things that could change the fetch result:
+// which action's which port, which SOURCE (fn ref or cmd string), and what
+// the depended-on values are at request time. Same-port fetches with
+// different deps (worktree.branch for repo A vs repo B) hash to different
+// keys so one tree's branches can't surface in the other's popover. Fields
+// with no choices channel hash to null (uncacheable — caller skips).
+function _cacheKeyFor(actionKey, field, depValues) {
+  if (!actionKey || !field) return null;
+  const source = field.choicesCmd
+    ? `cmd:${field.choicesCmd}`
+    : (field.choicesFnRef ? `fn:${field.choicesFnRef}` : null);
+  if (!source) return null;
+  return `${actionKey}|${field.port}|${source}|${_depsHash(depValues)}`;
+}
+
+// Pure lookup: returns the stored payload shape {items, labels, truncated}
+// or null on miss. Order is NOT mutated here — promotion to MRU happens on
+// put only (seed-on-request is a read; a successful fetch is the write that
+// moves the key to the top). This keeps reads cheap and the LRU behavior
+// predictable from WAL alone.
+function _cacheGet(cache, key) {
+  if (!cache || !key) return null;
+  const entry = cache.entries && cache.entries[key];
+  return entry || null;
+}
+
+// Pure put — returns a NEW cache object (never mutates the input, so a
+// reducer arm that calls this stays replayable). LRU bound: when a put
+// would exceed `cap`, drop the LRU-most key (order[0]). An update to an
+// existing key moves it to MRU; a brand-new key appends.
+function _cachePut(cache, key, payload) {
+  if (!cache || !key || !payload) return cache;
+  const cap = cache.cap || 64;
+  const prevEntries = cache.entries || {};
+  const prevOrder = (cache.order || []).filter((k) => k !== key);
+  prevOrder.push(key);                                   // MRU at the tail
+  const entries = { ...prevEntries, [key]: payload };
+  // Evict LRU-most until size ≤ cap. Multiple evictions can happen if cap
+  // shrank between puts (not a real case, but safe).
+  while (prevOrder.length > cap) {
+    const evicted = prevOrder.shift();
+    delete entries[evicted];
+  }
+  return { entries, order: prevOrder, cap };
+}
+
 // Per-field text size ceiling, in JS String code units (UTF-16; NOT bytes —
 // 8192 code units can be anywhere from 8 KiB on all-ASCII to 32 KiB when the
 // field is all 4-byte emoji). A field is a prompt input — a thousand or two
@@ -131,7 +179,14 @@ function _chip(text, def) {
 //   items/labels  the current result (empty while idle/pending).
 //   error         fetch error text, or null.
 const EMPTY_COMPUTED = { state: 'idle', requestId: 0, inputsHash: null,
-                         items: [], labels: null, error: null, truncated: false };
+                         items: [], labels: null, error: null, truncated: false,
+                         // Brief 3 — stale-while-refetch cache markers:
+                         //   stale    → `⟳` chip suffix, cleared on fresh ok settle
+                         //   cacheKey → the (actionKey|port|source|deps) key for THIS
+                         //              in-flight request, so the resolved arm knows
+                         //              which cache slot to write without recomputing
+                         //              a deps hash from (now possibly stale) form state.
+                         stale: false, cacheKey: null };
 
 // Normalize an incoming raw field decl into the slot shape the reducer stores.
 // Caller sends { port, text, required, default, desc, choicesFnRef?, dependsOn? };
@@ -188,7 +243,10 @@ function _normalize(raw) {
       : null;
     computed = { state: 'ok', requestId: 0, inputsHash: null,
                  items: litItems, labels: litLabels,
-                 error: null, truncated: !!literal.truncated };
+                 error: null, truncated: !!literal.truncated,
+                 // Literal data has no cache dimension — there's no fetch
+                 // that could grow stale. Both flags stay inert.
+                 stale: false, cacheKey: null };
   } else if (choicesFnRef || choicesCmd) {
     computed = { ...EMPTY_COMPUTED };
   } else {
@@ -510,16 +568,48 @@ function update(model, msg) {
         : _depsHash(depValues);
       const nextSeq = (f.requestSeq || 0) + 1;
       const requestId = msg.requestId !== undefined ? msg.requestId : nextSeq;
+      // Brief 3 — stale-while-refetch cache. Look up by
+      // (actionKey, port, source, deps). On a hit, seed computed.state='ok'
+      // with the cached items IMMEDIATELY — the popover opens populated with
+      // the stale list while the fresh fetch runs in parallel. On settle,
+      // the resolved arm either replaces (ok) or keeps stale items visible
+      // (error / timeout). The `stale: true` flag drives the `⟳` chip
+      // marker; it clears on a clean ok resolve. The `cacheKey` field is
+      // persisted on computed so the resolved arm knows which cache slot
+      // to update without recomputing the deps hash from (now possibly
+      // stale) form state.
+      const actionKey = f.pendingAction && f.pendingAction.actionKey;
+      const cacheKey = _cacheKeyFor(actionKey, cur, depValues);
+      const cached = cacheKey ? _cacheGet(model.choicesCache, cacheKey) : null;
       const nextFields = f.fields.slice();
-      nextFields[idx] = { ...cur, computed: {
-        ...(cur.computed || EMPTY_COMPUTED),
-        state: 'pending',
-        requestId,
-        inputsHash,
-        error: null,
-      }};
-      const pending = f.pendingAction;
-      const actionKey = pending && pending.actionKey;
+      if (cached) {
+        // Hit — pre-fill items/labels; mark state 'ok' with stale:true so the
+        // user sees content immediately. The fetch still fires below (we
+        // don't short-circuit — the whole point is the cache is a HINT, not
+        // the source of truth).
+        nextFields[idx] = { ...cur, computed: {
+          ...(cur.computed || EMPTY_COMPUTED),
+          state: 'ok',
+          requestId,
+          inputsHash,
+          items: cached.items.slice(),
+          labels: cached.labels ? cached.labels.slice() : null,
+          truncated: !!cached.truncated,
+          error: null,
+          stale: true,
+          cacheKey,
+        }};
+      } else {
+        nextFields[idx] = { ...cur, computed: {
+          ...(cur.computed || EMPTY_COMPUTED),
+          state: 'pending',
+          requestId,
+          inputsHash,
+          error: null,
+          stale: false,
+          cacheKey,
+        }};
+      }
       // Branch on the channel the port declared. The two Cmds use different
       // keyed-effect prefixes so same-port fetches on different channels
       // don't collide, and `_cancelKeyForField` reads the same discriminator.
@@ -604,19 +694,68 @@ function update(model, msg) {
         if (labels) labels = labels.slice(0, MAX_CHOICES_ARM);
         truncated = true;
       }
+      // Brief 3 — stale-while-refetch handling on settle:
+      //   - OK settle: replace items/labels, clear stale, WRITE CACHE (so the
+      //     next form-open for the same key hits).
+      //   - ERROR/timeout settle WITH stale items present (seeded from cache
+      //     on request): keep the stale items visible, flip state to 'error',
+      //     keep stale:true. "An old list beats an empty popover" (brief).
+      //     Free-typing still always wins — the chip is informational.
+      //   - ERROR/timeout settle WITHOUT stale items: existing behavior,
+      //     computed.items becomes []. No cache write.
+      const hadStale = !!(cur.computed && cur.computed.stale
+                          && Array.isArray(cur.computed.items) && cur.computed.items.length > 0);
+      let nextState, nextItems, nextLabels, nextTruncated, nextStale;
+      let cacheUpdate = null;                            // {key, payload} on ok settle
+      if (error) {
+        if (hadStale) {
+          // Keep the stale items visible under the error chip.
+          nextState = 'error';
+          nextItems = cur.computed.items;
+          nextLabels = cur.computed.labels;
+          nextTruncated = !!cur.computed.truncated;
+          nextStale = true;
+        } else {
+          nextState = 'error';
+          nextItems = items; nextLabels = labels; nextTruncated = truncated;
+          nextStale = false;
+        }
+      } else {
+        nextState = 'ok';
+        nextItems = items; nextLabels = labels; nextTruncated = truncated;
+        nextStale = false;                               // fresh data clears the marker
+        if (cur.computed && cur.computed.cacheKey) {
+          cacheUpdate = { key: cur.computed.cacheKey,
+                          payload: { items: items.slice(),
+                                     labels: labels ? labels.slice() : null,
+                                     truncated } };
+        }
+      }
       const nextFields = f.fields.slice();
       nextFields[idx] = { ...cur, computed: {
         ...cur.computed,
-        state: error ? 'error' : 'ok',
-        items, labels, error, truncated,
+        state: nextState,
+        items: nextItems,
+        labels: nextLabels,
+        error,
+        truncated: nextTruncated,
+        stale: nextStale,
       }};
       // Clamp picking.idx if the user was navigated past the new list end.
+      // Uses nextItems (not msg.items) so the stale-keep path doesn't clamp
+      // against an empty error payload while the stale list is still shown.
       let nextPicking = f.picking;
       if (f.picking && f.picking.port === msg.port) {
-        if (items.length === 0) nextPicking = { ...f.picking, idx: 0 };
-        else if (f.picking.idx >= items.length) nextPicking = { ...f.picking, idx: items.length - 1 };
+        if (nextItems.length === 0) nextPicking = { ...f.picking, idx: 0 };
+        else if (f.picking.idx >= nextItems.length) nextPicking = { ...f.picking, idx: nextItems.length - 1 };
       }
-      return [withModal(model, { fabricForm: { ...f, fields: nextFields, picking: nextPicking } }), []];
+      const nextChoicesCache = cacheUpdate
+        ? _cachePut(model.choicesCache, cacheUpdate.key, cacheUpdate.payload)
+        : model.choicesCache;
+      return [{
+        ...withModal(model, { fabricForm: { ...f, fields: nextFields, picking: nextPicking } }),
+        choicesCache: nextChoicesCache,
+      }, []];
     }
     case 'fabric_form_choices_pick': {
       // `{ port, value }` — user picked an entry from the choices popover.

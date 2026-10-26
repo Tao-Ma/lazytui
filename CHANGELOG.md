@@ -8,6 +8,51 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Stale-while-refetch cache for computed port choices (TUI).** The
+  heavy `choices_cmd:` + `choices_fn:` fetches (e.g. dev9's
+  `worktree.branch`: `docker exec dev9-env git -C <path> branch` with
+  `choices_timeout: 8000`) made every form-open start from `[fetching…]`
+  with an empty popover for multiple seconds, and reopening the form
+  moments later repeated the full wait for a list that almost never
+  changed. The cache keeps the last ok payload per request and seeds
+  it on the next request with the same key.
+  - **Shape**: `model.choicesCache = {entries, order, cap: 64}`. Key:
+    `${actionKey}|${port}|${source}|${depsHash}` where `source` is
+    `cmd:<cmd>` or `fn:<ref>`. Dep values in the key keep same-port
+    fetches for different repos / targets apart (worktree.branch for
+    repo A vs repo B hash to different keys).
+  - **Request**: on a cache hit the computed slot is seeded with
+    `state:'ok'`, cached items/labels, and `stale:true` IMMEDIATELY —
+    the popover opens populated with the stale list. The fetch still
+    fires (cache is a HINT; one-shot values + request-seq staleness
+    rules are unchanged). On a miss, computed is `state:'pending'` as
+    today.
+  - **Resolved (ok)**: items replace, stale clears, cache WRITES at
+    the request-time key (promoted to MRU).
+  - **Resolved (error/timeout) with stale items present**: items are
+    PRESERVED under the error chip ("an old list beats an empty
+    popover"); `stale:true` is kept. Free-typing still always wins.
+  - **Resolved (error/timeout) without prior cache**: existing behavior
+    — `items:[]`, no stale marker.
+  - **LRU bound at 64**: new keys evict the LRU-most; a re-fetch of
+    an existing key moves it to MRU without changing size.
+  - **Replay-deterministic**: the cache lives in the model so WAL fold
+    reconstructs it bit-identically. Covered by a round-trip test that
+    folds `request → resolved(ok)` and asserts both `computed.items`
+    AND the `choicesCache` entry are identical post-replay.
+  - **Chip renderer**: `[N choices ⟳]` for stale ok, `[error ⟳]` for
+    stale error — one glyph added; dynamic chip-width reserve already
+    accommodates the extra two cells.
+  - **Scope**: TUI only. The completion helper (CLI `--complete`) is a
+    one-shot process — no cache state could persist, and none should
+    be attempted.
+  - **Pure transport unchanged**: `js/feature/choices-cmd-runtime.js`
+    and `js/feature/choices-fn-runtime.js` stay effect-only; the cache
+    lives in the fabric-form reducer arms exclusively.
+  - **Literal `choices:` unaffected**: literal fields seed `state:'ok'`
+    directly from config; `cacheKey` stays `null` and no cache entry is
+    ever written for them (nothing to be stale about).
+
 - **`[a]` edit-args keybind — open the ports form on demand (actions pane).**
   Previously the multi-field ports form opened only when a required port was
   missing (`_promptMissing`'s `requiredMissing` gate at
