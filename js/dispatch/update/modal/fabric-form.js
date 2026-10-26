@@ -38,6 +38,10 @@ const { withModalMode, withModal } = require('../model-ops');
 const { isChainActive } = require('../../../leaves/input/modes');
 const { applyInject } = require('../fabric');
 const { isPrintableSeq: _isPrintableSeq } = require('../../../leaves/text/printable');
+// Brief 3 — variadic fields tokenize `text` → argv items at submit using the
+// same leaf compileCommand uses, so form text and `run:` string templates
+// agree on quoting semantics (no second splitter).
+const { tokenize } = require('../../../fabric/command');
 
 const TYPES = [
   'fabric_form_enter', 'fabric_form_key',
@@ -252,9 +256,14 @@ function _normalize(raw) {
   } else {
     computed = null;
   }
+  // Brief 3 — variadic flag: field.text is a one-line "command + args", and
+  // the submit arm tokenizes it via the shared fabric/command.tokenize leaf
+  // before injecting the ARRAY. Carry-through only; the chip renderer may
+  // read it later to paint `[N items]`.
+  const variadic = !!(raw && raw.variadic === true);
   return { port, text, required, default: def, desc, choicesFnRef,
            choicesCmd, choicesLabeled, choicesTimeout, dependsOn,
-           computed, ..._chip(text, def) };
+           variadic, computed, ..._chip(text, def) };
 }
 
 // Defense-in-depth guards on the raw fields array passed on fabric_form_enter:
@@ -510,6 +519,18 @@ function update(model, msg) {
       for (const field of f.fields) {
         if (!field.isModified) continue;
         const addr = `${actionKey}.${field.port}`;
+        // Brief 3 — a variadic field's `text` is one line of "command + args";
+        // tokenize it via the shared fabric/command.tokenize leaf (same splitter
+        // compileCommand already uses) and inject the ARRAY. Zero items → skip
+        // the inject entirely, so a required-missing re-prompts cleanly (same
+        // outcome as an unmodified field). Scalar fields keep the string value
+        // path unchanged.
+        if (field.variadic) {
+          const items = tokenize(field.text || '');
+          if (items.length === 0) continue;
+          next = applyInject(next, addr, items, { oneShot: true });
+          continue;
+        }
         next = applyInject(next, addr, field.text, { oneShot: true });
       }
       const closed = withModalMode(next, { fabricFormMode: false }, { fabricForm: { ...CLOSED } });

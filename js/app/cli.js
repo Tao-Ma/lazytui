@@ -197,19 +197,42 @@ function runCli(configPath, actionPath, actionArgs) {
   // order and bind them as the child's environment ($file, $start_lsn, …) so
   // the script references named ports instead of positional `$1`. Legacy
   // actions (no ports.in) keep the POSIX `$@` behavior unchanged.
+  //
+  // Brief 3 — a port declared `variadic: true` collects every positional from
+  // its declaration slot onward as the shell's `$@` (passed through sh's `--`
+  // tail; items stay out-of-band — never joined into an env var, so a value
+  // containing spaces survives intact). The variadic port is always LAST (the
+  // parser enforces it); scalar ports before it still bind to env as today.
   let childArgs = actionArgs;
   let childEnv = process.env;
   if (action.ports && action.ports.in) {
     const portDecls = action.ports.in;
     const portNames = Object.keys(portDecls);
+    const variadicIdx = portNames.findIndex((n) => portDecls[n] && portDecls[n].variadic === true);
+    const scalarEnd = variadicIdx === -1 ? portNames.length : variadicIdx;
     const portEnv = {};
-    actionArgs.forEach((v, i) => { if (i < portNames.length) portEnv[portNames[i]] = v; });
-    const missing = portNames.filter((n) =>
-      (portDecls[n].required !== false) && portEnv[n] == null);
+    for (let i = 0; i < scalarEnd; i++) {
+      const v = actionArgs[i];
+      if (v != null) portEnv[portNames[i]] = v;
+    }
+    const variadicItems = variadicIdx === -1 ? null : actionArgs.slice(variadicIdx);
+    const missing = [];
+    for (let i = 0; i < scalarEnd; i++) {
+      const n = portNames[i];
+      if ((portDecls[n].required !== false) && portEnv[n] == null) missing.push(n);
+    }
+    if (variadicIdx !== -1) {
+      const vname = portNames[variadicIdx];
+      if ((portDecls[vname].required !== false) && variadicItems.length === 0) missing.push(vname);
+    }
     if (missing.length) {
+      // Usage line: variadic port renders with a trailing `...` so a reader
+      // sees that it takes one-or-more items (vs a single scalar).
+      const usageSlots = portNames.map((n, i) =>
+        i === variadicIdx ? `<${n}...>` : `<${n}>`);
       process.stderr.write(
         `tui --exec: missing required port(s): ${missing.join(', ')}\n` +
-        `  usage: --exec ${actionPath} ${portNames.map((n) => `<${n}>`).join(' ')}\n`);
+        `  usage: --exec ${actionPath} ${usageSlots.join(' ')}\n`);
       // Companion to shell-completion (feat): if the FIRST missing port
       // has a choices source (choices_cmd: OR literal choices:), resolve
       // it and surface the valid values on an ADDITIONAL stderr line.
@@ -245,7 +268,12 @@ function runCli(configPath, actionPath, actionArgs) {
       }
       return Promise.resolve(1);
     }
-    childArgs = [];                                      // ports supersede $@
+    // Scalars → env (today's behavior). Variadic items → "$@" via sh's `--`
+    // tail (childArgs); the variadic port NAME is never env-bound, so an item
+    // containing spaces/quotes can't be silently joined-and-split. Legacy
+    // actions (no variadic port) keep `childArgs = []` as before — scalar
+    // ports supersede `$@` entirely.
+    childArgs = variadicItems || [];
     // Env-shadow guard — same denylist the TUI invoke path uses
     // (slice-1 pre-release review round 4 Finding 1; CLI/TUI drift class.
     // See js/dispatch/runtime/action-runner.js:filterShadowedPortValues

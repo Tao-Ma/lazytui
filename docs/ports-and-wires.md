@@ -149,6 +149,75 @@ parameter model (they replace positional `args` for fabric consumers). Each carr
 command via the no-shell command model below, so `{{start_lsn}}` is a **bound parameter**,
 never shell-interpolated text.
 
+### Variadic input ports — command + arbitrary args
+
+Some actions have a last argument that is a **list of items** rather than one
+scalar — "ssh someone@host **ls -la /tmp**", "docker exec c **sh -c '…'**",
+"kubectl exec pod **-- bash**". These used to be served by the legacy raw
+`"$@"` surface (a declared-ports action with the shell script dropping down to
+positional `$1`/`$@` for the tail), which gave up every argument the ports
+model otherwise supplies: typed metadata, missing-required UX, TAB
+completion, shell-safe quoting.
+
+A port modifier `variadic: true` opts that port into "command + args" mode
+without losing the rest of the declaration:
+
+```yaml
+access_run:
+  label: SSH-via-VPN exec
+  type: run
+  script: 'exec ./tools/cli/scripts/access/run.sh "$@"'
+  ports:
+    in:
+      host: { type: string,  required: true }
+      cmd:  { type: cmdline, variadic: true, required: true,
+              desc: command + args to exec via the VPN proxy }
+```
+
+Parser rules (hard errors — the combinations couldn't exist before, so
+backward compat doesn't apply):
+
+- At most **one** variadic port per action.
+- It must be **LAST** in declaration order. The argv tail is what the shell
+  reads as `$@`; a scalar after it would get silently misbound.
+- Cannot carry `choices`, `choices_cmd`, `choices_fn`, `depends_on`, or
+  `default`. The choice channels presume a popover; `depends_on` presumes a
+  fetch; `default` is a scalar surface. None has coherent semantics on an
+  item list.
+- `required: true` means **"at least one item"** (the form skips the inject
+  when the tokenized list is empty, which re-prompts; `--exec` adds the port
+  to the missing list when no positionals land at the variadic slot).
+
+Routing at invoke:
+
+- Scalar ports before the variadic slot still bind to the child environment
+  (`$host` in the example above) exactly as a plain-ports action.
+- The variadic port's items go into the shell spawn's **argv tail** via
+  `spawn('sh', ['-c', script, '--', ...items])` — one `$@` element per item.
+  Items stay **out-of-band** at every hop:
+    - `--exec` takes `actionArgs.slice(variadicIdx)` verbatim (argv is
+      already argv — no shell re-parse, no split-on-whitespace).
+    - The TUI form field edits as one line and tokenizes on submit via
+      `js/fabric/command.tokenize` — the same leaf a `run:` string template
+      uses, so quoting semantics match (a double-quoted token with a space
+      survives as one item).
+- The variadic port NAME is **never bound as an env var**. A joined env var
+  (`$cmd="ls -la /tmp"`) would silently corrupt any item containing spaces,
+  quotes, or newlines: the shell re-splits on IFS at interpolation, so
+  `"a b"` ↔ `[a, b]` is a one-way lossy conversion. Better absent than
+  wrong — scripts reach the items as `"$@"`.
+- The env-shadow denylist does not apply (items never become env), but the
+  port NAME can still carry the modifier regardless of case — a lowercase
+  `cmd` and uppercase `CMD` behave identically here.
+- Shell TAB completion past the variadic slot emits no candidates (the
+  wrapper's `-o default` falls through to filename completion, which is
+  what the user wants for an exec-style tail).
+
+A legacy action without declared ports keeps today's raw `"$@"` passthrough
+unchanged (it is still allowed; it is now preferred to declare the surface
+with a variadic port instead so the invoke-time UX and the --lint catalog
+cover it).
+
 ## Command model — no shell, bind parameters
 
 A fabric component's `run:` is a **command template** — a program plus argument slots,

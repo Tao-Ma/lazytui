@@ -1101,12 +1101,25 @@ function validateActionPorts(aname, ports, ctx, warnings) {
           try { compileExtract(pdef.extract); }
           catch (e) { throw new SchemaError(`invalid 'extract': ${e.message}`, { context: pctx }); }
         }
+        // Brief 3 — `variadic` is an input-only modifier (it routes argv tail
+        // into `"$@"`, which has no symmetric meaning for an output port).
+        if ('variadic' in pdef) {
+          throw new SchemaError("'variadic' is an input-port modifier — not valid on an output port", { context: pctx });
+        }
       } else {
         if ('required' in pdef && typeof pdef.required !== 'boolean') {
           throw new SchemaError("'required' must be a boolean", { context: pctx });
         }
         if ('from' in pdef || 'extract' in pdef) {
           throw new SchemaError("input ports don't take 'from' / 'extract'", { context: pctx });
+        }
+        // Brief 3 — `variadic: true` opts a port into "command + arbitrary
+        // args" mode. Per-port type check here; cross-port rules (uniqueness,
+        // last-position, collisions with choices/depends_on/default) run in a
+        // second pass below (`_validateVariadicConstraints`) once every port's
+        // own fields have been validated. OUT ports never take variadic.
+        if ('variadic' in pdef && typeof pdef.variadic !== 'boolean') {
+          throw new SchemaError("'variadic' must be a boolean", { context: pctx });
         }
         // S2: a `default:` must be a primitive scalar — string, number, boolean.
         // A non-primitive would get `String()`'d by action-runner at run time,
@@ -1406,6 +1419,51 @@ function validateActionPorts(aname, ports, ctx, warnings) {
           }
         }
       }
+    }
+    // Brief 3 — cross-port rules for `variadic: true` input ports. Runs after
+    // every individual port is validated so the per-port state we read (type,
+    // choices arms, depends_on, default) reflects the normalized shape.
+    //   1. At most one variadic port per action.
+    //   2. The variadic port MUST be last in declaration order (argv tail is
+    //      what the shell interprets as $@; a scalar after it would get
+    //      silently misbound).
+    //   3. A variadic port cannot carry `choices` / `choices_cmd` /
+    //      `choices_fn` / `depends_on` / `default` — HARD error. Choices
+    //      presume a popover; depends_on presumes a fetch; `default` is a
+    //      scalar surface. None of them have coherent semantics on an item
+    //      list.
+    // HARD errors (not warn-drop) because the combinations couldn't exist
+    // before this brief — [[feedback_backcompat_on_new_validations]] does
+    // not apply; no previously-valid YAML is being newly rejected.
+    if (dir === 'in') {
+      _validateVariadicConstraints(defs, ctx);
+    }
+  }
+}
+
+function _validateVariadicConstraints(defs, ctx) {
+  const names = Object.keys(defs);
+  const variadics = names.filter((n) => defs[n] && defs[n].variadic === true);
+  if (variadics.length === 0) return;
+  if (variadics.length > 1) {
+    throw new SchemaError(
+      `at most one 'variadic: true' port per action, got ${variadics.length}: ${variadics.join(', ')}`,
+      { context: ctx });
+  }
+  const vname = variadics[0];
+  if (names[names.length - 1] !== vname) {
+    throw new SchemaError(
+      `'variadic: true' port '${vname}' must be LAST in declaration order (argv tail is $@); ` +
+      `move it after ${names.slice(names.indexOf(vname) + 1).map((n) => `'${n}'`).join(', ')}`,
+      { context: ctx });
+  }
+  const vdef = defs[vname];
+  const banned = ['choices', 'choices_cmd', 'choices_fn', 'depends_on', 'default'];
+  for (const key of banned) {
+    if (key in vdef) {
+      throw new SchemaError(
+        `variadic port '${vname}' cannot carry '${key}' (no coherent popover / fetch / scalar semantics on an item list)`,
+        { context: ctx });
     }
   }
 }

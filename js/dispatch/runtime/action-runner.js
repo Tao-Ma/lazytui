@@ -272,10 +272,39 @@ function doRun(actionKey, action, args = []) {
         resolved.missing.map((m) => `[warning]not ready: ${m.reason}[/]`).join('\n'));
       return;
     }
-    opts.env = _envWithShadowGuard(actionKey, resolved.values);
+    // Brief 3 — split scalars (→ child env) from the variadic port (→ argv
+    // tail that sh reads as `$@`). The variadic port name is NEVER env-bound:
+    // items stay out-of-band, so values with spaces/quotes/newlines arrive
+    // intact — no join-and-split lossage. Legacy actions (no variadic port)
+    // keep the original `args` passed in.
+    const { scalarValues, variadicItems } = _splitVariadic(action.ports.in, resolved.values);
+    opts.env = _envWithShadowGuard(actionKey, scalarValues);
     _consumeOneShotInjects(actionKey, action, resolved.sources);
+    if (variadicItems != null) args = variadicItems;
   }
   streamCommand(actionKey, cmd, args, opts);
+}
+
+// Brief 3 — classify resolved values into the two spawn channels. Returns
+// `{scalarValues, variadicItems}`: variadicItems is null when the action has
+// no variadic port (caller leaves the inherited `args` alone), or an array of
+// strings when it does. The variadic port NAME is removed from scalarValues
+// so the shadow guard + env spread never see it; items go to args instead.
+function _splitVariadic(portsIn, resolvedValues) {
+  const names = Object.keys(portsIn || {});
+  const vname = names.find((n) => portsIn[n] && portsIn[n].variadic === true) || null;
+  if (!vname) return { scalarValues: resolvedValues, variadicItems: null };
+  const v = resolvedValues[vname];
+  // Form submit injects an array; a wire/default would be a scalar — coerce
+  // either to the items-list the spawn tail wants. `null`/`undefined` means
+  // "nothing supplied" and yields an empty tail; the resolver should have
+  // already caught required-missing before we get here.
+  const variadicItems = Array.isArray(v)
+    ? v.map((x) => String(x))
+    : (v != null ? [String(v)] : []);
+  const scalarValues = { ...resolvedValues };
+  delete scalarValues[vname];
+  return { scalarValues, variadicItems };
 }
 
 // Env vars we refuse to let a port VALUE override — overriding any of these
@@ -453,6 +482,11 @@ function _buildFormField(port, decl, values) {
     choicesTimeout,
     dependsOn,
     choices,
+    // Brief 3 — variadic field: submit tokenizes `text` into an argv list
+    // (via the shared leaf fabric/command.tokenize) and injects the ARRAY,
+    // so the spawn tail receives one `$@` element per token. Scalar fields
+    // keep `variadic: false` (inject the raw string).
+    variadic: decl.variadic === true,
   };
 }
 
@@ -592,4 +626,5 @@ function doRunFabric(actionKey, action) {
 // (dispatch.js, plugins/docker.js, cleanup.js) keep working.
 module.exports = { runAction, doRun, killAll, streamCommand, _spawnUsesTmux, doRunFabric, shQuote,
   _resolvePortsForAction, _promptMissing, openPortsForm,
-  _consumeOneShotInjects, _envWithShadowGuard, filterShadowedPortValues };
+  _consumeOneShotInjects, _envWithShadowGuard, filterShadowedPortValues,
+  _splitVariadic };

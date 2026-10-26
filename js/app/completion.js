@@ -250,6 +250,12 @@ async function _completePositionalArg(configPath, config, cword, words) {
   const portName = portNames[portIdx];
   const portDecl = portsIn[portName];
   if (!portDecl || typeof portDecl !== 'object') return [];
+  // Brief 3 — variadic port: positionals from here on are "command + args",
+  // not choice candidates. Emit nothing; the wrapper's `-o default` falls
+  // back to filename completion, which is what the user wants for an exec-
+  // style tail. (A variadic port's declaration forbids all three choices
+  // channels, so this check is also a cheap tripwire for a renamed arm.)
+  if (portDecl.variadic === true) return [];
   // Literal `choices:` — the parser normalizes to {items, labels, truncated}.
   // No spawn, no timeout; emit the values directly (labeled maps → values only,
   // matching the choices_cmd+labeled contract: TAB inserts the value you'd

@@ -47,6 +47,12 @@
  * refused. Rename an offending port to its lowercase form to silence the
  * warning.
  *
+ * Not applicable to `variadic: true` input ports (Brief 3): their items go
+ * into the shell spawn's argv tail as `$@`, never into the child env — so a
+ * variadic port named `PATH` is still a bad idea, but not for env-shadow
+ * reasons; the parser's existing `port.env_shadow` warning fires on the
+ * NAME either way. See docs/ports-and-wires.md "Variadic input ports".
+ *
  * Pure leaf: no io, no model, data only. See the long comment in
  * `js/dispatch/runtime/action-runner.js:_envWithShadowGuard` for the matching
  * per-class rationale on the spawn side.
