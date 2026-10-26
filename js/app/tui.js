@@ -26,12 +26,13 @@ Options:
                              Only type: run is supported in CLI mode.
   --list [filter]            Print every YAML action (path, label, desc).
                              Optional substring filters by path.
-  --lint                     Parse config + plugins and report findings on
-                             stdout as \`<severity> <code> <context>: <msg>\`,
-                             plus a summary line on stderr. Exit 0 clean,
-                             1 warnings-only, 2 if any hard error (incl.
-                             config-won't-load). Add --json for a stable
-                             machine-readable array (summary suppressed).
+  --lint                     Parse the config (incl. any YAML plugins it
+                             pulls in) and report findings on stdout as
+                             \`<severity> <code> <context>: <msg>\`, plus
+                             a summary on stderr. Exit 0 clean, 1 warnings-
+                             only, 2 on any hard error (incl. config-won't-
+                             load). Add --json for a stable machine-readable
+                             array (summary suppressed).
   --spec                     Print the Component authoring spec to stdout
   --record-save <file>       Record this session to <file> from boot (also via
                              the :record-save cmdline verb mid-session).

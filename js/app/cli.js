@@ -34,6 +34,7 @@ const { spawn } = require('child_process');
 const path = require('path');
 const { loadConfig } = require('./state');
 const { getModel } = require('../model/store');
+const { findVariadicPortName } = require('../leaves/ports/variadic');
 
 // Built-in Components consulted for `groupActions(group, name)`
 // synthesis. Add new generic Components here as they ship — keep
@@ -208,7 +209,10 @@ function runCli(configPath, actionPath, actionArgs) {
   if (action.ports && action.ports.in) {
     const portDecls = action.ports.in;
     const portNames = Object.keys(portDecls);
-    const variadicIdx = portNames.findIndex((n) => portDecls[n] && portDecls[n].variadic === true);
+    // Shared leaf — one authoritative "which port is variadic?" lookup across
+    // --exec here and action-runner's _splitVariadic (CLI/TUI drift guard).
+    const variadicName = findVariadicPortName(portDecls);
+    const variadicIdx = variadicName === null ? -1 : portNames.indexOf(variadicName);
     const scalarEnd = variadicIdx === -1 ? portNames.length : variadicIdx;
     const portEnv = {};
     for (let i = 0; i < scalarEnd; i++) {

@@ -23,6 +23,7 @@ const sessionLog = require('../../io/session-log');
 const { resolveInputs } = require('../../fabric/resolve');
 const { compileCommand, fillCommand } = require('../../fabric/command');
 const fabricPorts = require('../../fabric/ports');
+const { findVariadicPortName } = require('../../leaves/ports/variadic');
 
 // type:spawn uses a real `tmux new-window` ONLY when running under tmux AND we
 // are NOT recording. While recording, force the embedded-PTY path even under
@@ -291,8 +292,9 @@ function doRun(actionKey, action, args = []) {
 // strings when it does. The variadic port NAME is removed from scalarValues
 // so the shadow guard + env spread never see it; items go to args instead.
 function _splitVariadic(portsIn, resolvedValues) {
-  const names = Object.keys(portsIn || {});
-  const vname = names.find((n) => portsIn[n] && portsIn[n].variadic === true) || null;
+  // Shared leaf — same "which port is variadic?" lookup --exec uses, so the
+  // CLI and TUI invoke paths can't drift (v0.6.29 class).
+  const vname = findVariadicPortName(portsIn);
   if (!vname) return { scalarValues: resolvedValues, variadicItems: null };
   const v = resolvedValues[vname];
   // Form submit injects an array; a wire/default would be a scalar — coerce

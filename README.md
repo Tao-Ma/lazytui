@@ -280,6 +280,9 @@ bin/lazytui path/to/config.yml --exec group:action [args...]
 # Enumerate every action
 bin/lazytui path/to/config.yml --list [filter]
 
+# Lint the config (CI gate — rc 0 clean / 1 warnings / 2 any hard error)
+bin/lazytui path/to/config.yml --lint [--json]
+
 # Print the Component-authoring bundle (feed to an AI agent)
 bin/lazytui --spec > spec.md
 ```

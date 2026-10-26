@@ -209,9 +209,9 @@ Routing at invoke:
 - The env-shadow denylist does not apply (items never become env), but the
   port NAME can still carry the modifier regardless of case — a lowercase
   `cmd` and uppercase `CMD` behave identically here.
-- Shell TAB completion past the variadic slot emits no candidates (the
-  wrapper's `-o default` falls through to filename completion, which is
-  what the user wants for an exec-style tail).
+- Shell TAB completion AT or past the variadic slot emits no candidates
+  (the wrapper's `-o default` falls through to filename completion, which
+  is what the user wants for an exec-style tail).
 
 A legacy action without declared ports keeps today's raw `"$@"` passthrough
 unchanged (it is still allowed; it is now preferred to declare the surface
