@@ -854,6 +854,7 @@ const NORMAL_VERBS = {
   register:    () => applyMsg({ type: 'register_popup_enter' }),
   cmdline:     () => applyMsg({ type: 'cmdline_enter' }),
   copy_mode:   () => enterCopyMode(),
+  edit_args:   () => handleAction('edit_args'),
 };
 
 // Resolve a keymap binding spec to its dispatch thunk (or null). `builtin` uses

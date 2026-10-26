@@ -8,6 +8,42 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`[a]` edit-args keybind — open the ports form on demand (actions pane).**
+  Previously the multi-field ports form opened only when a required port was
+  missing (`_promptMissing`'s `requiredMissing` gate at
+  action-runner.js:453). That meant **optional-only actions never
+  prompted** — the form / field lanes were unreachable, so an author
+  couldn't set e.g. `ddns-ping.host`, `issue.full_tunnel`,
+  `rotate-ca.passphrase`, `session cmd.command`. The `[a]` keybind,
+  pressed with an action selected in the Actions pane, opens the SAME
+  multi-field form the missing-required path builds — every declared
+  port materialized with resolved/default prefill and `[default]` /
+  `[modified]` / `[unset]` chips, choices machinery (choices_fn /
+  choices_cmd / literal `choices:`, depends_on, popover) included.
+  - Always the FORM lane under `[a]` even for a 1-port no-choices
+    action — `[a]` is an inspect/edit affordance; the lean popup adds
+    nothing on that path. The missing-required path's lane split
+    (form vs lean) is unchanged.
+  - Action with no declared `ports.in` → Transcript notice
+    (`<key>: no declared ports — edit args unavailable`), no modal.
+  - Submit → normal run path. `confirm:` fires on form submit — same
+    gating as the missing-required flow. Esc → cancel, no run.
+  - Guards (via the keymap scope): `a` is scoped to the `actions`
+    panel kind in the normal keymap, so it only fires with that pane
+    focused. The `edit_args` arm in handleAction additionally refuses
+    outside actions focus. While any modal mode is active (fabric-form,
+    fabric-field, confirm, menu, …), the modal owns input and `a` lands
+    as text / a mode key — never fires the edit-args handler.
+  - Extracted `openPortsForm(actionKey, action, resolved)` from
+    `_promptMissing`'s form-lane body: shared with the missing-required
+    path so a fix to the form shape only lives in one place.
+  - New verb `edit_args` added to `VERB_CATALOG` + `NORMAL_VERBS` + the
+    first-ever SCOPED default binding in `DEFAULT_NORMAL` (keymap v1
+    was all-global; `a` scoped to `actions` keeps the key free as text
+    everywhere else, and future scoped defaults are now a precedent).
+  - Help overlay row added; `docs/action-ports-guide.md` "Required vs
+    optional" section documents the keybind.
+
 - **Literal `choices:` port key — static sibling of `choices_cmd:` /
   `choices_fn:`.** Many ports take a fixed enum the author already knows
   (role names, flag values, severities). Previously these had to be

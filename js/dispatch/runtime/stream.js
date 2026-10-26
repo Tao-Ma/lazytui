@@ -451,4 +451,11 @@ function streamCommand(headerLabel, cmd, args = [], opts = {}) {
   });
 }
 
-module.exports = { streamCommand, killJob, killAll, preemptNotice };
+/** Append a single line to the unrouted Transcript (viewer_transcript target).
+ *  Thin public wrapper around the module-local appendDetailLine for callers
+ *  that just need to surface a notice (e.g. [a] edit-args on a 0-port action). */
+function pushTranscriptNotice(line) {
+  appendDetailLine(line, null);
+}
+
+module.exports = { streamCommand, killJob, killAll, preemptNotice, pushTranscriptNotice };

@@ -34,6 +34,7 @@ const { getModel } = require('../../model/store');
 const route = require('../../panel/route');
 const { killAction: _killAction } = require('../../leaves/proc/kill-signals');
 const mpane = require('../../leaves/wm/pane');
+const { esc } = require('../../leaves/text/ansi');
 
 /** v0.6.4 Theme C — compute the focused viewer's tab info HERE (handler,
  *  impure) so the next_tab/prev_tab reducer arms stay pure of Component
@@ -151,6 +152,27 @@ function _runResolvedAction(key, act) {
   // required port when the action has ports.in declared. An action with no
   // ports.in just runs; no args collection in that path.
   runAction(key, act);
+}
+
+/**
+ * Open the multi-field ports form for `act` on demand — the [a] edit-args
+ * keybind (Brief 1). ALWAYS opens the form (unlike _promptMissing's lane
+ * split): a 1-port no-choices action under [a] still gets the form so the
+ * user can inspect and override the resolved/default value. An action with
+ * no declared ports.in surfaces a transcript notice and does nothing else.
+ * Submit path is identical to the normal run → `confirm:` fires after the
+ * form Enter, same as the missing-required path.
+ */
+function _editArgsForAction(key, act) {
+  const inputs = (act && act.ports && act.ports.in) || {};
+  if (Object.keys(inputs).length === 0) {
+    require('../runtime/stream').pushTranscriptNotice(
+      `[dim]${esc(key)}: no declared ports — edit args unavailable[/]`);
+    return;
+  }
+  const ar = require('../runtime/action-runner');
+  const resolved = ar._resolvePortsForAction(key, act, getModel());
+  ar.openPortsForm(key, act, resolved);
 }
 
 /** Run a declared action by its key, searching every group. Resolves
@@ -295,6 +317,25 @@ function handleAction(action, arg, from) {
         // (same shape as the menu_action → dispatch.handleAction edge).
         require('./dispatch').showSelectedInfo();
       }
+      break;
+    }
+    case 'edit_args': {
+      // [a] edit-args (Brief 1) — open the multi-field ports form for the
+      // actions-pane selected action, even when nothing is missing. Lets the
+      // user set optional ports (which _promptMissing never prompts for) and
+      // review/override resolved values before a run. Submit → normal run
+      // path (confirm fires on submit, same as the missing-required flow).
+      //
+      // A no-op outside the actions pane focus: `a` on a group row shouldn't
+      // do anything, and the key handler's guards also refuse while any
+      // modal mode is active (text input wins there).
+      if (instanceKind(getFocus()) !== 'actions') break;
+      const afocus = getFocus();
+      const items = getItems(afocus);
+      const item = items[getSel(afocus)];
+      if (!item) break;
+      const [key, act] = item;
+      _editArgsForAction(key, act);
       break;
     }
     case 'refresh':

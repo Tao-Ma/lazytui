@@ -122,6 +122,7 @@ function helpLines() {
 
   lines.push('', '[dim]Actions[/]',
     '  Enter          Run selected action',
+    '  a              Open ports form (edit args — incl. optional)',
     '  x              Open menu popup',
     `  ${esc('[')}  ${esc(']')}           Cycle detail tabs`,
     '  +              Expand view (normal→half→full)',

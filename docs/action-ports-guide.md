@@ -169,6 +169,12 @@ diagnose:
 
 The `GOOD` version opens the form with 4 fields — the user hits `host`, types a value, and presses Enter. The 3 optionals ride along at their defaults and are discoverable without being in the way.
 
+### Setting an optional on demand — `[a]` edit-args
+
+Enter runs the action; if any REQUIRED port is empty the form opens over the gap. **But optional-only actions never prompt** — the form path is reached only when a required value is missing. For an all-optional action (or one where you want to review/override a resolved value before running), press `[a]` with an action selected to open the ports form on demand. Every declared port materializes with its resolved or default value prefilled; chips show `[default]` / `[modified]` / `[unset]`. Submit → the normal run path (any `confirm:` fires on submit, same as the missing-required flow). Esc → cancel, no run.
+
+An action with no declared `ports.in` surfaces a Transcript notice (`<key>: no declared ports — edit args unavailable`) and does nothing else — nothing to edit.
+
 ---
 
 ## Defaults — how they resolve

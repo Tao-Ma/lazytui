@@ -446,10 +446,34 @@ function _buildFormField(port, decl, values) {
   };
 }
 
+/**
+ * Open the multi-field ports form for `action` with every declared port
+ * materialized + prefilled from `resolved.values`. Shared body between the
+ * missing-required path (_promptMissing's form lane) and the `[a]` edit-args
+ * keybind (Brief 1): both land in the SAME fabric_form_enter dispatch so a
+ * fix to the form shape only lives in one place.
+ *
+ * The caller decides when to open — this fn is unconditional.
+ * - _promptMissing: calls only after the lane split (2+ ports OR anyChoices).
+ * - [a] edit-args: calls unconditionally (edit-args is always-form, even for
+ *   a 1-port no-choices action where _promptMissing would prefer the lean
+ *   popup — the inspect affordance of [a] adds nothing on the lean lane).
+ *
+ * `resolved` is the `{values, missing, sources}` from _resolvePortsForAction.
+ * Pass an empty `{values: {}}` to open with every field at its decl.default.
+ */
+function openPortsForm(actionKey, action, resolved) {
+  const inputs = (action && action.ports && action.ports.in) || {};
+  const values = (resolved && resolved.values) || {};
+  const declNames = Object.keys(inputs);
+  const fields = declNames.map((port) => _buildFormField(port, inputs[port] || {}, values));
+  applyMsg({ type: 'fabric_form_enter', fields,
+             pendingAction: { actionKey, action } });
+}
+
 function _promptMissing(actionKey, action, resolved) {
   const inputs = (action && action.ports && action.ports.in) || {};
   const missing = (resolved && resolved.missing) || [];
-  const values = (resolved && resolved.values) || {};
   const requiredMissing = missing.find((m) => inputs[m.port] && inputs[m.port].required !== false);
   if (!requiredMissing) return false;
 
@@ -467,9 +491,7 @@ function _promptMissing(actionKey, action, resolved) {
         || (d.choices && typeof d.choices === 'object' && Array.isArray(d.choices.items));
   });
   if (declNames.length >= 2 || anyChoices) {
-    const fields = declNames.map((port) => _buildFormField(port, inputs[port] || {}, values));
-    applyMsg({ type: 'fabric_form_enter', fields,
-               pendingAction: { actionKey, action } });
+    openPortsForm(actionKey, action, resolved);
     return true;
   }
 
@@ -559,5 +581,5 @@ function doRunFabric(actionKey, action) {
 // Re-export streaming helpers so existing import sites
 // (dispatch.js, plugins/docker.js, cleanup.js) keep working.
 module.exports = { runAction, doRun, killAll, streamCommand, _spawnUsesTmux, doRunFabric, shQuote,
-  _resolvePortsForAction, _promptMissing, _consumeOneShotInjects, _envWithShadowGuard,
-  filterShadowedPortValues };
+  _resolvePortsForAction, _promptMissing, openPortsForm,
+  _consumeOneShotInjects, _envWithShadowGuard, filterShadowedPortValues };

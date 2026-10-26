@@ -47,6 +47,7 @@ const VERB_CATALOG = {
   register:    'Open the yank-register picker',
   cmdline:     'Open the command line',
   copy_mode:   'Enter copy mode (select text to yank)',
+  edit_args:   "Open the ports form to edit args (incl. optional) for the actions-pane selection",
 };
 
 // Default normal-mode bindings, by context. v1: every default is GLOBAL — the
@@ -54,6 +55,16 @@ const VERB_CATALOG = {
 // so there are no per-focus-kind defaults yet. The resolver still walks
 // [focusKind, 'global'], so a future context-scoped default is purely additive.
 const DEFAULT_NORMAL = {
+  // v1 was all-global. Brief 1 (edit-args) introduces the first SCOPED default:
+  // `a` only fires on the actions pane — the handler itself is a no-op outside
+  // (see handleAction's edit_args arm), but scoping keeps `a` free as a text
+  // key for every other context (and future authors who want to bind it there).
+  // Resolver walks [focusKind, 'global']; a scoped match wins over any global
+  // binding on the same key, so a future `a` global binding would be shadowed
+  // on the actions pane — intentional.
+  actions: [
+    { key: 'a', spec: { builtin: 'edit_args' } },
+  ],
   global: [
     { key: 'r', spec: { builtin: 'refresh' } },
     { key: '?', spec: { builtin: 'show_help' } },
