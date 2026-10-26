@@ -1121,6 +1121,26 @@ function validateActionPorts(aname, ports, ctx, warnings) {
         if ('variadic' in pdef && typeof pdef.variadic !== 'boolean') {
           throw new SchemaError("'variadic' must be a boolean", { context: pctx });
         }
+        // Brief 3 (v0.6.43) — `remember: false` opts a port OUT of the per-
+        // action "last-submitted value" session cache (the `[last]` chip on
+        // form re-open). Default is remember-on for every port. Enforced
+        // strictly boolean (no truthy/falsy coercion): a typo like
+        // `remember: "no"` would otherwise be truthy → opt-IN, defeating the
+        // author's intent. Warn-drop per
+        // [[feedback_backcompat_on_new_validations]] — no pre-existing YAML
+        // can have carried `remember:` before this brief, but keeping warn-
+        // drop matches sibling conventions (bad_default_type / bad_choices_*)
+        // so the author sees it in the parser warning list rather than a
+        // crash.
+        if ('remember' in pdef && typeof pdef.remember !== 'boolean') {
+          if (warnings) {
+            warnings.push({
+              code: 'port.bad_remember',
+              message: `${pctx}: 'remember' must be a boolean (got ${typeof pdef.remember}) — dropped`,
+            });
+          }
+          delete pdef.remember;
+        }
         // S2: a `default:` must be a primitive scalar — string, number, boolean.
         // A non-primitive would get `String()`'d by action-runner at run time,
         // yielding "[object Object]" or "1,2,3" as the form pre-fill — never

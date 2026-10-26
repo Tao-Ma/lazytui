@@ -262,6 +262,19 @@ function init() {
     // _choicesCachePut. TUI-only: the completion helper is a one-shot process
     // and has no cache state to carry.
     choicesCache: { entries: {}, order: [], cap: 64 },
+    // Brief 3 (v0.6.43) — session-resident "last-submitted values per action"
+    // map, consumed by `_buildFormField` to pre-fill a reopened form with the
+    // user's prior entries ([last] chip). Shape mirrors choicesCache: an LRU
+    // over actionKey → { port: text } written by the pure fabric_form_submit
+    // reducer arm (so WAL replay reconstructs it deterministically; same
+    // argument that already keeps choicesCache replay-safe). Reset by
+    // set_config (the action universe just changed; stale port-key mappings
+    // against a redefined action would surface as mysterious pre-fills under
+    // a chip that reads [last]). Never leaves the model — the resolver (CLI
+    // --exec, completion helper, _resolvePortsForAction) does NOT consult it;
+    // it is strictly a UI seed. See js/dispatch/update/modal/fabric-form.js
+    // submit arm + js/dispatch/runtime/action-runner.js _buildFormField.
+    formHistory: { entries: {}, order: [], cap: 64 },
   };
   return m;
 }

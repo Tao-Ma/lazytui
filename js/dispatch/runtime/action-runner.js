@@ -448,10 +448,30 @@ function _resolvePortsForAction(actionKey, action, model) {
  * Brief 1's forthcoming `[a]` edit-args keybind which opens the same form
  * on demand even when nothing is missing.
  */
-function _buildFormField(port, decl, values) {
+function _buildFormField(port, decl, values, lastValue) {
   const def = decl.default != null ? String(decl.default) : null;
   const resolvedVal = (port in values) ? String(values[port]) : null;
-  const text = resolvedVal != null ? resolvedVal : (def != null ? def : '');
+  // Brief 3 (v0.6.43) — precedence resolved → last-used → default → empty.
+  // Last-used OUTRANKS the decl default on purpose: a value the user chose
+  // once and submitted is a stronger signal of "what I want" than the YAML
+  // author's placeholder. Resolved values (inject / wire) still win —
+  // explicit plumbing from a wire or a one-shot the TUI set up this run
+  // beats a stored memory. `remember: false` opts a port out at history
+  // READ time too, so a never-written port doesn't accidentally pull a
+  // stale slot (defense-in-depth; write-time already skipped it).
+  const historyEligible = decl.remember !== false;
+  const lastFromHistory = (historyEligible && typeof lastValue === 'string')
+    ? lastValue : null;
+  let text;
+  let isLast = false;
+  if (resolvedVal != null) {
+    text = resolvedVal;
+  } else if (lastFromHistory != null) {
+    text = lastFromHistory;
+    isLast = true;
+  } else {
+    text = def != null ? def : '';
+  }
   // Slice 2: choices_fn + depends_on.
   const choicesFnRef = typeof decl.choices_fn === 'string' && decl.choices_fn
     ? decl.choices_fn : null;
@@ -490,6 +510,12 @@ function _buildFormField(port, decl, values) {
     // so the spawn tail receives one `$@` element per token. Scalar fields
     // keep `variadic: false` (inject the raw string).
     variadic: decl.variadic === true,
+    // Brief 3 (v0.6.43) — history flags carried through so the reducer
+    // paints the `[last]` chip (isLast=true means text came from history
+    // and hasn't been edited this session) and the submit arm knows which
+    // fields to WRITE to history (remember=false opts out).
+    isLast,
+    remember: decl.remember !== false,
   };
 }
 
@@ -513,7 +539,18 @@ function openPortsForm(actionKey, action, resolved) {
   const inputs = (action && action.ports && action.ports.in) || {};
   const values = (resolved && resolved.values) || {};
   const declNames = Object.keys(inputs);
-  const fields = declNames.map((port) => _buildFormField(port, inputs[port] || {}, values));
+  // Brief 3 (v0.6.43) — pull this action's last-submitted values from the
+  // session-resident formHistory (seeded on the previous fabric_form_submit
+  // for the same actionKey). An absent key or empty entries behave as "no
+  // history" — _buildFormField falls back to decl default. Reading from
+  // getModel() here (impure shell boundary) keeps the reducer-visible path
+  // (openPortsForm → applyMsg) purely data; the WAL still carries the
+  // raw { port, text, isLast, remember } fields that _normalize will re-
+  // derive chips from, so a replayed session produces the same frame.
+  const histEntries = (getModel().formHistory && getModel().formHistory.entries) || {};
+  const lastValues = (actionKey && histEntries[actionKey]) || {};
+  const fields = declNames.map((port) =>
+    _buildFormField(port, inputs[port] || {}, values, lastValues[port]));
   applyMsg({ type: 'fabric_form_enter', fields,
              pendingAction: { actionKey, action } });
 }

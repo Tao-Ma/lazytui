@@ -73,6 +73,14 @@ function _chipMarkup(f) {
       return `[dim]\\[${n} choice${n === 1 ? '' : 's'}${staleMark}][/]`;
     }
   }
+  // Brief 3 (v0.6.43) — a field seeded from this session's formHistory and
+  // not yet edited reads `[last]`, under an accent (same color weight as
+  // the computed-choices `[fetching…]` chip — the user looks for it on
+  // every form re-open). Takes precedence over [modified] / [default]
+  // because the author submitted this value LAST and the field hasn't
+  // changed since — paint the stronger signal. Any edit (`_editCurrent`)
+  // clears `isLast`, dropping the chip back to the standard three.
+  if (f.isLast) return '[accent]\\[last][/]';
   if (f.isDefault) return '[dim]\\[default][/]';
   if (f.isModified) return '[warning]\\[modified][/]';
   if (f.text === '' && f.default == null) return '[dim]\\[unset][/]';

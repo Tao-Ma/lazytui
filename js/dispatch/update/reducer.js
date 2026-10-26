@@ -423,6 +423,13 @@ function update(model, msg) {
         configPath: msg.configPath || model.configPath,
         modes: nextModes,
         modal: nextModal,
+        // Brief 3 (v0.6.43) — the action universe just changed; a port named
+        // the same on a redefined action is NOT the same port (its type /
+        // default / remember opt-out may have moved). Clear the per-action
+        // form-history to avoid stale pre-fills surfacing under a [last] chip
+        // against a decl the author rewrote. Same reason the modal buffers
+        // above are cleared: scope-swap at the config boundary.
+        formHistory: { entries: {}, order: [], cap: (model.formHistory && model.formHistory.cap) || 64 },
       };
       // Fan set_config out to config-status, the only Component that snapshots
       // config (files / projectDir) onto its slice for reducer-pure reads.

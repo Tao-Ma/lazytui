@@ -269,9 +269,17 @@ function _normalize(raw) {
   // choicesCmd and silently dropped literal `choices:` fields; see
   // js/leaves/ports/has-choices.js for the drift postmortem.
   const hasChoices = !!(choicesFnRef || choicesCmd || literal);
+  // Brief 3 (v0.6.43) — history flags. `isLast` means the text was seeded
+  // from model.formHistory and the user has not edited it this session (so
+  // the chip renderer paints `[last]`); `_editCurrent` clears it on any
+  // text change. `remember` is the per-port opt-out carried through so the
+  // submit arm can skip writing without re-reading the action decl. Default
+  // remember=true (brief: "default is remember ON for everything else").
+  const isLast = !!(raw && raw.isLast === true);
+  const remember = !(raw && raw.remember === false);
   return { port, text, required, default: def, desc, choicesFnRef,
            choicesCmd, choicesLabeled, choicesTimeout, dependsOn,
-           variadic, hasChoices, computed, ..._chip(text, def) };
+           variadic, hasChoices, isLast, remember, computed, ..._chip(text, def) };
 }
 
 // Defense-in-depth guards on the raw fields array passed on fabric_form_enter:
@@ -312,7 +320,11 @@ function _editCurrent(fields, idx, nextText) {
   if (cur.text === nextText) return fields;
   const chips = _chip(nextText, cur.default);
   const next = fields.slice();
-  next[idx] = { ...cur, text: nextText, ...chips };
+  // Brief 3 (v0.6.43) — any text change clears the `[last]` chip (the field
+  // is no longer "the remembered value verbatim"). Explicit `isLast: false`
+  // AFTER the spread so a field normalized with isLast=true doesn't carry
+  // the flag past the edit it triggered.
+  next[idx] = { ...cur, text: nextText, isLast: false, ...chips };
   return next;
 }
 
@@ -525,6 +537,15 @@ function update(model, msg) {
       // doesn't flush until this arm returns.
       let next = model;
       for (const field of f.fields) {
+        // Brief 3 (v0.6.43) — inject predicate is "differs from default", which
+        // `isModified` already encodes (text !== default, OR non-empty with no
+        // default). A [last]-seeded field untouched this session has
+        // isModified=true (seed value differs from default — that's exactly
+        // what made it worth remembering), so it STILL injects without the
+        // user re-typing. The user sees the remembered text and the run
+        // actually uses it. Without this, the form would show the memory
+        // but the spawn would silently fall back to the decl default — the
+        // chip would lie.
         if (!field.isModified) continue;
         const addr = `${actionKey}.${field.port}`;
         // Brief 3 — a variadic field's `text` is one line of "command + args";
@@ -540,6 +561,34 @@ function update(model, msg) {
           continue;
         }
         next = applyInject(next, addr, field.text, { oneShot: true });
+      }
+      // Brief 3 (v0.6.43) — write per-port history for this submit. Each
+      // field contributes iff:
+      //   (a) `remember !== false`  (opt-out port never seeded, never
+      //       written — passphrases, must-be-unique names, --force style
+      //       typed-confirmation ports whose friction is the contract);
+      //   (b) field.isModified OR field.text is non-empty — i.e. the user
+      //       meaningfully filled it, either overriding the default or
+      //       filling an unset slot. A field left at its decl default is
+      //       NOT written (the default already carries the information;
+      //       writing would just pin the current default against a future
+      //       decl change).
+      // One LRU entry per actionKey — reopening another action does not
+      // evict this one until the cap of 64 actionKeys is reached.
+      // _cachePut is pure (returns a new object), so the formHistory write
+      // stays replay-safe (same reason the choicesCache LRU does).
+      const perActionEntry = {};
+      for (const field of f.fields) {
+        if (field.remember === false) continue;
+        if (!field.isModified && !field.text) continue;
+        perActionEntry[field.port] = field.text || '';
+      }
+      let nextHistory = next.formHistory;
+      if (Object.keys(perActionEntry).length > 0) {
+        nextHistory = _cachePut(next.formHistory, actionKey, perActionEntry);
+      }
+      if (nextHistory !== next.formHistory) {
+        next = { ...next, formHistory: nextHistory };
       }
       const closed = withModalMode(next, { fabricFormMode: false }, { fabricForm: { ...CLOSED } });
       // cancel_effect Cmds first so inflight entries clear before the
