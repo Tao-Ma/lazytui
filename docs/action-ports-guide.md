@@ -1,6 +1,6 @@
 # Action ports — a guide for component authors (humans and AI)
 
-**Status:** shipped — slice 1 (v0.6.34) + slice 2 (v0.6.35) + slice 3 (`[Unreleased]`). The multi-field form is live for any action with 2+ declared `ports.in`; actions with a single port keep the pre-slice-1 one-field popup. **Computed choices (`choices_fn:` + `depends_on:`)** ship in slice 2 — see the "Computed choices" section. **Shell-backed choices (`choices_cmd:` + `choices_labeled:` + `choices_timeout:`)** ship in slice 3 — see the "Shell-backed choices" section (the YAML-reachable sibling of `choices_fn:`). Static `choices: [...]` + the review page + section grouping are planned follow-ups and are flagged inline below.
+**Status:** shipped — slice 1 (v0.6.34) + slice 2 (v0.6.35) + slice 3 (v0.6.36) + literal `choices:` (`[Unreleased]`). The multi-field form is live for any action with 2+ declared `ports.in`; actions with a single port keep the pre-slice-1 one-field popup. **Computed choices (`choices_fn:` + `depends_on:`)** ship in slice 2 — see the "Computed choices" section. **Shell-backed choices (`choices_cmd:` + `choices_labeled:` + `choices_timeout:`)** ship in slice 3 — see the "Shell-backed choices" section. **Static literal choices (`choices:`)** ship under `[Unreleased]` — see the "Literal choices" section (the static sibling of the two dynamic channels). The review page + section grouping are planned follow-ups and are flagged inline below.
 
 **For:** anyone writing a lazytui component or shell action — including AI assistants generating them. If you declare `ports.in` on an action, this doc tells you how your choices will render in the invoke-time form and how they'll bind at run time. The authoritative reference for the dataflow mechanics stays in [`docs/ports-and-wires.md`](ports-and-wires.md).
 
@@ -61,8 +61,9 @@ Each entry in `ports.in` is `{ name: { ...decl } }` where `name` is a strict ide
 | `default` | string \| number | — | Pre-fills the field in the form and lets the resolver fall back when nothing upstream supplies the value. **Not type-checked in slice 1** — the raw literal is stringified and used as-is. |
 | `desc` | string | `''` | One-line hint. Rendered under the field name in the form; keep it ≤ 60 chars for narrow terminals. |
 | `choices` | list | — | (planned) Static enum of allowed values; renders as inline cycle or popover depending on list length. |
+| `choices` | list | — | Static list of valid values. Each entry is either a scalar (string / number / boolean coerced to string) or a `{value, label}` map (label shown in the TUI popover; `value` is submitted). No shell, no timeout. Mutually exclusive with `choices_fn:` / `choices_cmd:` — setting both is a parse error. See "Literal choices" below. |
 | `choices_fn` | string | — | Dotted ref `<component>.<fnName>` to a registered function the component ships; the fn returns the choices list at invoke time. Reachable only from Components / feature plugins (JS). See "Computed choices" below. |
-| `choices_cmd` | string | — | Shell command whose stdout provides the choices list at invoke time (one choice per line). Reachable from pure YAML. Mutually exclusive with `choices_fn:` — setting both is a parse error. See "Shell-backed choices" below. |
+| `choices_cmd` | string | — | Shell command whose stdout provides the choices list at invoke time (one choice per line). Reachable from pure YAML. Mutually exclusive with `choices_fn:` / `choices:` — setting multiple is a parse error. See "Shell-backed choices" below. |
 | `choices_labeled` | bool | `false` | Only with `choices_cmd:`. When `true`, each output line is split on the first `\t` into `value\tlabel`; the overlay shows `label`, submits `value`. |
 | `choices_timeout` | int (ms) | `5000` | Only with `choices_cmd:`. Hard timeout for the shell command; SIGTERM at expiry → `[timeout]` chip. Max 60000. |
 | `depends_on` | list | — | Sibling port names this port's `choices_fn:` / `choices_cmd:` reads. Edits to a depended-on port, on blur, trigger a reactive refetch. For `choices_cmd:`, dep values are bound onto the child env (port name → env var, verbatim). |
@@ -99,7 +100,7 @@ The form groups fields by requiredness, required first:
 - The port's `name` is the left-column label — pick names that read well there. `source_url` beats `src`.
 - `desc` is a dim one-liner under the input. Users scan it; don't repeat the port name.
 - Chips: `[default]` when text equals the declared default; `[modified]` when edited; `[unset]` when empty and no default.
-- An action with **exactly one** declared port opens the lean single-field `fabric-field` popup instead — no form chrome. Design one-port actions with that in mind: a long `desc` has room to breathe. **Exception:** a one-port action whose port declares `choices_fn:` or `choices_cmd:` opens the (one-field) form instead so the choices chip and `[space]` popover are reachable — the lean popup has no choices machinery. The fetch fires on invoke-time form-open, so `confirm:` + `choices_cmd:` on a 1-port action still runs the choices command between the confirm accept and the script spawn (see "Shells at form-open time: `confirm:` does NOT gate `choices_cmd:`" below).
+- An action with **exactly one** declared port opens the lean single-field `fabric-field` popup instead — no form chrome. Design one-port actions with that in mind: a long `desc` has room to breathe. **Exception:** a one-port action whose port declares any of `choices:` / `choices_fn:` / `choices_cmd:` opens the (one-field) form instead so the choices chip and `[space]` popover are reachable — the lean popup has no choices machinery. The fetch fires on invoke-time form-open, so `confirm:` + `choices_cmd:` on a 1-port action still runs the choices command between the confirm accept and the script spawn (see "Shells at form-open time: `confirm:` does NOT gate `choices_cmd:`" below).
 
 ---
 
@@ -203,7 +204,7 @@ role: { type: string, required: true,
         desc: "node role (worker | control | storage)" }
 ```
 
-Once static `choices:` ships (a later slice), `desc` stops carrying the enum list — the UI shows it. For now, carry it in `desc`. (If the enum is dynamic, see "Computed choices" or "Shell-backed choices" below — `choices_fn:` and `choices_cmd:` already handle that.)
+Static `choices:` now ships — see the "Literal choices" section below. For a fixed, author-known enum, prefer the literal form over listing it in `desc`. (If the enum is dynamic, see "Computed choices" or "Shell-backed choices" below.)
 
 ---
 
@@ -331,6 +332,48 @@ A port with no `desc` renders a blank line under the input — the user has to g
 
 ---
 
+## Literal choices — `choices:`
+
+Many ports take a value from a short fixed set the author already knows: a role name (`worker` / `control` / `storage`), a flag (`--full-tunnel` / `--no-full-tunnel`), a severity. For those, the author can declare the list inline — no shell, no fetch, no timeout:
+
+```yaml
+reissue:
+  type: run
+  script: ./issue-cert "$tunnel"
+  ports:
+    in:
+      tunnel:
+        type: string
+        required: true
+        choices:
+          - { value: --full-tunnel,    label: all traffic via VPN }
+          - { value: --no-full-tunnel, label: split tunnel (dev9net only) }
+```
+
+Each entry is either:
+
+- A **scalar** (string, number, boolean) — stringified, no label. `choices: [nginx, sshd, postgres]`.
+- A **`{value, label}` map** — the TUI popover shows `label`, submits `value`. `label` is optional (same as a scalar for that entry).
+
+Mixed lists are allowed; scalar entries get `label: null`, map entries get their label.
+
+Behavior:
+
+- **TUI**: the field's choices chip reads `[N choices]` from the first frame — no `[fetching…]` transition. `[space]` opens the popover; selection writes the value. Free-typing still wins (same contract as the dynamic channels).
+- **CLI `--complete`**: TAB offers the values directly (labeled maps → values only, matching the choices_cmd+labeled contract). No subprocess spawned.
+- **CLI `--exec` missing-required**: the companion `valid <port>: ...` line lists the values when the port is omitted.
+- **Cap**: 1024 entries (same as `choices_fn:`). Author-controlled list; past this, narrow the enum.
+
+Mutual exclusion:
+
+- `choices` + `choices_cmd` → **hard parse error.**
+- `choices` + `choices_fn` → **hard parse error.**
+- `choices` + `choices_labeled` / `choices_timeout` / `depends_on` → warn + drop the modifier (nothing to time out, nothing to re-fire on).
+
+Use `choices:` for a fixed enum; use `choices_cmd:` or `choices_fn:` when the list depends on live state (fs, process, database).
+
+---
+
 ## Computed choices — `choices_fn:` + `depends_on:`
 
 Some port values are enumerable but the author can't hard-code the list. The valid section names of an edit target depend on which file. The valid branches of a repo depend on which repo. The valid tables of a database depend on which connection. The list belongs *in code*, computed per invocation.
@@ -406,9 +449,9 @@ Three things worth knowing before you ship a `choices_fn`:
 
 Replay stays deterministic. The fn is a side effect — the first live invocation goes through the `fetch_choices` effect channel; its *result* lands as a reducer arm whose payload is captured in the WAL. Replay reproduces frames from the recorded payload without re-executing the fn, so a fn that touches the fs or spawns a child is safe to use.
 
-### When to pick `choices_fn` vs a static `choices:` (planned)
+### When to pick which choices channel
 
-- Static list, same for every invocation → `choices: [a, b, c]` (planned).
+- Static list, same for every invocation → `choices: [a, b, c]` (the "Literal choices" section above).
 - List depends on another port's value, or on live state (fs, process, db), reachable from JS → `choices_fn: component.fnName` + `depends_on: [...]`.
 - Same, but you're writing pure YAML (no Component) → `choices_cmd:` (next section).
 - Need both a static list and dynamic enrichment → use `choices_fn:` and have the fn return a static array.

@@ -6,6 +6,53 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Literal `choices:` port key — static sibling of `choices_cmd:` /
+  `choices_fn:`.** Many ports take a fixed enum the author already knows
+  (role names, flag values, severities). Previously these had to be
+  faked with a shell for a constant list — `choices_cmd: "printf 'a\\nb\\n'"`
+  — carrying a subprocess, a timeout window, and a quoting hazard. The
+  new literal key removes all three:
+  ```yaml
+  ports:
+    in:
+      tunnel:
+        type: string
+        required: true
+        choices:
+          - { value: --full-tunnel,    label: all traffic via VPN }
+          - { value: --no-full-tunnel, label: split tunnel }
+  ```
+  Each entry is a scalar (stringified → value, no label) or a
+  `{value, label}` map (label shown in the TUI popover, value submitted).
+  - **TUI**: `fabric_form_enter` seeds `field.computed` directly from the
+    parser-normalized `{items, labels, truncated}`. The chip reads
+    `[N choices]` from the first frame — no `[fetching…]` transition and
+    no fetch effect emitted. `anyChoices` in action-runner gains the
+    third disjunct so a 1-port literal-choices action still routes
+    through the form (to get the popover + chip affordance).
+  - **CLI `--complete`**: TAB offers the values directly — pure in-process
+    read, no subprocess, no timeout window to burn through. Labeled maps
+    emit values only (matching the choices_cmd+labeled contract).
+  - **CLI `--exec`** missing-required: the companion `valid <port>: …`
+    line lists literal values when the port is omitted, same shape as
+    for `choices_cmd:`.
+  - **Mutual exclusion** (hard parse errors): `choices` + `choices_cmd`
+    and `choices` + `choices_fn` both throw with "mutually exclusive".
+  - **Dangling modifiers** (warn + drop): `choices_labeled`,
+    `choices_timeout`, and `depends_on` alongside `choices:` are all
+    nonsensical (literal has no stdout parse, no timeout, no refetch).
+    The dangling checks warn via the `warnings` channel without
+    rejecting the config.
+  - **Cap**: 1024 entries, same as the `choices_fn:` channel. Past that
+    the author should narrow the enum.
+  - Parser normalizes to `{items:[], labels:[]|null, truncated:bool}` on
+    the pdef so action-runner / fabric-form / completion / cli all read a
+    single shape.
+  - Guide + schema docs updated (`docs/action-ports-guide.md` —
+    "Literal choices" section replaces the old "planned" placeholder).
+
 ## [0.6.40] — 2026-10-26
 
 ### Fixed

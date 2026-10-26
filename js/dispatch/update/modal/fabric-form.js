@@ -172,7 +172,28 @@ function _normalize(raw) {
     ? Math.floor(raw.choicesTimeout) : null;        // null → runtime default (5000)
   const dependsOn = raw && Array.isArray(raw.dependsOn)
     ? raw.dependsOn.filter((n) => typeof n === 'string' && n) : [];
-  const computed = (choicesFnRef || choicesCmd) ? { ...EMPTY_COMPUTED } : null;
+  // args→ports slice 3+1 — literal `choices:` normalized by the parser to
+  // {items:[], labels:[]|null, truncated:bool}. For literal, we seed the
+  // field.computed slot DIRECTLY at form_enter — no fetch effect, no
+  // [fetching…] chip. The data is already here; the renderer paints
+  // `[N choices]` from the first frame.
+  const literal = raw && raw.choices && typeof raw.choices === 'object'
+                  && Array.isArray(raw.choices.items)
+    ? raw.choices : null;
+  let computed;
+  if (literal) {
+    const litItems = literal.items.filter((v) => typeof v === 'string');
+    const litLabels = Array.isArray(literal.labels)
+      ? literal.labels.slice(0, litItems.length).map((v) => (typeof v === 'string' ? v : ''))
+      : null;
+    computed = { state: 'ok', requestId: 0, inputsHash: null,
+                 items: litItems, labels: litLabels,
+                 error: null, truncated: !!literal.truncated };
+  } else if (choicesFnRef || choicesCmd) {
+    computed = { ...EMPTY_COMPUTED };
+  } else {
+    computed = null;
+  }
   return { port, text, required, default: def, desc, choicesFnRef,
            choicesCmd, choicesLabeled, choicesTimeout, dependsOn,
            computed, ..._chip(text, def) };

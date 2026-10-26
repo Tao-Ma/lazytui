@@ -250,6 +250,16 @@ async function _completePositionalArg(configPath, config, cword, words) {
   const portName = portNames[portIdx];
   const portDecl = portsIn[portName];
   if (!portDecl || typeof portDecl !== 'object') return [];
+  // Literal `choices:` — the parser normalizes to {items, labels, truncated}.
+  // No spawn, no timeout; emit the values directly (labeled maps → values only,
+  // matching the choices_cmd+labeled contract: TAB inserts the value you'd
+  // actually submit, not the label).
+  if (portDecl.choices && typeof portDecl.choices === 'object'
+      && Array.isArray(portDecl.choices.items)) {
+    return portDecl.choices.items
+      .filter((v) => typeof v === 'string')
+      .slice(0, MAX_COMPLETION_ITEMS);
+  }
   // choices_fn: unsupported in CLI mode — Components aren't booted. Don't
   // fake candidates; let the shell fall back to default/file completion.
   if (typeof portDecl.choices_cmd !== 'string' || !portDecl.choices_cmd) return [];

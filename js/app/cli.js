@@ -211,15 +211,21 @@ function runCli(configPath, actionPath, actionArgs) {
         `tui --exec: missing required port(s): ${missing.join(', ')}\n` +
         `  usage: --exec ${actionPath} ${portNames.map((n) => `<${n}>`).join(' ')}\n`);
       // Companion to shell-completion (feat): if the FIRST missing port
-      // has a choices_cmd:, resolve it (2s cap) and surface the valid
-      // values on an ADDITIONAL stderr line. Keeps the two lines above
-      // byte-identical for anyone grepping `tui --exec: missing` or
-      // `  usage:`; this is purely additive. Legacy ports / choices_fn /
-      // slow-cmd / spawn failure → silently emit nothing (don't delay
-      // the exit for an unhelpful hint).
+      // has a choices source (choices_cmd: OR literal choices:), resolve
+      // it and surface the valid values on an ADDITIONAL stderr line.
+      // Keeps the two lines above byte-identical for anyone grepping
+      // `tui --exec: missing` or `  usage:`; this is purely additive.
+      // Legacy ports / choices_fn (not CLI-callable) / slow-cmd / spawn
+      // failure → silently emit nothing (don't delay the exit for an
+      // unhelpful hint). The _complete helper handles both cmd and
+      // literal uniformly; this gate just picks the ports worth
+      // consulting it for.
       const firstMissing = missing[0];
       const firstDecl = portDecls[firstMissing] || {};
-      if (typeof firstDecl.choices_cmd === 'string' && firstDecl.choices_cmd) {
+      const hasCmd = typeof firstDecl.choices_cmd === 'string' && firstDecl.choices_cmd;
+      const hasLiteral = firstDecl.choices && typeof firstDecl.choices === 'object'
+                         && Array.isArray(firstDecl.choices.items);
+      if (hasCmd || hasLiteral) {
         const { complete: _complete } = require('./completion');
         try {
           // Reuse the same completion helper so the resolve semantics

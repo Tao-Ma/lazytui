@@ -1145,6 +1145,90 @@ function validateActionPorts(aname, ports, ctx, warnings) {
             message: `${pctx}: port name '${pname}' would shadow a security-sensitive env var — dropped at run time; rename it (e.g. '${pname.toLowerCase()}') to silence this warning`,
           });
         }
+        // args→ports slice 3+1 — literal `choices:` (static sibling of
+        // choices_fn/choices_cmd). YAML list of scalars (value, no label) or
+        // {value, label} maps. The static form has no fetch effect, no
+        // timeout, no deps — the field.computed slot is seeded directly from
+        // config at form_enter. The CLI completion helper and `--exec`
+        // missing-required line read the same source without a spawn.
+        //
+        // Collision rule: `choices` + `choices_cmd` OR `choices` + `choices_fn`
+        // on the same port is a HARD parse error, same severity as the
+        // existing cmd+fn collision. Three sibling channels are mutually
+        // exclusive — no silent precedence surprises.
+        if ('choices' in pdef) {
+          if ('choices_cmd' in pdef || 'choices_fn' in pdef) {
+            throw new SchemaError(
+              "'choices' is mutually exclusive with 'choices_cmd' / 'choices_fn' — pick one",
+              { context: pctx });
+          }
+          const raw = pdef.choices;
+          if (!Array.isArray(raw)) {
+            if (warnings) {
+              warnings.push({
+                code: 'port.bad_choices',
+                message: `${pctx}: 'choices' must be a list of scalars or {value,label} maps — dropped`,
+              });
+            }
+            delete pdef.choices;
+          } else {
+            const CAP_CHOICES = 1024;                           // same cap as fn channel
+            const items = [];
+            const labels = [];
+            let anyLabel = false;
+            let dropped = 0;
+            for (const it of raw) {
+              // Scalar → stringified value, no label.
+              if (it != null && (typeof it === 'string' || typeof it === 'number' || typeof it === 'boolean')) {
+                items.push(String(it));
+                labels.push(null);
+                continue;
+              }
+              // {value, label} map — both required strings (label optional, coerces to '').
+              // Allowing value: number for YAML convenience; label stays string-only.
+              if (it && typeof it === 'object' && !Array.isArray(it)
+                  && 'value' in it
+                  && (typeof it.value === 'string' || typeof it.value === 'number' || typeof it.value === 'boolean')) {
+                items.push(String(it.value));
+                if (typeof it.label === 'string' && it.label) { labels.push(it.label); anyLabel = true; }
+                else labels.push(null);
+                continue;
+              }
+              dropped++;
+            }
+            if (dropped > 0 && warnings) {
+              warnings.push({
+                code: 'port.bad_choices_item',
+                message: `${pctx}: 'choices' dropped ${dropped} item(s) that were neither a scalar nor {value,label}`,
+              });
+            }
+            // Belt-and-suspenders cap: author-controlled list is bounded by
+            // the same 1024 as the fn channel (humans picking from a list
+            // this long is dubious; past this, the author should narrow at
+            // the data source).
+            let truncated = false;
+            if (items.length > CAP_CHOICES) {
+              items.length = CAP_CHOICES;
+              labels.length = CAP_CHOICES;
+              truncated = true;
+              if (warnings) {
+                warnings.push({
+                  code: 'port.choices_truncated',
+                  message: `${pctx}: 'choices' truncated to the first ${CAP_CHOICES} entries`,
+                });
+              }
+            }
+            // Normalize onto the pdef so downstream (action-runner, completion,
+            // cli) reads a single shape: {items:[], labels:[] | null, truncated}.
+            // labels: null when NO entry carried a label; otherwise an array
+            // aligned to items with null for the entries that didn't label.
+            pdef.choices = {
+              items,
+              labels: anyLabel ? labels : null,
+              truncated,
+            };
+          }
+        }
         // args→ports slice 2 — `choices_fn:` + `depends_on:` validation.
         // Both are warn-drop (not throw) per [[feedback_backcompat_on_new_
         // validations]]: a new rule that would reject previously-valid YAML
@@ -1230,16 +1314,20 @@ function validateActionPorts(aname, ports, ctx, warnings) {
             delete pdef.choices_timeout;
           }
         }
-        // Dangling keys — `choices_labeled` / `choices_timeout` with neither
-        // `choices_cmd` nor `choices_fn` set is a no-op; warn-drop so the
-        // author sees the typo without a broken load. (For `choices_fn:`
-        // these keys also do nothing; the author presumably intended them
-        // for `choices_cmd:` and misspelled or lost a key.)
+        // Dangling keys — `choices_labeled` / `choices_timeout` with none of
+        // the three choices channels set is a no-op; warn-drop so the author
+        // sees the typo without a broken load. (For `choices_fn:` these keys
+        // also do nothing today; the author presumably intended them for
+        // `choices_cmd:` and misspelled or lost a key.)
         //
         // ORDER MATTERS: these two checks run AFTER the type checks above
         // that may `delete pdef.choices_cmd`. A bad `choices_cmd` is dropped
         // first, then any lingering `choices_labeled`/`choices_timeout` fires
         // dangling. Re-ordering the blocks silently breaks this.
+        //
+        // For LITERAL `choices:`, labels come from the inline map entries
+        // ({value, label}) — `choices_labeled` is nonsensical there. Keep
+        // the same dangling-warn pattern.
         if ('choices_labeled' in pdef && !('choices_cmd' in pdef)) {
           if (warnings) {
             warnings.push({
@@ -1260,7 +1348,20 @@ function validateActionPorts(aname, ports, ctx, warnings) {
         }
         if ('depends_on' in pdef) {
           const raw = pdef.depends_on;
-          if (!Array.isArray(raw)) {
+          // Dangling: depends_on only makes sense when there's a FETCH that
+          // re-fires on dep change (choices_cmd / choices_fn). Literal
+          // `choices:` has no fetch — warn-drop so the author sees it. Must
+          // run BEFORE the type/sibling validation so a bad `depends_on`
+          // with literal `choices:` doesn't also warn about non-sibling refs.
+          if ('choices' in pdef && !('choices_cmd' in pdef) && !('choices_fn' in pdef)) {
+            if (warnings) {
+              warnings.push({
+                code: 'port.dangling_depends_on',
+                message: `${pctx}: 'depends_on' has no effect alongside literal 'choices' (no fetch to re-fire) — dropped`,
+              });
+            }
+            delete pdef.depends_on;
+          } else if (!Array.isArray(raw)) {
             if (warnings) {
               warnings.push({
                 code: 'port.bad_depends_on',

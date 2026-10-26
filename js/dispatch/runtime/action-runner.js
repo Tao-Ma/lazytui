@@ -387,6 +387,65 @@ function _resolvePortsForAction(actionKey, action, model) {
  * Returns true iff a modal was opened — the caller must then return without
  * running.
  */
+
+/**
+ * Build one `fabric_form_enter` field entry for a single declared port.
+ *
+ * A port's `text` is:
+ *   - its resolved value (inject/wire/default) if resolver put it in values[],
+ *   - else its decl.default (pre-fill so [default] chip reads correctly),
+ *   - else empty (→ renderer paints [unset] when decl has no default).
+ *
+ * Carries all three choices channels through (fn / cmd / literal):
+ *   - choicesFnRef, choicesCmd  → fetch effects fire from fabric-form reducer
+ *   - choices                   → {items, labels, truncated} seeded straight
+ *                                 into field.computed at fabric_form_enter
+ *                                 (no fetch effect — the data is already here)
+ *
+ * Shared between the missing-required prompt (this file, _promptMissing) and
+ * Brief 1's forthcoming `[a]` edit-args keybind which opens the same form
+ * on demand even when nothing is missing.
+ */
+function _buildFormField(port, decl, values) {
+  const def = decl.default != null ? String(decl.default) : null;
+  const resolvedVal = (port in values) ? String(values[port]) : null;
+  const text = resolvedVal != null ? resolvedVal : (def != null ? def : '');
+  // Slice 2: choices_fn + depends_on.
+  const choicesFnRef = typeof decl.choices_fn === 'string' && decl.choices_fn
+    ? decl.choices_fn : null;
+  // Slice 3: choices_cmd + labeled + timeout. Parser enforces mutex with fn.
+  const choicesCmd = typeof decl.choices_cmd === 'string' && decl.choices_cmd
+    ? decl.choices_cmd : null;
+  const choicesLabeled = decl.choices_labeled === true;
+  const choicesTimeout = typeof decl.choices_timeout === 'number'
+    && Number.isFinite(decl.choices_timeout) && decl.choices_timeout > 0
+    ? Math.floor(decl.choices_timeout) : null;
+  const dependsOn = Array.isArray(decl.depends_on)
+    ? decl.depends_on.filter((n) => typeof n === 'string' && n) : [];
+  // Slice 3+1: literal `choices:` normalized by the parser to
+  // {items:[], labels:[]|null, truncated:bool}. Pass through verbatim so the
+  // reducer can seed field.computed directly without a fetch.
+  const choices = (decl.choices && typeof decl.choices === 'object'
+                   && Array.isArray(decl.choices.items))
+    ? { items: decl.choices.items.slice(),
+        labels: decl.choices.labels ? decl.choices.labels.slice() : null,
+        truncated: !!decl.choices.truncated }
+    : null;
+  return {
+    port,
+    text,
+    required: decl.required !== false,
+    default: def,
+    desc: typeof decl.desc === 'string' ? decl.desc : '',
+    choicesFnRef,
+    choicesCmd,
+    choicesLabeled,
+    choicesTimeout,
+    dependsOn,
+    choices,
+  };
+}
+
 function _promptMissing(actionKey, action, resolved) {
   const inputs = (action && action.ports && action.ports.in) || {};
   const missing = (resolved && resolved.missing) || [];
@@ -395,58 +454,20 @@ function _promptMissing(actionKey, action, resolved) {
   if (!requiredMissing) return false;
 
   const declNames = Object.keys(inputs);
-  // Form lane: 2+ ports, OR any declared port carrying a choices channel.
-  // The lean fabric-field popup has no choices machinery (computed slot,
-  // fetch arms, popover are form-lane only), so a 1-port action with
-  // choices_fn:/choices_cmd: routes through the form to get the affordance.
-  // 1-port actions without choices keep the lean popup — pre-slice-1
-  // behavior, unchanged.
+  // Form lane: 2+ ports, OR any declared port carrying a choices channel
+  // (fn / cmd / literal). The lean fabric-field popup has no choices
+  // machinery (computed slot, fetch arms, popover are form-lane only), so a
+  // 1-port action with any choices variant routes through the form to get
+  // the affordance. 1-port actions without choices keep the lean popup —
+  // pre-slice-1 behavior, unchanged.
   const anyChoices = declNames.some((p) => {
     const d = inputs[p] || {};
     return (typeof d.choices_fn === 'string' && d.choices_fn)
-        || (typeof d.choices_cmd === 'string' && d.choices_cmd);
+        || (typeof d.choices_cmd === 'string' && d.choices_cmd)
+        || (d.choices && typeof d.choices === 'object' && Array.isArray(d.choices.items));
   });
   if (declNames.length >= 2 || anyChoices) {
-    // Multi-field form lane. Materialize every declared port — not just the
-    // missing ones — so the user sees the whole action's inputs at once with
-    // whatever's already resolved pre-filled. A port's `text` is:
-    //   - its resolved value (inject/wire/default) if resolver put it in values[],
-    //   - else its decl.default (pre-fill so [default] chip reads correctly),
-    //   - else empty (→ renderer paints [unset] when decl has no default).
-    const fields = declNames.map((port) => {
-      const decl = inputs[port] || {};
-      const def = decl.default != null ? String(decl.default) : null;
-      const resolvedVal = (port in values) ? String(values[port]) : null;
-      const text = resolvedVal != null ? resolvedVal : (def != null ? def : '');
-      // args→ports slice 2: carry `choices_fn:` + `depends_on:` through so the
-      // reducer can seed the field's computed slot and the enter arm can fire
-      // initial requests for fields with resolved deps.
-      const choicesFnRef = typeof decl.choices_fn === 'string' && decl.choices_fn
-        ? decl.choices_fn : null;
-      // args→ports slice 3: `choices_cmd:` shell-backed sibling + its two
-      // modifier keys. The parser already enforces mutual exclusion with
-      // `choices_fn:` (hard error) and clamps types.
-      const choicesCmd = typeof decl.choices_cmd === 'string' && decl.choices_cmd
-        ? decl.choices_cmd : null;
-      const choicesLabeled = decl.choices_labeled === true;
-      const choicesTimeout = typeof decl.choices_timeout === 'number'
-        && Number.isFinite(decl.choices_timeout) && decl.choices_timeout > 0
-        ? Math.floor(decl.choices_timeout) : null;
-      const dependsOn = Array.isArray(decl.depends_on)
-        ? decl.depends_on.filter((n) => typeof n === 'string' && n) : [];
-      return {
-        port,
-        text,
-        required: decl.required !== false,
-        default: def,
-        desc: typeof decl.desc === 'string' ? decl.desc : '',
-        choicesFnRef,
-        choicesCmd,
-        choicesLabeled,
-        choicesTimeout,
-        dependsOn,
-      };
-    });
+    const fields = declNames.map((port) => _buildFormField(port, inputs[port] || {}, values));
     applyMsg({ type: 'fabric_form_enter', fields,
                pendingAction: { actionKey, action } });
     return true;
