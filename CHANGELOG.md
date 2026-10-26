@@ -6,6 +6,120 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.42] — 2026-10-26
+
+### Added
+
+- **`--lint` CLI mode — config validation as a first-class flag.** Replaces
+  the "run `--list`, capture stderr to a file, assert zero bytes" change
+  gate that dev9 ships today with a proper CI contract. Parses the config
+  the SAME way `--list` does (`loadConfig` → `parse()` → `mergeYamlPlugins`
+  — not a parallel loader, so lint can't drift from reality) and surfaces
+  every finding on stdout as `<severity> <code> <context>: <msg>` plus a
+  summary on stderr.
+  - **Exit code contract**: `0` clean, `1` warnings-only, `2` any hard
+    error (incl. config-won't-load). Codes stay stable (API from the
+    flag's debut — append-only) so grep gates don't bit-rot.
+  - **`--lint --json`**: findings array `[{severity, code, context,
+    message}, …]`, summary suppressed, trailing `\n`. Tool-friendly.
+  - **Scope**: parser-emitted warnings + any thrown `ParseError` /
+    `SchemaError` / `ResolutionError`. The three lint-only checks
+    discussed in the brief (depends_on-undeclared, inert-choices,
+    dup-labels) are deliberate follow-ups.
+  - Missing-path falls through to `USAGE` + rc 1 (same as `--list` —
+    missing path is a usage problem, not a config problem).
+
+- **Variadic input port — the declared home for "command + arbitrary
+  args".** `variadic: true` opts a port into exec-style tail collection
+  without losing anything the ports model otherwise supplies (typed
+  metadata, missing-required UX, TAB completion, shell-safe quoting).
+  Retires the last legacy raw-`"$@"` surface so dev9's `access run` can
+  move onto ports.
+  - **Parser rules (HARD errors)**: at most one variadic port per action,
+    must be LAST in declaration order (argv tail IS `$@`), cannot carry
+    `choices` / `choices_cmd` / `choices_fn` / `depends_on` / `default`
+    (no coherent popover / fetch / scalar semantics on an item list).
+    `variadic` is input-only (rejected on OUT ports); non-boolean
+    rejected per port.
+  - **Routing**: `--exec` collects `actionArgs.slice(variadicIdx)` as
+    the sh spawn tail (`$@`) verbatim — no shell re-parse, items stay
+    out-of-band. Scalars before it still bind to env as today. The
+    variadic port NAME is **never** env-bound: a joined env var
+    would silently corrupt any item with spaces/quotes/newlines on
+    IFS re-split. The TUI form field edits as one line; submit
+    tokenizes via the shared `js/fabric/command.tokenize` leaf
+    (same splitter `compileCommand` uses for string templates) and
+    injects the ARRAY. Empty tokens → no inject, so required-missing
+    re-prompts cleanly. `required: true` means "≥1 item".
+  - **Completion**: AT or past the variadic slot → silent empty; the
+    shell wrapper's `-o default` falls through to filename completion
+    (correct for an exec-style tail).
+  - **Shared leaf**: `js/leaves/ports/variadic.js` holds
+    `findVariadicPortName(portsIn)` — one authoritative lookup used by
+    both `--exec` and the TUI invoke path (CLI/TUI drift guard,
+    v0.6.29 class).
+  - **Legacy actions unchanged**: an action without declared ports
+    keeps today's raw `"$@"` passthrough; prefer declaring the
+    surface with a variadic port instead so the invoke-time UX and
+    `--list` / `--lint` catalog cover it.
+
+### Changed
+
+- **env-shadow denylist extended with the interpreter-injection class.**
+  The slice-1 OS-loader + shell-startup set (PATH, SHELL, LD_*, DYLD_*,
+  BASH_ENV / ENV, `BASH_FUNC_*`) grew to cover "which code runs BEFORE
+  the script does, one layer up" — a port value binding one of these
+  names makes `python3 -c '…'` / `node -e '…'` / `perl -e '…'` /
+  `ruby -e '…'` / `lua -e '…'` / any java tool execute attacker code
+  via the interpreter's own startup hook. Added names (uppercase
+  literals; port names are case-sensitive, so lowercase stays legal):
+  - **node**: `NODE_OPTIONS`, `NODE_PATH`, `NODE_REPL_EXTERNAL_MODULE`
+  - **python**: `PYTHONPATH`, `PYTHONSTARTUP`, `PYTHONHOME`
+  - **perl**: `PERL5LIB`, `PERL5OPT`, `PERL5DB`
+  - **ruby**: `RUBYOPT`, `RUBYLIB`
+  - **lua**: `LUA_PATH`, `LUA_CPATH`, `LUA_INIT`
+  - **java**: `JAVA_TOOL_OPTIONS`, `_JAVA_OPTIONS`, `JDK_JAVA_OPTIONS`
+  - **git exec-class**: `GIT_SSH_COMMAND`, `GIT_EXTERNAL_DIFF`
+  - **Deliberately out** (decision, not omission — documented in the
+    leaf): `PAGER` / `EDITOR` / `GIT_PAGER` (interactive-only, would
+    annoy legitimate `pager` ports); runtime-tuning vars like
+    `GODEBUG` / `NODE_TLS_REJECT_UNAUTHORIZED` / `PYTHONUNBUFFERED`
+    (change runtime behavior, no code execution).
+  - **Mechanics**: pure Set additions in the shared leaf. All four
+    callers (parser load-time name rejection, spawn-time value
+    filtering in action-runner, `choices_cmd` runtime, completion
+    helper) inherit for free.
+  - **Backward compat**: zero YAML in the tree uses any of the new
+    names as a port — confirmed by a tree-wide scan during pre-release
+    review. New names ride the SAME warn-not-throw path PATH/SHELL use
+    today (slice-1 round 5), so a pre-existing config that happened to
+    carry one would still load.
+
+### Documentation
+
+- `docs/ports-and-wires.md` — new "Variadic input ports" section
+  covering parser rules, routing, the no-env-binding rationale, and
+  completion fallthrough.
+- `README.md` — `--lint` added to the CLI invocation summary.
+- `--help` — new `--lint` paragraph with the rc contract; existing
+  `--list` / `--exec` / `--spec` text unchanged.
+
+### Tests
+
+- `js/test/test-env-shadow-interpreters.js` — 166 assertions across all
+  four callers (leaf, filter, parser warning, end-to-end `--exec`
+  verifying child env lacks `PYTHONPATH`).
+- `js/test/test-cli-lint.js` — rc contract, line format, JSON round-
+  trip, `--list` byte-equivalence.
+- `js/test/test-variadic-port.js` — parser rules, `--exec` tail splice
+  (spaces / quotes / leading dashes / `--`), `_splitVariadic`, form-
+  submit tokenization + empty-items re-prompt, completion silence.
+- 250 → 254 unit files. 22 smoke scenarios green across the whole
+  train. Pre-release 4-track review (arch / backcompat / edge-cases /
+  doc-parity) surfaced one MEDIUM (duplicated variadic lookup →
+  shared leaf) + three minors (doc wording / `--help` honesty /
+  README mention), all addressed in-arc.
+
 ## [0.6.41] — 2026-10-26
 
 ### Added
