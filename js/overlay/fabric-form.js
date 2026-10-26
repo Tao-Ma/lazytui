@@ -33,6 +33,7 @@
 const { getModel } = require('../model/store');
 const { esc, visibleLen } = require('../leaves/text/ansi');
 const { renderOverlay, truncate, viewportDims } = require('../leaves/render/draw');
+const { filterChoices } = require('../leaves/ports/choices-filter');
 
 // Hard max for the overlay; the dims clamp (renderOverlay → overlayBox) narrows
 // to COLS-2 on tight terminals.
@@ -260,6 +261,16 @@ function renderFabricFormOverlay() {
     // the user has visible feedback that the fetch is in flight.
     if (picking && picking.port === field.port) {
       const c = field.computed || null;
+      // Brief 2 — paint `/<filter>` affordance line ABOVE the choices rows
+      // whenever the user has typed anything. Dim+accent so it reads as a
+      // state cue, not a selection target. Rendered even in pending/error
+      // states (the filter buffered mid-fetch applies when ok lands —
+      // showing it keeps the state visible). An empty filter paints no
+      // row, so the popover's chrome stays as compact as pre-Brief-2.
+      const filterStr = typeof picking.filter === 'string' ? picking.filter : '';
+      if (filterStr) {
+        rows.push(`${' '.repeat(leftW)}[dim]/[/][accent]${esc(filterStr)}[/]`);
+      }
       if (!c || c.state === 'pending') {
         rows.push(`${' '.repeat(leftW)}[dim]awaiting choices…[/]`);
       } else if (c.state === 'error') {
@@ -268,59 +279,80 @@ function renderFabricFormOverlay() {
         if (c.items.length === 0) {
           rows.push(`${' '.repeat(leftW)}[dim](no choices)[/]`);
         } else {
-          // Cap displayed items so the help line + required-missing footer
-          // stay visible on tall-choices lists (R2-BUG2: items ≥~viewport
-          // rows otherwise swallowed the hint). `chromeRows` computed above
-          // walks the actual form state (section headers, every field's
-          // input+desc, separator, still-missing, help), so a 1-field form
-          // and a 5-field form get the right budget each. −4 is the border
-          // (menuH compensates by 2 + innerH compensates by another 2) −
-          // another 1 reserved for the overflow indicator row. Minimum
-          // budget is 3 so the picker stays usable even on tiny terminals;
-          // on terminals too small for chrome + 3 items + indicator, the
-          // overlay viewport scrolls (acceptable — vp.rows ≤ 13 is extreme).
-          const availableRows = (vp.rows || 24) - 4 - chromeRows - 1;
-          const budget = Math.max(3, availableRows);
-          const total = c.items.length;
-          const willOverflow = total > budget;
-          let sliceStart = 0;
-          let sliceEnd = total;
-          if (willOverflow) {
-            // Reserve one row for the "N of M" indicator at the bottom.
-            const windowSize = budget - 1;
-            const half = Math.floor(windowSize / 2);
-            sliceStart = Math.max(0, picking.idx - half);
-            sliceEnd = Math.min(total, sliceStart + windowSize);
-            // If the picking.idx is near the end, pull sliceStart back so
-            // we still show `windowSize` items (not fewer).
-            sliceStart = Math.max(0, sliceEnd - windowSize);
-          }
-          for (let i = sliceStart; i < sliceEnd; i++) {
-            // R2C-SMELL1 — `labels[i]` was truthy-checked, which treated an
-            // explicit empty-string label as "no label" and fell back to the
-            // raw item. An author passing `labels: ['', 'Beta']` wanted blank
-            // for the first row, not the item. Compare against null|undefined
-            // instead so the empty string survives.
-            const label = (c.labels && c.labels[i] != null) ? c.labels[i] : c.items[i];
-            if (i === picking.idx) pickingLineIdx = rows.length;
-            const painted = i === picking.idx
-              ? `[reverse]${esc(label)}[/]`
-              : esc(label);
-            rows.push(`${' '.repeat(leftW)}${painted}`);
-          }
-          if (willOverflow) {
-            // "N of M" + the `+` suffix means "the fn also returned MORE
-            // than M that we had already dropped at the cap" (R1B-BUG1's
-            // original `[+more…]` cue, merged into this one line).
-            const shown = sliceEnd - sliceStart;
-            const totalLabel = `${total}${c.truncated ? '+' : ''}`;
-            rows.push(`${' '.repeat(leftW)}[dim]\\[${shown} of ${totalLabel} — up/down to scroll][/]`);
-          } else if (c.truncated) {
-            // R1B-BUG1: choices runtime caps items at MAX_CHOICES; the overlay
-            // tells the user the fn's return was longer than the cap so they
-            // know what they're not seeing. Escape the leading `[` so Rich
-            // doesn't try to parse `[+more…]` as a markup tag.
-            rows.push(`${' '.repeat(leftW)}[dim]\\[+more…][/]`);
+          // Brief 2 — the FILTERED view is what we paint, nav against, and
+          // what dispatch.js's Enter looks up. Shared leaf, same list.
+          const view = filterChoices(c.items, c.labels || null, filterStr);
+          if (view.items.length === 0) {
+            // "no match" row: filter is active and nothing survived. Enter
+            // dispatches close here (dispatch.js guards on view[idx] === undefined).
+            rows.push(`${' '.repeat(leftW)}[dim](no match)[/]`);
+          } else {
+            // Cap displayed items so the help line + required-missing footer
+            // stay visible on tall-choices lists (R2-BUG2: items ≥~viewport
+            // rows otherwise swallowed the hint). `chromeRows` computed above
+            // walks the actual form state (section headers, every field's
+            // input+desc, separator, still-missing, help), so a 1-field form
+            // and a 5-field form get the right budget each. −4 is the border
+            // (menuH compensates by 2 + innerH compensates by another 2) −
+            // another 1 reserved for the overflow indicator row. Minimum
+            // budget is 3 so the picker stays usable even on tiny terminals;
+            // on terminals too small for chrome + 3 items + indicator, the
+            // overlay viewport scrolls (acceptable — vp.rows ≤ 13 is extreme).
+            // Brief 2 — the filter row ABOVE the list (painted when
+            // filterStr is non-empty) is popover chrome that chromeRows
+            // doesn't count (it's computed before pushField runs). Subtract
+            // one so a 1-char filter doesn't push the overflow indicator off
+            // screen on terminals that were previously right at the chrome
+            // budget edge.
+            const filterChromeRows = filterStr ? 1 : 0;
+            const availableRows = (vp.rows || 24) - 4 - chromeRows - 1 - filterChromeRows;
+            const budget = Math.max(3, availableRows);
+            const total = view.items.length;
+            const willOverflow = total > budget;
+            let sliceStart = 0;
+            let sliceEnd = total;
+            if (willOverflow) {
+              // Reserve one row for the "N of M" indicator at the bottom.
+              const windowSize = budget - 1;
+              const half = Math.floor(windowSize / 2);
+              sliceStart = Math.max(0, picking.idx - half);
+              sliceEnd = Math.min(total, sliceStart + windowSize);
+              // If the picking.idx is near the end, pull sliceStart back so
+              // we still show `windowSize` items (not fewer).
+              sliceStart = Math.max(0, sliceEnd - windowSize);
+            }
+            for (let i = sliceStart; i < sliceEnd; i++) {
+              // R2C-SMELL1 — `labels[i]` was truthy-checked, which treated an
+              // explicit empty-string label as "no label" and fell back to the
+              // raw item. An author passing `labels: ['', 'Beta']` wanted blank
+              // for the first row, not the item. Compare against null|undefined
+              // instead so the empty string survives.
+              const label = (view.labels && view.labels[i] != null) ? view.labels[i] : view.items[i];
+              if (i === picking.idx) pickingLineIdx = rows.length;
+              const painted = i === picking.idx
+                ? `[reverse]${esc(label)}[/]`
+                : esc(label);
+              rows.push(`${' '.repeat(leftW)}${painted}`);
+            }
+            if (willOverflow) {
+              // "N of M" + the `+` suffix means "the fn also returned MORE
+              // than M that we had already dropped at the cap" (R1B-BUG1's
+              // original `[+more…]` cue, merged into this one line).
+              const shown = sliceEnd - sliceStart;
+              // Brief 2 — the `+` cue counts the FETCH-cap truncation on the
+              // raw list; a filter narrowing an already-truncated list keeps
+              // the `+` suffix so the user knows the fetch dropped candidates
+              // that MIGHT have matched. The "N of M" tells them how many of
+              // their filtered view they're seeing right now.
+              const totalLabel = `${total}${c.truncated ? '+' : ''}`;
+              rows.push(`${' '.repeat(leftW)}[dim]\\[${shown} of ${totalLabel} — up/down to scroll][/]`);
+            } else if (c.truncated) {
+              // R1B-BUG1: choices runtime caps items at MAX_CHOICES; the overlay
+              // tells the user the fn's return was longer than the cap so they
+              // know what they're not seeing. Escape the leading `[` so Rich
+              // doesn't try to parse `[+more…]` as a markup tag.
+              rows.push(`${' '.repeat(leftW)}[dim]\\[+more…][/]`);
+            }
           }
         }
       }
@@ -352,8 +384,13 @@ function renderFabricFormOverlay() {
   // discoverable without reading docs.
   if (picking) {
     // R2B-SMELL8 — "close popover" disambiguates against the next-up Esc,
-    // which closes the form.
-    rows.push('[dim]\\[up/down] move   \\[enter] pick   \\[esc] close popover[/]');
+    // which closes the form. Brief 2 — show the filter affordance so users
+    // discover type-to-filter without reading docs; the Esc hint reads
+    // "clear/close" so the two-step (clear filter first, then close) is
+    // discoverable too.
+    const filterActive = typeof picking.filter === 'string' && picking.filter.length > 0;
+    const escHint = filterActive ? '\\[esc] clear filter' : '\\[esc] close popover';
+    rows.push(`[dim]\\[up/down] move   \\[type] filter   \\[enter] pick   ${escHint}[/]`);
   } else {
     const focused = f.fields[f.focusIdx];
     const hasChoices = focused && (focused.choicesFnRef || focused.choicesCmd);

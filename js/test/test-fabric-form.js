@@ -576,14 +576,20 @@ describe('[fabric-form] KEY path integration — choices popover (slice 2)', () 
     eq(section.text, '', 'nothing picked — section stays empty');
   });
 
-  it('printable key while picking closes popover + types the char into the field', () => {
+  it('printable key while picking APPENDS to picking.filter (Brief 2 type-to-filter)', () => {
+    // Pre-Brief-2 behavior was close-and-fall-through on any printable; Brief 2
+    // reroutes printables + backspace to picking.filter so the user can narrow
+    // the list without first closing. The popover stays open; the field text
+    // DOES NOT change. The filter-clear + filter-close test coverage lives in
+    // test-form-choices-filter.js alongside the new reducer arms.
     openPopover(['a', 'b']);
     _dispatchToken(' ');                        // open
-    _dispatchToken('n');                        // non-nav printable
+    _dispatchToken('n');                        // printable → filter append
     const after = store.getModel().modal.fabricForm;
-    eq(after.picking, null, 'popover closed by non-nav key');
+    assert(after.picking, 'popover still open');
+    eq(after.picking.filter, 'n', 'filter appended');
     const section = after.fields.find((x) => x.port === 'section');
-    eq(section.text, 'n', 'char landed in section text (fall-through to field editor)');
+    eq(section.text, '', 'field text UNCHANGED — printable no longer falls through');
   });
 });
 

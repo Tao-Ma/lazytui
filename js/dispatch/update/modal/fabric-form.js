@@ -44,6 +44,7 @@ const { isPrintableSeq: _isPrintableSeq } = require('../../../leaves/text/printa
 const { tokenize } = require('../../../fabric/command');
 const sharedKey = require('../../../leaves/ports/choices-cache-key');
 const { declHasChoices } = require('../../../leaves/ports/has-choices');
+const { filterChoices } = require('../../../leaves/ports/choices-filter');
 
 const TYPES = [
   'fabric_form_enter', 'fabric_form_key',
@@ -57,6 +58,12 @@ const TYPES = [
   'fabric_form_choices_request', 'fabric_form_choices_resolved',
   'fabric_form_choices_pick', 'fabric_form_choices_open',
   'fabric_form_choices_close', 'fabric_form_choices_nav',
+  // Brief 2 (v0.6.43) — type-to-filter in the popover. `_filter` appends
+  // one printable `seq` (or pops the last char when `seq === '\x7f'`);
+  // `_filter_clear` resets to '' (first Esc press when the filter is
+  // non-empty, so a second Esc still closes). Both reset picking.idx to 0
+  // (filter change → highlight resets to the first filtered row).
+  'fabric_form_choices_filter', 'fabric_form_choices_filter_clear',
 ];
 
 const CLOSED = { fields: [], focusIdx: 0, pendingAction: null, picking: null,
@@ -822,10 +829,16 @@ function update(model, msg) {
       // Clamp picking.idx if the user was navigated past the new list end.
       // Uses nextItems (not msg.items) so the stale-keep path doesn't clamp
       // against an empty error payload while the stale list is still shown.
+      // Brief 2 — clamp against the FILTERED view (what the user sees); a
+      // mid-filter resolved reply with fewer matches must keep idx inside
+      // the filtered rows, not inside the raw list.
       let nextPicking = f.picking;
       if (f.picking && f.picking.port === msg.port) {
-        if (nextItems.length === 0) nextPicking = { ...f.picking, idx: 0 };
-        else if (f.picking.idx >= nextItems.length) nextPicking = { ...f.picking, idx: nextItems.length - 1 };
+        const filterStr = typeof f.picking.filter === 'string' ? f.picking.filter : '';
+        const view = filterChoices(nextItems, nextLabels || null, filterStr);
+        const vn = view.items.length;
+        if (vn === 0) nextPicking = { ...f.picking, idx: 0 };
+        else if (f.picking.idx >= vn) nextPicking = { ...f.picking, idx: vn - 1 };
       }
       const nextChoicesCache = cacheUpdate
         ? _cachePut(model.choicesCache, cacheUpdate.key, cacheUpdate.payload)
@@ -876,7 +889,13 @@ function update(model, msg) {
       // popover. The flag is stamped by _normalize via the shared leaf.
       if (!field.hasChoices) return [model, []];
       if (f.picking && f.picking.port === msg.port) return [model, []];   // idempotent
-      return [withModal(model, { fabricForm: { ...f, picking: { port: msg.port, idx: 0 } } }), []];
+      // Brief 2 — filter resets to '' on every open. Reopening the SAME
+      // field (after a close) starts fresh; a prior filter should not
+      // persist across popover lifecycles (confusing + unobservable
+      // from outside the picker).
+      return [withModal(model, { fabricForm: {
+        ...f, picking: { port: msg.port, idx: 0, filter: '' },
+      } }), []];
     }
     case 'fabric_form_choices_close': {
       // Esc / blur / any key that closes the popover without committing.
@@ -895,12 +914,63 @@ function update(model, msg) {
       if (f.picking === null) return [model, []];
       const field = f.fields.find((x) => x.port === f.picking.port);
       if (!field || !field.computed || field.computed.state !== 'ok') return [model, []];
-      const n = field.computed.items.length;
+      // Brief 2 — nav operates on the FILTERED view (the user sees filtered
+      // rows and expects Up/Down to walk them). Shared leaf keeps dispatch.js's
+      // Enter-picks-value lookup, the renderer's row-painting loop and this
+      // clamp all reading the same list.
+      const view = filterChoices(field.computed.items, field.computed.labels || null, (f.picking.filter || ''));
+      const n = view.items.length;
       if (n === 0) return [model, []];
       const dir = msg.dir < 0 ? -1 : 1;
       const nextIdx = Math.max(0, Math.min(n - 1, f.picking.idx + dir));
       if (nextIdx === f.picking.idx) return [model, []];
       return [withModal(model, { fabricForm: { ...f, picking: { ...f.picking, idx: nextIdx } } }), []];
+    }
+    case 'fabric_form_choices_filter': {
+      // `{ seq }` — append one printable code-unit to picking.filter, or pop
+      // the last code-unit when seq === '\x7f' (backspace). Any other control
+      // seq is a no-op (dispatch.js only sends printables + \x7f here; this
+      // defense-in-depth stops a hand-built Msg from pushing a Tab byte into
+      // the filter string). idx RESETS TO 0 on any filter change so a
+      // narrowing refilter doesn't leave the highlight past the end of the
+      // new filtered view (its clamp runs on the next nav / resolved reply,
+      // but resetting here keeps the first visible row highlighted the frame
+      // the filter changes). WAL-safe: filter lives in picking (not computed),
+      // so a replay reproduces the typed state exactly.
+      if (!model.modes.fabricFormMode) return [model, []];
+      const f = model.modal.fabricForm;
+      if (f.picking === null) return [model, []];
+      const cur = typeof f.picking.filter === 'string' ? f.picking.filter : '';
+      let next;
+      if (msg.seq === '\x7f') {
+        if (cur.length === 0) return [model, []];
+        next = cur.slice(0, -1);
+      } else if (typeof msg.seq === 'string' && msg.seq.length > 0 && !/[\x00-\x1f\x7f]/.test(msg.seq)) {
+        // Cap the filter at a sane length — a 128-char filter is already
+        // past any plausible popover list, and this stops a stuck-key or
+        // paste event from inflating the WAL.
+        if (cur.length >= 128) return [model, []];
+        next = cur + msg.seq;
+      } else {
+        return [model, []];
+      }
+      if (next === cur) return [model, []];
+      return [withModal(model, { fabricForm: {
+        ...f, picking: { ...f.picking, filter: next, idx: 0 },
+      } }), []];
+    }
+    case 'fabric_form_choices_filter_clear': {
+      // Esc with a non-empty filter clears the filter FIRST; a second Esc
+      // closes the popover (dispatch.js reads picking.filter.length to
+      // decide which to dispatch). idx resets to 0 — the view just widened
+      // back to the full list, highlight should land on the first row.
+      if (!model.modes.fabricFormMode) return [model, []];
+      const f = model.modal.fabricForm;
+      if (f.picking === null) return [model, []];
+      if (!f.picking.filter) return [model, []];
+      return [withModal(model, { fabricForm: {
+        ...f, picking: { ...f.picking, filter: '', idx: 0 },
+      } }), []];
     }
     default:
       return [model, []];

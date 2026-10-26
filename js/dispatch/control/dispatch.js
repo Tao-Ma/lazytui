@@ -1030,12 +1030,20 @@ const _modeHandlers = {
   // dead code — the string-name typo class, same as the `[inverse]` →
   // `[reverse]` caret bug caught in round 3.
   fabricFormMode:      (key, seq) => {
-    // Choices popover (`choices_fn:`): when `picking` is non-null, intercept
-    // the picker's keys. Up/Down move within the choices list, Enter picks the
-    // highlighted entry, Esc / Space close the popover. Tab routes through to
-    // the regular form (closing the popover first) so the user can keep moving
-    // between fields. Any other key falls through to the field editor after
-    // closing — a type-ahead search is a planned follow-up slice.
+    // Choices popover (`choices_fn:` / `choices_cmd:` / literal `choices:`):
+    // when `picking` is non-null, intercept the picker's keys. Up/Down move
+    // within the FILTERED choices list (Brief 2), Enter picks the highlighted
+    // filtered entry (commits the VALUE, not the label), Space closes.
+    //
+    // Esc is two-step while a filter is non-empty: first clear the filter,
+    // next Esc closes the popover (the form's own cancel Esc is still
+    // one more step after that). This gives the user a reliable "widen my
+    // view" without surprising a reach for cancel. Tab / Shift-Tab keep
+    // the close-and-fall-through so moving between fields stays one keypress.
+    //
+    // Printable code units + backspace APPEND / POP against picking.filter
+    // (Brief 2); any other control seq still falls through to the field
+    // editor after closing, matching pre-Brief-2 behavior.
     //
     // R1E-SMELL5: single getModel() read per entry. R1E-BUG1: after a
     // fallthrough-close dispatch, re-read model so the regular-form branch
@@ -1045,16 +1053,38 @@ const _modeHandlers = {
     if (f && f.picking) {
       if      (key === 'up')               { applyMsg({ type: 'fabric_form_choices_nav', dir: -1 }); return; }
       else if (key === 'down')             { applyMsg({ type: 'fabric_form_choices_nav', dir:  1 }); return; }
-      else if (key === 'escape')           { applyMsg({ type: 'fabric_form_choices_close' }); return; }
+      else if (key === 'escape')           {
+        // Brief 2 — Esc two-step. A non-empty filter is cleared first so a
+        // reflex-cancel from a search doesn't also tear down the popover.
+        const hasFilter = typeof f.picking.filter === 'string' && f.picking.filter.length > 0;
+        applyMsg({ type: hasFilter ? 'fabric_form_choices_filter_clear'
+                                   : 'fabric_form_choices_close' });
+        return;
+      }
       else if (seq === ' ')                { applyMsg({ type: 'fabric_form_choices_close' }); return; }
       else if (key === 'return')           {
+        // Brief 2 — Enter commits the FILTERED value at picking.idx (not the
+        // raw-list value). On "no match" (filtered empty), close the popover
+        // rather than committing the empty string.
         const field = f.fields.find((x) => x.port === f.picking.port);
-        const value = field && field.computed && field.computed.items[f.picking.idx];
+        const items = (field && field.computed && field.computed.items) || [];
+        const labels = (field && field.computed && field.computed.labels) || null;
+        const filterStr = typeof f.picking.filter === 'string' ? f.picking.filter : '';
+        const view = require('../../leaves/ports/choices-filter').filterChoices(items, labels, filterStr);
+        const value = view.items[f.picking.idx];
         if (typeof value === 'string') {
           applyMsg({ type: 'fabric_form_choices_pick', port: f.picking.port, value });
         } else {
           applyMsg({ type: 'fabric_form_choices_close' });
         }
+        return;
+      }
+      // Brief 2 — backspace pops the filter; a printable code-unit appends.
+      // Tab / Shift-Tab + any other control seq fall through to the regular
+      // form routing after closing the popover (same semantics as pre-Brief-2).
+      else if (seq === '\x7f') { applyMsg({ type: 'fabric_form_choices_filter', seq }); return; }
+      else if (typeof seq === 'string' && seq.length > 0 && !/[\x00-\x1f\x7f]/.test(seq)) {
+        applyMsg({ type: 'fabric_form_choices_filter', seq });
         return;
       }
       // Tab / Shift-Tab + anything else: close the popover, then fall through
