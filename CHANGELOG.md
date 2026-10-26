@@ -6,6 +6,8 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.41] — 2026-10-26
+
 ### Added
 
 - **Stale-while-refetch cache for computed port choices (TUI).** The
