@@ -49,8 +49,20 @@ keymap:
 Run `--keymap` for the authoritative, always-current list with summaries. As of
 format v1 the built-in verbs are: `refresh`, `show_help`, `page_up`,
 `page_down`, `goto_top`, `goto_bottom`, `register`, `cmdline`, `copy_mode`,
-`edit_args`, `action_palette`. (Plus any of your config's actions via
-`{ action: … }` and commands via `{ command: … }`.)
+`edit_args`, `action_palette`, `repeat_run`. (Plus any of your config's
+actions via `{ action: … }` and commands via `{ command: … }`.)
+
+**`repeat_run`** (default `R`) re-invokes the last `type:run` action
+through the standard invoke path — confirm fires again (repeat never
+bypasses the gate), the ports form opens again if required or if any
+field was collected on the first run (pre-filled by the `[last]`
+chip), and ports declared `remember: false` come up blank so secret-
+ish ports never auto-replay. The slot is session-scoped (cleared on
+`set_config`) and session-persistent (survives tab switches, group
+switches, pane focus moves). Only `type:run` actions are recorded —
+`type:spawn` terminal panes and other non-run actions are not. If the
+slot is empty or the remembered `group:action` no longer resolves, a
+transcript notice fires and nothing runs.
 
 The **fuzzy action palette** (`action_palette`, default `p`) opens a
 centered type-to-jump list of every `group:action`. Narrow by typing

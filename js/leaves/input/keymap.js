@@ -49,6 +49,7 @@ const VERB_CATALOG = {
   copy_mode:   'Enter copy mode (select text to yank)',
   edit_args:   "Open the ports form to edit args (incl. optional) for the actions-pane selection",
   action_palette: 'Open the fuzzy action palette (type to jump to any group:action)',
+  repeat_run:  'Re-invoke the last `type:run` action (same confirm gate, same ports form)',
 };
 
 // Default normal-mode bindings, by context. v1: every default is GLOBAL — the
@@ -80,6 +81,12 @@ const DEFAULT_NORMAL = {
     // handleNormalKey's switch (see dispatch.js _SHADOWED_NORMAL_KEYS)
     // and reads as the common editor idiom "picker / palette".
     { key: 'p', spec: { builtin: 'action_palette' } },
+    // v0.6.44 Brief 1 — repeat-last-run. Bare uppercase `R` is free
+    // (lowercase `r` is refresh); the shift-r/r split reads as "the
+    // same action but stronger / again" without stealing refresh.
+    // Fully rebindable via the `keymap: normal:` surface — operators
+    // who prefer a chord can `R: noop` + bind elsewhere.
+    { key: 'R', spec: { builtin: 'repeat_run' } },
   ],
 };
 

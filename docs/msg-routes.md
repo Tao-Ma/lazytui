@@ -597,6 +597,35 @@ dataflow mechanics.
   its reply. The two prefixes also prevent the registries colliding if the
   same port name is used across channels in different actions.
 
+### 4.X v0.6.44 Brief 1 — `set_last_run` + `repeat_run` (root arms)
+
+Two flat Msgs on the root reducer that let the `repeat_run` verb
+(default `R`) re-invoke the last `type:run` action without replaying
+raw argv:
+
+| Msg | Writes | Cmds | Pure |
+|-----|--------|------|------|
+| `set_last_run{groupPath, actionKey}` | `model.lastRun = {groupPath, actionKey}` (identity-preserve on same pair, silent drop on malformed) | — | ✓ |
+| `repeat_run` | — (identity-preserve) | `repeat_last_run{groupPath, actionKey}` when populated, else `repeat_last_run_empty` | ✓ |
+
+`set_last_run` is dispatched by `action-runner.doRun` at its top,
+gated on `(action.type || 'run') === 'run'`, so the write happens
+AFTER the confirm gate passed (declined confirms never reach doRun)
+and only for `type:run` actions. The reducer-written Msg + flat JSON
+slot keep the slot WAL-replayable (same discipline as `formHistory`).
+
+`repeat_run` is a Cmd-only verb: empty slot → `repeat_last_run_empty`
+effect pushes a transcript notice; populated slot →
+`repeat_last_run{groupPath, actionKey}` effect re-resolves through the
+overlay/action-palette injected `resolve` seam (so a `set_config`
+racing the Msg → Cmd window silently drops), switches `currentGroup`
+if needed, and routes through `runAction` so the confirm gate / ports
+form / missing-required prompting all fire exactly as the first run.
+The repeat is a RE-INVOKE, not a replay.
+
+`set_config` clears `model.lastRun` to null (action-universe-swap
+discipline, same reason it clears `formHistory`).
+
 ### 5.10b `palette` (`modal/palette.js`) — fuzzy action palette (v0.6.44 Brief 2)
 
 Type-to-jump list over every `group:action` enumerated by `iterActions`

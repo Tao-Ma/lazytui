@@ -520,6 +520,37 @@ function installBuiltins() {
     }
     require('./action-runner').runAction(eff.actionKey, r.action);
   });
+  // v0.6.44 Brief 1 — repeat the last-invoked run. The reducer arm for
+  // `repeat_run` emits this Cmd carrying (groupPath, actionKey); here
+  // we re-resolve against the LIVE config (the slot may have been
+  // written seconds ago but the action removed since) and route back
+  // through runAction so the confirm gate / ports form / missing-
+  // required prompting all fire exactly as the first run. The repeat
+  // never bypasses the confirm — that's the point.
+  registerEffect('repeat_last_run', (eff) => {
+    const palette = require('../../overlay/action-palette');
+    const { getModel } = require('../../model/store');
+    const { applyMsg } = require('../control/dispatch');
+    const stream = require('./stream');
+    const model = getModel();
+    const r = palette.resolve(model.config, eff.groupPath, eff.actionKey);
+    if (r.error) {
+      stream.pushTranscriptNotice(
+        `[dim]repeat_run: ${eff.groupPath}:${eff.actionKey} no longer resolves (config changed?)[/]`);
+      return;
+    }
+    if (model.currentGroup !== eff.groupPath) {
+      applyMsg({ type: 'set_current_group', name: eff.groupPath });
+    }
+    require('./action-runner').runAction(eff.actionKey, r.action);
+  });
+  // Empty-slot notice — fired by the `repeat_run` reducer arm when
+  // model.lastRun is null (first keystroke of the session, or just
+  // after a config_swap wiped the slot).
+  registerEffect('repeat_last_run_empty', () => {
+    require('./stream').pushTranscriptNotice(
+      '[dim]repeat_run: no previous run to repeat[/]');
+  });
   // run_binding: a resolved leader leaf. Surface sync throws + async
   // rejections (mirrors the `:` cmdline path) rather than swallowing them.
   registerEffect('run_binding', (eff) => {

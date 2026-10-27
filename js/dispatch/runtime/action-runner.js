@@ -117,6 +117,22 @@ function ensureActionTab(group, actionKey) {
 }
 
 function doRun(actionKey, action, args = []) {
+  // v0.6.44 Brief 1 — stamp `model.lastRun` for the `repeat_run` verb
+  // (default `<leader>r`). We're PAST the confirm gate here (runAction
+  // stages confirm_enter and the do_run Cmd re-emits through doRun on
+  // y/accept), so a declined confirm never becomes "the last run".
+  // Scope to `type:run` so terminal spawns and other non-run action
+  // types don't become repeat targets. The stamp is a Msg via applyMsg
+  // (not an inline model write) so the reducer stays the single
+  // writer; its WAL entry is what makes repeat_run replay-safe.
+  if ((action.type || 'run') === 'run') {
+    require('../control/dispatch').applyMsg({
+      type: 'set_last_run',
+      groupPath: getModel().currentGroup,
+      actionKey,
+    });
+  }
+
   // Fabric consumer/producer (decision A): a `run:` action resolves its input
   // ports and runs as a no-shell argv vector. Distinct from the legacy
   // cmd/script shell path below.

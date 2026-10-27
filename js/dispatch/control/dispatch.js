@@ -857,6 +857,7 @@ const NORMAL_VERBS = {
   copy_mode:   () => enterCopyMode(),
   edit_args:   () => handleAction('edit_args'),
   action_palette: () => applyMsg({ type: 'palette_open' }),
+  repeat_run:  () => applyMsg({ type: 'repeat_run' }),
 };
 
 // Resolve a keymap binding spec to its dispatch thunk (or null). `builtin` uses

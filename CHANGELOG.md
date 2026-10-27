@@ -8,6 +8,31 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Repeat-last-run verb (`repeat_run`, default `R`).** The daily loop
+  of run → tweak → run again now compresses to one keystroke. Pressing
+  `R` re-invokes the last `type:run` action through the standard invoke
+  path — the confirm gate fires again (repeat never bypasses it), the
+  ports form opens again if required or if any field was collected the
+  first time (pre-filled by the `[last]` chip from v0.6.43's
+  formHistory), and ports declared `remember: false` come up blank so
+  secret-ish values never auto-replay. Lifecycle:
+  - The slot (`model.lastRun = {groupPath, actionKey}`) is written at
+    the top of `action-runner.doRun`, gated on `type:run`, so a
+    declined confirm never becomes "the last run" and non-run actions
+    (`type:spawn` terminal panes etc.) aren't recorded.
+  - Cleared on `set_config` — same scope-swap discipline as
+    `formHistory` (a repeat against a redefined action would run the
+    wrong thing).
+  - Session-persistent: survives tab / group / focus moves.
+  - Replay-safe: the slot rides the WAL via a reducer-written
+    `set_last_run` Msg; no closures, pure JSON.
+  - Empty slot or unresolved target → transcript notice + no-op (never
+    silent failure).
+
+  Rebindable like any normal-mode verb — `R: noop` + bind elsewhere
+  via `keymap: normal:` if `R` is reserved for something in your
+  workflow.
+
 - **Fuzzy action palette.** New overlay (default key `p` in normal mode)
   lists every discoverable `group:action` in a centered type-to-jump
   list; narrow by typing (case-insensitive substring match against the

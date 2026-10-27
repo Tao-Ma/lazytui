@@ -199,6 +199,16 @@ function init() {
       // pinned against palette.CLOSED.
       palette: { filter: '', idx: 0 },
     },
+    // v0.6.44 Brief 1 — last-invoked `type:run` action (session-scoped). The
+    // `repeat_run` verb (default `<leader>r`) re-invokes `(groupPath,
+    // actionKey)` through the standard invoke path: confirm fires again,
+    // missing-required prompting + formHistory `[last]` prefill apply as
+    // if the user selected the action in the actions pane. Stamped by
+    // action-runner.doRun AFTER the confirm gate passes (so a declined
+    // confirm never becomes "the last run"); cleared on `set_config`
+    // (same action-universe-swap discipline as formHistory). Null until
+    // the first run.
+    lastRun: null,
     // Framework-level state: parsed config, paths, leader-mode buffers,
     // misc flags. The layout struct + freeConfig state + viewMode + focus
     // are on the layout Component's slice (see

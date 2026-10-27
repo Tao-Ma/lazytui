@@ -458,6 +458,10 @@ function update(model, msg) {
         // against a decl the author rewrote. Same reason the modal buffers
         // above are cleared: scope-swap at the config boundary.
         formHistory: { entries: {}, order: [], cap: (model.formHistory && model.formHistory.cap) || 64 },
+        // v0.6.44 Brief 1 — same reason: lastRun points at a
+        // (groupPath, actionKey) that may no longer resolve, and a
+        // repeat against a redefined action would run the wrong thing.
+        lastRun: null,
       };
       // Fan set_config out to config-status, the only Component that snapshots
       // config (files / projectDir) onto its slice for reducer-pure reads.
@@ -472,6 +476,32 @@ function update(model, msg) {
     }
     case 'set_register': {
       return [{ ...model, register: msg.register }, []];
+    }
+    // v0.6.44 Brief 1 — session-scoped last-run slot. Written by
+    // action-runner.doRun AFTER the confirm gate passes (declined
+    // confirms never reach here). `repeat_run` reads it.
+    case 'set_last_run': {
+      if (!msg.actionKey || !msg.groupPath) return [model, []];
+      const prev = model.lastRun;
+      if (prev && prev.actionKey === msg.actionKey && prev.groupPath === msg.groupPath) {
+        return [model, []];  // identity-preserve
+      }
+      return [{ ...model, lastRun: { groupPath: msg.groupPath, actionKey: msg.actionKey } }, []];
+    }
+    // `repeat_run` — the verb dispatched by `<leader>r`. Pure arm: emits
+    // a Cmd descriptor the effects layer re-resolves + runs through the
+    // standard invoke path. Empty slot → silent no-op + transcript
+    // notice (via the effect). The reducer can't run the action
+    // directly (no effectful imports); the Cmd is the handoff.
+    case 'repeat_run': {
+      if (!model.lastRun) {
+        return [model, [{ type: 'repeat_last_run_empty' }]];
+      }
+      return [model, [{
+        type: 'repeat_last_run',
+        groupPath: model.lastRun.groupPath,
+        actionKey: model.lastRun.actionKey,
+      }]];
     }
     case 'reset_group_context': {
       // Cross-layer Msg emitted by the groups Component on a group switch —
