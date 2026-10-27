@@ -24,6 +24,17 @@ const { esc } = require('../leaves/text/ansi');
 const { renderOverlay } = require('../leaves/render/draw');
 const { formatPreview } = require('../leaves/ports/submit-preview');
 
+// Pre-release round-2 WAL-fidelity note: the preview block below reads
+// `model.modal.continuation.cmd.action` — the whole action config
+// object staged by `confirm_enter` (action-runner.js:57). That object
+// is parsed-YAML + parser-stamped flags (`sensitive`, `remember`,
+// `variadic`, `default`) — pure data, no closures. On WAL fold the
+// `confirm_enter` Msg re-stages it through the same reducer arm;
+// `structuredClone` round-trips the shape (not JSON — undefined
+// values are preserved). A future change that stuffed non-serializable
+// values (functions, Date, Set, Map) onto an action would break BOTH
+// the preview AND the run — so the preview's accuracy is coupled to
+// the invariant the run already needs. No separate pin required.
 function renderConfirmOverlay() {
   const model = getModel();
   const c = model.modal.confirm;

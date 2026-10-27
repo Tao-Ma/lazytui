@@ -641,7 +641,7 @@ reissue-cert:
 
 A `remember: false` port is never written to history AND never seeded from a stale slot (defense-in-depth: a prior opt-in that later became opt-out drops its memory on first read). Parser accepts strictly boolean; a `remember: "no"` warn-drops under code `port.bad_remember` with no truthy coercion (`"no"` is truthy in JS).
 
-**`sensitive: true` implies `remember: false`** (v0.6.44 Brief 3). A port declared `sensitive:` masks its value in the submit preview (confirm overlay + ports-form compact footer); the parser also forces `remember: false` on the normalized decl so a sensitive value is NEVER persisted in formHistory and NEVER seeds the `[last]` chip. A conflicting `remember: true` on a sensitive port emits `port.sensitive_overrides_remember` and gets overridden. See the `sensitive` row in the schema table above.
+**`sensitive: true` implies `remember: false`** (v0.6.44 Brief 3): a sensitive port is never persisted in formHistory and never seeds the `[last]` chip. See the `sensitive` row in the schema table above for the full rule — that row is the canonical home for the behavior; this cross-reference is here so a reader scanning for `[last]` discovers the interaction.
 
 The chip renderer paints `[last]` under `accent`, distinct from `[default]` (dim), `[modified]` (warning), and `[unset]` (dim). On a computed-choices field, `[fetching…]` and `[error]` take precedence while the fetch is live (the user needs to see the fetch state), but once the fetch settles with text differing from the default (the usual `[last]`-seeded case), the chip reads `[last]` and the popover is still reachable via `[space]`.
 
