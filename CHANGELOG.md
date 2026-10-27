@@ -6,6 +6,55 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.50] — 2026-10-28
+
+Overlay-compositor migration — **Release 1 of 3**
+(`docs/overlay-compositor-migration.md`). Closes **Class C** of the
+2026-10-27 field-caught run: the setImmediate-dispatched-applyMsg
+hazard that reducer arms worked around with per-arm paint Cmds.
+
+### Changed (architecture)
+
+- **`applyMsg` schedules a trailing paint at depth-0 exit.** Every
+  top-level root dispatch — pump-driven or from an async path that
+  bypasses the input pump's trailing render (setImmediate'd effects
+  `do_run` / `run_action` / `unrouted_preempt_and_run`, the jobs /
+  metrics store mirrors) — reliably paints without per-arm paint
+  Cmds. The render-queue's `_renderPending` guard coalesces with
+  the pump's own `paintNow` when both paths fire for the same
+  gesture; nested dispatches never reach the branch (depth > 0).
+
+- **`fabric_form_enter` and `fabric_field_enter` arms no longer
+  emit per-arm `force_full_repaint` + `render` Cmds** (v0.6.48
+  pattern retired for Class C). Class A (overlay bypass of cell-
+  diff) is still carried by `paint.js`'s sig trackers until
+  Release 2 (v0.6.51) replaces them with the row-compositor.
+
+### Added
+
+- `js/test/test-loop-schedule.js` pins the loop-level invariant:
+  one `scheduleRender` per top-level `applyMsg`, nested dispatches
+  do NOT re-schedule, reducer-throw still fires the trailing
+  schedule from the finally block.
+
+### Changed (tests)
+
+- `test-fabric-form.js` section [10] inverts: `fabric_form_enter`
+  arm must emit NO per-arm paint Cmds. The new assertions catch
+  drift back to the pre-migration shape (first-open plain, first-
+  open with computed-choices field, close+reopen cycle).
+- `test-choices-literal-form.js` comment refreshed; the fetch-
+  shape filter is now equivalent to `cmds.length === 0`.
+
+### Not changed
+
+- `fabric_form_submit` still emits an explicit `render` Cmd for the
+  v0.6.49 no-churn short-circuit (that path doesn't go through a
+  reopen; the render Cmd is semantic — "the focus-change paints
+  now" — not Class C compensation). Coalesces with the trailing
+  schedule via the same `_renderPending` guard.
+- Classes A + B stay on sig trackers until Release 2.
+
 ## [0.6.49] — 2026-10-27
 
 Fifth point release of the day. Two field-caught items shipped
