@@ -17,6 +17,8 @@ const bctl = require('./border-controls');
 // at boot. Keeping this leaf free of io is what lets io/file-loader depend DOWN
 // on the pure leaves/ansi without forming an io↔leaves cycle.
 
+const { compositeRow } = require('./row-compositor');
+
 const BORDER = { tl: '╭', tr: '╮', bl: '╰', br: '╯', h: '─', v: '│' };
 const THUMB = '▐';
 const CLOSE_GLYPH = '\\[X]';
@@ -513,15 +515,38 @@ function overlayBox({ linesLen, anchor = null, maxWidth = 44 }) {
   return { offX, offY, menuW, menuH };
 }
 
-function renderOverlay({ lines, title, count = null, maxWidth = 44, anchor = null, scrollOffset = 0 }) {
+// Overlay-compositor migration (Release 2, docs/overlay-compositor-migration.md).
+// `targetRows` + `targetCols` — when provided, the overlay composites its rows
+// into the main-frame row buffer the paint pass is about to diff (via
+// `row-compositor.compositeRow`) instead of writing ANSI directly to stdout.
+// The cell-diff then handles both the overlay's leading paint AND the clean-up
+// on close/shrink from the natural per-cell delta — no sig tracker required.
+// Omitted → the stdout path runs unchanged, which keeps every not-yet-migrated
+// overlay working AND keeps the pure-render unit tests (captureOverlay) that
+// observe overlays via stdout working too. The stdout fallback deletes at the
+// end of Release 2, once all 15 overlays route through `targetRows`.
+function renderOverlay({ lines, title, count = null, maxWidth = 44, anchor = null, scrollOffset = 0,
+                         targetRows = null, targetCols = 0 }) {
   const { offX, offY, menuW, menuH } = overlayBox({ linesLen: lines.length, anchor, maxWidth });
   const content = renderPanel({
     width: menuW, height: menuH, lines, title, focused: true, count, scrollOffset,
   });
   const out = content.split('\n');
-  // Build one string with embedded cursor moves, write once. Per-line
-  // moveTo + stdout.write was a syscall per row; on a slow TTY that
-  // could tear under load.
+  if (targetRows) {
+    // Composite path: splice each overlay row into the main-frame buffer so
+    // the cell-diff sees overlay cells land AND leave through the normal
+    // per-row delta. No stdout write — the main-frame paintFrame will emit
+    // the composited bytes a step later with its own `richToAnsi` pass.
+    for (let i = 0; i < out.length; i++) {
+      compositeRow(targetRows, targetCols, out[i], offX, offY + i, menuW);
+    }
+    return;
+  }
+  // Stdout fallback: pre-compositor path, preserved for not-yet-migrated
+  // overlays and for the per-overlay captureOverlay tests that observe
+  // paint via stdout. Build one string with embedded cursor moves, write
+  // once. Per-line moveTo + stdout.write was a syscall per row; on a slow
+  // TTY that could tear under load.
   let buf = '';
   for (let i = 0; i < out.length; i++) {
     buf += `\x1b[${offY + i + 1};${offX + 1}H` + richToAnsi(out[i]) + RESET;

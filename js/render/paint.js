@@ -537,13 +537,13 @@ function renderNormal(model, arrangeOverride) {
   const rectsWithLines = composeRects(layout, model);
   const COLS = dims.cols;
   const newRows = painter.composeRows(rectsWithLines, COLS, layout.availH);
-  if (COLS !== _frame.prevCols || newRows.length !== _frame.prevRows.length) _frame.forceFull = true;
-  _frame.prevCols = COLS;
-  const { ansi, didFull } = painter.paintFrame(_frame.prevRows, newRows, _frame.forceFull, _frame.hl);
-  if (didFull) _frame.forceFull = false;
-  if (ansi) _emit(ansi);
-  _frame.prevRows = newRows;
-  return didFull;
+  // Overlay-compositor migration (Release 2): the view-mode dispatchers now
+  // RETURN the composed main-frame buffer; `render()` splices migrated
+  // overlays in and `_paintMainFrame` runs the shared paintFrame/emit tail.
+  // Routing paintFrame through one site lets each overlay land in prevRows
+  // through the normal cell-diff, so close/shrink produces per-cell clears
+  // without a sig tracker.
+  return { newRows, COLS };
 }
 
 // renderHalf / renderFull — half/full view modes. Same v0.6.3 P3.6
@@ -614,13 +614,7 @@ function renderHalf(model, arrangeOverride) {
     });
   }
   const newRows = painter.composeRows(rects, COLS, availH);
-  if (COLS !== _frame.prevCols || newRows.length !== _frame.prevRows.length) _frame.forceFull = true;
-  _frame.prevCols = COLS;
-  const { ansi, didFull } = painter.paintFrame(_frame.prevRows, newRows, _frame.forceFull, _frame.hl);
-  if (didFull) _frame.forceFull = false;
-  if (ansi) _emit(ansi);
-  _frame.prevRows = newRows;
-  return didFull;
+  return { newRows, COLS };
 }
 
 function renderFull(model, arrangeOverride) {
@@ -651,6 +645,15 @@ function renderFull(model, arrangeOverride) {
       lines: content === '' ? [] : content.split('\n') },
   ];
   const newRows = painter.composeRows(rects, COLS, availH);
+  return { newRows, COLS };
+}
+
+// Shared paintFrame/emit tail — the one place `_frame.prevRows` is written
+// per frame, extracted so `render()` can splice migrated overlays into
+// `newRows` (overlay-compositor Release 2) between the view-mode compose
+// and the diff emit. A COLS or row-count change forces full the same way
+// the per-mode tail did before.
+function _paintMainFrame(newRows, COLS) {
   if (COLS !== _frame.prevCols || newRows.length !== _frame.prevRows.length) _frame.forceFull = true;
   _frame.prevCols = COLS;
   const { ansi, didFull } = painter.paintFrame(_frame.prevRows, newRows, _frame.forceFull, _frame.hl);
@@ -918,7 +921,6 @@ function render(model) {
   if (_frame.prevDiffMode !== diffMode) _frame.forceFull = true;
   _frame.prevDiffMode = diffMode;
 
-  let mainDidFull;
   // viewMode lives on the layout Component slice (Phase 1b).
   const layoutSlice = getInstanceSlice('layout') || { viewMode: 'normal' };
   // Drag preview: during an active drag with a valid target, paint the
@@ -981,9 +983,21 @@ function render(model) {
   // (painted after) read it. Empty when nothing is hovered.
   hoverRegion.clear();
   const viewMode = layoutSlice.viewMode;
-  if (viewMode === 'half') mainDidFull = renderHalf(model, previewArrange);
-  else if (viewMode === 'full') mainDidFull = renderFull(model, previewArrange);
-  else mainDidFull = renderNormal(model, previewArrange);
+  // Overlay-compositor migration Release 2 (docs/overlay-compositor-migration.md):
+  // the view-mode dispatchers RETURN `{ newRows, COLS }` instead of running
+  // paintFrame themselves. `render()` splices migrated overlays into `newRows`
+  // before `_paintMainFrame` runs the shared diff emit, so overlay cells land
+  // in `prevRows` and the cell-diff catches close/shrink naturally — one of
+  // the two paths that lets paint.js eventually drop its per-overlay sig
+  // trackers (prevMenuItems / prevFabricPickingSig / prevPaletteSig /
+  // prevReplayView). Phase 2.a #1 migrates `confirm`; later per-overlay
+  // commits add themselves one by one here.
+  const main = viewMode === 'half' ? renderHalf(model, previewArrange)
+             : viewMode === 'full' ? renderFull(model, previewArrange)
+             : renderNormal(model, previewArrange);
+  const { newRows, COLS } = main;
+  if (md.confirmMode) renderConfirmOverlay(newRows, COLS);
+  const mainDidFull = _paintMainFrame(newRows, COLS);
   // Only force the terminal-overlay repaint when main paint actually
   // cleared the screen (resize, overlay-close, first frame). In the steady
   // state main paint is diff-based and leaves the PTY region untouched, so
@@ -1011,7 +1025,9 @@ function render(model) {
   if (md.menuOpen)    renderMenu();
   if (md.freeConfigMode)  { renderPanelListOverlay(); }
   if (md.cmdMode)     renderCmdline();
-  if (md.confirmMode) renderConfirmOverlay();
+  // confirmMode moved up (overlay-compositor Release 2 Phase 2.a #1): it
+  // composites into newRows BEFORE paintFrame so cell-diff catches its
+  // transitions. See the `renderConfirmOverlay(newRows, COLS)` call above.
   // Invoke-time fabric-field popup (ports-pane in-grid edits paint themselves,
   // gated on paneId equality inside the ports-pane's render — see
   // overlay/fabric-field.js). Modes are mutually exclusive via the modeChain,
