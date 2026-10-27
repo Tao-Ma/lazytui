@@ -6,6 +6,52 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.47] — 2026-10-27
+
+Third point release of the day — browse-blind BUG in the action
+palette surfaced on first real use against the 97-action consumer
+config. The palette's `[a]` fuzzy-filter list painted every row and
+relied on the overlay's top-biased truncation, so the `[reverse]>`
+marker walked off the bottom of the painted frame once the selection
+passed the viewport body height. The operator could Enter-invoke an
+action they couldn't see.
+
+### Fixed
+
+- **Palette scroll window follows selection.** v0.6.44 Brief 2
+  specified "render cap + scroll like the choices popover" but the
+  palette shipped without the slice-window math — just a flat `for`
+  loop over every filtered row. On a tall list (≥ overlay body
+  height) the `[reverse]>` cursor marker simply left the screen past
+  the first screen's worth of rows. The selection index still moved
+  correctly (counter clamped, Enter picked the right row via the full
+  rows list), but "invoke blind" is exactly what the palette exists
+  to prevent.
+
+  Fix: extract the choices popover's inline window math into a shared
+  pure leaf `js/leaves/render/window-slice.js` and use it from BOTH
+  consumers. Palette additionally gains the popover's inline
+  "N of M — ↑/↓ to scroll" overflow indicator. The window is
+  idx-centered with a near-end pullback so a selection past the last
+  visible row still shows a FULL window (not a short tail).
+
+  The leaf extraction removes the drift class: the two type-to-filter
+  lists can't scroll differently again. Same pattern as the v0.6.46
+  shared-resolver fix.
+
+  Pre-fix tests didn't catch this because the palette's fixture was
+  under the overlay body budget — the overflow path never rendered.
+  Regression tests `[9]` in `js/test/test-action-palette.js` drive
+  the overflow path with a 60-action × 24-row-viewport fixture.
+
+### Changed (internal)
+
+- `js/overlay/fabric-form.js` picker body now calls `windowSlice`
+  instead of computing `sliceStart`/`sliceEnd` inline. Pure refactor
+  — the leaf's math is extracted from this file's reference impl, so
+  existing choices popover tests pass unchanged. Behavior is
+  byte-identical.
+
 ## [0.6.46] — 2026-10-27
 
 Second point release of the day — accuracy follow-up to v0.6.45's
@@ -4781,7 +4827,8 @@ release tarballs. Full pre-squash development history is preserved
 on the internal gitea mirror under the `backup/main-history` branch
 and the `v0.1.0-pre-squash` tag.
 
-[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.46...HEAD
+[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.47...HEAD
+[0.6.47]: https://github.com/Tao-Ma/lazytui/compare/v0.6.46...v0.6.47
 [0.6.46]: https://github.com/Tao-Ma/lazytui/compare/v0.6.45...v0.6.46
 [0.6.45]: https://github.com/Tao-Ma/lazytui/compare/v0.6.44...v0.6.45
 [0.6.44]: https://github.com/Tao-Ma/lazytui/compare/v0.6.43...v0.6.44
