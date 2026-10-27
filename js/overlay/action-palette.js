@@ -163,7 +163,16 @@ function renderActionPalette() {
   }
 
   if (total === 0) {
-    lines.push('[dim](no match)[/]');
+    // Pre-release round-2 edge-cases review — distinguish "the filter
+    // killed every candidate" from "there are no actions at all" so an
+    // operator opening the palette on an empty config doesn't think
+    // they typed a bad needle. The all-row count is the discriminant.
+    const allRows = _collectRows(model.config);
+    if (allRows.length === 0 && !filter) {
+      lines.push('[dim](no actions configured)[/]');
+    } else {
+      lines.push('[dim](no match)[/]');
+    }
   } else {
     const cols = PALETTE_MAX_WIDTH - 4; // minus borders (2) + indent (2)
     for (let i = 0; i < total; i++) {

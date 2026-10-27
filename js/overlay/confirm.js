@@ -34,15 +34,21 @@ function renderConfirmOverlay() {
   const lines = [...promptLines];
 
   // v0.6.44 Brief 3 — append preview block when the staged cmd is a
-  // `do_run` on an action with declared `ports.in`.
+  // `do_run` on an action with NON-EMPTY declared `ports.in`. The
+  // empty-object guard (round-2 edge-cases) prevents the "`-- preview
+  // --` header for a bare script line" case: an action with
+  // `ports: { in: {} }` would otherwise paint the separator for no
+  // extra content vs. the plain confirm.
   const cont = model.modal.continuation;
-  if (cont && cont.type === 'do_run' && cont.action && cont.action.ports && cont.action.ports.in) {
+  const portsIn = cont && cont.type === 'do_run' && cont.action
+                  && cont.action.ports && cont.action.ports.in;
+  if (portsIn && Object.keys(portsIn).length > 0) {
     const injects = (model.fabric && model.fabric.injects) || {};
     const action = cont.action;
     const actionKey = cont.actionKey;
     const boundPorts = [];
     let variadic = null;
-    for (const [name, decl] of Object.entries(action.ports.in)) {
+    for (const [name, decl] of Object.entries(portsIn)) {
       const addr = `${actionKey}.${name}`;
       const inj = injects[addr];
       if (decl && decl.variadic === true) {

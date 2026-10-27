@@ -1106,6 +1106,20 @@ function validateActionPorts(aname, ports, ctx, warnings) {
         if ('variadic' in pdef) {
           throw new SchemaError("'variadic' is an input-port modifier — not valid on an output port", { context: pctx });
         }
+        // v0.6.44 Brief 3 pre-release round-2 — `sensitive:` is an input-
+        // only concern (it masks the field in the ports form + confirm
+        // preview). An output port never shows a form field, so marking
+        // one `sensitive:` is a declaration mistake. Warn-drop so the
+        // author sees it (silently-ignored on the out-port branch would
+        // match the "unknown port-level keys" policy but surprises
+        // authors who added `sensitive:` with an obvious mental model).
+        if ('sensitive' in pdef && warnings) {
+          warnings.push({
+            code: 'port.sensitive_on_out_port',
+            message: `${pctx}: 'sensitive' is an input-port modifier (masks the ports form + preview) — not valid on an output port; dropped`,
+          });
+          delete pdef.sensitive;
+        }
       } else {
         if ('required' in pdef && typeof pdef.required !== 'boolean') {
           throw new SchemaError("'required' must be a boolean", { context: pctx });
@@ -1182,6 +1196,20 @@ function validateActionPorts(aname, ports, ctx, warnings) {
             warnings.push({
               code: 'port.sensitive_overrides_remember',
               message: `${pctx}: 'sensitive: true' implies 'remember: false' — override applied (your 'remember: true' is ignored for this port)`,
+            });
+          }
+          // v0.6.44 pre-release round-2 — declaring a hardcoded
+          // `default:` on a sensitive port is a declaration mistake:
+          // the YAML file now carries the secret in plaintext, and a
+          // user who doesn't override will silently run with the
+          // placeholder. Warn so the author sees it (we don't drop
+          // the default — the author may want the "devpass" dev-time
+          // override behavior with eyes open). Pre-release round-2
+          // edge-cases review surfaced this.
+          if ('default' in pdef && pdef.default != null && warnings) {
+            warnings.push({
+              code: 'port.sensitive_with_default',
+              message: `${pctx}: 'sensitive: true' with a hardcoded 'default:' — the YAML now contains the secret in plaintext; move the default out of the config or drop it`,
             });
           }
           // Force the implicit coupling by stamping remember:false onto

@@ -988,9 +988,18 @@ function handlePaletteKey(key, seq) {
     applyMsg({ type: filter ? 'palette_filter_clear' : 'palette_close' });
     return;
   }
+  // v0.6.44 pre-release round-2 — compute currentView ONCE per handler
+  // entry when Enter/Up/Down may need it. Pre-fix, Enter/Up/Down each
+  // called currentView() independently (three walks of iterActions on
+  // a hot path); after the fix one walk per keystroke. Round-2 arch
+  // review flagged this as scaling to visible latency past ~1k actions.
+  // The reducer still gets the live view's `.rows.length` through
+  // `total`; the walker is now behind one call.
+  let view = null;
+  const getView = () => (view || (view = palette.currentView()));
   if (key === 'return') {
-    const view = palette.currentView();
-    if (!view.picked) {
+    const v = getView();
+    if (!v.picked) {
       // (no match) row — Enter should NOT commit an empty pick; close
       // the palette instead so the user's Enter still has a visible
       // effect (dropping back to normal mode).
@@ -999,19 +1008,17 @@ function handlePaletteKey(key, seq) {
     }
     applyMsg({
       type: 'palette_pick',
-      groupPath: view.picked.groupPath,
-      actionKey: view.picked.actionKey,
+      groupPath: v.picked.groupPath,
+      actionKey: v.picked.actionKey,
     });
     return;
   }
   if (key === 'up'   || seq === '\x1b[A') {
-    const view = palette.currentView();
-    applyMsg({ type: 'palette_nav', dir: -1, total: view.rows.length });
+    applyMsg({ type: 'palette_nav', dir: -1, total: getView().rows.length });
     return;
   }
   if (key === 'down' || seq === '\x1b[B') {
-    const view = palette.currentView();
-    applyMsg({ type: 'palette_nav', dir: +1, total: view.rows.length });
+    applyMsg({ type: 'palette_nav', dir: +1, total: getView().rows.length });
     return;
   }
   // Backspace pops the filter buffer.

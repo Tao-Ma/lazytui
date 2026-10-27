@@ -539,6 +539,18 @@ function installBuiltins() {
         `[dim]repeat_run: ${eff.groupPath}:${eff.actionKey} no longer resolves (config changed?)[/]`);
       return;
     }
+    // v0.6.44 pre-release round-2 — defense-in-depth. The `set_last_run`
+    // writer gates on `type:run`, so model.lastRun should only EVER
+    // carry a type:run action. But a mod/plugin that mutates lastRun
+    // directly (bypassing the Msg path) could seed a type:spawn action;
+    // repeating would then invoke doRun's spawn branch. Mirror the
+    // writer's gate here so the invariant can't drift. The transcript
+    // notice tells the user why nothing ran.
+    if ((r.action.type || 'run') !== 'run') {
+      stream.pushTranscriptNotice(
+        `[dim]repeat_run: ${eff.groupPath}:${eff.actionKey} is a '${r.action.type}' action, not 'run' — skipped[/]`);
+      return;
+    }
     if (model.currentGroup !== eff.groupPath) {
       applyMsg({ type: 'set_current_group', name: eff.groupPath });
     }
