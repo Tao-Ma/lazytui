@@ -162,6 +162,36 @@ describe('[fabric-form] enter + field materialization', () => {
     assert(!after.modes.fabricFieldMode, 'fabric-field also cleared (same arm, same class)');
   });
 
+  it('set_config emits cancel_effect for every in-flight choices fetch (round-2 WAL review)', () => {
+    // Pre-fix the sibling fabric_form_cancel arm cancelled pending fetches
+    // but set_config did not — a hot-reload while a slow choices_cmd was
+    // running left the Promise closure retaining host.applyMsg + the
+    // AbortController until the child settled naturally. The arm now
+    // walks the fabricForm fields and emits one cancel_effect per field
+    // whose computed.state === 'pending', keyed the same way the fetch
+    // was dispatched (so the keyed-effects registry aborts the right one).
+    let m = freshModel();
+    const fields = [{
+      port: 'section', text: '', required: true, default: null,
+      choicesFnRef: 'edit.sections_of', dependsOn: [],
+    }];
+    [m] = runtime.update(m, { type: 'fabric_form_enter', fields,
+      pendingAction: { actionKey: 'edit-section', group: 'g',
+                       action: { label: 'ES', type: 'run', run: 'e {{section}}',
+                                 ports: { in: { section: { type: 'string', required: true,
+                                                           choices_fn: 'edit.sections_of' } } } } } });
+    // Drive the field into pending state.
+    [m] = runtime.update(m, { type: 'fabric_form_choices_request', port: 'section', requestId: 1 });
+    const pending = m.modal.fabricForm.fields.find((x) => x.port === 'section');
+    eq(pending.computed.state, 'pending', 'field is pending before set_config');
+    const [, cmds] = runtime.update(m, { type: 'set_config',
+      config: { groups: {}, project_dir: '.', theme: 'monokai', register: {}, files: [], plugins: {} } });
+    const cancels = (cmds || []).filter((c) => c && c.type === 'cancel_effect');
+    eq(cancels.length, 1, 'exactly one cancel_effect emitted');
+    assert(/^choices_fn:edit-section\.section$/.test(cancels[0].key),
+      `cancel key matches fetch key, got ${JSON.stringify(cancels[0].key)}`);
+  });
+
   it('surrogate split guard: cap never leaves a lone high surrogate at the tail (round 4 Fork 4 Finding 2)', () => {
     let m = freshModel();
     [m] = runtime.update(m, { type: 'fabric_form_enter', fields: fieldsFor(), pendingAction: PENDING });

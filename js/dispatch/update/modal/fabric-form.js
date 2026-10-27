@@ -1000,4 +1000,7 @@ function update(model, msg) {
 // model) and reducer.js (config_swap reset) spread it instead of hand-copying
 // the keys. Pre-fix those two sites were missing `picking` + `requestSeq`,
 // which was a latent drift risk whenever a new field was added here (R3B-SMELL1).
-module.exports = { TYPES, update, CLOSED };
+// _cancelKeyForField is exported for the root set_config arm, which also needs
+// to emit cancel_effect per in-flight fetch when it closes a live form
+// (pre-release round-2 WAL review).
+module.exports = { TYPES, update, CLOSED, _cancelKeyForField };

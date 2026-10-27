@@ -28,12 +28,18 @@
  */
 'use strict';
 
-// Replace any \r / \n / \t with a single space. The LF split above has
-// already consumed line-terminators, but a label may legitimately contain
-// a tab (opt-in splitting consumes only the FIRST tab) — the paint path
-// would misalign on a literal \t, so we flatten before storing.
+// Replace any C0 control character or DEL (0x00–0x1f, 0x7f) with a single
+// space. The LF split above has already consumed line-terminators, but a
+// label may legitimately contain a tab (opt-in splitting consumes only the
+// FIRST tab) — the paint path would misalign on a literal \t. The wider
+// C0 strip (pre-release round-2 security review) hardens the TUI and the
+// completion helper against ESC/CSI/OSC injection via a hostile `choices_cmd:`
+// (or a tampered on-disk completion cache file): a cached item containing
+// `\x1b]0;OWNED\x07` would otherwise spoof the terminal title on display
+// of the next TAB menu. Items are already single-line (post-LF split), so
+// C0 is never load-bearing content.
 function _flatten(s) {
-  return typeof s === 'string' ? s.replace(/[\r\n\t]+/g, ' ') : s;
+  return typeof s === 'string' ? s.replace(/[\x00-\x1f\x7f]+/g, ' ') : s;
 }
 
 /**

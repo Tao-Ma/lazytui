@@ -410,6 +410,28 @@ function update(model, msg) {
       // modal state inside the config swap keeps that invariant explicit even
       // today; on boot the clear is a no-op (initial model has every flag off
       // and the modal buffers empty).
+      //
+      // Pre-release round-2 WAL/concurrency review — ALSO cancel any
+      // in-flight choices fetches tied to the form being closed. Same
+      // reason fabric_form_cancel does: without the cancel, a slow fetch
+      // retains host.applyMsg and the child's AbortController + process
+      // through its Promise closure until it settles naturally; the
+      // resolved reply then lands into a cleared modal and is dropped by
+      // the mode guard (no crash), but the WAL carries the dead Msg and
+      // the child process lingers past the hot-reload. Mirrors the arm
+      // at fabric-form.js:555-567.
+      const prevForm = model.modal && model.modal.fabricForm;
+      const prevPending = prevForm && prevForm.pendingAction;
+      const prevActionKey = prevPending && prevPending.actionKey;
+      const cancelCmds = [];
+      if (prevForm && prevActionKey && Array.isArray(prevForm.fields)) {
+        const { _cancelKeyForField } = require('./modal/fabric-form');
+        for (const field of prevForm.fields) {
+          if (field && field.computed && field.computed.state === 'pending' && _cancelKeyForField) {
+            cancelCmds.push({ type: 'cancel_effect', key: _cancelKeyForField(field, prevActionKey) });
+          }
+        }
+      }
       const nextModes = { ...model.modes, fabricFormMode: false, fabricFieldMode: false };
       const nextModal = {
         ...model.modal,
@@ -437,9 +459,10 @@ function update(model, msg) {
       // app/state.loadConfig) and stamped on msg.csOwner, so the reducer reads
       // no ownership registry. null owner (Component unregistered) drops the
       // fan-out.
-      return [next, msg.csOwner
-        ? [{ type: 'msg', msg: route.wrap(msg.csOwner, { type: 'set_config', config: msg.config }) }]
-        : []];
+      const outCmds = msg.csOwner
+        ? [...cancelCmds, { type: 'msg', msg: route.wrap(msg.csOwner, { type: 'set_config', config: msg.config }) }]
+        : [...cancelCmds];
+      return [next, outCmds];
     }
     case 'set_register': {
       return [{ ...model, register: msg.register }, []];

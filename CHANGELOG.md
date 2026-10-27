@@ -20,7 +20,7 @@ below. Pre-release review landed three correctness fixes before cut
   v0.6.41 model-resident cache was TUI-only, invisible to `--complete`
   which is a one-shot process. A hit within TTL now prints cached items
   and skips the spawn.
-  - **Default TTL 15s**, LRU cap 64 cache files, path
+  - **Default TTL 15s**, LRU cap 64 entries per cache file, path
     `$XDG_CACHE_HOME/lazytui/complete/<sha1-of-realpath>.json`
     (fallback `~/.cache`). Atomic tmp+rename, chmod 0600.
   - **Escape hatch**: set `LAZYTUI_COMPLETE_NO_CACHE=1` to skip both

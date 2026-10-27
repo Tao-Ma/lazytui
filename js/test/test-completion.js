@@ -736,9 +736,46 @@ groups:
     eq(r.status, 0, `rc=${r.status} stderr=${r.stderr}`);
     eq(lines(r.stdout), ['ok']);
     eq(spawns(c.counter), 1);
-    // File is now valid JSON again.
-    assert(() => JSON.parse(fs.readFileSync(file, 'utf8')),
+    // File is now valid JSON again. (Pre-release round-2 test-coverage review:
+    // the pre-fix assertion passed `() => JSON.parse(...)` as `cond`, which is
+    // an arrow-function value — always truthy — so the parse never ran. Invoke
+    // explicitly; a parse-throw fails the test naturally, then assert the
+    // non-null result.)
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+    assert(parsed && typeof parsed === 'object',
       'corrupt file must be rewritten with valid JSON');
+  });
+
+  it('tampered cache file with ESC/CSI/NUL items is sanitized on HIT (round-2 security)', () => {
+    // Prime the cache the normal way, then overwrite each item's string in
+    // place with hostile control-char payloads (so the key stays canonical).
+    // The HIT path must strip all C0 + DEL so the user's terminal doesn't
+    // execute the escape sequences on the TAB-menu display, and so the shell
+    // can't trip on an embedded NUL.
+    const c = newCase('sanitize');
+    fs.writeFileSync(c.cfg, buildFixture(c.counter, ['safe']));
+    // 1) Prime — real spawn, real key, real file.
+    const prime = runCompleteEnv({ cfg: c.cfg, env: { XDG_CACHE_HOME: c.xdg }, cword: 3, words: ['do', 'g', 'a', ''] });
+    eq(prime.status, 0, 'prime run OK');
+    eq(spawns(c.counter), 1, 'one spawn to warm the cache');
+    // 2) Tamper — rewrite items with ESC/CSI/NUL payloads under the SAME key.
+    const file = cacheFileFor(c.xdg, c.cfg);
+    const state = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const key = Object.keys(state.entries)[0];
+    state.entries[key].items = ['\x1b]0;OWNED\x07', '\x1b[2Jclear', 'ok\x00bad', 'plain'];
+    fs.writeFileSync(file, JSON.stringify(state));
+    // 3) Hit — must not spawn, and every emitted line must be C0+DEL-free.
+    const r = runCompleteEnv({ cfg: c.cfg, env: { XDG_CACHE_HOME: c.xdg }, cword: 3, words: ['do', 'g', 'a', ''] });
+    eq(r.status, 0, `rc=${r.status} stderr=${r.stderr}`);
+    eq(spawns(c.counter), 1, 'cache hit — must NOT re-spawn');
+    const out = lines(r.stdout);
+    assert(out.length === 4, `expected 4 sanitized rows, got ${out.length}: ${JSON.stringify(out)}`);
+    for (const line of out) {
+      assert(!/[\x00-\x1f\x7f]/.test(line),
+        `item still carries a control char: ${JSON.stringify(line)}`);
+    }
+    // "plain" was never hostile and must survive unchanged.
+    assert(out.includes('plain'), `benign item must survive, got ${JSON.stringify(out)}`);
   });
 
   it('timeout → empty + exit 0, NOT cached (next call respawns)', () => {

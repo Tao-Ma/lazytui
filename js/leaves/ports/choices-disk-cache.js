@@ -88,8 +88,19 @@ function writeCache(configPath, state) {
   try {
     const file = cachePathForConfig(configPath);
     fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-    const tmp = `${file}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(state), { mode: 0o600 });
+    // Pre-release round-2 security review — tmp filename includes a
+    // 16-char cryptographically-random suffix in addition to the PID,
+    // and the write uses O_EXCL (`flag: 'wx'`) so if `tmp` already
+    // exists (as a regular file OR a symlink), the open fails before
+    // any content is written. Closes the TOCTOU symlink race where a
+    // local attacker predicted the PID-only tmp name and planted a
+    // symlink pointing at `~/.ssh/authorized_keys` (or similar) to
+    // trick writeCache into overwriting user data with JSON. PID alone
+    // is predictable (sequential on Linux, visible via /proc); random
+    // bytes make prediction infeasible.
+    const rand = crypto.randomBytes(8).toString('hex');
+    const tmp = `${file}.${process.pid}.${rand}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(state), { mode: 0o600, flag: 'wx' });
     try { fs.chmodSync(tmp, 0o600); } catch (_) { /* best-effort — mode flag may be dropped by umask on some fs */ }
     fs.renameSync(tmp, file);
     return true;
