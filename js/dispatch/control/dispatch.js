@@ -856,6 +856,7 @@ const NORMAL_VERBS = {
   cmdline:     () => applyMsg({ type: 'cmdline_enter' }),
   copy_mode:   () => enterCopyMode(),
   edit_args:   () => handleAction('edit_args'),
+  action_palette: () => applyMsg({ type: 'palette_open' }),
 };
 
 // Resolve a keymap binding spec to its dispatch thunk (or null). `builtin` uses
@@ -970,6 +971,60 @@ function loadContextMenu(config) {
     }
   }
   require('../../leaves/input/context-menu').configure(entries);
+}
+
+// v0.6.44 Brief 2 — fuzzy action palette key handler. Resolves the row
+// at `palette.idx` against the live filtered view (walker + leaf) and
+// threads (groupPath, actionKey) onto palette_pick so the reducer stays
+// pure of config walking. See js/overlay/action-palette.js#currentView.
+function handlePaletteKey(key, seq) {
+  const palette = require('../../overlay/action-palette');
+  const model = getModel();
+  const pstate = model.modal && model.modal.palette;
+  const filter = (pstate && pstate.filter) || '';
+  // Escape: two-step. Non-empty filter clears first; empty filter closes.
+  if (key === 'escape') {
+    applyMsg({ type: filter ? 'palette_filter_clear' : 'palette_close' });
+    return;
+  }
+  if (key === 'return') {
+    const view = palette.currentView();
+    if (!view.picked) {
+      // (no match) row — Enter should NOT commit an empty pick; close
+      // the palette instead so the user's Enter still has a visible
+      // effect (dropping back to normal mode).
+      applyMsg({ type: 'palette_close' });
+      return;
+    }
+    applyMsg({
+      type: 'palette_pick',
+      groupPath: view.picked.groupPath,
+      actionKey: view.picked.actionKey,
+    });
+    return;
+  }
+  if (key === 'up'   || seq === '\x1b[A') {
+    const view = palette.currentView();
+    applyMsg({ type: 'palette_nav', dir: -1, total: view.rows.length });
+    return;
+  }
+  if (key === 'down' || seq === '\x1b[B') {
+    const view = palette.currentView();
+    applyMsg({ type: 'palette_nav', dir: +1, total: view.rows.length });
+    return;
+  }
+  // Backspace pops the filter buffer.
+  if (seq === '\x7f') { applyMsg({ type: 'palette_filter', seq }); return; }
+  // Any printable code unit appends to the filter. Mirrors the v0.6.43
+  // choices-filter popover's guard: reject C0 + DEL so a stray control
+  // byte doesn't quietly pollute the filter.
+  if (typeof seq === 'string' && seq.length > 0 && !/[\x00-\x1f\x7f]/.test(seq)) {
+    applyMsg({ type: 'palette_filter', seq });
+    return;
+  }
+  // Anything else — a control sequence we don't bind — is swallowed. The
+  // palette shouldn't let stray `\x1b[C` land as a filter character or
+  // leak to the panel below.
 }
 
 // Mode → handler map. The ORDER and the membership of the modal set
@@ -1135,6 +1190,18 @@ const _modeHandlers = {
     if (!inst || inst.kind !== 'agent') { applyMsg({ type: 'agent_exit' }); return; }
     dispatchMsg(wrap(id, { type: 'agent_input', key, seq, selfId: id }));
   },
+  // v0.6.44 Brief 2 — fuzzy action palette. Esc two-step mirrors the
+  // v0.6.43 choices-filter popover shape: first Esc clears a non-empty
+  // filter, second Esc closes. Enter resolves the row at `palette.idx`
+  // against the live filtered view (walker + leaf) and emits
+  // palette_pick with the (groupPath, actionKey); the reducer closes
+  // the modal and emits a `palette_run_action` Cmd the effects layer
+  // interprets. Printable code units APPEND to the filter; backspace
+  // POPS. Space is a printable (allowed inside the filter — a group
+  // name may contain spaces? no, isValidFabricName forbids — but a
+  // user filtering on an action label with a space-including label
+  // still wants it).
+  paletteMode:         (key, seq) => handlePaletteKey(key, seq),
 };
 
 const modeChain = modes.CHAIN_MODES.map(flag => {

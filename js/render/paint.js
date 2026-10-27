@@ -998,6 +998,11 @@ function render(model) {
   // composed inline by renderPanel({chrome}) per P4.2; the painter
   // stamps it atomically alongside the rest of the top border.
   if (md.paneMenuMode) _paneMenu().render();
+  // Fuzzy action palette (v0.6.44 Brief 2) — centered type-to-jump list
+  // over every group:action. Mutually exclusive with the other overlays
+  // via the modeChain; lazy-required so paint-time cost is zero when
+  // closed and the require doesn't widen the paint tree at boot.
+  if (md.paletteMode) require('../overlay/action-palette').renderActionPalette();
   if (md.jobsMode)    renderJobsOverlay(now);
   if (md.diagLogMode) require('../overlay/diag-log').renderDiagLog(now);
   // v0.6.6 replay arc — interactive replay-control pane (floats over all).

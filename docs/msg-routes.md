@@ -597,6 +597,46 @@ dataflow mechanics.
   its reply. The two prefixes also prevent the registries colliding if the
   same port name is used across channels in different actions.
 
+### 5.10b `palette` (`modal/palette.js`) — fuzzy action palette (v0.6.44 Brief 2)
+
+Type-to-jump list over every `group:action` enumerated by `iterActions`
+(same walker `--list` / `--complete` use — injected into the overlay
+via `setConfigAccessors`, so overlay/ never imports upward into app/).
+The row set is NOT stored on `model.modal.palette`; the dispatch
+handler walks `model.config` at render / pick time and threads the
+needed slice into each Msg (`total` on nav, `(groupPath, actionKey)`
+on pick). Modal state stays `{filter, idx}` only.
+
+| Msg | Writes | Cmds | Pure |
+|-----|--------|------|------|
+| `palette_open` | `modes.paletteMode→true`, `modal.palette={filter:'',idx:0}` | — | ✓ |
+| `palette_close` | `modes.paletteMode→false`, `modal.palette=CLOSED` | — | ✓ |
+| `palette_filter{seq}` | append / backspace into `modal.palette.filter`; `idx→0` | — | ✓ |
+| `palette_filter_clear` | `modal.palette={filter:'',idx:0}` (guard: non-empty only) | — | ✓ |
+| `palette_nav{dir,total}` | clamp `modal.palette.idx` against `total` | — | ✓ |
+| `palette_pick{groupPath,actionKey}` | close modal | `palette_run_action{groupPath,actionKey}` | ✓ |
+
+**Esc two-step** mirrors the v0.6.43 choices-filter popover: first Esc
+dispatches `palette_filter_clear` (while filter non-empty), second Esc
+dispatches `palette_close`. **Enter on `(no match)`** dispatches
+`palette_close` without an emit — never commits an empty pick.
+
+**Paste cap**: `palette_filter` clamps POST-concat at `MAX_FILTER_LEN=128`
+with a surrogate-pair guard, same shape as `fabric_form_choices_filter`.
+
+**`palette_run_action`** effect handler (`dispatch/runtime/effects.js`)
+re-resolves against the LIVE config through the overlay's injected
+`resolve()` seam (so a `set_config` racing the Msg → Cmd window drops
+the pick silently), switches `currentGroup` if needed (making the
+invoke identical to selecting the action in the actions pane), and
+calls `action-runner.runAction` so the confirm gate / ports form apply
+unchanged.
+
+**`set_config` resets** `modal.palette` + flips `paletteMode→false`
+alongside `fabricForm` / `fabricField` / `formHistory` — same scope-
+swap discipline (the action universe changed; a mid-palette pick
+against a redefined universe is a dead reference).
+
 ### 5.11 `fabric` (`update/fabric.js`) — the dataflow-fabric state store (NOT a modal)
 
 The single writer of `model.fabric.*` (injects / output / wires), delegated by the

@@ -20,17 +20,17 @@ describe('[1] registry derivations', () => {
   it('CHAIN_MODES is the modeChain precedence order', () => {
     // agentMode (live-agent A4) is LAST — every popup above wins while open.
     eq(modes.CHAIN_MODES.join(','),
-       'confirmMode,freeConfigTitleEditMode,freeConfigMode,menuOpen,filterMode,copyMode,detailSearchMode,registerPopupMode,prefixMode,cmdMode,fabricFieldMode,fabricFormMode,paneMenuMode,jobsMode,diagLogMode,agentMode');
+       'confirmMode,freeConfigTitleEditMode,freeConfigMode,menuOpen,filterMode,copyMode,detailSearchMode,registerPopupMode,prefixMode,cmdMode,fabricFieldMode,fabricFormMode,paneMenuMode,paletteMode,jobsMode,diagLogMode,agentMode');
   });
   it('isOverlayActive matches the pre-registry hardcoded list', () => {
-    const overlay = ['copyMode','menuOpen','freeConfigMode','cmdMode','confirmMode','registerPopupMode','prefixMode','paneMenuMode','jobsMode','diagLogMode','fabricFieldMode','fabricFormMode'];
+    const overlay = ['copyMode','menuOpen','freeConfigMode','cmdMode','confirmMode','registerPopupMode','prefixMode','paneMenuMode','paletteMode','jobsMode','diagLogMode','fabricFieldMode','fabricFormMode'];
     for (const f of modes.MODES.map(m => m.flag)) {
       const s = {}; s[f] = true;
       eq(modes.isOverlayActive(s), overlay.includes(f), `${f} overlay`);
     }
   });
   it('isModal matches the pre-registry hardcoded list', () => {
-    const modal = ['terminalMode','filterMode','copyMode','freeConfigMode','freeConfigTitleEditMode','menuOpen','prefixMode','fabricFieldMode','fabricFormMode','agentMode'];
+    const modal = ['terminalMode','filterMode','copyMode','freeConfigMode','freeConfigTitleEditMode','menuOpen','prefixMode','fabricFieldMode','fabricFormMode','paletteMode','agentMode'];
     for (const f of modes.MODES.map(m => m.flag)) {
       const s = {}; s[f] = true;
       eq(modes.isModal(s), modal.includes(f), `${f} modal`);
@@ -41,7 +41,7 @@ describe('[1] registry derivations', () => {
     // MODES `suppressChrome` column; this pins behavior-equivalence with
     // the 8-mode list it replaced.
     const suppress = ['cmdMode','menuOpen','copyMode','confirmMode',
-                      'registerPopupMode','freeConfigTitleEditMode','terminalMode','diagLogMode','fabricFieldMode','fabricFormMode'];
+                      'registerPopupMode','freeConfigTitleEditMode','terminalMode','diagLogMode','fabricFieldMode','fabricFormMode','paletteMode'];
     for (const f of modes.MODES.map(m => m.flag)) {
       const s = {}; s[f] = true;
       eq(modes.suppressesChromeClicks(s), suppress.includes(f), `${f} suppressChrome`);

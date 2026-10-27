@@ -48,9 +48,19 @@ keymap:
 
 Run `--keymap` for the authoritative, always-current list with summaries. As of
 format v1 the built-in verbs are: `refresh`, `show_help`, `page_up`,
-`page_down`, `goto_top`, `goto_bottom`, `register`, `cmdline`, `copy_mode`.
-(Plus any of your config's actions via `{ action: … }` and commands via
-`{ command: … }`.)
+`page_down`, `goto_top`, `goto_bottom`, `register`, `cmdline`, `copy_mode`,
+`edit_args`, `action_palette`. (Plus any of your config's actions via
+`{ action: … }` and commands via `{ command: … }`.)
+
+The **fuzzy action palette** (`action_palette`, default `p`) opens a
+centered type-to-jump list of every `group:action`. Narrow by typing
+(matches on path AND label, case-insensitive, order-preserving); `↑/↓`
+nav; `Enter` invokes the selected action through the standard invoke
+path (same confirm gate / missing-required prompting / ports form as
+selecting it in the actions pane); `Esc` is two-step while a filter is
+non-empty — first `Esc` clears the filter, second `Esc` closes. The
+walker is the same `iterActions` that `--list` and `--complete` use,
+so the palette can never drift from what the CLI sees.
 
 ## Reserved keys
 

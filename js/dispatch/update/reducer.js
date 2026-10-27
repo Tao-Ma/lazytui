@@ -76,11 +76,12 @@ const filter = require('./modal/filter');
 const fabric = require('./fabric');
 const fabricField = require('./modal/fabric-field');
 const fabricForm = require('./modal/fabric-form');
+const palette = require('./modal/palette');
 
 // Build the Msg-type → sub-reducer routing table once. The root `update`
 // checks it first; a hit delegates the whole arm to that sub-reducer's `update`.
 const _SUBREDUCER_BY_TYPE = new Map();
-for (const m of [confirm, copy, registerPopup, cmdline, jobs, diagLog, menu, filter, fabric, fabricField, fabricForm]) {
+for (const m of [confirm, copy, registerPopup, cmdline, jobs, diagLog, menu, filter, fabric, fabricField, fabricForm, palette]) {
   for (const t of m.TYPES) _SUBREDUCER_BY_TYPE.set(t, m);
 }
 
@@ -432,11 +433,16 @@ function update(model, msg) {
           }
         }
       }
-      const nextModes = { ...model.modes, fabricFormMode: false, fabricFieldMode: false };
+      const nextModes = { ...model.modes, fabricFormMode: false, fabricFieldMode: false, paletteMode: false };
       const nextModal = {
         ...model.modal,
         fabricForm: { ...require('./modal/fabric-form').CLOSED },  // config_swap reset — spreading CLOSED keeps slice-2's picking + requestSeq from drifting
         fabricField: { paneId: null, addr: null, text: '', pendingAction: null },
+        // v0.6.44 Brief 2 — the action universe just changed; a stale
+        // palette picking an action key that no longer resolves would be
+        // a dead-pick on Enter. Close it; the next open sees the new
+        // config.
+        palette: { ...require('./modal/palette').CLOSED },
       };
       const next = {
         ...model,

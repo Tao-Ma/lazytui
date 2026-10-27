@@ -73,6 +73,13 @@ const MODES = [
   // v0.6.4 #1 Step 2 — the one `[≡]` pane-menu (unioned the former
   // tabListMode + paneSelectMode; same column profile).
   { flag: 'paneMenuMode',            chain: true,  overlay: true,  modal: false, reset: true, suppressChrome: false },
+  // Fuzzy action palette (v0.6.44 Brief 2) — type-to-jump across every
+  // group:action. overlay:true so paint.js's forceFull repaint fires on
+  // close (same lesson as fabricFieldMode's v0.6.33 fix — a centered
+  // popup leaves residue in the cell-diff cache otherwise). suppressChrome
+  // because the popup covers chrome glyphs. modal:true so the footer row
+  // yields.
+  { flag: 'paletteMode',             chain: true,  overlay: true,  modal: true,  reset: true, suppressChrome: true  },
   { flag: 'jobsMode',                chain: true,  overlay: true,  modal: false, reset: true, suppressChrome: false },
   // diagLog is a read-only modal you Esc out of — NOT a pane selector like
   // jobs/tabList/paneSelect — so it suppresses chrome-glyph clicks behind it

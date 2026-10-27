@@ -48,6 +48,7 @@ const VERB_CATALOG = {
   cmdline:     'Open the command line',
   copy_mode:   'Enter copy mode (select text to yank)',
   edit_args:   "Open the ports form to edit args (incl. optional) for the actions-pane selection",
+  action_palette: 'Open the fuzzy action palette (type to jump to any group:action)',
 };
 
 // Default normal-mode bindings, by context. v1: every default is GLOBAL — the
@@ -75,6 +76,10 @@ const DEFAULT_NORMAL = {
     { key: '"', spec: { builtin: 'register' } },
     { key: ':', spec: { builtin: 'cmdline' } },
     { key: 'y', spec: { builtin: 'copy_mode' } },
+    // v0.6.44 Brief 2 — fuzzy action palette. `p` is unshadowed by
+    // handleNormalKey's switch (see dispatch.js _SHADOWED_NORMAL_KEYS)
+    // and reads as the common editor idiom "picker / palette".
+    { key: 'p', spec: { builtin: 'action_palette' } },
   ],
 };
 

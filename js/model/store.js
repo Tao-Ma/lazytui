@@ -192,6 +192,12 @@ function init() {
       // Shape pinned by test-slice-initial-shape.js against fabric-form.CLOSED
       // (dispatch/update/modal/fabric-form). Keep the two in sync.
       fabricForm: { fields: [], focusIdx: 0, pendingAction: null, picking: null, requestSeq: 0 },
+      // Fuzzy action palette (v0.6.44 Brief 2) — type-to-jump across every
+      // group:action. State is just `{filter, idx}`; the items are derived
+      // at dispatch/render time from model.config via iterActions (same
+      // walker as --list/--complete, so the palette can't drift). Shape
+      // pinned against palette.CLOSED.
+      palette: { filter: '', idx: 0 },
     },
     // Framework-level state: parsed config, paths, leader-mode buffers,
     // misc flags. The layout struct + freeConfig state + viewMode + focus

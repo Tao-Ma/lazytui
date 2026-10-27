@@ -6,6 +6,23 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Fuzzy action palette.** New overlay (default key `p` in normal mode)
+  lists every discoverable `group:action` in a centered type-to-jump
+  list; narrow by typing (case-insensitive substring match against the
+  path and the action's label), `↑/↓` nav, `Enter` invokes the
+  highlighted row through the standard invoke path (confirm gate,
+  missing-required prompting, ports form — identical to selecting the
+  action in the actions pane). `Esc` is two-step while the filter is
+  non-empty — first `Esc` clears the filter, second `Esc` closes. Fed by
+  the SAME `iterActions` walker shell completion uses, so the palette's
+  row set and `--list` / `--complete` can't drift. Wired through an
+  injected seam so the overlay never imports upward into `app/`
+  (dep-layering gate pinned by `test-dep-layering.js`). New verb
+  `action_palette` is listed in the `--keymap` dump and rebindable like
+  any other normal-mode verb.
+
 ## [0.6.43] — 2026-10-27
 
 Four shipped feature arcs on the v0.6.43 train — one CLI (completion

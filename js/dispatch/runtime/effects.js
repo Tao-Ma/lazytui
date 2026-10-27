@@ -497,6 +497,29 @@ function installBuiltins() {
     if (eff.action.startsWith('focus_panel:')) dispatch.handleAction('focus_panel', eff.action.split(':')[1]);
     else dispatch.handleAction(eff.action, eff.arg, eff.from);
   });
+  // v0.6.44 Brief 2 — fuzzy action palette pick. The Msg carried
+  // (groupPath, actionKey); re-resolve against the LIVE config so a
+  // mid-palette config_swap gracefully drops the pick instead of
+  // running a stale action. Switch currentGroup first so the invoke
+  // path (missing-required prompting, formHistory [last], injects)
+  // keys off the picked action's group — identical to selecting it in
+  // the actions pane. Then route through runAction so the confirm
+  // gate / ports form apply unchanged.
+  registerEffect('palette_run_action', (eff) => {
+    const palette = require('../../overlay/action-palette');
+    const { getModel } = require('../../model/store');
+    const { applyMsg } = require('../control/dispatch');
+    const model = getModel();
+    // Re-resolve against the LIVE config through the injected seam
+    // (overlay/action-palette.resolve) so a config_swap racing the
+    // Msg → Cmd window drops the pick instead of running stale.
+    const r = palette.resolve(model.config, eff.groupPath, eff.actionKey);
+    if (r.error) return;
+    if (model.currentGroup !== eff.groupPath) {
+      applyMsg({ type: 'set_current_group', name: eff.groupPath });
+    }
+    require('./action-runner').runAction(eff.actionKey, r.action);
+  });
   // run_binding: a resolved leader leaf. Surface sync throws + async
   // rejections (mirrors the `:` cmdline path) rather than swallowing them.
   registerEffect('run_binding', (eff) => {

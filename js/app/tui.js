@@ -414,6 +414,17 @@ function bootInteractive(opts) {
     const ext = require('./external-components');
     ext.registerExternal(ext.configFromLog(log), require('../panel/api').registerComponent);
   });
+  // v0.6.44 Brief 2 — wire the fuzzy action palette (overlay layer) to the
+  // SAME walker shell completion uses (app/cli.iterActions + resolveAction).
+  // Injected seam so overlay/ never imports upward into app/ (dep-layering
+  // gate). Guarantees palette rows and `--list` / `--complete` can't drift.
+  {
+    const cli = require('./cli');
+    require('../overlay/action-palette').setConfigAccessors({
+      iterActions: cli.iterActions,
+      resolveAction: cli.resolveAction,
+    });
+  }
 
   // Install the Component effect handlers (focus/render/apply_msg/...) before
   // any Component registers — a Component's update→effects must resolve at
