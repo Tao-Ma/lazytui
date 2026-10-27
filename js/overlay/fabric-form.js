@@ -388,6 +388,45 @@ function renderFabricFormOverlay() {
   if (stillMissing.length) {
     rows.push(`[warning]required inputs still missing: ${esc(stillMissing.join(', '))}[/]`);
   }
+  // v0.6.44 Brief 3 — compact preview footer. One line: port count +
+  // sensitive count + a truncated script teaser. Always-on so the
+  // operator sees SOMETHING about what will run before pressing Enter;
+  // the full preview block lives on the confirm overlay (if the action
+  // has `confirm:`). Values are read from LIVE field state, not
+  // defaults — the user may be mid-edit; the preview must reflect
+  // what Enter will actually submit. Sensitive mask comes from the
+  // same shared leaf as the confirm preview, so a port can't be
+  // masked in one surface and leak in the other.
+  {
+    const { formatCompactFooter } = require('../leaves/ports/submit-preview');
+    const pa = f.pendingAction;
+    const act = pa && pa.action;
+    const portsIn = (act && act.ports && act.ports.in) || {};
+    const boundPorts = [];
+    let variadic = null;
+    for (const field of f.fields) {
+      const decl = portsIn[field.port];
+      if (decl && decl.variadic === true) {
+        variadic = {
+          name: field.port, decl,
+          items: typeof field.text === 'string' && field.text.length > 0
+            ? [field.text] /* tokenization happens at submit; teaser just shows raw */
+            : [],
+        };
+        continue;
+      }
+      boundPorts.push({
+        name: field.port, decl,
+        value: field.text || null,
+        source: field.isLast ? 'last' : (field.isDefault ? 'default' : (field.isModified ? 'user' : null)),
+      });
+    }
+    rows.push(formatCompactFooter({
+      script: (act && act.script) || '',
+      boundPorts, variadic,
+    }));
+  }
+
   // Help line adapts to the mode: the picker gets its own keys; a focused
   // computed-choices field advertises `[space] choices` so the affordance is
   // discoverable without reading docs.

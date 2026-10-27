@@ -8,6 +8,39 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Submit preview + `sensitive:` port opt.** Actions that mutate
+  production (CA rotations, config-branch restores, deploys) now show
+  a resolved-command preview before they run so the operator knows
+  exactly what the submit will exec. Two surfaces, one shared pure
+  leaf (`js/leaves/ports/submit-preview.js`):
+  - **Confirm overlay** — when the staged `do_run` cmd's action
+    declares `ports.in`, the confirm shows the resolved script line
+    plus one `name=value` row per port (with a source tag:
+    `[default]` / `[inject]` / etc.) and the variadic argv tail as a
+    labeled list. The preview reads live model state at render time;
+    the formatted text never lands in a Msg payload.
+  - **Ports form** — always-on compact one-line footer: port count +
+    sensitive count + a truncated script teaser. Reflects LIVE
+    `field.text` as the user edits, so the preview can't lie about
+    what Enter will submit.
+  - **New port decl `sensitive: true`** (strict boolean; parser
+    warn-drops a non-bool as `port.bad_sensitive`). Renders as
+    `name=••••••` in both preview surfaces regardless of resolution
+    state — the mask is a constant shape so even an unfilled sensitive
+    field can't signal "no value typed."
+  - **Implicit coupling**: `sensitive: true` auto-forces
+    `remember: false` on the normalized decl. A conflicting
+    `remember: true` emits `port.sensitive_overrides_remember` and
+    gets overridden — sensitive values are never persisted in
+    `formHistory` and never seed the `[last]` chip.
+  - **WAL scope**: Brief 3 covers the preview-UI mask; the field
+    editor itself still paints what the user types (standard
+    developer-tool password-field tradeoff — users need to verify
+    typos). Session recordings that include sensitive-port typing
+    will still carry per-keystroke `fabric_form_key` Msgs under the
+    current WAL design; a future brief can address that layer
+    separately.
+
 - **Repeat-last-run verb (`repeat_run`, default `R`).** The daily loop
   of run → tweak → run again now compresses to one keystroke. Pressing
   `R` re-invokes the last `type:run` action through the standard invoke

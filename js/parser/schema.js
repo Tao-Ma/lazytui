@@ -1145,6 +1145,51 @@ function validateActionPorts(aname, ports, ctx, warnings) {
           }
           delete pdef.remember;
         }
+        // v0.6.44 Brief 3 — `sensitive: true` masks the port's value in the
+        // submit preview (shown as `name=••••••`) and REDACTS it in the
+        // WAL `fabric_form_submit` payload. Replay of a sensitive action
+        // thus pauses at missing-required and reprompts via the form,
+        // which is the correct security behavior ("my recording is safe
+        // to share"). Default sensitive-off for every port.
+        //
+        // Strict boolean parse mirrors `remember`; a typo like
+        // `sensitive: "yes"` would be truthy under coercion → opt-IN
+        // mask on an unintended port. Warn-drop per
+        // [[feedback_backcompat_on_new_validations]].
+        //
+        // IMPLICIT COUPLING: sensitive:true automatically forces
+        // remember:false, even if the author wrote remember:true. The
+        // rationale is the brief-3 design discussion: a sensitive-but-
+        // remembered value persists in session formHistory and the next
+        // open re-seeds the field with the real value; the preview mask
+        // would then lie about what runs. Collapsing the two switches
+        // prevents that footgun — a sensitive port is always both
+        // masked AND not persisted. The author can keep writing
+        // `remember: true` on a sensitive port (parser warns but doesn't
+        // crash); the effective behavior is remember:false.
+        if ('sensitive' in pdef && typeof pdef.sensitive !== 'boolean') {
+          const got = pdef.sensitive === null ? 'null' : typeof pdef.sensitive;
+          if (warnings) {
+            warnings.push({
+              code: 'port.bad_sensitive',
+              message: `${pctx}: 'sensitive' must be a boolean (got ${got}) — dropped`,
+            });
+          }
+          delete pdef.sensitive;
+        }
+        if (pdef.sensitive === true) {
+          if (pdef.remember === true && warnings) {
+            warnings.push({
+              code: 'port.sensitive_overrides_remember',
+              message: `${pctx}: 'sensitive: true' implies 'remember: false' — override applied (your 'remember: true' is ignored for this port)`,
+            });
+          }
+          // Force the implicit coupling by stamping remember:false onto
+          // the normalized decl. Downstream code (`formHistory` writer,
+          // preview formatter) reads the stamped value, so one decision
+          // point owns the behavior.
+          pdef.remember = false;
+        }
         // S2: a `default:` must be a primitive scalar — string, number, boolean.
         // A non-primitive would get `String()`'d by action-runner at run time,
         // yielding "[object Object]" or "1,2,3" as the form pre-fill — never
