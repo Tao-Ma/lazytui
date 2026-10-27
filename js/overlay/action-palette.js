@@ -21,9 +21,10 @@
 'use strict';
 
 const { getModel } = require('../model/store');
-const { renderOverlay } = require('../leaves/render/draw');
+const { renderOverlay, viewportDims } = require('../leaves/render/draw');
 const { esc } = require('../leaves/text/ansi');
 const { filterChoices } = require('../leaves/ports/choices-filter');
+const { windowSlice } = require('../leaves/render/window-slice');
 
 const PALETTE_MAX_WIDTH = 72;
 
@@ -174,10 +175,39 @@ function renderActionPalette() {
       lines.push('[dim](no match)[/]');
     }
   } else {
+    // v0.6.47 — scroll window. Pre-fix, the paint loop walked every row;
+    // `renderOverlay` truncates by KEEPING the top of the lines array, so
+    // on a tall list the `[reverse]>` marker walked off the bottom edge
+    // once idx exceeded the overlay body height — the operator could
+    // Enter-invoke a row they couldn't see. Shared math with the choices
+    // popover (overlay/fabric-form.js) via leaves/render/window-slice so
+    // the two type-to-filter lists can't drift again.
+    //
+    // Budget derivation: viewport rows − overlay chrome (borders +
+    // outer margin, overlayBox clamps to ROWS-2 then renderPanel loses
+    // 2 for top/bottom border = -4 total) − palette's own chrome rows
+    // (the /<filter> row when non-empty + the blank + the help line = 2
+    // or 3 fixed). Floor at 3 so a tiny terminal still shows SOMETHING;
+    // on terminals smaller than 7 rows the overlay viewport will clip,
+    // which is unavoidable without hiding chrome.
+    const { rows: vpRows } = viewportDims();
+    const filterChromeRows = filter ? 1 : 0;
+    const fixedChrome = 2 + filterChromeRows;   // blank + help + filter-when-shown
+    const budget = Math.max(3, (vpRows || 24) - 4 - fixedChrome);
+    const win = windowSlice({ idx: clamped, total, budget });
     const cols = PALETTE_MAX_WIDTH - 4; // minus borders (2) + indent (2)
-    for (let i = 0; i < total; i++) {
+    for (let i = win.start; i < win.end; i++) {
       const row = _formatRow(rows[i], cols);
       lines.push(i === clamped ? `[reverse]> ${row}` : `  ${row}`);
+    }
+    if (win.overflow) {
+      // Same inline affordance shape the choices popover uses, so a
+      // user who's seen one recognizes the other. The header counter
+      // (passed as `count` to renderOverlay below) carries the live
+      // 1-based position; this row carries the window-sized "N of M"
+      // plus the "↑/↓ to scroll" affordance.
+      const shown = win.end - win.start;
+      lines.push(`[dim]\\[${shown} of ${total} — ↑/↓ to scroll][/]`);
     }
   }
 

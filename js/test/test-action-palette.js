@@ -40,6 +40,17 @@ const { freshOverlayModel, captureOverlay } = require('./_helpers/overlay-captur
 // Wire the config accessors the way app/tui.js does at boot. Tests run
 // without that boot path, so overlay/action-palette comes up with empty
 // accessors — register them here so the walker + resolver work.
+//
+// LOAD-ORDER NOTE (v0.6.47 — scroll-window fix): `renderActionPalette`
+// reads `viewportDims()` from leaves/render/draw to compute its scroll
+// budget. The dims provider is wired as a side-effect of requiring
+// `panel/api`, which this file picks up TRANSITIVELY via the `../app/cli`
+// require below. The `[9]` scope's `freshOverlayModel({cols,rows})` only
+// shapes the model's dims — the LEAF's dims provider must also be wired,
+// or `viewportDims()` falls back to 80×24 and the overflow tests paint
+// the wrong frame. If you refactor the cli import out, require
+// `../panel/api` here explicitly, or the dims-sensitive scopes will
+// silently paint against the fallback viewport.
 const cli = require('../app/cli');
 palette.setConfigAccessors({
   iterActions: cli.iterActions,
@@ -485,6 +496,163 @@ describe('[8] key-path integration — raw bytes drive the full handler chain', 
     _dispatchToken('\r');  // Enter — expected to close (no commit)
     const after = store.getModel();
     eq(after.modes.paletteMode, false, 'mode off after Enter on empty view');
+  });
+});
+
+// -------------------------------------------------------------------------
+// [9] scroll window — v0.6.47 fix for the browse-blind BUG.
+//
+// Pre-fix (v0.6.44 Brief 2 shipping until v0.6.46), the palette's paint
+// loop walked every row and relied on renderOverlay's truncation to
+// clip. renderOverlay keeps the TOP of the lines array, so on a 97-
+// action config in a 36-row viewport, Down past idx 35 left the
+// `[reverse]>` marker off the painted frame — operator could Enter-
+// invoke an action they couldn't see. Field-caught 2026-10-27.
+//
+// Fix: slice-window math shared with the choices popover via a leaf
+// (js/leaves/render/window-slice.js). The tests below drive the
+// overflow path with a fixture TALLER than the viewport body — the
+// exact gap that let this ship.
+// -------------------------------------------------------------------------
+
+describe('[9] scroll window — selection stays visible on tall lists', () => {
+  // Build a 60-action fixture: 6 groups × 10 actions each. Fits inside the
+  // 72-char PALETTE_MAX_WIDTH + large enough to overflow a 24-row terminal.
+  function _bigFixture() {
+    const groups = {};
+    for (let g = 0; g < 6; g++) {
+      const groupKey = `grp${g}`;
+      const actions = {};
+      for (let a = 0; a < 10; a++) {
+        actions[`act${a}`] = { type: 'run', label: `g${g}a${a}`, script: 'x',
+                               desc: `desc g${g}a${a}` };
+      }
+      groups[groupKey] = { actions };
+    }
+    return { project_dir: '.', groups };
+  }
+
+  it('REGRESSION — selected row stays visible when nav exceeds the viewport body', () => {
+    // 24-row terminal: palette body budget ≈ 24 - 4 (overlay chrome) - 2
+    // (blank + help) = 18 rows; with filter empty, no /<filter> chrome.
+    // 60 actions >> 18 → overflow fires.
+    let m = freshOverlayModel({ cols: 120, rows: 24 });
+    m.config = _bigFixture();
+    m.configPath = '/tmp/lazytui-palette.yml';
+    m.currentGroup = 'grp0';
+    [m] = runtime.update(m, { type: 'palette_open' });
+
+    // Walk the selection past the first screen's worth, then paint.
+    // palette_nav needs `total` threaded (dispatch handler does this
+    // in prod — see js/dispatch/control/dispatch.js#handlePaletteKey).
+    for (let i = 0; i < 30; i++) {
+      [m] = runtime.update(m, { type: 'palette_nav', dir: 1, total: 60 });
+    }
+    const out = captureOverlay(m, () => palette.renderActionPalette());
+    // The marker must be in the painted frame. Pre-fix, idx=30 would
+    // paint rows 0..17 only — no `>` would appear.
+    assert(out.includes('[reverse]')
+           || /> grp\d+:act\d/.test(out)
+           || /> g\d+a\d/.test(out)
+           || out.includes('> '),   // reverse-marker ANSI stripped by captureOverlay
+      `selection marker must appear in painted frame. Got:\n${out}`);
+    // The idx-30 row's content (grp3:act0 — 3×10 = 30 → group 3 first
+    // action if iterActions walks group-order) must be present.
+    // Hedge against walker order by checking SOMETHING from grp3 or
+    // grp2 (within window) is visible instead of only grp0 content.
+    const windowGroups = (out.match(/grp[0-9]/g) || []);
+    assert(windowGroups.length > 0, `rows painted at all. Got:\n${out}`);
+    assert(windowGroups.some((g) => g !== 'grp0'),
+      `window must have SCROLLED past grp0; got only: ${windowGroups.slice(0,5)}`);
+  });
+
+  it('overflow indicator row paints "N of M — ↑/↓ to scroll"', () => {
+    let m = freshOverlayModel({ cols: 120, rows: 24 });
+    m.config = _bigFixture();
+    m.configPath = '/tmp/lazytui-palette.yml';
+    m.currentGroup = 'grp0';
+    [m] = runtime.update(m, { type: 'palette_open' });
+    const out = captureOverlay(m, () => palette.renderActionPalette());
+    assert(/\d+ of 60/.test(out),
+      `overflow indicator with "N of 60" must paint when overflow fires. Got:\n${out}`);
+    assert(out.includes('to scroll'),
+      `overflow indicator must carry the ↑/↓ affordance. Got:\n${out}`);
+  });
+
+  it('no overflow indicator when the full list fits', () => {
+    // Small (fixture) config inside a 30-row terminal — fits, no overflow.
+    let m = freshOverlayModel({ cols: 120, rows: 30 });
+    m.config = _fixtureConfig();          // 9 actions, well under budget
+    m.configPath = '/tmp/lazytui-palette.yml';
+    m.currentGroup = 'deploy';
+    [m] = runtime.update(m, { type: 'palette_open' });
+    const out = captureOverlay(m, () => palette.renderActionPalette());
+    assert(!/\d+ of 9 — .*scroll/.test(out),
+      `no overflow indicator when list fits. Got:\n${out}`);
+  });
+
+  it('near-end clamp — Down past the last row keeps a full window visible', () => {
+    let m = freshOverlayModel({ cols: 120, rows: 24 });
+    m.config = _bigFixture();
+    m.configPath = '/tmp/lazytui-palette.yml';
+    m.currentGroup = 'grp0';
+    [m] = runtime.update(m, { type: 'palette_open' });
+    // Jam the selection to the very end.
+    for (let i = 0; i < 100; i++) {
+      [m] = runtime.update(m, { type: 'palette_nav', dir: 1, total: 60 });
+    }
+    const out = captureOverlay(m, () => palette.renderActionPalette());
+    // Last-row content: grp5:act9 (if walker is group-then-action order).
+    // Hedge: check SOMETHING from grp5 is visible (the window should
+    // include it).
+    assert(/grp5/.test(out),
+      `near-end: window must include the end of the list (grp5). Got:\n${out}`);
+    // The window must still be FULL size (pulled back from the end), not
+    // a short tail. We assert the shown-count is >= 2 (any realistic
+    // budget) by checking the indicator shows more than 1 row.
+    const matchShown = out.match(/\[(\d+) of 60/);
+    assert(matchShown && parseInt(matchShown[1], 10) >= 5,
+      `near-end window must be FULL-SIZED (≥5 rows), not a short tail. ` +
+      `indicator: ${matchShown && matchShown[0]}`);
+  });
+
+  it('filter shrink while scrolled deep — window snaps back to top', () => {
+    let m = freshOverlayModel({ cols: 120, rows: 24 });
+    m.config = _bigFixture();
+    m.configPath = '/tmp/lazytui-palette.yml';
+    m.currentGroup = 'grp0';
+    [m] = runtime.update(m, { type: 'palette_open' });
+    for (let i = 0; i < 40; i++) {
+      [m] = runtime.update(m, { type: 'palette_nav', dir: 1, total: 60 });
+    }
+    // Filter down to a handful of rows — reducer resets idx on filter
+    // change (existing behavior).
+    [m] = runtime.update(m, { type: 'palette_filter', seq: 'grp5' });
+    const out = captureOverlay(m, () => palette.renderActionPalette());
+    assert(/grp5:act0/.test(out) || /g5a0/.test(out),
+      `after filter the window must include the first match. Got:\n${out}`);
+    // No overflow indicator — filtered list fits.
+    assert(!/\[\d+ of \d+ — .*scroll/.test(out),
+      `filtered list fits → no overflow indicator. Got:\n${out}`);
+  });
+
+  it('BUDGET ≤ 3 degenerate case — at least the selected row paints', () => {
+    // A pathological viewport. 60 rows into a 7-row terminal:
+    // budget = max(3, 7-4-2) = max(3, 1) = 3.
+    let m = freshOverlayModel({ cols: 120, rows: 7 });
+    m.config = _bigFixture();
+    m.configPath = '/tmp/lazytui-palette.yml';
+    m.currentGroup = 'grp0';
+    [m] = runtime.update(m, { type: 'palette_open' });
+    for (let i = 0; i < 20; i++) {
+      [m] = runtime.update(m, { type: 'palette_nav', dir: 1, total: 60 });
+    }
+    const out = captureOverlay(m, () => palette.renderActionPalette());
+    // Selected (idx-20) row must be in the window somewhere.
+    assert(out.length > 0, 'something painted even on tiny viewport');
+    assert(/grp2/.test(out) || /grp1/.test(out),
+      `tiny-viewport window must include at least the selected row. ` +
+      `idx=20 should land in grp1 or grp2. Got:\n${out}`);
   });
 });
 

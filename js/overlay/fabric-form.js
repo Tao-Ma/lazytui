@@ -34,6 +34,7 @@ const { getModel } = require('../model/store');
 const { esc, visibleLen } = require('../leaves/text/ansi');
 const { renderOverlay, truncate, viewportDims } = require('../leaves/render/draw');
 const { filterChoices } = require('../leaves/ports/choices-filter');
+const { windowSlice } = require('../leaves/render/window-slice');
 
 // Hard max for the overlay; the dims clamp (renderOverlay → overlayBox) narrows
 // to COLS-2 on tight terminals.
@@ -317,19 +318,16 @@ function renderFabricFormOverlay() {
             const availableRows = (vp.rows || 24) - 4 - chromeRows - 1 - filterChromeRows;
             const budget = Math.max(3, availableRows);
             const total = view.items.length;
-            const willOverflow = total > budget;
-            let sliceStart = 0;
-            let sliceEnd = total;
-            if (willOverflow) {
-              // Reserve one row for the "N of M" indicator at the bottom.
-              const windowSize = budget - 1;
-              const half = Math.floor(windowSize / 2);
-              sliceStart = Math.max(0, picking.idx - half);
-              sliceEnd = Math.min(total, sliceStart + windowSize);
-              // If the picking.idx is near the end, pull sliceStart back so
-              // we still show `windowSize` items (not fewer).
-              sliceStart = Math.max(0, sliceEnd - windowSize);
-            }
+            // v0.6.47 — shared slice math with the action palette via
+            // leaves/render/window-slice. Pre-fix this block inlined the
+            // same math; the leaf extraction is a pure refactor on this
+            // side (reference implementation preserved byte-for-byte).
+            // The action palette gets the same scroll behavior without a
+            // second copy to drift.
+            const win = windowSlice({ idx: picking.idx, total, budget });
+            const willOverflow = win.overflow;
+            const sliceStart = win.start;
+            const sliceEnd = win.end;
             for (let i = sliceStart; i < sliceEnd; i++) {
               // R2C-SMELL1 — `labels[i]` was truthy-checked, which treated an
               // explicit empty-string label as "no label" and fell back to the
