@@ -6,6 +6,77 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.48] — 2026-10-27
+
+Fourth point release of the day — invisible-modal BUG surfaced on first
+real use of the `session enable` consumer action (one required port,
+`choices_cmd`, no confirm). Pressing Enter on an EMPTY required field
+closed the form and the re-prompt fired in the model but didn't paint
+— the operator stared at an idle-looking screen while every key was
+eaten by the invisible modal. Reads as "the TUI is dead."
+
+### Fixed
+
+- **Empty resubmit paints the reopened ports form.** The resubmit
+  cycle for a required-missing port is: `fabric_form_submit` (no
+  modified fields → zero injects) closes the form and emits `do_run`
+  → `setImmediate` → `doRun` → `_promptMissing` →
+  `applyMsg(fabric_form_enter)` reopens. The second `applyMsg` lands
+  INSIDE a setImmediate — OUTSIDE the input pump's trailing-render
+  span — so no paint was scheduled. The model was correct; the paint
+  was missing. ANY subsequent Msg (even arrow keys) painted the
+  reopened form in full, which is why "pre-fix the modal was alive
+  but invisible."
+
+  Fix: `fabric_form_enter` arm now always emits two paint Cmds
+  prepended to any initial choices-fetch requests —
+  `{type:'force_full_repaint'}` (invalidates the diff cache so a
+  close+reopen cycle can't leave outgoing cells as ghost chrome, the
+  v0.6.33 shrink class) and `{type:'render'}` (schedules a paint via
+  the 50ms-debounced queue). Harmless on the first-open path: the
+  pump's trailing render coalesces with the scheduled one; the
+  diff-cache invalidation on a fresh open is a no-op (nothing to
+  invalidate past the first paint).
+
+  Also addresses the two secondary observations in the brief:
+  - **Ghost chrome on reopen** (double top-border visible when the
+    reopened form paints smaller than its predecessor): the
+    `force_full_repaint` invalidation flushes the outgoing border's
+    cells on the next paint.
+  - **Partial paint on key-triggered repaint** (field + desc rows
+    only, no header/footer/help): the diff-cache invalidation
+    forces a full repaint on the next frame, so the first paint
+    after the invisible state reaches ALL rows.
+
+  Regression test `[10]` in `js/test/test-fabric-form.js` pins the
+  invariant that EVERY `fabric_form_enter` emits both paint Cmds, in
+  order before any choices-fetch Msgs, and that a close+reopen cycle
+  (as the real doRun → _promptMissing → fabric_form_enter path
+  would produce) leaves the model consistent AND emits the paint
+  Cmds on the reopen.
+
+  Deferred (brief's optional polish): the "no-churn" variant that
+  short-circuits an empty resubmit (keeps the form open, flashes
+  "required inputs still missing" instead of close+reopen). The
+  paint guarantee is the must-have — it makes the modal visible
+  whether the churn runs or not. The no-churn behavior change would
+  move WAL semantics (no fabric_form_submit → fabric_form_enter pair
+  recorded on empty resubmit), big enough to review on its own.
+
+### Changed (internal)
+
+- `fabric_form_enter` Msg's emitted Cmds now include two paint-
+  guarantee effects. A WAL recorded on v0.6.47 or earlier replays
+  identically — replay no-ops ALL effects, and the model-side
+  reducer step is unchanged.
+- **Class-sweep**: `fabric_field_enter` (the 1-port lean-lane modal)
+  gets the same two paint Cmds proactively. The review fork's
+  class-walk noted the setImmediate-dispatched-applyMsg-with-no-
+  trailing-render hazard exists on both arms; the field variant is
+  harder to repro (1-port forms resolve on any non-empty submit) but
+  the class is identical. Fixed in the same release so a future
+  field-catch isn't needed.
+
 ## [0.6.47] — 2026-10-27
 
 Third point release of the day — browse-blind BUG in the action
@@ -4827,7 +4898,8 @@ release tarballs. Full pre-squash development history is preserved
 on the internal gitea mirror under the `backup/main-history` branch
 and the `v0.1.0-pre-squash` tag.
 
-[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.47...HEAD
+[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.48...HEAD
+[0.6.48]: https://github.com/Tao-Ma/lazytui/compare/v0.6.47...v0.6.48
 [0.6.47]: https://github.com/Tao-Ma/lazytui/compare/v0.6.46...v0.6.47
 [0.6.46]: https://github.com/Tao-Ma/lazytui/compare/v0.6.45...v0.6.46
 [0.6.45]: https://github.com/Tao-Ma/lazytui/compare/v0.6.44...v0.6.45
