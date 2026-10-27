@@ -6,6 +6,98 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.45] — 2026-10-27
+
+Point release — single high-severity bug fix caught in field testing
+against a real consumer config. No new features.
+
+### Fixed
+
+- **`[a]` edit-args no longer bypasses `confirm:`.** On v0.6.41–v0.6.44,
+  pressing `[a]` on an action with ports.in and `confirm:` set, filling
+  the ports form, and pressing Enter spawned the action with NO confirm
+  overlay. The bug was that the fabric-form submit arm unconditionally
+  emitted `do_run` (the POST-confirm-gate cmd) — correct for the
+  missing-required flow (where runAction's gate had already fired
+  pre-form), wrong for Brief 1's `[a]` lane which opens the form
+  directly without ever touching the gate. Two keystrokes `[a]` Enter
+  was enough to spawn a confirm-gated destructive action with no
+  confirmation surface shown. Field-caught 2026-10-27 against a
+  CA-rotate action whose script-side `--force` tripwire was the only
+  thing preventing a live cert revert.
+
+  Fix: `openPortsForm` now accepts a `{confirmed}` opt stamped on
+  `pendingAction`. `_promptMissing` opens with `confirmed:true` (we're
+  post-gate), `_editArgsForAction` opens with `confirmed:false`. The
+  submit arm emits `do_run` when `pending.confirmed === true`, else
+  `run_action` (which calls runAction, which stages confirm_enter when
+  action.confirm is set). Strict `=== true` compare means a hand-built
+  Msg with a truthy-but-not-boolean confirmed field falls through to
+  the gated path — the safe default when a value is anything other
+  than literal `true`.
+
+  Behavior now matches what the inline comments + action-ports-guide
+  already claimed:
+  - `[a]` → Enter on a confirm-gated action: form opens → user fills
+    → Enter → confirm overlay stages the run with the submit-preview
+    (now shows RESOLVED values, not `<pending>`, because the form
+    already collected them) → `y` runs, `n`/Esc cancels.
+  - Enter (invoke path) on a confirm-gated action: confirm overlay
+    stages first → `y` → form opens over missing required ports →
+    submit runs (no re-confirm — the gate already fired).
+  - A declined confirm never spawns and never updates `model.lastRun`
+    (repeat_run invariant preserved from v0.6.44).
+
+  Regression test `js/test/test-edit-args-confirm-gate.js` pins all
+  four corners (`[a]` × {confirm-gated, no-confirm}, _promptMissing
+  × {confirm-gated, no-confirm}) plus hand-crafted hostile-input
+  defense (`confirmed:"yes"` is not accepted — strict compare).
+
+  **Round-2 adversarial follow-up** — declined `[a]` → confirm must
+  roll back the one-shot injects the submit arm already wrote.
+  Without rollback, declining the confirm left the typed values
+  sitting in `model.fabric.injects` as one-shots; the next invoke
+  Enter → confirm `y` → spawn would silently reuse the previously
+  DECLINED values. (The gate itself still fires — this is not a
+  bypass — but the user who said "no" meant "forget what I typed,"
+  not "ask me again later with the same values pre-filled.")
+
+  Fix: the submit arm stamps `model.modal.onReject` with a
+  `port_consume_oneshot` Cmd carrying the exact addrs it wrote, on
+  the `[a]` lane for a confirm-gated action only. `confirm.js`'s
+  `confirm_enter` arm preserves the stamp across the setImmediate'd
+  trip to `runAction → confirm_enter`; `confirm_reject` fires it;
+  `confirm_accept` clears it without firing (the forward `do_run`
+  → `doRun → _consumeOneShotInjects` path consumes through its own
+  channel after spawn, so firing on accept would double-consume).
+  New slot `model.modal.onReject: Cmd | null`.
+
+  Deferred to a follow-up: move the confirm gate AFTER port
+  collection on the INVOKE path too, so the submit-preview's
+  `<pending>` port placeholders also render as resolved values on
+  that lane. v0.6.45 keeps the invoke path at confirm-then-form (the
+  pre-v0.6.41 behavior) and fixes only the regression; the
+  consistency win from always-form-first-then-confirm is a semantics
+  change big enough to review on its own.
+
+### Changed (model shape)
+
+- `pendingAction` on a `fabric_form_enter` Msg now carries an
+  optional `confirmed: boolean` field. A WAL recorded on v0.6.44 or
+  earlier (no `confirmed` field) replays identically for actions
+  without `confirm:` (submit routes through `run_action` → no gate
+  fires → spawn is unchanged); for actions WITH `confirm:`, replay
+  will now surface a confirm_enter that the WAL's recorded
+  `confirm_accept` resolves — the pre-fix WAL cannot have captured a
+  `[a]`-bypass session because the bug never showed a confirm
+  overlay (nothing to accept or decline), so no divergence in
+  practice.
+- `model.modal.onReject: Cmd | null` — new slot that `confirm_reject`
+  fires on decline. Written only by the form-submit rollback path
+  today; serializable Cmd descriptor (never a closure) so a
+  checkpoint round-trips. Null on fresh boot and on every
+  `confirm_accept` / `confirm_reject`.
+
 ## [0.6.44] — 2026-10-27
 
 Three briefs shipped as one release: the fuzzy action palette (type
@@ -4620,7 +4712,8 @@ release tarballs. Full pre-squash development history is preserved
 on the internal gitea mirror under the `backup/main-history` branch
 and the `v0.1.0-pre-squash` tag.
 
-[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.44...HEAD
+[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.45...HEAD
+[0.6.45]: https://github.com/Tao-Ma/lazytui/compare/v0.6.44...v0.6.45
 [0.6.44]: https://github.com/Tao-Ma/lazytui/compare/v0.6.43...v0.6.44
 [0.6.43]: https://github.com/Tao-Ma/lazytui/compare/v0.6.42...v0.6.43
 [0.6.36]: https://github.com/Tao-Ma/lazytui/compare/v0.6.35...v0.6.36
