@@ -25,6 +25,8 @@
  */
 'use strict';
 
+const { esc } = require('../text/ansi');
+
 const SENSITIVE_MASK = '••••••';
 
 /**
@@ -34,19 +36,30 @@ const SENSITIVE_MASK = '••••••';
  * fact that no value was typed, which can itself be a signal. The mask
  * is the constant shape.
  */
+// Pre-release round-2 security fix (v0.6.44): esc() EVERY user- or
+// wire-controlled interpolation. A wire-fed port value (`producer`
+// output lands at `boundPorts[i].value`) could otherwise inject
+// rich-markup — `[reverse]SAFE[/]` would spoof the "sure about WHAT"
+// display in the confirm overlay. Same shape as the fabric-form title
+// esc() precedent (v0.6.43 Fork 2 Finding 1) and the action-palette
+// row esc() precedent (Brief 2). Port names are isValidFabricName-
+// restricted so markup-safe by construction, but escape them too for
+// one-rule-everywhere clarity.
 function _formatPortValue(portName, portDecl, resolvedValue, source) {
+  const safeName = esc(portName);
   if (portDecl && portDecl.sensitive === true) {
-    return `${portName}=${SENSITIVE_MASK}`;
+    return `${safeName}=${SENSITIVE_MASK}`;
   }
   if (resolvedValue == null || resolvedValue === '') {
-    return `${portName}=<pending>`;
+    return `${safeName}=<pending>`;
   }
   // The source tag ('user', 'default', 'last', 'inject', 'env', 'wire')
   // is useful context for the confirm preview — tells the operator
   // where this value came from without them having to track across
-  // the actions pane / ports form / env state.
-  const srcTag = source ? ` [${source}]` : '';
-  return `${portName}=${String(resolvedValue)}${srcTag}`;
+  // the actions pane / ports form / env state. Source strings are
+  // caller-controlled (overlay dispatch sites), but escape anyway.
+  const srcTag = source ? ` [${esc(String(source))}]` : '';
+  return `${safeName}=${esc(String(resolvedValue))}${srcTag}`;
 }
 
 /**
@@ -67,20 +80,26 @@ function _formatPortValue(portName, portDecl, resolvedValue, source) {
 function formatPreview({ script, boundPorts = [], variadic = null } = {}) {
   const lines = [];
   if (script) {
-    lines.push(`[dim]$ ${script}[/]`);
+    // Script text is YAML-author-controlled (not user- or wire-
+    // controlled), but a tampered config could inject markup; esc()
+    // for one rule.
+    lines.push(`[dim]$ ${esc(script)}[/]`);
   }
   for (const p of boundPorts) {
     if (!p || !p.name) continue;
     lines.push(`  ${_formatPortValue(p.name, p.decl, p.value, p.source)}`);
   }
   if (variadic && Array.isArray(variadic.items) && variadic.items.length > 0) {
+    const safeVariadicName = esc(variadic.name);
     const isSensitive = variadic.decl && variadic.decl.sensitive === true;
     if (isSensitive) {
-      lines.push(`  ${variadic.name}=${SENSITIVE_MASK} (${variadic.items.length} item${variadic.items.length === 1 ? '' : 's'})`);
+      lines.push(`  ${safeVariadicName}=${SENSITIVE_MASK} (${variadic.items.length} item${variadic.items.length === 1 ? '' : 's'})`);
     } else {
-      lines.push(`  ${variadic.name}:`);
+      lines.push(`  ${safeVariadicName}:`);
       for (const item of variadic.items) {
-        lines.push(`    - ${item}`);
+        // Variadic items are user- or wire-controlled; same injection
+        // risk as boundPorts[i].value above.
+        lines.push(`    - ${esc(String(item))}`);
       }
     }
   }
@@ -102,8 +121,12 @@ function formatCompactFooter({ script, boundPorts = [], variadic = null } = {}) 
   const sensitiveCount =
     boundPorts.filter((p) => p && p.decl && p.decl.sensitive === true).length +
     (variadic && variadic.decl && variadic.decl.sensitive === true ? 1 : 0);
-  const scriptTeaser = script
-    ? ` [dim]— ${script.length > 40 ? script.slice(0, 37) + '…' : script}[/]`
+  // Script is YAML-author-controlled — same esc() rule as formatPreview.
+  const scriptTruncated = script
+    ? (script.length > 40 ? script.slice(0, 37) + '…' : script)
+    : '';
+  const scriptTeaser = scriptTruncated
+    ? ` [dim]— ${esc(scriptTruncated)}[/]`
     : '';
   const sensitiveTag = sensitiveCount > 0
     ? `, [warning]${sensitiveCount} sensitive[/]`

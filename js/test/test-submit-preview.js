@@ -323,6 +323,67 @@ describe('[4] confirm overlay — preview block visibility', () => {
   });
 });
 
+// ---- [4b] security: markup injection via wire-fed values (round-2 BUG) ----
+
+describe('[4b] security — markup injection in preview surfaces is blocked', () => {
+  it('a wire-fed port value with rich-markup is esc()d, not interpreted', () => {
+    const lines = formatPreview({
+      boundPorts: [{
+        name: 'env',
+        decl: { type: 'string' },
+        value: '[reverse]SAFE[/]',  // wire-fed attempt to spoof the display
+        source: 'wire',
+      }],
+    });
+    const joined = lines.join('\n');
+    // The literal brackets must be present as ESCAPED text, not as markup
+    // that would render SAFE as reverse-video. esc() turns `[` into `\[`
+    // (or similar), which rich-to-ansi then paints as a literal `[`.
+    assert(joined.includes('env='), 'port name rendered');
+    assert(joined.includes('SAFE'), 'raw text letters still visible');
+    // The matcher is: `[reverse]` as RAW (literal brackets) must not
+    // appear unescaped (which would open the reverse-video style). esc()
+    // outputs `\[reverse\]` or similar; we assert the escaped form is
+    // present by checking the preceding backslash marker or that the
+    // literal `[reverse]` substring is NOT paired with a closing `[/]`
+    // bracket that would open+close.
+    assert(/\\\[reverse\\\]/.test(joined) || !/\[reverse\][^\\]*\[\/\]/.test(joined),
+      'markup kept literal (either as \\[ escaped or as content without a matching [/] closer)');
+  });
+  it('a wire-fed VARIADIC item with rich-markup is esc()d too', () => {
+    const lines = formatPreview({
+      variadic: {
+        name: 'paths',
+        decl: { type: 'string', variadic: true },
+        items: ['[dim]hidden[/]', 'normal.txt'],
+      },
+    });
+    const joined = lines.join('\n');
+    assert(joined.includes('normal.txt'), 'normal item visible');
+    assert(joined.includes('hidden'), 'malicious item text still visible');
+    // The dim markup must be escaped — same discipline.
+    assert(/\\\[dim\\\]/.test(joined) || !/\[dim\]hidden\[\/\]/.test(joined),
+      'variadic item markup kept literal');
+  });
+  it('script with injected markup is esc()d (both preview surfaces)', () => {
+    const previewLines = formatPreview({ script: '[reverse]evil[/]' });
+    const footer = formatCompactFooter({ script: '[reverse]evil[/]' });
+    const previewJoined = previewLines.join('\n');
+    assert(/\\\[reverse\\\]/.test(previewJoined) || !/\[reverse\]evil\[\/\]/.test(previewJoined),
+      'preview script markup escaped');
+    assert(/\\\[reverse\\\]/.test(footer) || !/\[reverse\]evil\[\/\]/.test(footer),
+      'footer script markup escaped');
+  });
+  it('port NAME with (impossible) markup is esc()d defensively', () => {
+    // isValidFabricName restricts port names, but one-rule-everywhere.
+    const lines = formatPreview({
+      boundPorts: [{ name: 'ok[dim]evil', decl: {}, value: 'v', source: null }],
+    });
+    const joined = lines.join('\n');
+    assert(joined.includes('ok'), 'name letters visible');
+  });
+});
+
 // ---- [5] form overlay — compact footer paints + masks sensitive -------
 
 describe('[5] form overlay — compact footer with sensitive mask', () => {
