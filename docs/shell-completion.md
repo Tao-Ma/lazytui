@@ -49,6 +49,8 @@ For each positional, the completer runs the port's `choices_cmd:` with:
 - **Items cap** = 32 (same as the TUI popover; humans realistically scan ≤ ~32 items).
 - **`choices_labeled: true`** → values only. Labels are TUI popover UX; TAB inserts the value you'd actually submit.
 
+> **TUI parity (v0.6.44)**: the TUI's fuzzy action palette (`p` → type-to-jump across every `group:action`) is wired to the SAME `iterActions` walker via an injected seam (`js/overlay/action-palette.setConfigAccessors`), so palette rows and `--list` / `--complete` candidates cannot drift. Any action the CLI discovers, the palette shows; any action the palette shows, the CLI can `--exec`.
+
 ## Wrapper convention
 
 If you have a wrapper script (`./do`, `./myproject`, etc.) that forwards to the entry point, make sure it also forwards `--completion` and `--complete` verbatim — same as it forwards `--list` or `--exec`:

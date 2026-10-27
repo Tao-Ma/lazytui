@@ -338,6 +338,18 @@ ports:
 
 A port with no `desc` renders a blank line under the input — the user has to guess what to type. If you can't write a one-liner for a port, your port name is wrong.
 
+### Marking `sensitive:` on a non-secret port (v0.6.44)
+
+```yaml
+# BAD
+ports:
+  in:
+    force: { type: bool, required: true, sensitive: true,
+             desc: "overwrite without asking" }
+```
+
+`sensitive: true` is for actual secrets (passphrases, API tokens, private keys). Marking a `--force` yes/no or a must-be-unique name as sensitive would mask it in the preview without protecting anything that needs protecting — the operator loses the ability to verify what they're about to confirm, and the implicit `remember: false` coupling kicks in too (so they'd lose the `[last]` chip they probably wanted). For ports whose last value is wrong to pre-fill but which aren't themselves secret, use `remember: false` alone — same no-prefill behavior, no preview mask.
+
 ---
 
 ## Literal choices — `choices:`
@@ -628,6 +640,8 @@ reissue-cert:
 ```
 
 A `remember: false` port is never written to history AND never seeded from a stale slot (defense-in-depth: a prior opt-in that later became opt-out drops its memory on first read). Parser accepts strictly boolean; a `remember: "no"` warn-drops under code `port.bad_remember` with no truthy coercion (`"no"` is truthy in JS).
+
+**`sensitive: true` implies `remember: false`** (v0.6.44 Brief 3). A port declared `sensitive:` masks its value in the submit preview (confirm overlay + ports-form compact footer); the parser also forces `remember: false` on the normalized decl so a sensitive value is NEVER persisted in formHistory and NEVER seeds the `[last]` chip. A conflicting `remember: true` on a sensitive port emits `port.sensitive_overrides_remember` and gets overridden. See the `sensitive` row in the schema table above.
 
 The chip renderer paints `[last]` under `accent`, distinct from `[default]` (dim), `[modified]` (warning), and `[unset]` (dim). On a computed-choices field, `[fetching…]` and `[error]` take precedence while the fetch is live (the user needs to see the fetch state), but once the fetch settles with text differing from the default (the usual `[last]`-seeded case), the chip reads `[last]` and the popover is still reachable via `[space]`.
 

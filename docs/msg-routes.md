@@ -286,6 +286,8 @@ identity-preserves on no-op. **All 30 arms are pure** — verified.
 | `set_register` | boot `initState` | `model.register` | — | ✓ |
 | `reset_group_context` | groups cascade | `modes.terminalMode/listSelectMode→false` | `select_cancel_all` + per `msg.owners`: `msg→set_cursor`+`multisel_clear`+`clear_filter` | shell¹¹ |
 | `free_config` | `:free-config` verb | — | `msg→free_config_enter` (layout) | ✓ |
+| `set_last_run` | `action-runner.doRun` (gated on `type:run`, post-confirm) | `model.lastRun={groupPath,actionKey}` (identity-preserve on same pair) | — | ✓¹² |
+| `repeat_run` | `repeat_run` verb (default `R`) | — (identity-preserve) | `repeat_last_run_empty` when `lastRun===null`, else `repeat_last_run{groupPath,actionKey}` | ✓¹² |
 | *(default)* | — | — | — | ✓ |
 
 ¹ The handler stamps `msg.hadMultiSel` + `msg.route = route.bundle(getFocus())`
@@ -338,6 +340,16 @@ identity-preserves on no-op. **All 30 arms are pure** — verified.
   reset, null owner skips. `select_cancel_all` (§8.1) sweeps EVERY active per-pane
   text selection (the instance registry, incl. hidden tabs) so a stale absolute
   selection can't re-own whatever content the new group loads at that spot.
+¹² v0.6.44 Brief 1 — `set_last_run` is dispatched from `action-runner.doRun` at
+  the top, gated on `(action.type || 'run') === 'run'`, so the write happens
+  AFTER the confirm gate passed (declined confirms never reach doRun) and ONLY
+  for `type:run` actions (`type:spawn` terminal panes and others don't record).
+  `set_config` clears `model.lastRun` to null alongside `formHistory` — same
+  action-universe-swap discipline. The `repeat_last_run` effect re-resolves
+  through the overlay/action-palette injected `resolve` seam (shared with
+  Brief 2), switches `currentGroup` if needed, and routes through `runAction`
+  so the confirm gate / ports form / missing-required all fire as the first
+  run. The repeat is a RE-INVOKE, not a replay — no raw argv is stored.
 
 **Verdict (§4): pure TEA.** Every root arm is a pure function of `(model, msg)`.
 All topology/model/clock/store/hub reads are relocated to the impure shell via
@@ -596,35 +608,6 @@ dataflow mechanics.
   the prior spawn's process group (cmd path) before the handler dispatches
   its reply. The two prefixes also prevent the registries colliding if the
   same port name is used across channels in different actions.
-
-### 4.X v0.6.44 Brief 1 — `set_last_run` + `repeat_run` (root arms)
-
-Two flat Msgs on the root reducer that let the `repeat_run` verb
-(default `R`) re-invoke the last `type:run` action without replaying
-raw argv:
-
-| Msg | Writes | Cmds | Pure |
-|-----|--------|------|------|
-| `set_last_run{groupPath, actionKey}` | `model.lastRun = {groupPath, actionKey}` (identity-preserve on same pair, silent drop on malformed) | — | ✓ |
-| `repeat_run` | — (identity-preserve) | `repeat_last_run{groupPath, actionKey}` when populated, else `repeat_last_run_empty` | ✓ |
-
-`set_last_run` is dispatched by `action-runner.doRun` at its top,
-gated on `(action.type || 'run') === 'run'`, so the write happens
-AFTER the confirm gate passed (declined confirms never reach doRun)
-and only for `type:run` actions. The reducer-written Msg + flat JSON
-slot keep the slot WAL-replayable (same discipline as `formHistory`).
-
-`repeat_run` is a Cmd-only verb: empty slot → `repeat_last_run_empty`
-effect pushes a transcript notice; populated slot →
-`repeat_last_run{groupPath, actionKey}` effect re-resolves through the
-overlay/action-palette injected `resolve` seam (so a `set_config`
-racing the Msg → Cmd window silently drops), switches `currentGroup`
-if needed, and routes through `runAction` so the confirm gate / ports
-form / missing-required prompting all fire exactly as the first run.
-The repeat is a RE-INVOKE, not a replay.
-
-`set_config` clears `model.lastRun` to null (action-universe-swap
-discipline, same reason it clears `formHistory`).
 
 ### 5.10b `palette` (`modal/palette.js`) — fuzzy action palette (v0.6.44 Brief 2)
 
