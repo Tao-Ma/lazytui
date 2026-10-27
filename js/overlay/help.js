@@ -122,6 +122,8 @@ function helpLines() {
 
   lines.push('', '[dim]Actions[/]',
     '  Enter          Run selected action',
+    '  R              Repeat last run (re-invoke; confirm fires again)',
+    '  p              Open fuzzy action palette (type to jump)',
     '  a              Open ports form (edit args — incl. optional)',
     '  x              Open menu popup',
     `  ${esc('[')}  ${esc(']')}           Cycle detail tabs`,
