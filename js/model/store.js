@@ -147,6 +147,18 @@ function init() {
       // test-modal-continuation.js via the model-ops.findModalClosure guard
       // helper (asserts no function under model.modal after each transition).
       continuation: null,
+      // v0.6.45 — Cmd to fire on confirm_reject (user `n`/Esc on the confirm
+      // overlay) when the confirm's trigger left some reversible side-effect
+      // in the model that must be rolled back on decline. Currently used by
+      // fabric_form_submit's unconfirmed-lane ([a] → confirm-gated action):
+      // the submit arm has already written one-shot injects by the time the
+      // confirm fires, so a decline must consume them so the next invoke
+      // doesn't resolve the gate against the values the user just declined.
+      // Stamped before the forward Cmd, preserved across `confirm_enter`,
+      // fired by `confirm_reject`, cleared by both accept and reject. Shape
+      // matches `continuation` — a single serializable Cmd descriptor, so
+      // the model round-trips a checkpoint's JSON and stays replay-safe.
+      onReject: null,
       // The pending confirm: just the display message now — the Cmd to emit on
       // `y` lives on `continuation` (E14).
       confirm: { message: '' },

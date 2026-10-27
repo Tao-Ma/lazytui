@@ -46,7 +46,10 @@ function fieldsFor(actionKey = 'provision') {
     { port: 'tags', text: '',       required: false, default: null, desc: 'comma-separated tags' },
   ];
 }
-const PENDING = { actionKey: 'provision', action: ACTION };
+// confirmed:true — these tests exercise the submit arm's `do_run` path, which
+// is the POST-confirm-gate open (_promptMissing). The `[a]` edit-args open
+// (confirmed:false → run_action) is covered in test-edit-args-confirm-gate.js.
+const PENDING = { actionKey: 'provision', action: ACTION, confirmed: true };
 
 const inj = (m) => (m.fabric.injects[m.currentGroup] || {});
 

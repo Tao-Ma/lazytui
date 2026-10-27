@@ -173,7 +173,9 @@ The `GOOD` version opens the form with 4 fields — the user hits `host`, types 
 
 ### Setting an optional on demand — `[a]` edit-args
 
-Enter runs the action; if any REQUIRED port is empty the form opens over the gap. **But optional-only actions never prompt** — the form path is reached only when a required value is missing. For an all-optional action (or one where you want to review/override a resolved value before running), press `[a]` with an action selected to open the ports form on demand. Every declared port materializes with its resolved or default value prefilled; chips show `[default]` / `[modified]` / `[unset]`. Submit → the normal run path (any `confirm:` fires on submit, same as the missing-required flow). Esc → cancel, no run.
+Enter runs the action; if any REQUIRED port is empty the form opens over the gap. **But optional-only actions never prompt** — the form path is reached only when a required value is missing. For an all-optional action (or one where you want to review/override a resolved value before running), press `[a]` with an action selected to open the ports form on demand. Every declared port materializes with its resolved or default value prefilled; chips show `[default]` / `[modified]` / `[unset]`. Submit → the normal run path. Esc → cancel, no run.
+
+**`confirm:` gate — when it fires:** on the invoke path (Enter), `confirm:` fires FIRST (before the form opens over any missing required port). On the `[a]` edit-args path, `confirm:` fires AFTER you submit the form — the form opens first so you can review/edit the port values, then on Enter the confirm overlay stages the run (y accepts, n/Esc cancels). Either way, confirm fires exactly ONCE per run, and a declined confirm never spawns anything. (v0.6.45 fixed a bug where `[a]` → Enter bypassed `confirm:` entirely.)
 
 An action with no declared `ports.in` surfaces a Transcript notice (`<key>: no declared ports — edit args unavailable`) and does nothing else — nothing to edit.
 

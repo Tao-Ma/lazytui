@@ -160,8 +160,14 @@ function _runResolvedAction(key, act) {
  * split): a 1-port no-choices action under [a] still gets the form so the
  * user can inspect and override the resolved/default value. An action with
  * no declared ports.in surfaces a transcript notice and does nothing else.
- * Submit path is identical to the normal run → `confirm:` fires after the
- * form Enter, same as the missing-required path.
+ *
+ * `confirmed: false` on the open — this path does NOT go through runAction's
+ * confirm gate (it fires `openPortsForm` directly), so submit must route via
+ * `run_action` (which gates) rather than `do_run` (which bypasses). Fixes
+ * v0.6.44 BUG where `[a]` → Enter spawned confirm-gated actions with no
+ * confirmation (the form's submit arm emitted `do_run` unconditionally,
+ * bypassing the gate that lives only in `runAction`). See
+ * fabric-form.js's `fabric_form_submit` arm for the receiving half.
  */
 function _editArgsForAction(key, act) {
   const inputs = (act && act.ports && act.ports.in) || {};
@@ -172,7 +178,7 @@ function _editArgsForAction(key, act) {
   }
   const ar = require('../runtime/action-runner');
   const resolved = ar._resolvePortsForAction(key, act, getModel());
-  ar.openPortsForm(key, act, resolved);
+  ar.openPortsForm(key, act, resolved, { confirmed: false });
 }
 
 /** Run a declared action by its key, searching every group. Resolves
@@ -323,8 +329,11 @@ function handleAction(action, arg, from) {
       // [a] edit-args (Brief 1) — open the multi-field ports form for the
       // actions-pane selected action, even when nothing is missing. Lets the
       // user set optional ports (which _promptMissing never prompts for) and
-      // review/override resolved values before a run. Submit → normal run
-      // path (confirm fires on submit, same as the missing-required flow).
+      // review/override resolved values before a run. Submit → runAction
+      // (confirmed:false on the open means the form submit routes via the
+      // `run_action` Cmd, which fires the `confirm:` gate before spawn. The
+      // missing-required flow is confirmed:true and submits via `do_run` so
+      // the already-accepted confirm is not re-staged.)
       //
       // A no-op outside the actions pane focus: `a` on a group row shouldn't
       // do anything, and the key handler's guards also refuse while any

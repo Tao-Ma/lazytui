@@ -550,8 +550,20 @@ function _buildFormField(port, decl, values, lastValue) {
  *
  * `resolved` is the `{values, missing, sources}` from _resolvePortsForAction.
  * Pass an empty `{values: {}}` to open with every field at its decl.default.
+ *
+ * `opts.confirmed` records whether the OPEN already passed the confirm gate:
+ *   - `_promptMissing` reaches this fn via runAction → doRun → _promptMissing,
+ *     so an action's `confirm:` has already been accepted. Pass `true` to
+ *     avoid a double-confirm on submit.
+ *   - `[a]` edit-args reaches this fn via _editArgsForAction directly, which
+ *     NEVER touched the gate. Pass `false` so submit routes through
+ *     `run_action` (which gates) instead of `do_run` (which bypasses).
+ * Default `false` is the safe choice — forgetting to opt in re-stages
+ * confirm, which is worst-case annoying; the previous default of `do_run`
+ * silently bypassed the gate (BUG v0.6.44, fixed v0.6.45).
  */
-function openPortsForm(actionKey, action, resolved) {
+function openPortsForm(actionKey, action, resolved, opts) {
+  const confirmed = !!(opts && opts.confirmed === true);
   const inputs = (action && action.ports && action.ports.in) || {};
   const values = (resolved && resolved.values) || {};
   const declNames = Object.keys(inputs);
@@ -580,7 +592,7 @@ function openPortsForm(actionKey, action, resolved) {
   const fields = declNames.map((port) =>
     _buildFormField(port, inputs[port] || {}, values, lastValues[port]));
   applyMsg({ type: 'fabric_form_enter', fields,
-             pendingAction: { actionKey, action, group } });
+             pendingAction: { actionKey, action, group, confirmed } });
 }
 
 function _promptMissing(actionKey, action, resolved) {
@@ -598,7 +610,14 @@ function _promptMissing(actionKey, action, resolved) {
   // pre-slice-1 behavior, unchanged.
   const anyChoices = declNames.some((p) => declHasChoices(inputs[p]));
   if (declNames.length >= 2 || anyChoices) {
-    openPortsForm(actionKey, action, resolved);
+    // confirmed:true — we're POST runAction's confirm gate here (runAction
+    // → doRun → _promptMissing); submit must NOT re-stage the gate. If the
+    // user accepted a `y` already, re-asking after they fill the form would
+    // be annoying noise. The invariant is unchanged for the invoke path:
+    // confirm fires once (before the form opens), and submit re-emits do_run
+    // past the gate. See the `[a]` edit-args BUG fix below for the other
+    // half of the lane split.
+    openPortsForm(actionKey, action, resolved, { confirmed: true });
     return true;
   }
 

@@ -607,11 +607,56 @@ function update(model, msg) {
       if (Object.keys(perActionEntry).length > 0) {
         next = { ...next, formHistory: _cachePut(next.formHistory, histKey, perActionEntry) };
       }
-      const closed = withModalMode(next, { fabricFormMode: false }, { fabricForm: { ...CLOSED } });
+      // v0.6.45 round-2 — rollback stamp. On the confirmed:false lane for an
+      // action that has `confirm:`, we've already written one-shot injects
+      // above, but the user may still decline the forthcoming confirm. Stamp
+      // the written addrs on model.modal.onReject so confirm.js's
+      // confirm_reject arm consumes them on decline. Without this, declining
+      // the confirm leaves the typed values as one-shots that the NEXT Enter
+      // invoke resolves against — the user would silently re-attempt their
+      // declined input. Only stamp when BOTH a gate will fire AND an actual
+      // write happened; otherwise the stamp is dead weight that could taint
+      // a later unrelated confirm (confirm.js preserves onReject across
+      // confirm_enter so our stamp survives the run_action → runAction →
+      // confirm_enter trip).
+      const willGate = pending.confirmed !== true
+                       && pending.action && pending.action.confirm;
+      const writtenAddrs = [];
+      if (willGate) {
+        for (const field of f.fields) {
+          if (!field.isModified) continue;
+          // Variadic empty-text skips the inject (fabric-form.js L573); mirror
+          // that skip here so we don't ask the resolver to consume an addr
+          // that was never written.
+          if (field.variadic && tokenize(field.text || '').length === 0) continue;
+          writtenAddrs.push(`${actionKey}.${field.port}`);
+        }
+      }
+      const closedBase = withModalMode(next, { fabricFormMode: false }, { fabricForm: { ...CLOSED } });
+      const closed = (willGate && writtenAddrs.length > 0)
+        ? { ...closedBase, modal: { ...closedBase.modal,
+            onReject: { type: 'msg', msg: { type: 'port_consume_oneshot', ports: writtenAddrs } } } }
+        : closedBase;
       // cancel_effect Cmds first so inflight entries clear before the
-      // do_run → _promptMissing → fabric_form_enter sequence re-fires
-      // initial requests under the same keys.
-      return [closed, [...cancelCmds, { type: 'do_run', actionKey, action: pending.action }]];
+      // run_action/do_run → _promptMissing → fabric_form_enter sequence
+      // re-fires initial requests under the same keys.
+      //
+      // Confirm-gate routing (v0.6.45 BUG fix):
+      //   pending.confirmed === true  → emit `do_run` (bypass the gate —
+      //     the form was opened by _promptMissing POST-gate, so an
+      //     action.confirm already fired. Re-staging would double-confirm.)
+      //   pending.confirmed !== true  → emit `run_action` (which calls
+      //     runAction, which stages confirm_enter when action.confirm is
+      //     set). This is the `[a]` edit-args lane: the form opened
+      //     directly without any gate. Pre-fix, this arm always emitted
+      //     `do_run`, so `[a]` → Enter spawned confirm-gated actions
+      //     silently (BUG v0.6.44).
+      // Keep the pending.action pointer verbatim so a declined confirm
+      // reaches the same action object the form was built from.
+      const runCmd = pending.confirmed === true
+        ? { type: 'do_run',     actionKey, action: pending.action }
+        : { type: 'run_action', actionKey, action: pending.action };
+      return [closed, [...cancelCmds, runCmd]];
     }
     case 'fabric_form_cancel': {
       if (!model.modes.fabricFormMode) return [model, []];

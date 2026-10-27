@@ -57,7 +57,10 @@ function fieldsFor() {
       dependsOn: ['repo'] },
   ];
 }
-const PENDING = { actionKey: 'worktree-add', action: ACTION };
+// confirmed:true — mirrors the _promptMissing open (post-confirm-gate). The
+// `[a]` edit-args path (confirmed:false → run_action) is covered in
+// test-edit-args-confirm-gate.js.
+const PENDING = { actionKey: 'worktree-add', action: ACTION, confirmed: true };
 
 function openForm() {
   const m = freshModel();
@@ -291,7 +294,8 @@ describe('[fabric-form-choices-cmd] dep-blur refetch emits fetch_choices_cmd', (
 //     field before, so pin that Tab/Shift-Tab are harmless no-ops, Enter
 //     submits, and Esc cancels + aborts the in-flight fetch.) ---
 
-const PENDING_1 = { actionKey: 'pick',
+// confirmed:true — same rationale as PENDING above (post-gate mock).
+const PENDING_1 = { actionKey: 'pick', confirmed: true,
   action: { label: 'Pick', type: 'run', script: 'echo $name',
     ports: { in: { name: { type: 'string', required: true,
                            choices_cmd: "printf 'a\\nb\\n'" } } } } };

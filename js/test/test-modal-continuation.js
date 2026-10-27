@@ -189,7 +189,10 @@ describe('[E14] findModalClosure guard', () => {
 // replay. Same shape for fabric-field (the 1-port lane).
 
 describe('[E14] fabric-form — replay-safe open/key/cancel/submit', () => {
-  const PENDING_ACTION = { actionKey: 'provision',
+  // confirmed:true — mirrors a _promptMissing open (post-confirm-gate), so the
+  // submit arm emits do_run. The [a] edit-args open (confirmed:false → run_action)
+  // is covered in test-edit-args-confirm-gate.js.
+  const PENDING_ACTION = { actionKey: 'provision', confirmed: true,
     action: { type: 'run', script: 'provision "$host" "$role"',
       ports: { in: { host: { type: 'string', required: true },
                      role: { type: 'string', required: true, default: 'worker' } } } } };

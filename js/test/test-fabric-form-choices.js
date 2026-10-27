@@ -56,7 +56,10 @@ function fieldsFor() {
       choicesFnRef: 'edit.sections_of', dependsOn: ['file'] },
   ];
 }
-const PENDING = { actionKey: 'edit-section', action: ACTION };
+// confirmed:true — mirrors the _promptMissing open (post-confirm-gate). The
+// `[a]` edit-args path (confirmed:false → run_action) is covered in
+// test-edit-args-confirm-gate.js, so this file's submit tests stay on do_run.
+const PENDING = { actionKey: 'edit-section', action: ACTION, confirmed: true };
 
 function openForm() {
   const m = freshModel();
