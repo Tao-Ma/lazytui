@@ -180,6 +180,34 @@ describe('[form-filter] reducer — picking.filter append / backspace / clear-on
     eq(m.modal.fabricForm.picking.filter, '', 'cleared');
     eq(m.modal.fabricForm.picking.idx, 0, 'idx reset');
   });
+  it('filter buffers while computed.state === "pending" — applies when ok lands (round-2 test-coverage)', () => {
+    // Pre-fix no test exercised typing-while-pending; a plausible mutant
+    // that gated the filter arm on `state === 'ok'` would kill the UX on
+    // slow fetches without any test turning red. Open the popover BEFORE
+    // the resolve, type a filter during pending, resolve, verify the
+    // filter is applied to the new items + idx stays at 0.
+    let m = freshModel();
+    [m] = runtime.update(m, { type: 'fabric_form_enter', fields: fields_fn(),
+      pendingAction: { actionKey: 'edit-section', action: ACTION_FN } });
+    [m] = runtime.update(m, { type: 'fabric_form_focus_next' });
+    [m] = runtime.update(m, { type: 'fabric_form_choices_request', port: 'section', requestId: 1 });
+    [m] = runtime.update(m, { type: 'fabric_form_choices_open', port: 'section' });
+    // State is pending — type the filter now.
+    [m] = runtime.update(m, { type: 'fabric_form_choices_filter', seq: 'b' });
+    [m] = runtime.update(m, { type: 'fabric_form_choices_filter', seq: 'r' });
+    eq(m.modal.fabricForm.picking.filter, 'br', 'filter buffered during pending');
+    // Resolve.
+    [m] = runtime.update(m, { type: 'fabric_form_choices_resolved', port: 'section',
+      requestId: 1, items: ['alpha', 'bravo', 'brass'], labels: null, error: null });
+    eq(m.modal.fabricForm.picking.filter, 'br', 'filter preserved through resolve');
+    eq(m.modal.fabricForm.picking.idx, 0, 'idx stays at 0 (first filtered row)');
+    // Enter must pick the first FILTERED row ("bravo"), not the raw-list [0] ("alpha").
+    const items = m.modal.fabricForm.fields.find((x) => x.port === 'section').computed.items;
+    const { filterChoices: fc } = require('../leaves/ports/choices-filter');
+    const view = fc(items, null, m.modal.fabricForm.picking.filter);
+    eq(view.items[0], 'bravo', 'first filtered row is bravo');
+  });
+
   it('_filter_clear on empty filter is a no-op', () => {
     let m = openWithItems(['intro']);
     [m] = runtime.update(m, { type: 'fabric_form_choices_open', port: 'section' });

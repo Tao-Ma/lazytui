@@ -173,6 +173,39 @@ describe('[form-history] submit writes model.formHistory per-action', () => {
     assert(m.formHistory.entries[HKEY('act.65')], 'act.65 present — MRU added');
   });
 
+  it('LRU across MULTIPLE groups: 64 entries split across 2 groups evict in correct order (round-2 test-coverage)', () => {
+    // Pre-fix test used a single group; a plausible mutant keying `_cachePut`
+    // on actionKey when group=='' would survive. Spread 64 entries across
+    // two groups so the LRU key space EXERCISES the `${group}.${actionKey}`
+    // join; the oldest (g1.act.0) is still the LRU-most.
+    let m = freshModel();
+    for (let i = 0; i < 32; i++) {
+      m.currentGroup = 'g1';
+      m = openForm(m, [field({ port: 'x', text: `g1-${i}`, required: true })],
+                   PENDING(`act.${i}`, 'g1'));
+      m = submit(m);
+    }
+    for (let i = 0; i < 32; i++) {
+      m.currentGroup = 'g2';
+      m = openForm(m, [field({ port: 'x', text: `g2-${i}`, required: true })],
+                   PENDING(`act.${i}`, 'g2'));
+      m = submit(m);
+    }
+    eq(Object.keys(m.formHistory.entries).length, 64, 'at cap, mixed groups');
+    assert(m.formHistory.entries['g1.act.0'], 'g1.act.0 (oldest) still present pre-overflow');
+    assert(m.formHistory.entries['g2.act.31'], 'g2.act.31 (newest) present');
+    // Push one more past the cap — g1.act.0 (LRU-most) evicts; g1.act.1 and
+    // all of g2.* survive.
+    m.currentGroup = 'g2';
+    m = openForm(m, [field({ port: 'x', text: 'overflow', required: true })],
+                 PENDING('act.32', 'g2'));
+    m = submit(m);
+    eq(Object.keys(m.formHistory.entries).length, 64, 'still at cap after overflow');
+    assert(!m.formHistory.entries['g1.act.0'], 'g1.act.0 evicted');
+    assert(m.formHistory.entries['g1.act.1'], 'g1.act.1 still present');
+    assert(m.formHistory.entries['g2.act.32'], 'g2.act.32 added');
+  });
+
   it('resubmit of same actionKey updates in place + promotes MRU', () => {
     let m = freshModel();
     m = openForm(m, [field({ port: 'x', text: 'v1', required: true })], PENDING('other'));
@@ -374,6 +407,65 @@ describe('[form-history] key is `${group}.${actionKey}` — no cross-group leaka
                  PENDING('loose', ''));
     m = submit(m);
     assert(m.formHistory.entries['.loose'], 'empty-group key still writes');
+  });
+});
+
+// ---- [4.6] round-2 — [last] on a settled choices field + remember:false on variadic --
+
+describe('[form-history] [last] + choices field: chip paints [last] when text ≠ default and fetch settled', () => {
+  it('a [last]-seeded choices field with text≠default + state=ok paints [last], not [N choices]', () => {
+    // _chipMarkup: `state === 'ok' && !isModified` returns `[N choices]`,
+    // else falls through. A [last]-seeded choices field (isLast=true,
+    // isModified=true because text≠default) must fall through to the
+    // isLast branch. Pre-fix no test pinned this; a renderer swap that
+    // painted [N choices] above isLast would survive.
+    let m = freshModel();
+    [m] = runtime.update(m, {
+      type: 'fabric_form_enter',
+      fields: [{ port: 'tunnel', text: 'vpn-all', isLast: true, required: true, default: null,
+                 choices: { items: ['vpn-all', 'split-dns'], labels: null, truncated: false } }],
+      pendingAction: PENDING('reissue', 'g'),
+    });
+    const field = m.modal.fabricForm.fields.find((x) => x.port === 'tunnel');
+    assert(field.isLast, 'isLast=true');
+    assert(field.isModified, 'isModified=true (text != null default)');
+    eq(field.computed.state, 'ok', 'literal choices → state=ok from first frame');
+    // Overlay check — chip paints [last] under accent, NOT [2 choices].
+    const { freshOverlayModel, captureOverlay } = require('./_helpers/overlay-capture');
+    const { renderFabricFormOverlay } = require('../overlay/fabric-form');
+    const vm = freshOverlayModel({ cols: 120, rows: 30 });
+    const [mm] = runtime.update(vm, {
+      type: 'fabric_form_enter',
+      fields: [{ port: 'tunnel', text: 'vpn-all', isLast: true, required: true, default: null,
+                 choices: { items: ['vpn-all', 'split-dns'], labels: null, truncated: false } }],
+      pendingAction: PENDING('reissue', 'g'),
+    });
+    const out = captureOverlay(mm, () => renderFabricFormOverlay());
+    assert(out.includes('[last]'), `expected [last] chip; got: ${JSON.stringify(out.slice(0, 500))}`);
+    assert(!out.includes('[2 choices]'), 'must NOT paint [N choices] when isLast is set and isModified');
+  });
+});
+
+describe('[form-history] remember:false on a variadic port — never written, never read', () => {
+  it('a remember:false variadic port submits normally but writes no history slot', () => {
+    let m = freshModel();
+    m = openForm(m, [
+      // Variadic + remember:false — not forbidden by parser; submit tokenizes
+      // text and injects the array, but the raw text is NOT remembered.
+      { port: 'args', text: '--foo bar',  required: false, default: null,
+        isLast: false, remember: false, variadic: true },
+      { port: 'target', text: 'host-x',  required: true, default: null },
+    ]);
+    m = submit(m);
+    const entry = m.formHistory.entries[HKEY()];
+    assert(entry, 'history slot exists for the actionKey');
+    eq(entry.target, 'host-x', 'non-variadic remember:true field IS remembered');
+    assert(!('args' in entry), 'variadic remember:false field is NOT remembered');
+    // Submit still injected the variadic (as an array of tokens).
+    const injs = injectsFor(m, 'session.worktree');
+    assert(injs.args, 'variadic inject still fired on submit');
+    assert(Array.isArray(injs.args.value), 'variadic value is an array');
+    eq(injs.args.value.join(','), '--foo,bar', 'tokens from "--foo bar"');
   });
 });
 
