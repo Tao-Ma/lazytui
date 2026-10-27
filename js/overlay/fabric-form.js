@@ -269,7 +269,16 @@ function renderFabricFormOverlay() {
       // row, so the popover's chrome stays as compact as pre-Brief-2.
       const filterStr = typeof picking.filter === 'string' ? picking.filter : '';
       if (filterStr) {
-        rows.push(`${' '.repeat(leftW)}[dim]/[/][accent]${esc(filterStr)}[/]`);
+        // Pre-release round-2 edge-case review — truncate the filter text
+        // to the available input area so a 100-char filter on a narrow
+        // terminal (COLS=20) can't push the panel-painter's `…`
+        // truncation mid-markup (`[acc…`) and leak a stray `[accent` into
+        // the frame. The chip slot is reserved on data rows but NOT on
+        // the filter row (filter is single-column, left-aligned), so the
+        // budget is the inner width minus the leading left column.
+        const filterBudget = Math.max(1, innerW - leftW);
+        const filterPainted = truncate(esc(filterStr), filterBudget);
+        rows.push(`${' '.repeat(leftW)}[dim]/[/][accent]${filterPainted}[/]`);
       }
       if (!c || c.state === 'pending') {
         rows.push(`${' '.repeat(leftW)}[dim]awaiting choices…[/]`);

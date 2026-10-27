@@ -45,7 +45,11 @@
 function filterChoices(items, labels, filter) {
   if (!Array.isArray(items)) return { items: [], labels: null };
   if (typeof filter !== 'string' || filter === '') {
-    return { items, labels: labels || null };
+    // Pre-release round-2 edge-case review — identity-passthrough preserves
+    // the labels array even when empty (`[]`), so the shape round-trips
+    // without `labels: []` becoming `labels: null`. Only coerce when the
+    // caller actually passed a non-array null-ish.
+    return { items, labels: Array.isArray(labels) ? labels : null };
   }
   const needle = filter.toLowerCase();
   const outItems = [];
