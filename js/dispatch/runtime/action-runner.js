@@ -560,7 +560,7 @@ function openPortsForm(actionKey, action, resolved) {
   const group = m.currentGroup || '';
   const histKey = `${group}.${actionKey}`;
   const histEntries = (m.formHistory && m.formHistory.entries) || {};
-  const lastValues = (actionKey && histEntries[histKey]) || {};
+  const lastValues = (histKey && histEntries[histKey]) || {};
   const fields = declNames.map((port) =>
     _buildFormField(port, inputs[port] || {}, values, lastValues[port]));
   applyMsg({ type: 'fabric_form_enter', fields,

@@ -1133,10 +1133,14 @@ function validateActionPorts(aname, ports, ctx, warnings) {
         // so the author sees it in the parser warning list rather than a
         // crash.
         if ('remember' in pdef && typeof pdef.remember !== 'boolean') {
+          // typeof null === 'object' in JS; call it out as 'null' explicitly
+          // (a `remember: null` warning that just said "got object" would
+          // leave the author wondering which object).
+          const got = pdef.remember === null ? 'null' : typeof pdef.remember;
           if (warnings) {
             warnings.push({
               code: 'port.bad_remember',
-              message: `${pctx}: 'remember' must be a boolean (got ${typeof pdef.remember}) — dropped`,
+              message: `${pctx}: 'remember' must be a boolean (got ${got}) — dropped`,
             });
           }
           delete pdef.remember;
