@@ -626,4 +626,83 @@ describe('[fabric-form] KEY path integration — choices popover (slice 2)', () 
   });
 });
 
+// -------------------------------------------------------------------------
+// [10] fabric_form_enter PAINT-GUARANTEE — v0.6.48 BUG fix.
+//
+// The empty-resubmit cycle on a required-missing-port action:
+//   user Enter on empty field → submit arm closes form + emits do_run →
+//   setImmediate → doRun → _promptMissing → applyMsg(fabric_form_enter)
+// The last applyMsg lands INSIDE a setImmediate, OUTSIDE the input
+// pump's trailing-render span. Pre-fix, no paint was scheduled — the
+// reopened form was invisible but alive (every subsequent key eaten
+// by it). Fix: fabric_form_enter arm emits force_full_repaint + render
+// Cmds so a reopen reliably paints, and the diff cache invalidation
+// prevents the v0.6.33 overlay-shrink class (ghost chrome from a
+// close+reopen pair).
+// -------------------------------------------------------------------------
+
+describe('[10] fabric_form_enter paint-guarantee', () => {
+  it('REGRESSION — fabric_form_enter emits force_full_repaint + render Cmds', () => {
+    let m = freshModel();
+    const [, cmds] = runtime.update(m, { type: 'fabric_form_enter',
+      fields: fieldsFor(), pendingAction: PENDING });
+    const types = cmds.map((c) => c && c.type);
+    assert(types.includes('force_full_repaint'),
+      `fabric_form_enter must emit force_full_repaint (diff-cache invalidation ` +
+      `prevents the v0.6.33 ghost-chrome class on close+reopen). Got: ${JSON.stringify(types)}`);
+    assert(types.includes('render'),
+      `fabric_form_enter must emit render (schedules a paint for the reopen ` +
+      `path which lands inside setImmediate, outside the input pump's trailing ` +
+      `render). Got: ${JSON.stringify(types)}`);
+  });
+
+  it('paint Cmds come BEFORE any initial choices fetch requests', () => {
+    // Not a correctness requirement (both effects are idempotent on the
+    // render-queue level), but a diagnostic one — a reader walking the
+    // cmd list should see "ensure painted" before "fetch choices" so the
+    // intent is obvious.
+    const choicesField = {
+      port: 'section', text: '', required: true, default: null, desc: '',
+      choicesFnRef: 'edit.sections_of', dependsOn: [],
+    };
+    let m = freshModel();
+    const [, cmds] = runtime.update(m, { type: 'fabric_form_enter',
+      fields: [choicesField], pendingAction: PENDING });
+    const types = cmds.map((c) => c && c.type);
+    const paintIdx = Math.min(types.indexOf('force_full_repaint'), types.indexOf('render'));
+    const fetchIdx = types.findIndex((t) => t === 'msg');
+    assert(paintIdx >= 0 && fetchIdx >= 0,
+      `both paint and fetch cmds expected. Got: ${JSON.stringify(types)}`);
+    assert(paintIdx < fetchIdx,
+      `paint cmds should precede fetch cmds. Got: ${JSON.stringify(types)}`);
+  });
+
+  it('empty-resubmit cycle: close + reopen leaves modal state consistent (model side)', () => {
+    // The BUG was a paint race; the MODEL was always right. Pin that
+    // explicitly here so a future refactor of the paint-guarantee doesn't
+    // break the underlying close+reopen cycle. Enter → submit (no modified
+    // fields) → model closes → do_run Cmd stages → simulate the reopen
+    // (what doRun → _promptMissing would do).
+    let m = freshModel();
+    [m] = runtime.update(m, { type: 'fabric_form_enter',
+      fields: [{ port: 'name', text: '', required: true, default: null, desc: '' }],
+      pendingAction: PENDING });
+    assert(m.modes.fabricFormMode, 'open');
+    // Empty submit — no modified fields, so no injects written.
+    const [m2, submitCmds] = runtime.update(m, { type: 'fabric_form_submit' });
+    assert(!m2.modes.fabricFormMode, 'closed after submit');
+    assert(submitCmds.some((c) => c && c.type === 'do_run'),
+      `submit emits do_run (which would reach _promptMissing → re-enter)`);
+    // Simulate the reopen that doRun → _promptMissing would do.
+    const [m3, reopenCmds] = runtime.update(m2, { type: 'fabric_form_enter',
+      fields: [{ port: 'name', text: '', required: true, default: null, desc: '' }],
+      pendingAction: PENDING });
+    assert(m3.modes.fabricFormMode, 'reopened after fabric_form_enter');
+    assert(reopenCmds.some((c) => c && c.type === 'force_full_repaint'),
+      `reopen must emit force_full_repaint — the paint-guarantee invariant`);
+    assert(reopenCmds.some((c) => c && c.type === 'render'),
+      `reopen must emit render — the paint-guarantee invariant`);
+  });
+});
+
 report();

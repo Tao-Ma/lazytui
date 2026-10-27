@@ -63,7 +63,14 @@ describe('[form] fabric_form_enter seeds computed from literal choices directly'
     eq(f.computed.labels, null, 'labels preserved as null (all-scalar)');
     eq(f.computed.error, null);
     eq(f.computed.truncated, false);
-    assert(!cmds || cmds.length === 0, `no fetch Cmd for literal, got: ${JSON.stringify(cmds)}`);
+    // v0.6.48 — the arm always emits force_full_repaint + render Cmds
+    // (reopen paint-guarantee); the invariant here is "no FETCH Cmd for
+    // literal choices", not "zero Cmds total". Narrow the assertion to
+    // the choices-fetch Cmd shape.
+    const fetchCmds = (cmds || []).filter(
+      (c) => c && (c.type === 'fetch_choices' || c.type === 'fetch_choices_cmd'
+                   || (c.type === 'msg' && c.msg && c.msg.type === 'fabric_form_choices_request')));
+    eq(fetchCmds.length, 0, `no fetch Cmd for literal, got: ${JSON.stringify(fetchCmds)}`);
   });
 
   it('labeled map list → labels array survives into computed, items are values', () => {

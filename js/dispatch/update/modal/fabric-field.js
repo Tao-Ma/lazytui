@@ -41,6 +41,14 @@ function update(model, msg) {
       // can re-dispatch the deferred run (which loops to the next missing port
       // or finally runs). ports-pane manual edits leave it null → sticky inject,
       // no cmd on submit (the atomic ports-pane behavior stays unchanged).
+      // v0.6.48 — paint-guarantee on reopen, same as fabric_form_enter's
+      // arm. The 1-port lean-lane path (this file) is reached from the
+      // same `doRun → _promptMissing` setImmediate'd dispatch, so a
+      // close+reopen cycle on an empty resubmit would land this
+      // applyMsg OUTSIDE the input pump's trailing-render span. The
+      // reviewer's class-sweep (v0.6.48 fork) noted the hazard here was
+      // harder to repro (1-port forms resolve on any non-empty submit)
+      // but same class. Fix proactively per [[feedback_fix_the_class_not_the_instance]].
       return [withModalMode(model, { fabricFieldMode: true }, {
         fabricField: {
           paneId: msg.paneId || null,
@@ -48,7 +56,10 @@ function update(model, msg) {
           text: typeof msg.text === 'string' ? msg.text : '',
           pendingAction: msg.pendingAction || null,
         },
-      }), []];
+      }), [
+        { type: 'force_full_repaint' },
+        { type: 'render' },
+      ]];
     }
     case 'fabric_field_key': {
       if (!model.modes.fabricFieldMode) return [model, []];
