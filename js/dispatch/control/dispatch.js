@@ -36,6 +36,7 @@ const modes = require('../../leaves/input/modes');
 const route = require('../../panel/route');
 const mpane = require('../../leaves/wm/pane');
 const { halfProjection } = require('../../leaves/wm/geometry');
+const { filterChoices } = require('../../leaves/ports/choices-filter');
 // getModel is the bottom-layer store (v0.6.5 §1), imported down.
 const { getModel } = require('../../model/store');
 // #D4b — the root-Msg pump (applyMsg) now lives in the runtime loop alongside
@@ -1070,7 +1071,7 @@ const _modeHandlers = {
         const items = (field && field.computed && field.computed.items) || [];
         const labels = (field && field.computed && field.computed.labels) || null;
         const filterStr = typeof f.picking.filter === 'string' ? f.picking.filter : '';
-        const view = require('../../leaves/ports/choices-filter').filterChoices(items, labels, filterStr);
+        const view = filterChoices(items, labels, filterStr);
         const value = view.items[f.picking.idx];
         if (typeof value === 'string') {
           applyMsg({ type: 'fabric_form_choices_pick', port: f.picking.port, value });

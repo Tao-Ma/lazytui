@@ -252,26 +252,36 @@ function init() {
     // reading the off-model hub bus live. Seeded {} (no topic until a consumer
     // pane is placed + its first sample lands).
     metrics: {},
-    // Brief 3 — stale-while-refetch cache for computed port choices. Lives on
-    // the MODEL so WAL replay reconstructs it deterministically (same reason
-    // fetched results are WAL-captured today). Keyed by
+    // Stale-while-refetch cache for computed port choices (v0.6.41 Brief 3,
+    // the dev9 brief train — not to be confused with v0.6.43 Brief 3's
+    // `formHistory` below, which is a sibling cache with a different payload).
+    // Lives on the MODEL so WAL replay reconstructs it deterministically
+    // (same reason fetched results are WAL-captured today). Keyed by
     // `${actionKey}|${port}|${source}|${depsHash}` where `source` is either
     // `fn:<ref>` or `cmd:<cmd>` (dep values in the key keep same-port fetches
     // for different repos / targets apart). LRU-bounded via `cap`; a long
-    // session can't grow it unbounded. See fabric-form.js _choicesCacheGet /
-    // _choicesCachePut. TUI-only: the completion helper is a one-shot process
-    // and has no cache state to carry.
+    // session can't grow it unbounded. See fabric-form.js `_cacheGet` /
+    // `_cachePut` — `_cachePut` is now shared with the formHistory write
+    // below. TUI-only on this side; the shell-completion helper is a
+    // one-shot process and has its own on-disk TTL cache (v0.6.43 commit
+    // `3e130883`, `js/leaves/ports/choices-disk-cache.js`) under
+    // `$XDG_CACHE_HOME/lazytui/complete/` — different lifecycle, same key
+    // format via the shared leaf `js/leaves/ports/choices-cache-key.js` so
+    // the two caches can't drift apart.
     choicesCache: { entries: {}, order: [], cap: 64 },
-    // Brief 3 (v0.6.43) — session-resident "last-submitted values per action"
-    // map, consumed by `_buildFormField` to pre-fill a reopened form with the
-    // user's prior entries ([last] chip). Shape mirrors choicesCache: an LRU
-    // over actionKey → { port: text } written by the pure fabric_form_submit
-    // reducer arm (so WAL replay reconstructs it deterministically; same
-    // argument that already keeps choicesCache replay-safe). Reset by
-    // set_config (the action universe just changed; stale port-key mappings
-    // against a redefined action would surface as mysterious pre-fills under
-    // a chip that reads [last]). Never leaves the model — the resolver (CLI
-    // --exec, completion helper, _resolvePortsForAction) does NOT consult it;
+    // Brief 3 of v0.6.43 — session-resident "last-submitted values per
+    // action" map, consumed by `_buildFormField` to pre-fill a reopened
+    // form with the user's prior entries ([last] chip). Shape mirrors
+    // `choicesCache`: an LRU over `${group}.${actionKey}` → { port: text }
+    // (group-qualified key so same-named actions in different groups do
+    // not share slots), written by the pure fabric_form_submit reducer
+    // arm through the shared `_cachePut` helper (so WAL replay
+    // reconstructs it deterministically; same argument that already keeps
+    // choicesCache replay-safe). Reset by set_config (the action universe
+    // just changed; stale port-key mappings against a redefined action
+    // would surface as mysterious pre-fills under a chip that reads
+    // [last]). Never leaves the model — the resolver (CLI --exec,
+    // completion helper, _resolvePortsForAction) does NOT consult it;
     // it is strictly a UI seed. See js/dispatch/update/modal/fabric-form.js
     // submit arm + js/dispatch/runtime/action-runner.js _buildFormField.
     formHistory: { entries: {}, order: [], cap: 64 },
