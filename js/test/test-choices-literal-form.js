@@ -252,4 +252,36 @@ describe('[form] Brief-1 fix — action-runner lane picks literal-only 1-port ac
   });
 });
 
+// Pre-release review (code fork) — overlay footer-hint drift was the same
+// class as Brief 1. A literal-only focused field must advertise `[space] choices`
+// in the non-picking footer, same as fn/cmd fields.
+describe('[form] overlay footer-hint — literal field focused advertises [space] choices', () => {
+  it('non-picking footer paints `[space] choices` when focused field is literal-only', () => {
+    const m = freshOverlayModel({ cols: 120, rows: 30 });
+    const [after] = runtime.update(m, {
+      type: 'fabric_form_enter',
+      fields: [{ port: 'tunnel', text: '', required: true, default: null,
+                 choices: { items: ['vpn-all', 'split-tunnel'], labels: null, truncated: false } }],
+      pendingAction: { actionKey: 'reissue',
+                       action: { label: 'Reissue', type: 'run', run: 'r {{tunnel}}',
+                                 ports: { in: { tunnel: { type: 'string', required: true } } } } },
+    });
+    const out = captureOverlay(after, () => renderFabricFormOverlay());
+    assert(out.includes('[space] choices'),
+      `expected "[space] choices" hint for literal field; got: ${JSON.stringify(out.slice(0, 500))}`);
+  });
+  it('plain field (no choices channel) does NOT paint `[space] choices`', () => {
+    const m = freshOverlayModel({ cols: 120, rows: 30 });
+    const [after] = runtime.update(m, {
+      type: 'fabric_form_enter',
+      fields: [{ port: 'plain', text: '', required: true, default: null }],
+      pendingAction: { actionKey: 'noop',
+                       action: { label: 'Noop', type: 'run', run: 'n {{plain}}',
+                                 ports: { in: { plain: { type: 'string', required: true } } } } },
+    });
+    const out = captureOverlay(after, () => renderFabricFormOverlay());
+    assert(!out.includes('[space] choices'), 'no choices hint on a plain field');
+  });
+});
+
 report();

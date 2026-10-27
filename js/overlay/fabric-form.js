@@ -393,8 +393,11 @@ function renderFabricFormOverlay() {
     rows.push(`[dim]\\[up/down] move   \\[type] filter   \\[enter] pick   ${escHint}[/]`);
   } else {
     const focused = f.fields[f.focusIdx];
-    const hasChoices = focused && (focused.choicesFnRef || focused.choicesCmd);
-    const spaceHint = hasChoices ? '   \\[space] choices' : '';
+    // Pre-release review (code fork) — same drift class as Brief 1: this hint
+    // site was missed when `hasChoices` was centralized. Read the single-source
+    // flag so a literal-only focused field advertises `[space] choices` too.
+    // The flag is stamped by _normalize via js/leaves/ports/has-choices.js.
+    const spaceHint = (focused && focused.hasChoices) ? '   \\[space] choices' : '';
     rows.push(`[dim]\\[tab] next   \\[shift-tab] prev${spaceHint}   \\[enter] run   \\[esc] cancel[/]`);
   }
 

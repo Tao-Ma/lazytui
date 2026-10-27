@@ -547,12 +547,24 @@ function openPortsForm(actionKey, action, resolved) {
   // (openPortsForm → applyMsg) purely data; the WAL still carries the
   // raw { port, text, isLast, remember } fields that _normalize will re-
   // derive chips from, so a replayed session produces the same frame.
-  const histEntries = (getModel().formHistory && getModel().formHistory.entries) || {};
-  const lastValues = (actionKey && histEntries[actionKey]) || {};
+  //
+  // Pre-release review (code fork) — the history key MUST include the group,
+  // because every other per-run slot (`fabric.injects[group][addr]`) is
+  // group-scoped. Two groups with the same action name (two environments
+  // both named `deploy`) would otherwise silently share their [last] slots,
+  // and reopening in group B would pre-fill with group A's text under a
+  // [last] chip. Group is stamped onto `pending.group` so the submit arm
+  // writes under the SAME key the open arm read from, even if the user
+  // somehow switches groups mid-flow (modal blocks it today — defense).
+  const m = getModel();
+  const group = m.currentGroup || '';
+  const histKey = `${group}.${actionKey}`;
+  const histEntries = (m.formHistory && m.formHistory.entries) || {};
+  const lastValues = (actionKey && histEntries[histKey]) || {};
   const fields = declNames.map((port) =>
     _buildFormField(port, inputs[port] || {}, values, lastValues[port]));
   applyMsg({ type: 'fabric_form_enter', fields,
-             pendingAction: { actionKey, action } });
+             pendingAction: { actionKey, action, group } });
 }
 
 function _promptMissing(actionKey, action, resolved) {

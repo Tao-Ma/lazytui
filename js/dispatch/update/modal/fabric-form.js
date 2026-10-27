@@ -172,6 +172,13 @@ function _cachePut(cache, key, payload) {
 // cut lands wherever they stopped reading. No special handling needed.
 const MAX_FIELD_TEXT = 8192;
 
+// Brief 2 — hard upper bound on picking.filter length. Filter is a popover
+// needle, not a field value; 128 code units is already past any plausible
+// label a port could expose, and the cap stops a paste or a stuck key from
+// inflating the WAL (every char rides the WAL as a fabric_form_choices_filter
+// Msg). Enforced POST-concat so a multi-char seq can't bypass a pre-check.
+const MAX_FILTER_LEN = 128;
+
 // Classify a (text, default) pair into the chip flags the submit path reads.
 // `def` is the declared default (string or null); `text` is the current value.
 function _chip(text, def) {
@@ -580,22 +587,25 @@ function update(model, msg) {
       //       NOT written (the default already carries the information;
       //       writing would just pin the current default against a future
       //       decl change).
-      // One LRU entry per actionKey — reopening another action does not
-      // evict this one until the cap of 64 actionKeys is reached.
+      // One LRU entry per (group, actionKey) — reopening another action
+      // does not evict this one until the cap of 64 entries is reached.
       // _cachePut is pure (returns a new object), so the formHistory write
       // stays replay-safe (same reason the choicesCache LRU does).
+      //
+      // Pre-release review (code fork) — key is `${group}.${actionKey}` to
+      // match the openPortsForm read side. Group comes off `pending.group`
+      // (stamped at open time) so the submit writes the same key the open
+      // read from, even if currentGroup churns between the two.
       const perActionEntry = {};
       for (const field of f.fields) {
         if (field.remember === false) continue;
         if (!field.isModified && !field.text) continue;
         perActionEntry[field.port] = field.text || '';
       }
-      let nextHistory = next.formHistory;
+      const histGroup = (pending && typeof pending.group === 'string') ? pending.group : '';
+      const histKey = `${histGroup}.${actionKey}`;
       if (Object.keys(perActionEntry).length > 0) {
-        nextHistory = _cachePut(next.formHistory, actionKey, perActionEntry);
-      }
-      if (nextHistory !== next.formHistory) {
-        next = { ...next, formHistory: nextHistory };
+        next = { ...next, formHistory: _cachePut(next.formHistory, histKey, perActionEntry) };
       }
       const closed = withModalMode(next, { fabricFormMode: false }, { fabricForm: { ...CLOSED } });
       // cancel_effect Cmds first so inflight entries clear before the
@@ -946,11 +956,20 @@ function update(model, msg) {
         if (cur.length === 0) return [model, []];
         next = cur.slice(0, -1);
       } else if (typeof msg.seq === 'string' && msg.seq.length > 0 && !/[\x00-\x1f\x7f]/.test(msg.seq)) {
-        // Cap the filter at a sane length — a 128-char filter is already
-        // past any plausible popover list, and this stops a stuck-key or
-        // paste event from inflating the WAL.
-        if (cur.length >= 128) return [model, []];
-        next = cur + msg.seq;
+        // Cap the filter at MAX_FILTER_LEN code units — anything past that
+        // is a stuck key or an accidental paste, not a reasonable needle.
+        // Pre-release review (code fork): the pre-concat guard was bypassable
+        // by a long paste (seq is a multi-char string on `key:'paste'`), so
+        // cur=127 + a 100-char paste yielded next=227. CLAMP POST-CONCAT so
+        // the cap is enforced regardless of per-event seq length, and apply
+        // the same surrogate-split guard the field-key arm uses so a cap
+        // landing on a HIGH surrogate steps back one unit (fabric_form_key
+        // L400 — same hazard class).
+        next = (cur + msg.seq).slice(0, MAX_FILTER_LEN);
+        if (next.length > 0) {
+          const lastCU = next.charCodeAt(next.length - 1);
+          if (lastCU >= 0xD800 && lastCU <= 0xDBFF) next = next.slice(0, -1);
+        }
       } else {
         return [model, []];
       }

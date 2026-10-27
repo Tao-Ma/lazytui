@@ -128,6 +128,40 @@ describe('[form-filter] reducer — picking.filter append / backspace / clear-on
     const [after] = runtime.update(m, { type: 'fabric_form_choices_filter', seq: '\x7f' });
     eq(after, m, 'identity-preserving no-op (same ref)');
   });
+  it('multi-char seq (paste) is clamped POST-concat at MAX_FILTER_LEN=128 — pre-release fix', () => {
+    // The pre-check `cur.length >= MAX` was bypassable by a long multi-char
+    // seq (dispatch.js's printable branch forwards paste bytes as one Msg):
+    // cur=127 + "aaaa…" (100 chars) → next=227. Clamp POST-concat fixes it.
+    let m = openWithItems(['x']);
+    [m] = runtime.update(m, { type: 'fabric_form_choices_open', port: 'section' });
+    // Prime to length 127 with one printable at a time.
+    for (let i = 0; i < 127; i++) {
+      [m] = runtime.update(m, { type: 'fabric_form_choices_filter', seq: 'a' });
+    }
+    eq(m.modal.fabricForm.picking.filter.length, 127, 'primed to 127');
+    // Paste 100 chars — pre-fix this would land at 227; post-fix clamps to 128.
+    [m] = runtime.update(m, { type: 'fabric_form_choices_filter', seq: 'z'.repeat(100) });
+    eq(m.modal.fabricForm.picking.filter.length, 128, 'clamped POST-concat');
+    assert(m.modal.fabricForm.picking.filter.endsWith('z'),
+      'the one `z` that fit landed at the tail');
+  });
+  it('paste cap landing on a HIGH surrogate steps back one unit (no lone surrogate)', () => {
+    let m = openWithItems(['x']);
+    [m] = runtime.update(m, { type: 'fabric_form_choices_open', port: 'section' });
+    // Prime to length 127.
+    for (let i = 0; i < 127; i++) {
+      [m] = runtime.update(m, { type: 'fabric_form_choices_filter', seq: 'a' });
+    }
+    // Paste two emoji (surrogate pairs, 2 UTF-16 units each). Cap at 128
+    // would otherwise cut between HIGH + LOW of the first emoji, leaving a
+    // lone high surrogate at the tail.
+    [m] = runtime.update(m, { type: 'fabric_form_choices_filter', seq: '\u{1F600}\u{1F600}' });
+    const filter = m.modal.fabricForm.picking.filter;
+    assert(filter.length <= 128, `within cap, got ${filter.length}`);
+    const last = filter.charCodeAt(filter.length - 1);
+    assert(!(last >= 0xD800 && last <= 0xDBFF),
+      `tail must not be a lone HIGH surrogate (got 0x${last.toString(16)})`);
+  });
   it('control chars (Tab, Enter, Esc byte) are no-ops on the filter arm', () => {
     let m = openWithItems(['intro']);
     [m] = runtime.update(m, { type: 'fabric_form_choices_open', port: 'section' });

@@ -57,12 +57,17 @@ function field(opts) {
   };
 }
 
-const PENDING = (actionKey = 'session.worktree') => ({
+const PENDING = (actionKey = 'session.worktree', group = 'g') => ({
   actionKey,
+  group,                                                    // stamped by openPortsForm in prod
   action: { label: 'wt', type: 'run', run: 'git worktree add {{dir}} {{branch}}',
             ports: { in: { dir: { type: 'string', required: true },
                            branch: { type: 'string', required: true } } } },
 });
+
+// Pre-release review (code fork) — formHistory keys are `${group}.${actionKey}`
+// so same-named actions in different groups cannot clobber each other.
+const HKEY = (actionKey = 'session.worktree', group = 'g') => `${group}.${actionKey}`;
 
 function openForm(m, fields, pending) {
   const [next] = runtime.update(m, { type: 'fabric_form_enter',
@@ -94,12 +99,12 @@ describe('[form-history] submit writes model.formHistory per-action', () => {
       field({ port: 'branch', text: 'feature/x',   required: true }),
     ]);
     m = submit(m);
-    const entry = m.formHistory.entries['session.worktree'];
+    const entry = m.formHistory.entries[HKEY()];
     assert(entry, 'actionKey landed in formHistory');
     eq(entry.dir, '/srv/repo', 'dir remembered');
     eq(entry.branch, 'feature/x', 'branch remembered');
     const order = m.formHistory.order;
-    eq(order[order.length - 1], 'session.worktree', 'MRU-promoted');
+    eq(order[order.length - 1], HKEY(), 'MRU-promoted');
   });
 
   it('an unmodified non-empty field (text equals default) IS remembered — brief: "fields left at a non-empty value"', () => {
@@ -109,7 +114,7 @@ describe('[form-history] submit writes model.formHistory per-action', () => {
       field({ port: 'dir',    text: '/srv', required: true }),
     ]);
     m = submit(m);
-    const entry = m.formHistory.entries['session.worktree'];
+    const entry = m.formHistory.entries[HKEY()];
     assert(entry, 'actionKey present');
     eq(entry.branch, 'main', 'default-equal non-empty IS remembered (pins memory against future default changes)');
     eq(entry.dir, '/srv', 'and dir');
@@ -122,7 +127,7 @@ describe('[form-history] submit writes model.formHistory per-action', () => {
       field({ port: 'dir',   text: '/srv', required: true }),
     ]);
     m = submit(m);
-    const entry = m.formHistory.entries['session.worktree'];
+    const entry = m.formHistory.entries[HKEY()];
     assert(entry, 'actionKey present');
     assert(!('maybe' in entry), 'empty-no-default: skipped');
     eq(entry.dir, '/srv', 'other field remembered');
@@ -135,7 +140,7 @@ describe('[form-history] submit writes model.formHistory per-action', () => {
       field({ port: 'secret', text: 'p@ssw0rd',   required: true, remember: false }),
     ]);
     m = submit(m);
-    const entry = m.formHistory.entries['session.worktree'];
+    const entry = m.formHistory.entries[HKEY()];
     assert(entry, 'something landed');
     eq(entry.dir, '/srv/repo', 'dir remembered');
     assert(!('secret' in entry), 'secret NOT remembered — remember:false honored');
@@ -148,7 +153,7 @@ describe('[form-history] submit writes model.formHistory per-action', () => {
       field({ port: 'empty',  text: '',         required: false, default: null }),
     ]);
     m = submit(m);
-    assert(!m.formHistory.entries['session.worktree'],
+    assert(!m.formHistory.entries[HKEY()],
       'actionKey absent — no persistent empty slot');
     eq(m.formHistory.order.length, 0, 'order untouched');
   });
@@ -160,12 +165,12 @@ describe('[form-history] submit writes model.formHistory per-action', () => {
       m = submit(m);
     }
     eq(Object.keys(m.formHistory.entries).length, 64, 'at cap');
-    assert(m.formHistory.entries['act.0'], 'oldest still present pre-overflow');
+    assert(m.formHistory.entries[HKEY('act.0')], 'oldest still present pre-overflow');
     m = openForm(m, [field({ port: 'x', text: 'new', required: true })], PENDING('act.65'));
     m = submit(m);
     eq(Object.keys(m.formHistory.entries).length, 64, 'still at cap after overflow');
-    assert(!m.formHistory.entries['act.0'], 'act.0 evicted — LRU-most dropped');
-    assert(m.formHistory.entries['act.65'], 'act.65 present — MRU added');
+    assert(!m.formHistory.entries[HKEY('act.0')], 'act.0 evicted — LRU-most dropped');
+    assert(m.formHistory.entries[HKEY('act.65')], 'act.65 present — MRU added');
   });
 
   it('resubmit of same actionKey updates in place + promotes MRU', () => {
@@ -174,9 +179,9 @@ describe('[form-history] submit writes model.formHistory per-action', () => {
     m = submit(m);
     m = openForm(m, [field({ port: 'x', text: 'v2', required: true })]);
     m = submit(m);
-    eq(m.formHistory.entries['session.worktree'].x, 'v2', 'overwritten');
+    eq(m.formHistory.entries[HKEY()].x, 'v2', 'overwritten');
     const order = m.formHistory.order;
-    eq(order[order.length - 1], 'session.worktree', 'MRU is session.worktree');
+    eq(order[order.length - 1], HKEY(), 'MRU is group-qualified session.worktree');
     eq(Object.keys(m.formHistory.entries).length, 2, 'both kept');
   });
 });
@@ -258,8 +263,10 @@ describe('[form-history] openPortsForm precedence resolved > last > default > em
   function openFor(historyEntry, resolvedValues, inputs) {
     const m = runtime.init();
     m.currentGroup = 'g';
-    m.formHistory = { entries: historyEntry ? { 'act.k': historyEntry } : {},
-                      order: historyEntry ? ['act.k'] : [], cap: 64 };
+    // Pre-release fix — key is `${group}.${actionKey}`.
+    const key = 'g.act.k';
+    m.formHistory = { entries: historyEntry ? { [key]: historyEntry } : {},
+                      order: historyEntry ? [key] : [], cap: 64 };
     store.setModel(m);
     actionRunner.openPortsForm('act.k',
       { ports: { in: inputs } },
@@ -328,12 +335,45 @@ describe('[form-history] set_config clears formHistory', () => {
     let m = freshModel();
     m = openForm(m, [field({ port: 'dir', text: '/srv/repo', required: true })]);
     m = submit(m);
-    assert(m.formHistory.entries['session.worktree'], 'pre-swap entry present');
+    assert(m.formHistory.entries[HKEY()], 'pre-swap entry present');
     const [after] = runtime.update(m, { type: 'set_config',
       config: { groups: {}, project_dir: '.', theme: 'monokai', register: {}, files: [], plugins: {} } });
     eq(Object.keys(after.formHistory.entries).length, 0, 'entries cleared');
     eq(after.formHistory.order.length, 0, 'order cleared');
     eq(after.formHistory.cap, 64, 'cap preserved');
+  });
+});
+
+// ---- [4.5] Pre-release — formHistory is group-scoped --------------------
+
+describe('[form-history] key is `${group}.${actionKey}` — no cross-group leakage', () => {
+  it('same actionKey in two groups does NOT share history slots', () => {
+    let m = freshModel();
+    // Group g1: submit action `deploy` with dir=/srv/prod
+    m.currentGroup = 'g1';
+    m = openForm(m, [field({ port: 'dir', text: '/srv/prod', required: true })],
+                 PENDING('deploy', 'g1'));
+    m = submit(m);
+    // Switch group, submit same actionKey with different values.
+    m.currentGroup = 'g2';
+    m = openForm(m, [field({ port: 'dir', text: '/srv/stage', required: true })],
+                 PENDING('deploy', 'g2'));
+    m = submit(m);
+    const e1 = m.formHistory.entries['g1.deploy'];
+    const e2 = m.formHistory.entries['g2.deploy'];
+    assert(e1 && e2, 'both group-qualified entries present');
+    eq(e1.dir, '/srv/prod', 'g1.deploy keeps its own value');
+    eq(e2.dir, '/srv/stage', 'g2.deploy keeps its own value — NO cross-group clobber');
+    assert(!m.formHistory.entries['deploy'],
+      'unqualified "deploy" key must NOT exist (pre-fix bug)');
+  });
+  it('empty group stamps the key as `.actionKey` (no crash)', () => {
+    let m = freshModel();
+    m.currentGroup = '';
+    m = openForm(m, [field({ port: 'x', text: 'v', required: true })],
+                 PENDING('loose', ''));
+    m = submit(m);
+    assert(m.formHistory.entries['.loose'], 'empty-group key still writes');
   });
 });
 
