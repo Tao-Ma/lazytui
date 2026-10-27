@@ -53,10 +53,19 @@ function runAction(actionKey, action, args = []) {
     // Stage the confirm through the reducer — `y` re-emits the do_run Cmd
     // (a DATA descriptor, not a closure). Lazy require breaks the
     // dispatch↔actions load cycle; this is "an effect dispatches a Msg".
+    //
+    // v0.6.46 — stamp `group` on the cmd so the confirm overlay's preview
+    // block (overlay/confirm.js → leaves/ports/resolve-for-render) reads
+    // injects from the STAGED group, not model.currentGroup at paint
+    // time. The user can navigate groups while the confirm is up; the
+    // overlay must still preview the action's own group. Read `group`
+    // ONCE here (post-dispatchMsg above — captures any late action-arm
+    // group switch) so it stays stable across the overlay's lifetime.
+    const stagedGroup = getModel().currentGroup || '';
     require('../control/dispatch').applyMsg({
       type: 'confirm_enter',
       message: action.confirm,
-      cmd: { type: 'do_run', actionKey, action, args },
+      cmd: { type: 'do_run', actionKey, action, args, group: stagedGroup },
     });
     return;
   }

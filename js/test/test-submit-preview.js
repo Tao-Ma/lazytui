@@ -36,6 +36,11 @@
 const { describe, it, eq, assert, report } = require('./test-runner');
 const runtime = require('../app/runtime');
 const store = require('../model/store');
+const { getModel } = store;
+// v0.6.46 — [4] inject-reading tests + [7] end-to-end tests resolve ports
+// through `leaves/ports/resolve-for-render`, which calls fabricPorts.listWires().
+// Wire the fabric host once at module load so `h()` doesn't throw.
+require('../dispatch/runtime/host-wiring').wireFabricHost();
 const {
   formatPreview, formatCompactFooter, SENSITIVE_MASK,
 } = require('../leaves/ports/submit-preview');
@@ -264,12 +269,13 @@ describe('[4] confirm overlay — preview block visibility', () => {
   function openConfirmWithStagedDoRun(action, actionKey) {
     const m = freshOverlayModel({ cols: 120, rows: 30 });
     m.currentGroup = 'g';
-    // Open the confirm modal with a staged do_run cmd — the shape
-    // runAction stages for an action with `confirm:`.
+    // v0.6.46 — runAction stamps `group` on the cmd so the overlay reads
+    // injects from the staged group (not model.currentGroup). Match the
+    // real shape so these tests exercise the actual production path.
     const [m2] = runtime.update(m, {
       type: 'confirm_enter',
       message: 'Are you sure?',
-      cmd: { type: 'do_run', actionKey, action, args: [] },
+      cmd: { type: 'do_run', actionKey, action, args: [], group: 'g' },
     });
     store.setModel(m2);
     return m2;
@@ -335,10 +341,15 @@ describe('[4] confirm overlay — preview block visibility', () => {
       } },
     };
     const m = openConfirmWithStagedDoRun(action, 'rotate-ca');
-    // Pre-populate fabric.injects with the sensitive value — the
-    // confirm overlay reads injects via `model.fabric.injects[
-    // `${actionKey}.${portName}`]`.
-    m.fabric = { injects: { 'rotate-ca.passphrase': 'hunter2-raw-leaked' } };
+    // v0.6.46 — injects are GROUP-KEYED (`{[group]: {[addr]: {value,
+    // at, oneShot?}}}`), not flat `{[addr]: value}`. Pre-fix, this test
+    // (and the broken overlay reader) both used the wrong shape and the
+    // test still "passed" because the sensitive mask fires before any
+    // value lookup. Writing the correct shape now EXERCISES the inject-
+    // read path end-to-end — the mask must still fire, AND the raw
+    // value must never appear.
+    m.fabric = { injects: { g: { 'rotate-ca.passphrase':
+      { value: 'hunter2-raw-leaked', at: 0, oneShot: true } } } };
     store.setModel(m);
     const out = captureOverlay(m, () => renderConfirmOverlay());
     assert(out.includes(`passphrase=${SENSITIVE_MASK}`), 'sensitive mask applied');
@@ -598,6 +609,217 @@ describe('[6] preview is formatted at render time, never carried by a Msg', () =
              !src.includes("require('../../../leaves/ports/submit-preview')"),
         `reducer file ${path.basename(file)} must not import submit-preview (format at render time)`);
     }
+  });
+});
+
+// -------------------------------------------------------------------------
+// [7] confirm preview — END-TO-END through the REAL submit → confirm pipeline.
+//
+// This section exists because v0.6.44's [4] tests above fed `formatPreview`
+// hand-built `boundPorts` — which is how a group-key resolver bug shipped:
+// the overlay's inline mini-resolver read `model.fabric.injects[addr]` at the
+// top level, but injects live at `model.fabric.injects[group][addr].value`.
+// Every port rendered `<pending>` on the real [a]-submit → confirm flow, even
+// when the form had just collected a value. The leaf tests couldn't catch it
+// because they bypassed the resolver entirely.
+//
+// The regression surface here is: start from a real action, drive
+// `openPortsForm` + `fabric_form_submit` through the real applyMsg loop,
+// then run `renderConfirmOverlay` and assert on the PAINTED text. Pins:
+//   - A form-collected value shows resolved + [inject] tag, not <pending>
+//   - Byte-equal to what the spawn's env binding will receive on accept
+//   - Group stamp isolates: a mid-confirm group switch doesn't change
+//     the preview (the overlay reads the stamped group, not currentGroup)
+//   - Variadic port: items listed, not <pending> / not `[object Object]`
+//   - Decline-rollback (v0.6.45 round-2): declined [a] → re-invoke shows
+//     <pending> again (one-shots were consumed by confirm_reject)
+// -------------------------------------------------------------------------
+
+describe('[7] confirm preview — END-TO-END through real submit + staging', () => {
+  const sm = require('./smoke/_helpers/smoke');
+  const runner = require('../dispatch/runtime/action-runner');
+  const { applyMsg } = require('../dispatch/control/dispatch');
+  const { wireFabricHost } = require('../dispatch/runtime/host-wiring');
+  wireFabricHost();
+
+  const ROTATE_CA = {
+    type: 'run',
+    script: 'exec ./rotate-ca.sh "$force" ${passphrase:?required}',
+    confirm: 'Really revoke the CA?',
+    ports: { in: {
+      force:      { type: 'string', required: true },
+      passphrase: { type: 'string', required: true, sensitive: true, remember: false },
+      server_cn:  { type: 'string', required: false },
+    } },
+  };
+
+  function openFormFillSubmitStageConfirm(action, actionKey, fills) {
+    // Open [a] → fill fields → submit (writes injects + stamps onReject +
+    // emits run_action) → simulate the run_action effect's call into
+    // runAction by directly dispatching confirm_enter the way runAction
+    // would (preserves the staged group + cmd shape).
+    sm.bootFresh();
+    if (getModel().modal.onReject) getModel().modal.onReject = null;
+    // bootFresh doesn't clear model.fabric.injects — a prior test's
+    // one-shot injects would otherwise leak as pre-fill values on the
+    // new form's field texts, and typing on top would concatenate.
+    // Same hazard with formHistory (last-used precedence inside
+    // _buildFormField reads `${group}.${actionKey}` across scenarios).
+    const m0 = getModel();
+    if (m0.fabric) m0.fabric.injects = {};
+    m0.formHistory = { entries: {}, order: [], cap: 64 };
+    const resolved = runner._resolvePortsForAction(actionKey, action, getModel());
+    runner.openPortsForm(actionKey, action, resolved, { confirmed: false });
+    for (const [port, text] of Object.entries(fills)) {
+      // Focus the field, then type.
+      let f = getModel().modal.fabricForm;
+      let idx = f.fields.findIndex((x) => x.port === port);
+      while (f.focusIdx !== idx) {
+        applyMsg({ type: 'fabric_form_focus_next' });
+        f = getModel().modal.fabricForm;
+      }
+      for (const c of text) applyMsg({ type: 'fabric_form_key', key: c, seq: c });
+    }
+    applyMsg({ type: 'fabric_form_submit' });
+    // Simulate what runAction does on seeing action.confirm: stage confirm_enter
+    // with cmd={type:'do_run', actionKey, action, args, group:currentGroup}.
+    const group = getModel().currentGroup || '';
+    applyMsg({
+      type: 'confirm_enter',
+      message: action.confirm || 'Are you sure?',
+      cmd: { type: 'do_run', actionKey, action, args: [], group },
+    });
+    return getModel();
+  }
+
+  it('REGRESSION — form-collected value appears RESOLVED in the preview, not <pending>', () => {
+    const m = openFormFillSubmitStageConfirm(ROTATE_CA, 'rotate-ca',
+      { force: '--refused', server_cn: 'ca.example.org' });
+    const out = captureOverlay(m, () => renderConfirmOverlay());
+    assert(out.includes('force=--refused'),
+      `BUG regression: force must show resolved value, not <pending>. Got overlay:\n${out}`);
+    assert(out.includes('server_cn=ca.example.org'),
+      `server_cn must show resolved value, not <pending>. Got overlay:\n${out}`);
+    assert(!out.includes('force=<pending>'),
+      `force must NOT be <pending> after a form submit wrote the inject`);
+    assert(!out.includes('server_cn=<pending>'),
+      `server_cn must NOT be <pending> after a form submit wrote the inject`);
+    // Sensitive stays masked regardless of fill state.
+    assert(out.includes(`passphrase=${SENSITIVE_MASK}`),
+      `passphrase sensitive mask still applied`);
+  });
+
+  it('BYTE-EQUALITY — the preview value matches what the spawn would env-bind', () => {
+    const m = openFormFillSubmitStageConfirm(ROTATE_CA, 'rotate-ca',
+      { force: '--refused' });
+    // Resolve exactly the way the spawn's doRun path does, in the STAGED
+    // group (not model.currentGroup, which is where it currently sits
+    // anyway — the invariant is "same group as the staged confirm").
+    const spawnResolved = runner._resolvePortsForAction('rotate-ca', ROTATE_CA, m);
+    eq(spawnResolved.values.force, '--refused',
+      `spawn-side resolver finds the inject`);
+    const out = captureOverlay(m, () => renderConfirmOverlay());
+    // The preview text contains `force=--refused` iff the preview reader
+    // found the SAME value the spawn would. Byte-equality by substring
+    // (the preview's row shape `  force=--refused  [inject]` is one line).
+    assert(out.includes('force=--refused'),
+      `preview value must byte-equal the spawn's env binding`);
+  });
+
+  it('GROUP STAMP — a mid-confirm group switch does NOT change the preview', () => {
+    const m = openFormFillSubmitStageConfirm(ROTATE_CA, 'rotate-ca',
+      { force: '--refused' });
+    // Simulate the user navigating to a different group mid-confirm.
+    const m2 = { ...m, currentGroup: 'completely-other-group' };
+    store.setModel(m2);
+    const out = captureOverlay(m2, () => renderConfirmOverlay());
+    assert(out.includes('force=--refused'),
+      `preview must read the STAGED group (continuation.group='g'), ` +
+      `not the live currentGroup='completely-other-group' which has no injects`);
+  });
+
+  it('VARIADIC — the preview lists items, not <pending> and not [object Object]', () => {
+    const VARIADIC_ACTION = {
+      type: 'run',
+      script: 'exec ssh "$host" -- "$@"',
+      confirm: 'Run on host?',
+      ports: { in: {
+        host: { type: 'string', required: true },
+        cmd:  { type: 'cmdline', variadic: true, required: true },
+      } },
+    };
+    const m = openFormFillSubmitStageConfirm(VARIADIC_ACTION, 'ssh',
+      { host: 'h.example', cmd: 'ls -la /tmp' });
+    const out = captureOverlay(m, () => renderConfirmOverlay());
+    assert(out.includes('host=h.example'),
+      `host scalar resolved`);
+    assert(!out.includes('[object Object]'),
+      `BUG regression: raw record object must never appear in the preview. Got:\n${out}`);
+    // Variadic items appear as a labeled list — exact format comes from
+    // formatPreview's variadic branch. Pin the three items are visible.
+    assert(out.includes('ls') && out.includes('-la') && out.includes('/tmp'),
+      `variadic items listed in preview, not <pending>. Got:\n${out}`);
+  });
+
+  it('DECLINE-ROLLBACK LAYER — after a declined [a] confirm, re-invoke shows <pending>', () => {
+    // Fill + submit + confirm_enter + reject.
+    openFormFillSubmitStageConfirm(ROTATE_CA, 'rotate-ca',
+      { force: '--refused' });
+    applyMsg({ type: 'confirm_reject' });
+    // After reject the v0.6.45 round-2 rollback fires port_consume_oneshot
+    // on the written addrs, so the injects should be gone.
+    const g = getModel().currentGroup;
+    const injects = (getModel().fabric && getModel().fabric.injects
+                     && getModel().fabric.injects[g]) || {};
+    assert(!injects['rotate-ca.force'],
+      `precondition: round-2 rollback consumed the inject on reject`);
+    // Now simulate re-invoke → confirm stage: no form, just stage the
+    // confirm the invoke path would (runAction with action.confirm set
+    // but no form opened).
+    applyMsg({
+      type: 'confirm_enter',
+      message: ROTATE_CA.confirm,
+      cmd: { type: 'do_run', actionKey: 'rotate-ca', action: ROTATE_CA, args: [], group: g },
+    });
+    const out = captureOverlay(getModel(), () => renderConfirmOverlay());
+    assert(out.includes('force=<pending>'),
+      `BUG: the rolled-back value must now show <pending> again on re-invoke. ` +
+      `Pre-fix (round-1 of this fix) the preview wrongly showed the declined ` +
+      `value. Got overlay:\n${out}`);
+  });
+
+  it('empty staged group falls through to <pending> (safe failure mode)', () => {
+    // A future caller that forgets to stamp group on the cmd. The leaf
+    // treats an empty-string group as "no injects known" and renders
+    // <pending> — safer than reading currentGroup (which could leak a
+    // different group's injects into the preview).
+    sm.bootFresh();
+    if (getModel().modal.onReject) getModel().modal.onReject = null;
+    const action = {
+      type: 'run', script: 'echo $env',
+      confirm: 'ok?',
+      ports: { in: { env: { type: 'string', required: true } } },
+    };
+    // Write an inject under group 'g'.
+    const m0 = getModel();
+    m0.fabric = m0.fabric || { injects: {}, output: {} };
+    m0.fabric.injects = m0.fabric.injects || {};
+    m0.fabric.injects.g = m0.fabric.injects.g || {};
+    m0.fabric.injects.g['x.env'] = { value: 'leaked', at: 0, oneShot: true };
+    store.setModel(m0);
+    // Stage confirm WITHOUT a group field on the cmd (simulating a stale
+    // or buggy caller).
+    applyMsg({
+      type: 'confirm_enter',
+      message: 'ok?',
+      cmd: { type: 'do_run', actionKey: 'x', action, args: [] },   // no group
+    });
+    const out = captureOverlay(getModel(), () => renderConfirmOverlay());
+    assert(out.includes('env=<pending>'),
+      `empty staged group must NOT leak another group's injects into the preview. ` +
+      `Got overlay:\n${out}`);
+    assert(!out.includes('env=leaked'),
+      `leaked value from group 'g' must not appear`);
   });
 });
 

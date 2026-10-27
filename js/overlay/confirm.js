@@ -23,6 +23,7 @@ const { getModel } = require('../model/store');
 const { esc } = require('../leaves/text/ansi');
 const { renderOverlay } = require('../leaves/render/draw');
 const { formatPreview } = require('../leaves/ports/submit-preview');
+const { resolveForRender } = require('../leaves/ports/resolve-for-render');
 
 // Pre-release round-2 WAL-fidelity note: the preview block below reads
 // `model.modal.continuation.cmd.action` — the whole action config
@@ -54,24 +55,42 @@ function renderConfirmOverlay() {
   const portsIn = cont && cont.type === 'do_run' && cont.action
                   && cont.action.ports && cont.action.ports.in;
   if (portsIn && Object.keys(portsIn).length > 0) {
-    const injects = (model.fabric && model.fabric.injects) || {};
+    // v0.6.46 — route through the SHARED resolver the spawn path uses
+    // (leaves/ports/resolve-for-render → fabric/resolve.resolveInputs).
+    // Pre-fix (v0.6.44 Brief 3), this block inlined a mini-resolver that
+    // read `model.fabric.injects[addr]` at the TOP level — but injects
+    // are GROUP-KEYED (`{[group]: {[addr]: {value, at, oneShot?}}}`), so
+    // the top-level read missed every inject and every port rendered as
+    // `<pending>` even when a form submit had just injected the value.
+    // The staged group lives on `cont.group` (stamped by runAction at
+    // confirm_enter time) — do NOT read model.currentGroup here, the
+    // user can move groups while the confirm is up.
     const action = cont.action;
     const actionKey = cont.actionKey;
+    const stagedGroup = typeof cont.group === 'string' ? cont.group : '';
+    const resolved = resolveForRender(actionKey, action, model, stagedGroup);
+    const values = (resolved && resolved.values) || {};
+    const sources = (resolved && resolved.sources) || {};
     const boundPorts = [];
     let variadic = null;
     for (const [name, decl] of Object.entries(portsIn)) {
-      const addr = `${actionKey}.${name}`;
-      const inj = injects[addr];
+      const v = (name in values) ? values[name] : undefined;
       if (decl && decl.variadic === true) {
-        variadic = {
-          name, decl,
-          items: Array.isArray(inj) ? inj.map(String) : [],
-        };
+        // Variadic port's value is an array (form-submit injects an
+        // array via tokenize; a scalar wire would be a string that we
+        // wrap into a single-item list to match spawn's `_splitVariadic`).
+        let items = [];
+        if (Array.isArray(v)) items = v.map(String);
+        else if (v != null) items = [String(v)];
+        variadic = { name, decl, items };
         continue;
       }
       const def = decl && decl.default != null ? String(decl.default) : null;
-      const value = inj != null ? String(inj) : def;
-      const source = inj != null ? 'inject' : (def != null ? 'default' : null);
+      // `source` from the resolver is one of 'inject' | 'wire' | 'default'
+      // | undefined (missing — resolver leaves it out of `sources`). The
+      // formatPreview leaf treats null/undefined source as `<pending>`.
+      const value = (v != null) ? String(v) : def;
+      const source = sources[name] || (def != null ? 'default' : null);
       boundPorts.push({ name, decl, value, source });
     }
     const previewLines = formatPreview({
