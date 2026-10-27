@@ -6,6 +6,87 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.49] — 2026-10-27
+
+Fifth point release of the day. Two field-caught items shipped
+together — Brief 1 closes the third strike of the v0.6.33 overlay-
+shrink class (palette filter ghost chrome), Brief 2 lands the "no-
+churn" variant that v0.6.48 deferred (empty resubmit no longer
+blinks).
+
+### Fixed
+
+- **Palette filter leaves ghost chrome around the live overlay.**
+  Typing a narrowing filter re-rendered the palette at smaller
+  geometry; the taller pre-filter box's cells lingered on screen
+  around it. Same class as v0.6.33 (panels) and v0.6.48 (form
+  reopen) — overlay shrinks within a stable mode flag, cell-diff
+  cache keeps the outgoing border's cells.
+
+  Fix: `js/render/paint.js` gains `prevPaletteSig` next to the
+  existing `prevFabricPickingSig` / `prevMenuItems` / `prevReplayView`
+  trackers — same pattern. Sig = `on#${filter}` while paletteMode is
+  live, '' when closed; any transition sets `_frame.forceFull = true`
+  so the next paint flushes the diff cache. Catches BOTH filter
+  mutations (append / backspace / Esc-clear) and open/close
+  transitions. No palette reducer arm changes.
+
+  Added palette shrink case to the existing
+  `test-fabric-form-popover-repaint.js` generic overlay-shrink
+  harness. Harness fails with the standard actionable message
+  pointing at the sig-tracker template implementations.
+
+  **TODO named** (per brief's recommendation): a per-overlay-id
+  registry at the `renderOverlay` layer would close the whole class
+  (every current + future overlay). Deferred to a future refactor
+  because the four current sig trackers are each tight and the
+  canonical shape is now documented inline on `prevPaletteSig`.
+  Comment names the class so strike four isn't a repeat ambush.
+
+### Changed (behavior)
+
+- **Empty resubmit no longer closes + reopens the form (no churn).**
+  v0.6.48's paint guarantee made the reopened modal visible, but the
+  close → do_run → reopen cycle was still visible as a ~30ms blink
+  on every empty Enter. Operator leaning on Enter saw the popup
+  flash repeatedly, which also made the "required inputs still
+  missing" line easy to miss (whole box flashed instead).
+
+  Fix: `fabric_form_submit` arm detects the no-op reprompt case —
+  zero `isModified` fields (nothing to inject) AND at least one
+  required field at empty text (resolver would see it as missing) —
+  and keeps the form open. Focus moves to the first missing required
+  field so the user has visible feedback about where to type. The
+  short-circuit returns `[model, [{type:'render'}]]`.
+
+  Submits where ANY field is modified (user typed something) OR all
+  required fields are satisfied (via defaults or wire resolution)
+  take the existing close + do_run path unchanged.
+
+  Replay / WAL note: the short-circuit is reducer-local on model
+  state (`isModified` / `required` / `text`), so a new recording
+  replays identically by construction. Pre-v0.6.49 WALs recorded
+  close+reopen pairs on empty resubmit — those replay against the
+  pre-fix reducer path only. Final model state converges either way
+  (close+reopen leaves the form in the same shape as stay-open),
+  and `js/dispatch/runtime/replay.js` no-ops effects, so a replay
+  fold produces the same final model regardless of which release
+  wrote the WAL.
+
+### Internal
+
+- `prevPaletteSig` canonical sig-tracker shape documented inline
+  on the field declaration — pins the pattern for the next overlay
+  that reaches the same shrink class.
+- Three existing tests updated to escape the new short-circuit when
+  their invariant assumes submit progresses to do_run:
+  - `test-fabric-form.js` "Enter still submits via the symbolic-name path"
+    (pre-fills `host` before Enter)
+  - `test-fabric-form.js` `[10]` "empty-resubmit cycle" rewritten to
+    "non-empty resubmit cycle" using fabric_form_cancel + reopen
+  - `test-fabric-form-choices.js` R2B-BUG1 "fabric_form_submit emits
+    cancel_effect" pre-fills required fields
+
 ## [0.6.48] — 2026-10-27
 
 Fourth point release of the day — invisible-modal BUG surfaced on first
@@ -4898,7 +4979,8 @@ release tarballs. Full pre-squash development history is preserved
 on the internal gitea mirror under the `backup/main-history` branch
 and the `v0.1.0-pre-squash` tag.
 
-[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.48...HEAD
+[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.49...HEAD
+[0.6.49]: https://github.com/Tao-Ma/lazytui/compare/v0.6.48...v0.6.49
 [0.6.48]: https://github.com/Tao-Ma/lazytui/compare/v0.6.47...v0.6.48
 [0.6.47]: https://github.com/Tao-Ma/lazytui/compare/v0.6.46...v0.6.47
 [0.6.46]: https://github.com/Tao-Ma/lazytui/compare/v0.6.45...v0.6.46
