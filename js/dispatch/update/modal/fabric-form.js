@@ -529,6 +529,47 @@ function update(model, msg) {
       const f = model.modal.fabricForm;
       const pending = f.pendingAction;
       const actionKey = pending && pending.actionKey;
+      // v0.6.49 Brief 2 — no-churn short-circuit. If this submit would be
+      // a pure no-op reprompt — zero isModified fields (nothing to inject)
+      // AND at least one required field still at empty text (resolver
+      // would see it as missing) — DON'T close+reopen. The paint guarantee
+      // from v0.6.48 made the modal visible, but the close→reopen churn
+      // was still visible as a ~30ms blink on each empty Enter (operator
+      // leaning on Enter saw the popup flash). Keep the form open; move
+      // focus to the first missing required field so the user has visible
+      // feedback about where to type.
+      //
+      // Why reducer-local: the condition is a function of model state only
+      // (isModified / required / text), so a replayed session reproduces
+      // the same decision. Pre-v0.6.49 WALs recorded close+reopen pairs
+      // on empty resubmit; those replay against the OLD reducer path only.
+      // The forward Cmd shape (what the submit emits) is NEVER a `do_run`
+      // when the short-circuit fires, so a replay fold produces the same
+      // final model regardless of which release wrote the WAL (replay
+      // no-ops effects — see js/dispatch/runtime/replay.js).
+      //
+      // Non-empty submit paths (any isModified field, OR no required-empty
+      // field) take the existing close + do_run path unchanged.
+      const anyModified = f.fields.some((x) => x.isModified);
+      const firstMissingRequiredIdx = f.fields.findIndex(
+        (x) => x.required && !x.text);                   // empty text (incl. undefined)
+      if (pending && actionKey && !anyModified && firstMissingRequiredIdx >= 0) {
+        // No-op reprompt. Keep form open; move focus to first missing
+        // required (identity-preserving if already there). Emit a render
+        // so the focus change paints — matches the v0.6.48 paint-guarantee
+        // pattern on the OTHER arms. No cancel of in-flight choices
+        // fetches: nothing closed, those fetches are still relevant.
+        const nextFocusIdx = firstMissingRequiredIdx;
+        if (nextFocusIdx === f.focusIdx) {
+          // Identity-preserving: no focus change needed. Return the
+          // model unchanged but emit a render so the blink doesn't
+          // sneak through (defensive — current paint is already up to
+          // date, so this is a no-op cycle at worst).
+          return [model, [{ type: 'render' }]];
+        }
+        return [withModal(model, { fabricForm: { ...f, focusIdx: nextFocusIdx } }),
+                [{ type: 'render' }]];
+      }
       // R2B-BUG1 — abort any in-flight choices fetches before submitting.
       // Without this, a submit-while-fetching lets the OLD fetch's `.then`
       // dispatch its resolved msg AFTER do_run reopens the form (via

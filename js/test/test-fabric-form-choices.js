@@ -420,6 +420,13 @@ describe('[fabric-form-choices] R1B-SMELL1 — cancel aborts in-flight fetches',
 describe('[fabric-form-choices] R2B-BUG1 — submit aborts in-flight fetches', () => {
   it('fabric_form_submit emits cancel_effect per pending field BEFORE do_run', () => {
     let m = openForm();
+    // v0.6.49 — fill required fields so the submit actually runs (no
+    // modified fields trips the Brief 2 no-churn short-circuit; this
+    // test pins the cancel-fires-before-do_run invariant for the
+    // RUN path, so pre-populate values to bypass the short-circuit).
+    [m] = runtime.update(m, { type: 'fabric_form_key', key: 'f', seq: 'f' });   // file → "f"
+    [m] = runtime.update(m, { type: 'fabric_form_focus_next' });
+    [m] = runtime.update(m, { type: 'fabric_form_key', key: 's', seq: 's' });   // section → "s"
     [m] = runtime.update(m, { type: 'fabric_form_choices_request', port: 'section' });
     const [, cmds] = runtime.update(m, { type: 'fabric_form_submit' });
     const cancels = cmds.filter((c) => c.type === 'cancel_effect');

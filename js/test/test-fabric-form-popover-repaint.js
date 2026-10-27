@@ -153,6 +153,24 @@ describe('[overlay-shrink-invariant] generic harness pins each variable-size ove
     });
   });
 
+  it('action palette: filter narrows → shrink forces repaint (v0.6.49)', () => {
+    // Close the fabric form so the palette can open (modals are flat).
+    sm.applyMsg({ type: 'fabric_form_cancel' });
+    sm.capture(sm.render);              // settle after close
+    // The palette needs some actions to filter against. The default bootFresh
+    // config carries an `a1` action under group `g`; sm.applyMsg here walks
+    // iterActions which reads live config state. Open the palette (grow) then
+    // type a filter that narrows the view (shrink).
+    assertOverlayShrinkForcesRepaint({
+      overlayName: 'action palette filter',
+      grow: () => sm.applyMsg({ type: 'palette_open' }),
+      // Any filter mutation shrinks the overlay by at least one row (and the
+      // typical case is harsher: 97 actions → 1 match). The sig tracker
+      // catches ALL filter mutations, not just shrinks.
+      shrink: () => sm.applyMsg({ type: 'palette_filter', seq: 'z' }),
+    });
+  });
+
   // Future variable-size overlays go here. Each is one block ≈ 6 lines.
   //
   // When adding a new overlay that can change size while its mode flag

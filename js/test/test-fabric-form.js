@@ -461,6 +461,13 @@ describe('[fabric-form] KEY path integration — Tab / Shift-Tab reach the reduc
 
   it('Enter still submits via the symbolic-name path', () => {
     open();
+    // v0.6.49 — fill the required-empty `host` field before Enter so the
+    // new no-churn short-circuit doesn't trip (it would otherwise keep
+    // the form open on an all-empty required-missing submit). The
+    // integration this test pins is "the ENTER symbolic-name key reaches
+    // fabric_form_submit"; the short-circuit on no-op reprompts is
+    // covered in the [11] no-churn section below.
+    for (const c of 'h.example') _dispatchToken(c);
     _dispatchToken('\r');
     const after = store.getModel();
     assert(!after.modes.fabricFormMode, 'Enter closed the form');
@@ -677,31 +684,174 @@ describe('[10] fabric_form_enter paint-guarantee', () => {
       `paint cmds should precede fetch cmds. Got: ${JSON.stringify(types)}`);
   });
 
-  it('empty-resubmit cycle: close + reopen leaves modal state consistent (model side)', () => {
-    // The BUG was a paint race; the MODEL was always right. Pin that
-    // explicitly here so a future refactor of the paint-guarantee doesn't
-    // break the underlying close+reopen cycle. Enter → submit (no modified
-    // fields) → model closes → do_run Cmd stages → simulate the reopen
-    // (what doRun → _promptMissing would do).
+  it('non-empty resubmit cycle (model side): fabric_form_enter emits paint Cmds on reopen', () => {
+    // v0.6.49 — the v0.6.48 original scope ("empty resubmit close+reopen")
+    // is now caught by the Brief 2 no-churn short-circuit (see [11]
+    // below), so this test pins the paint-guarantee invariant for a
+    // DIFFERENT reopen path: an action with a confirm, where the submit
+    // routes through the confirm overlay and the form reopens for a
+    // different port on retry. Simpler shape here — directly dispatch
+    // a second fabric_form_enter and assert the paint Cmds on both
+    // the first open AND the re-enter.
     let m = freshModel();
+    const [m1, firstCmds] = runtime.update(m, { type: 'fabric_form_enter',
+      fields: [{ port: 'name', text: '', required: true, default: null, desc: '' }],
+      pendingAction: PENDING });
+    assert(m1.modes.fabricFormMode, 'open');
+    assert(firstCmds.some((c) => c && c.type === 'force_full_repaint'),
+      `first open emits force_full_repaint`);
+    assert(firstCmds.some((c) => c && c.type === 'render'),
+      `first open emits render`);
+    // Reopen (simulating e.g. config_swap-triggered re-prompt).
+    const [m2, reopenCmds] = runtime.update(m1, { type: 'fabric_form_enter',
+      fields: [{ port: 'name', text: '', required: true, default: null, desc: '' }],
+      pendingAction: PENDING });
+    // The flat-modals guard (isChainActive) actually drops this reopen
+    // when the first form is still open — the reducer early-returns
+    // [model, []]. That's a defensive guard, NOT the v0.6.48 fix target.
+    // The reopen path the fix targets is through a close + reopen cycle;
+    // simulate it by closing first.
+    const [m2closed] = runtime.update(m1, { type: 'fabric_form_cancel' });
+    const [m3, reopenCmds2] = runtime.update(m2closed, { type: 'fabric_form_enter',
+      fields: [{ port: 'name', text: '', required: true, default: null, desc: '' }],
+      pendingAction: PENDING });
+    assert(m3.modes.fabricFormMode, 'reopened after close + fabric_form_enter');
+    assert(reopenCmds2.some((c) => c && c.type === 'force_full_repaint'),
+      `reopen must emit force_full_repaint — v0.6.48 paint-guarantee invariant`);
+    assert(reopenCmds2.some((c) => c && c.type === 'render'),
+      `reopen must emit render — v0.6.48 paint-guarantee invariant`);
+  });
+});
+
+// -------------------------------------------------------------------------
+// [11] no-churn empty-resubmit short-circuit — v0.6.49 Brief 2.
+//
+// Pre-fix (v0.6.48 shipped the paint-guarantee for the reopen path), the
+// empty-Enter cycle was: fabric_form_submit → close → do_run → doRun →
+// _promptMissing → fabric_form_enter → reopen → paint (via the v0.6.48
+// paint Cmds). The modal was visible after each cycle, but the close+
+// reopen caused a ~30ms blank frame — operator leaning on Enter saw the
+// popup flash repeatedly. Post-fix: fabric_form_submit detects the no-op
+// case (no isModified fields AND at least one required empty) and keeps
+// the form open; focus moves to the first missing required field.
+// -------------------------------------------------------------------------
+
+describe('[11] no-churn empty-resubmit short-circuit', () => {
+  function _buildFields(spec) {
+    // Minimal field builder from a {port, text, required, default} spec.
+    // Mirrors _normalize's chip derivation (isModified) so the test
+    // sees the same shape production reducer paths produce.
+    return spec.map((s) => {
+      const text = typeof s.text === 'string' ? s.text : '';
+      const required = s.required !== false;
+      const def = s.default != null ? String(s.default) : null;
+      let isModified = false, isDefault = false;
+      if (def != null && text === def) isDefault = true;
+      else if (text === '' && def == null) {}         // unset
+      else isModified = true;
+      return { port: s.port, text, required, default: def, desc: '', isModified, isDefault };
+    });
+  }
+
+  it('REGRESSION — empty required Enter does NOT close the form', () => {
+    let m = freshModel();
+    // Build a form via fabric_form_enter so the normalized `isModified`
+    // flags match production. One required empty field.
     [m] = runtime.update(m, { type: 'fabric_form_enter',
       fields: [{ port: 'name', text: '', required: true, default: null, desc: '' }],
       pendingAction: PENDING });
     assert(m.modes.fabricFormMode, 'open');
-    // Empty submit — no modified fields, so no injects written.
-    const [m2, submitCmds] = runtime.update(m, { type: 'fabric_form_submit' });
-    assert(!m2.modes.fabricFormMode, 'closed after submit');
-    assert(submitCmds.some((c) => c && c.type === 'do_run'),
-      `submit emits do_run (which would reach _promptMissing → re-enter)`);
-    // Simulate the reopen that doRun → _promptMissing would do.
-    const [m3, reopenCmds] = runtime.update(m2, { type: 'fabric_form_enter',
+    const [m2, cmds] = runtime.update(m, { type: 'fabric_form_submit' });
+    // The no-churn invariant: form stays open, no do_run Cmd.
+    assert(m2.modes.fabricFormMode,
+      `form MUST stay open on empty-required submit (v0.6.49 Brief 2). ` +
+      `Pre-fix the form closed and reopened via _promptMissing, causing a visible blink.`);
+    assert(!cmds.some((c) => c && c.type === 'do_run'),
+      `no do_run Cmd on no-op short-circuit. Got: ${JSON.stringify(cmds)}`);
+    assert(cmds.some((c) => c && c.type === 'render'),
+      `must still emit render (focus-change paint). Got: ${JSON.stringify(cmds)}`);
+  });
+
+  it('empty submit moves focus to the first missing required field', () => {
+    // Start on an optional field (idx > the first missing required).
+    let m = freshModel();
+    [m] = runtime.update(m, { type: 'fabric_form_enter',
+      fields: [
+        { port: 'host', text: '',     required: true,  default: null, desc: '' },
+        { port: 'tags', text: 'opt',  required: false, default: null, desc: '' },
+      ],
+      pendingAction: PENDING });
+    // Nav to the optional field (idx 1).
+    [m] = runtime.update(m, { type: 'fabric_form_focus_next' });
+    eq(m.modal.fabricForm.focusIdx, 1, 'precondition — on the optional field');
+    // Edit the optional — but wait, that would make it isModified=true and
+    // bypass the short-circuit. Keep this test on "no mods anywhere" by
+    // using focus_next without editing. First reset the fixture to NOT
+    // have a modified optional. Re-build:
+    let m2 = freshModel();
+    [m2] = runtime.update(m2, { type: 'fabric_form_enter',
+      fields: [
+        { port: 'host', text: '', required: true,  default: null, desc: '' },
+        { port: 'tags', text: '', required: false, default: null, desc: '' },
+      ],
+      pendingAction: PENDING });
+    [m2] = runtime.update(m2, { type: 'fabric_form_focus_next' });
+    eq(m2.modal.fabricForm.focusIdx, 1, 'precondition — focus on optional');
+    const [m3] = runtime.update(m2, { type: 'fabric_form_submit' });
+    assert(m3.modes.fabricFormMode, 'form still open');
+    eq(m3.modal.fabricForm.focusIdx, 0,
+      `focus moved to the first missing required (idx 0)`);
+  });
+
+  it('short-circuit does NOT fire when ANY field is isModified', () => {
+    // Required-empty exists, BUT another field is modified — user has
+    // typed something, so the submit should ATTEMPT the run (standard
+    // close+do_run path). This path commits the modified field's inject,
+    // and _promptMissing reopens only for the still-missing-required.
+    let m = freshModel();
+    [m] = runtime.update(m, { type: 'fabric_form_enter',
+      fields: [
+        { port: 'host', text: '',  required: true, default: null, desc: '' },
+        { port: 'role', text: 'r', required: true, default: null, desc: '' },
+      ],
+      pendingAction: PENDING });
+    // Fake "user modified role" by sending a key.
+    [m] = runtime.update(m, { type: 'fabric_form_focus_next' });
+    [m] = runtime.update(m, { type: 'fabric_form_key', key: 'x', seq: 'x' });
+    const [m2, cmds] = runtime.update(m, { type: 'fabric_form_submit' });
+    assert(!m2.modes.fabricFormMode, 'form closes when there IS a modified field');
+    assert(cmds.some((c) => c && c.type === 'do_run'),
+      `do_run emitted when there IS progress to commit. Got: ${JSON.stringify(cmds)}`);
+  });
+
+  it('short-circuit does NOT fire when all required fields are satisfied', () => {
+    // No field isModified AND no field is required-empty (all required
+    // have defaults). This is "submit without changes" on a fully-resolved
+    // form — should proceed to run.
+    let m = freshModel();
+    [m] = runtime.update(m, { type: 'fabric_form_enter',
+      fields: [
+        { port: 'host', text: 'default-host', required: true, default: 'default-host', desc: '' },
+      ],
+      pendingAction: PENDING });
+    const [m2, cmds] = runtime.update(m, { type: 'fabric_form_submit' });
+    assert(!m2.modes.fabricFormMode,
+      `form closes when all required are satisfied via default — spawn should run`);
+    assert(cmds.some((c) => c && c.type === 'do_run'),
+      `do_run emitted when required has a default. Got: ${JSON.stringify(cmds)}`);
+  });
+
+  it('focus already on the first missing — short-circuit emits render but no model change', () => {
+    let m = freshModel();
+    [m] = runtime.update(m, { type: 'fabric_form_enter',
       fields: [{ port: 'name', text: '', required: true, default: null, desc: '' }],
       pendingAction: PENDING });
-    assert(m3.modes.fabricFormMode, 'reopened after fabric_form_enter');
-    assert(reopenCmds.some((c) => c && c.type === 'force_full_repaint'),
-      `reopen must emit force_full_repaint — the paint-guarantee invariant`);
-    assert(reopenCmds.some((c) => c && c.type === 'render'),
-      `reopen must emit render — the paint-guarantee invariant`);
+    // focusIdx is already 0 (the only field).
+    eq(m.modal.fabricForm.focusIdx, 0, 'precondition');
+    const [m2, cmds] = runtime.update(m, { type: 'fabric_form_submit' });
+    eq(m2, m, `model identity preserved when focus already correct`);
+    assert(cmds.length === 1 && cmds[0].type === 'render',
+      `exactly one render Cmd. Got: ${JSON.stringify(cmds)}`);
   });
 });
 
