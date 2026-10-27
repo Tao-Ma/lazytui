@@ -407,19 +407,20 @@ function renderFabricFormOverlay() {
     for (const field of f.fields) {
       const decl = portsIn[field.port];
       if (decl && decl.variadic === true) {
-        variadic = {
-          name: field.port, decl,
-          items: typeof field.text === 'string' && field.text.length > 0
-            ? [field.text] /* tokenization happens at submit; teaser just shows raw */
-            : [],
-        };
+        // Compact footer summary only tallies the port count +
+        // sensitive count — never the ITEMS. Pass decl only (same as
+        // scalar ports below) so a secret can't leak into the summary
+        // line even by accident.
+        variadic = { name: field.port, decl };
         continue;
       }
-      boundPorts.push({
-        name: field.port, decl,
-        value: field.text || null,
-        source: field.isLast ? 'last' : (field.isDefault ? 'default' : (field.isModified ? 'user' : null)),
-      });
+      // Pass only `name` + `decl` — the compact footer formatter
+      // (`js/leaves/ports/submit-preview.formatCompactFooter`) reads
+      // only these two for its summary (count + sensitive count +
+      // script teaser). Passing field.text here would be a dead carry
+      // and (worse) could obscure the "the summary never carries a
+      // port VALUE" invariant pinned by test-submit-preview §5.
+      boundPorts.push({ name: field.port, decl });
     }
     rows.push(formatCompactFooter({
       script: (act && act.script) || '',

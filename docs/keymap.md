@@ -11,7 +11,7 @@ own `keymap:`.
 keymap:
   version: 1            # format version (see "Versioning" below)
   normal:               # normal-mode single-key bindings
-    R: refresh          # bare string  = a built-in verb
+    F: refresh          # bare string  = a built-in verb (`F` is free)
     "?": show_help
     g: { action: grep } # mapping form = an action / command target
     ",": noop           # disable a default binding
@@ -40,8 +40,8 @@ To **move** a verb to a different key, bind the new key and `noop` the old one:
 ```yaml
 keymap:
   normal:
-    R: refresh
-    r: noop
+    F: refresh          # bind the new key
+    r: noop             # disable the old default
 ```
 
 ## Verbs
