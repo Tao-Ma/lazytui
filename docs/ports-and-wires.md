@@ -420,8 +420,12 @@ compute surface is a form-only concern:
   guard, defense-in-depth against the handler's internal state).
 - **UX**: form chips cycle `[fetching…]` → `[N choices]` / `[error]`. SPACE
   on a focused computed field opens an inline popover below the row;
-  Up/Down nav, Enter picks, Esc closes. A free-typed value still wins —
-  the fn is a shortcut, never a hard constraint.
+  Up/Down nav, Enter picks, Esc closes (or in v0.6.43-unreleased, Esc
+  with a non-empty type-to-filter clears the filter first, Esc again
+  closes). A free-typed value still wins — the fn is a shortcut, never
+  a hard constraint. Type-to-filter (printable keys) narrows the list
+  on both value AND label; see [`docs/action-ports-guide.md`](action-ports-guide.md)
+  "Computed choices" for the full key contract.
 - **Replay-determinism**: the fetch is a side effect (effect channel is
   skipped under replay); its RESULT is a WAL-captured reducer arm. Replay
   reproduces frames from the recorded payload WITHOUT re-executing the fn,
@@ -434,6 +438,16 @@ compute surface is a form-only concern:
   `host.applyMsg` after the user bails. Cross-form stale replies are
   guarded by `actionKey` match on the resolved arm, so a fetch belonging
   to a prior form can't land into a new form whose port has the same name.
+- **Caching**: the TUI keeps a session-resident stale-while-refetch cache
+  on `model.choicesCache` (v0.6.41) — a form reopened on the same deps
+  shows cached items instantly while a fresh fetch runs in the
+  background. The CLI shell-completion helper (`--complete`) is a
+  one-shot process and can't carry a model, so it has its own on-disk
+  TTL cache for `choices_cmd:` candidates (v0.6.43-unreleased) under
+  `$XDG_CACHE_HOME/lazytui/complete/`. Both caches hash to byte-identical
+  keys via the shared leaf `js/leaves/ports/choices-cache-key.js`. See
+  [`docs/shell-completion.md`](shell-completion.md) for the CLI cache's
+  TTL, LRU cap, and the `LAZYTUI_COMPLETE_NO_CACHE=1` escape hatch.
 
 Insertion points: `_promptMissing` in `js/dispatch/runtime/action-runner.js`
 carries `choicesFnRef` + `dependsOn` through to the field snapshots; the
