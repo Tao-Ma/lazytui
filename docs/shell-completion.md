@@ -87,6 +87,12 @@ LAZYTUI_COMPLETE_NO_CACHE=1 ./do session worktree <repo> <TAB>
 
 Skips both read AND write. Use this when debugging an edited `choices_cmd:` so the 15s stale window doesn't hide the change, or when you specifically want to measure a cold spawn. The env var is only consulted by the completion helper; the TUI's own cache is unaffected.
 
+**Concurrent writers (last-rename-wins)**
+
+Two shells both TAB the same config at the same instant: both the `--complete` processes read the same cache state S, both compute an independent put of a different key, both tmp+rename. The second rename overwrites the first writer's new entry. Each process sees its own key on the next TAB; neither sees the other's.
+
+Not corruption (atomic tmp+rename rules out a half-written file) and not an exploit — one of the two keys is just missing until a later TAB respawns it. The common case (one user, one shell) is unaffected. If you consistently share a config between many parallel shells and some entries seem to disappear, that's this.
+
 **Cache invalidation = you**
 
 The cache is **time-bounded only** — no mtime watch on the config, no SIGUSR trigger, no file-watcher. If you need an immediate retry on an edited `choices_cmd:` without waiting out the TTL, either set `LAZYTUI_COMPLETE_NO_CACHE=1` for the next TAB, or wipe the cache file by hand (`rm "$XDG_CACHE_HOME/lazytui/complete/<sha1>.json"`).

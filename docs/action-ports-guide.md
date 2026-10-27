@@ -520,7 +520,7 @@ Default (`choices_labeled: false`): one line = one choice. CRLF normalized; blan
 
 With `choices_labeled: true`: split each line on the FIRST `\t` into `value\tlabel`. The overlay shows `label`, submits `value`. A line without a tab means label falls back to value — convenient for mixed lists where some entries don't need a long label.
 
-The popover supports **type-to-filter** (v0.6.43-unreleased): the user narrows the list by typing a substring. Match is case-insensitive against the VALUE AND the LABEL, so labels like `foo (expires 2027-01)` are reachable by typing `expires` even if the value is a bare id — but keeping the value's identifying text inside the label stays the best style (one fewer thing for the user to translate).
+The popover supports **type-to-filter** (v0.6.43-unreleased): the user narrows the list by typing a substring. Match is case-insensitive against the VALUE AND the LABEL, so labels like `foo (expires 2027-01)` are reachable by typing `expires` even if the value is a bare id — but keeping the value's identifying text inside the label stays the best style (one fewer thing for the user to translate). Case-folding is JS `String#toLowerCase` — ASCII and most European scripts work; a known gap is `ß` → `ß` (not `ss`), so filter text `ss` misses `Straße`. If a config targets German-labelled lists, prefer labels authored with `ss`.
 
 ### Cap: 32 items
 

@@ -80,9 +80,22 @@ function readCache(configPath) {
 }
 
 /**
- * Write `state` for `configPath` atomically. Creates the dir if missing,
- * writes a tmp file with mode 0600, renames into place. Returns true on
- * success, false on ANY failure — caller never sees a throw.
+ * Write `state` for `configPath` atomically. Creates the dir chain if
+ * missing (0700 on dirs this process creates — note Node's mkdirSync
+ * applies the mode only to NEWLY created dirs; a pre-existing parent at
+ * 0755 is NOT tightened here, so the parent chain's enumerability
+ * depends on the host umask + whoever created the ancestors), writes a
+ * tmp file at 0600 with O_EXCL (fails if any file exists at tmp path,
+ * symlink or regular — closes the TOCTOU race), renames into place.
+ * Returns true on success, false on ANY failure — caller never sees a
+ * throw.
+ *
+ * Not atomic across writers: two completion-helper processes TAB-ing
+ * the same config at the same instant both read state S, both compute
+ * their put, both rename — the second rename wins, dropping the
+ * first writer's new entry. Each sees its own key on next TAB; neither
+ * sees the other's. See `docs/shell-completion.md` for the full
+ * caveat; the common single-user case is unaffected.
  */
 function writeCache(configPath, state) {
   try {
