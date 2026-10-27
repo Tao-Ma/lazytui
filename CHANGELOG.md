@@ -6,11 +6,15 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.43] — 2026-10-27
+
 Four shipped feature arcs on the v0.6.43 train — one CLI (completion
 disk cache) + three TUI (literal-choices popover fix, `[last]` chip,
-type-to-filter popover). Not tagged yet; see the SHAs in each section
-below. Pre-release review landed three correctness fixes before cut
-(T1 of a four-track sweep on `3e130883..c6e40d1d`).
+type-to-filter popover). TWO rounds of pre-release review on the arc
+landed nine review commits (three + two + four more by tier) covering
+eight correctness/security fixes, five doc-parity catchups across six
+docs, and four surviving-mutant coverage tests. See commit history
+`e30e63bb..v0.6.43` for the full sequence.
 
 ### Added
 
@@ -4526,7 +4530,8 @@ release tarballs. Full pre-squash development history is preserved
 on the internal gitea mirror under the `backup/main-history` branch
 and the `v0.1.0-pre-squash` tag.
 
-[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.42...HEAD
+[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.43...HEAD
+[0.6.43]: https://github.com/Tao-Ma/lazytui/compare/v0.6.42...v0.6.43
 [0.6.36]: https://github.com/Tao-Ma/lazytui/compare/v0.6.35...v0.6.36
 [0.6.32]: https://github.com/Tao-Ma/lazytui/compare/v0.6.31...v0.6.32
 [0.6.31]: https://github.com/Tao-Ma/lazytui/compare/v0.6.30...v0.6.31
