@@ -321,6 +321,39 @@ describe('[4] confirm overlay — preview block visibility', () => {
     assert(out.includes('env=prod'), 'non-sensitive shows value');
     assert(out.includes(`token=${SENSITIVE_MASK}`), 'sensitive masked');
   });
+  it('sensitive port with an in-flight INJECT still masks (round-2 coverage gap)', () => {
+    // Pre-release round-2 test-coverage review: the sensitive-port
+    // tests above exercised DEFAULT and PENDING paths but not the
+    // INJECT path. If a sensitive port had a sticky inject (from a
+    // prior ports-pane edit or an `[a]` edit-args that staged
+    // values), the confirm overlay reads it from model.fabric.injects
+    // — and MUST mask it.
+    const action = {
+      type: 'run', script: 'rotate-ca --pass $passphrase',
+      ports: { in: {
+        passphrase: { type: 'string', sensitive: true, required: true, remember: false },
+      } },
+    };
+    const m = openConfirmWithStagedDoRun(action, 'rotate-ca');
+    // Pre-populate fabric.injects with the sensitive value — the
+    // confirm overlay reads injects via `model.fabric.injects[
+    // `${actionKey}.${portName}`]`.
+    m.fabric = { injects: { 'rotate-ca.passphrase': 'hunter2-raw-leaked' } };
+    store.setModel(m);
+    const out = captureOverlay(m, () => renderConfirmOverlay());
+    assert(out.includes(`passphrase=${SENSITIVE_MASK}`), 'sensitive mask applied');
+    assert(!out.includes('hunter2-raw-leaked'),
+      'raw inject value NEVER appears in the preview output');
+  });
+  it('action with EMPTY ports.in: {} does NOT paint `-- preview --` separator', () => {
+    // Pre-release round-2 edge-case: {} is truthy but empty.
+    // The confirm should treat it the same as no ports.in at all.
+    const action = { type: 'run', script: 'echo hi', ports: { in: {} } };
+    const m = openConfirmWithStagedDoRun(action, 'empty-ports');
+    const out = captureOverlay(m, () => renderConfirmOverlay());
+    assert(!out.includes('── preview ──'), 'no preview separator for empty ports.in');
+    assert(out.includes('[y] confirm'), 'confirm still functional');
+  });
 });
 
 // ---- [4b] security: markup injection via wire-fed values (round-2 BUG) ----
@@ -441,6 +474,105 @@ describe('[5] form overlay — compact footer with sensitive mask', () => {
     const out = captureOverlay(m, () => renderFabricFormOverlay());
     assert(out.includes('2 ports'), 'count in overlay');
     assert(out.includes('1 sensitive'), 'sensitive count in overlay');
+  });
+});
+
+// ---- [5c] call-site discipline — fabric-form footer caller carries no value ----
+
+describe('[5c] fabric-form.js footer call site passes NO value: field (anti-regression)', () => {
+  it('grep the call site to ensure no future caller reintroduces a value: field', () => {
+    // Pre-release round-2 test-coverage: the T1 round-1 fix dropped
+    // the dead `value: field.text` carry from the fabric-form footer
+    // caller. Pin that it stays dropped — a future refactor adding
+    // `value:` back would quietly re-enable a secret-leak path if the
+    // leaf's signature ever extended to use it.
+    const fs = require('fs');
+    const path = require('path');
+    const src = fs.readFileSync(path.join(__dirname, '../overlay/fabric-form.js'), 'utf8');
+    const idx = src.indexOf('formatCompactFooter');
+    assert(idx >= 0, 'formatCompactFooter call site found');
+    // Scan a 500-char window around the call for a `value:` field in
+    // the boundPorts constructor. The leaf-level signature test (§5
+    // above) ensures the leaf itself takes no value; this test ensures
+    // the CALLER doesn't pass one either.
+    const start = Math.max(0, src.lastIndexOf('for (const field of f.fields)', idx));
+    const window = src.slice(start, idx + 500);
+    assert(!/value:\s*field\.text/.test(window),
+      'the fabric-form footer builder must NOT carry `value: field.text` into the leaf');
+  });
+});
+
+// ---- [5d] parser warn-drops for round-2 safety fixes --------------------
+
+describe('[5d] parser — sensitive on OUT port + sensitive+default warnings (round-2)', () => {
+  const { validate: parserValidate } = require('../parser/schema');
+  function parseWithOutPort(outPortDecl) {
+    const data = {
+      project_dir: '.',
+      groups: {
+        g: {
+          label: 'G', containers: [],
+          actions: {
+            a: {
+              type: 'run',
+              label: 'A',
+              run: 'cmd',
+              ports: {
+                in: { x: { type: 'string', required: true } },
+                out: { y: { type: 'string', from: 'stdout', ...outPortDecl } },
+              },
+            },
+          },
+        },
+      },
+    };
+    const warnings = [];
+    try { parserValidate(data, '/tmp/t.yml', warnings); return { data, warnings, error: null }; }
+    catch (e) { return { data: null, warnings, error: e }; }
+  }
+  it('sensitive on an OUTPUT port emits port.sensitive_on_out_port and drops the key', () => {
+    const r = parseWithOutPort({ sensitive: true });
+    assert(!r.error, 'warn-drop does not throw');
+    const w = r.warnings.find(w => w.code === 'port.sensitive_on_out_port');
+    assert(w, 'warning emitted');
+    const outPort = r.data && r.data.groups && r.data.groups.g.actions.a.ports.out.y;
+    assert(outPort, 'out port parsed');
+    eq(outPort.sensitive, undefined, 'sensitive stripped from out port');
+  });
+  function parsePort(portDecl) {
+    const data = {
+      project_dir: '.',
+      groups: {
+        g: {
+          label: 'G', containers: [],
+          actions: {
+            a: {
+              type: 'run',
+              label: 'A',
+              script: 'echo $x',
+              ports: { in: { x: { type: 'string', ...portDecl } } },
+            },
+          },
+        },
+      },
+    };
+    const warnings = [];
+    try { parserValidate(data, '/tmp/t.yml', warnings); return { data, warnings }; }
+    catch (e) { return { data: null, warnings, error: e }; }
+  }
+  it('sensitive:true + default:"devpass" emits port.sensitive_with_default', () => {
+    const r = parsePort({ sensitive: true, default: 'devpass' });
+    const w = r.warnings.find(w => w.code === 'port.sensitive_with_default');
+    assert(w, 'warning emitted');
+    // Default is NOT dropped — the warning is advisory; author may want
+    // the eyes-open override behavior.
+    const port = r.data.groups.g.actions.a.ports.in.x;
+    eq(port.default, 'devpass', 'default preserved (warning is advisory)');
+  });
+  it('sensitive:true WITHOUT default: no warning (clean decl)', () => {
+    const r = parsePort({ sensitive: true });
+    assert(!r.warnings.find(w => w.code === 'port.sensitive_with_default'),
+      'no spurious warning when there is no default');
   });
 });
 

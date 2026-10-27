@@ -151,33 +151,61 @@ describe('[3] set_config — action universe swap clears lastRun', () => {
 // (what doRun's first branch does): it reads action.type and dispatches
 // set_last_run via applyMsg for `type:run`.
 
-describe('[4] doRun stamps set_last_run for type:run ONLY (confirm-gated by construction)', () => {
-  // We don't call doRun directly (it spawns subprocess side-effects).
-  // Instead we read the dispatch path through the reducer, which is
-  // what doRun's top branch does: applyMsg({type:'set_last_run',...}).
-  it('a type:run action, when it reaches doRun, writes lastRun', () => {
-    // Simulate the Msg doRun dispatches for a type:run action.
+describe('[4] doRun stamps set_last_run for type:run ONLY — behavioral assertion', () => {
+  // Pre-release round-2 test-coverage review flagged §4's grep-against-
+  // source as a weak assertion (a commented-out stamp block that still
+  // contained the literal string would survive). Replaced with a
+  // behavioral test that calls `action-runner.doRun` directly with
+  // each action type and reads back model.lastRun through the
+  // reducer-written slot.
+  //
+  // doRun has subprocess side-effects (streamCommand). We don't try
+  // to isolate those — the test just reads model.lastRun after each
+  // call and ignores whatever the spawn attempted. The point is the
+  // Msg-level gate, not the spawn outcome.
+  const path = require('path');
+  it('type:run through doRun writes model.lastRun', () => {
+    const ar = require('../dispatch/runtime/action-runner');
+    // Reset the model with a known currentGroup; the stamp reads it.
     let m = freshModel();
     m.currentGroup = 'deploy';
-    [m] = runtime.update(m, {
-      type: 'set_last_run',
-      groupPath: m.currentGroup,
-      actionKey: 'build',
-    });
-    eq(m.lastRun.groupPath, 'deploy', 'groupPath = currentGroup');
-    eq(m.lastRun.actionKey, 'build', 'actionKey captured');
+    m.config = _fixtureConfig();
+    store.setModel(m);
+    // Call doRun directly on a type:run action.
+    // The spawn WILL fire (streamCommand spawns `make build` which
+    // likely errors in the test env — but that's irrelevant; we only
+    // observe the Msg-level stamp).
+    try { ar.doRun('build', { type: 'run', script: 'true', label: 'B' }, []); } catch (_) {}
+    const after = store.getModel();
+    assert(after.lastRun, 'lastRun populated');
+    eq(after.lastRun.actionKey, 'build', 'actionKey captured');
+    eq(after.lastRun.groupPath, 'deploy', 'groupPath = currentGroup');
   });
-  it('a type:spawn action never reaches set_last_run — the stamp is gated in doRun', () => {
-    // The gate lives in action-runner.doRun — we assert the SOURCE
-    // guards `(action.type || 'run') === 'run'`. Non-run types never
-    // dispatch set_last_run, so model.lastRun stays null.
-    const fs = require('fs');
-    const path = require('path');
-    const src = fs.readFileSync(path.join(__dirname, '../dispatch/runtime/action-runner.js'), 'utf8');
-    assert(src.includes("(action.type || 'run') === 'run'"),
-      "doRun gates set_last_run on action.type === 'run'");
-    assert(src.includes("type: 'set_last_run'"),
-      "doRun dispatches set_last_run");
+  it('type:spawn through doRun does NOT write model.lastRun (the gate holds)', () => {
+    const ar = require('../dispatch/runtime/action-runner');
+    let m = freshModel();
+    m.currentGroup = 'deploy';
+    m.config = _fixtureConfig();
+    m.lastRun = null;
+    store.setModel(m);
+    try { ar.doRun('launch', { type: 'spawn', script: 'true', label: 'L' }, []); } catch (_) {}
+    const after = store.getModel();
+    eq(after.lastRun, null, 'type:spawn did NOT populate lastRun');
+  });
+  it('an action with no explicit type (defaults to "run") still stamps', () => {
+    // doRun's gate is `(action.type || 'run') === 'run'` — so an
+    // action missing a `type:` field stamps. Confirms the default
+    // behavior matches the YAML author's expectation.
+    const ar = require('../dispatch/runtime/action-runner');
+    let m = freshModel();
+    m.currentGroup = 'deploy';
+    m.config = _fixtureConfig();
+    m.lastRun = null;
+    store.setModel(m);
+    try { ar.doRun('implicit', { script: 'true', label: 'I' }, []); } catch (_) {}
+    const after = store.getModel();
+    assert(after.lastRun, 'implicit-type action stamps');
+    eq(after.lastRun.actionKey, 'implicit', 'actionKey captured');
   });
 });
 

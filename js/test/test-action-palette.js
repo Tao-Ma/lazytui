@@ -225,6 +225,24 @@ describe('[4] filter buffer paste cap — clamp POST-concat with surrogate guard
     [m] = runtime.update(m, { type: 'palette_filter', seq: big });
     eq(m.modal.palette.filter.length, CAP, 'clamped at CAP');
   });
+  it('input of length EXACTLY CAP passes through untruncated', () => {
+    // Pre-release round-2 mutant: `if (next.length <= MAX_FILTER_LEN)`
+    // → `if (next.length < MAX_FILTER_LEN)` would survive the "paste too
+    // large" test but shorten the EXACTLY-CAP case to CAP-1. This test
+    // catches that off-by-one.
+    const CAP = paletteRed.MAX_FILTER_LEN;
+    const exact = 'y'.repeat(CAP);
+    let m = openPalette(freshModel());
+    [m] = runtime.update(m, { type: 'palette_filter', seq: exact });
+    eq(m.modal.palette.filter.length, CAP, 'exactly-CAP input preserved');
+  });
+  it('input of length CAP+1 clamps to CAP (one over, off-by-one guard)', () => {
+    const CAP = paletteRed.MAX_FILTER_LEN;
+    const over = 'z'.repeat(CAP + 1);
+    let m = openPalette(freshModel());
+    [m] = runtime.update(m, { type: 'palette_filter', seq: over });
+    eq(m.modal.palette.filter.length, CAP, 'one over clamps');
+  });
   it('surrogate pair at the boundary is not split (lone high surrogate dropped)', () => {
     const CAP = paletteRed.MAX_FILTER_LEN;
     // Fill the buffer up to CAP-1 code units, then append a surrogate
@@ -360,6 +378,26 @@ describe('[7] config_swap clears palette state (action universe changed)', () =>
     eq(m.modes.paletteMode, false, 'mode flipped off by swap');
     eq(m.modal.palette.filter, '', 'filter wiped');
     eq(m.modal.palette.idx, 0, 'idx reset');
+  });
+  it('set_config writes EXACTLY palette.CLOSED (no stray fields slip through)', () => {
+    // Pre-release round-2 WAL-replay SMELL — the three-site CLOSED
+    // pattern (initial store + set_config reset + authoritative CLOSED
+    // export) must agree on shape. If palette grew a `pending` or
+    // `requestSeq` field analogous to fabricForm, this test would
+    // catch set_config not spreading from CLOSED.
+    let m = openPalette(freshModel());
+    [m] = runtime.update(m, { type: 'palette_filter', seq: 'test' });
+    [m] = runtime.update(m, {
+      type: 'set_config',
+      config: { project_dir: '.', groups: {} },
+      configPath: '/tmp/lazytui-palette.yml',
+    });
+    const expectedKeys = Object.keys(paletteRed.CLOSED).sort().join(',');
+    const actualKeys   = Object.keys(m.modal.palette).sort().join(',');
+    eq(actualKeys, expectedKeys, 'palette slice keys match CLOSED exactly');
+    for (const k of Object.keys(paletteRed.CLOSED)) {
+      eq(m.modal.palette[k], paletteRed.CLOSED[k], `${k} matches CLOSED`);
+    }
   });
 });
 
