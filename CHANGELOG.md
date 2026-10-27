@@ -6,6 +6,75 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.46] — 2026-10-27
+
+Second point release of the day — accuracy follow-up to v0.6.45's
+`[a]` confirm-gate fix. The gate itself is working; this release
+restores the confirm overlay's preview block to show RESOLVED port
+values instead of `<pending>` on the `[a]` → submit → confirm path.
+
+### Fixed
+
+- **Confirm preview reads real injects — no more `<pending>` for
+  form-collected values.** v0.6.44's Brief 3 shipped a preview block
+  on the confirm overlay with an inline mini-resolver that read
+  `model.fabric.injects[addr]` at the TOP level — but injects are
+  group-keyed (`{[group]: {[addr]: {value, at, oneShot?}}}`), so the
+  top-level read missed every inject and every port displayed as
+  `<pending>` even when the form had just collected a value. The bug
+  was latent until v0.6.45's gate fix made the surface reachable
+  AFTER a form submit (which is exactly the flow that populates
+  injects). Caught in field testing against the consumer config the
+  gate-fix brief originated from.
+
+  The spawn still used the right values (the action-runner's own
+  resolver correctly walks the group-keyed injects) — this was a
+  preview accuracy bug, not a safety bug. The gap: Brief 3's leaf
+  tests fed `formatPreview` hand-built `boundPorts`, bypassing the
+  resolver, so the real model-read path was never exercised
+  end-to-end.
+
+  Fix: route the overlay's preview through the SAME resolver the
+  spawn path uses, via a new shared leaf
+  `js/leaves/ports/resolve-for-render.js` that wraps
+  `fabric/resolve.resolveInputs` with the right ctx (group-keyed
+  injects + wires + fabric host portValue). The leaf takes `group`
+  as an EXPLICIT arg — the overlay reads it off `continuation.cmd.group`
+  (stamped by `runAction` at `confirm_enter` staging time) so a
+  mid-confirm group navigation can't leak another group's injects
+  into the preview. An empty staged group falls through to
+  `<pending>` (safe failure mode — never leaks).
+
+  Removes the drift class, not just the instance: any future preview
+  surface uses the same resolver, so the spawn and preview can't
+  disagree on "what Enter will submit."
+
+  Regression tests `[7]` in `js/test/test-submit-preview.js` drive
+  the END-TO-END pipeline (real `openPortsForm` → `fabric_form_submit`
+  → `confirm_enter` → `renderConfirmOverlay` → painted overlay) and
+  pin:
+  - Form-collected value shows RESOLVED, not `<pending>`
+  - Byte-equal to what the spawn's env binding will receive on accept
+  - Group stamp isolates: mid-confirm group switch does not change
+    the preview (reads staged group, not currentGroup)
+  - Variadic port: items listed, not `<pending>` / not `[object Object]`
+  - Declined `[a]` confirm → re-invoke shows `<pending>` again
+    (v0.6.45 round-2 rollback consumed the injects)
+  - Empty staged group falls through to `<pending>` safely
+
+### Changed (model shape)
+
+- `cmd` on a `confirm_enter` Msg (and the staged `model.modal.continuation`
+  derived from it) now carries an optional `group: string` field when
+  the staging site is `runAction`. A `confirm_enter` from any other
+  staging site (job preempt, unrouted stream collision, etc.) leaves
+  `group` undefined — the overlay's preview block is gated on
+  `cont.type === 'do_run'` so those paths never read it. Pre-v0.6.46
+  WAL replay: `cont.group` is absent → the preview resolver sees an
+  empty group → every port renders `<pending>`. Replay is passive
+  (no user is reading the paint buffer) so this is cosmetic; the
+  staged forward Cmd and the WAL-visible reducer state are unchanged.
+
 ## [0.6.45] — 2026-10-27
 
 Point release — single high-severity bug fix caught in field testing
@@ -4712,7 +4781,8 @@ release tarballs. Full pre-squash development history is preserved
 on the internal gitea mirror under the `backup/main-history` branch
 and the `v0.1.0-pre-squash` tag.
 
-[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.45...HEAD
+[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.46...HEAD
+[0.6.46]: https://github.com/Tao-Ma/lazytui/compare/v0.6.45...v0.6.46
 [0.6.45]: https://github.com/Tao-Ma/lazytui/compare/v0.6.44...v0.6.45
 [0.6.44]: https://github.com/Tao-Ma/lazytui/compare/v0.6.43...v0.6.44
 [0.6.43]: https://github.com/Tao-Ma/lazytui/compare/v0.6.42...v0.6.43
