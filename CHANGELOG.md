@@ -6,6 +6,21 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.44] — 2026-10-27
+
+Three briefs shipped as one release: the fuzzy action palette (type
+`p` to jump across every `group:action`), the repeat-last-run verb
+(press `R` to re-invoke the last `type:run` action through the
+standard invoke path), and the submit-preview + `sensitive:` port opt
+(resolved-command preview with secrets masked in the confirm overlay
+and the ports form). Two rounds of pre-release review landed seven
+review commits atop the three feature commits — covering a security
+fix (markup injection in the preview surfaces) + six safety SMELLs
+(parser warnings, UX edges, perf cache, defense-in-depth guards) +
+test-coverage gap closures (five new scopes catching paste-cap
+off-by-one, inject→mask path, behavioral set_last_run gating, and
+parser warn-drop regressions).
+
 ### Added
 
 - **Submit preview + `sensitive:` port opt.** Actions that mutate
@@ -4605,7 +4620,8 @@ release tarballs. Full pre-squash development history is preserved
 on the internal gitea mirror under the `backup/main-history` branch
 and the `v0.1.0-pre-squash` tag.
 
-[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.43...HEAD
+[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.44...HEAD
+[0.6.44]: https://github.com/Tao-Ma/lazytui/compare/v0.6.43...v0.6.44
 [0.6.43]: https://github.com/Tao-Ma/lazytui/compare/v0.6.42...v0.6.43
 [0.6.36]: https://github.com/Tao-Ma/lazytui/compare/v0.6.35...v0.6.36
 [0.6.32]: https://github.com/Tao-Ma/lazytui/compare/v0.6.31...v0.6.32
