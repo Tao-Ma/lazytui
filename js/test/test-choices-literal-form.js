@@ -63,10 +63,11 @@ describe('[form] fabric_form_enter seeds computed from literal choices directly'
     eq(f.computed.labels, null, 'labels preserved as null (all-scalar)');
     eq(f.computed.error, null);
     eq(f.computed.truncated, false);
-    // v0.6.48 — the arm always emits force_full_repaint + render Cmds
-    // (reopen paint-guarantee); the invariant here is "no FETCH Cmd for
-    // literal choices", not "zero Cmds total". Narrow the assertion to
-    // the choices-fetch Cmd shape.
+    // Invariant: literal `choices:` must NOT trigger a fetch Cmd —
+    // the data is already resolved at parse time. (Overlay-compositor
+    // Release 1 removed the per-arm paint Cmds, so this assertion is
+    // now equivalent to `cmds.length === 0`, but the fetch-shaped
+    // filter stays — it documents the real invariant being pinned.)
     const fetchCmds = (cmds || []).filter(
       (c) => c && (c.type === 'fetch_choices' || c.type === 'fetch_choices_cmd'
                    || (c.type === 'msg' && c.msg && c.msg.type === 'fabric_form_choices_request')));

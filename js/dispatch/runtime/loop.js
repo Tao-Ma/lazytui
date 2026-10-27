@@ -26,6 +26,18 @@ const { wrap } = route;
 const { getModel, setModel } = require('../../model/store');
 const runtime = require('../update/reducer');
 const { runEffects, flushNavCapture } = require('./effects');
+// Release 1 of the overlay-compositor migration (docs/overlay-compositor-
+// migration.md): applyMsg schedules a trailing paint at depth-0 exit so a
+// root Msg dispatched OUTSIDE the input pump's trailing-render span (the
+// setImmediate-dispatched-applyMsg hazard — Class C in the plan) still
+// repaints. Reducer arms no longer need to emit per-arm `render` /
+// `force_full_repaint` Cmds for that reason alone. The render-queue's
+// _renderPending guard coalesces with the pump's own paintNow when both
+// paths fire for the same gesture.
+//
+// Lazy property access (matches dispatch/runtime/replay-control.js's `_render`
+// seam) so a test can intercept by replacing `renderQueue.scheduleRender`.
+const _renderQueue = require('../../leaves/infra/render-queue');
 // #D4 — the post-dispatch invariant pass (scroll clamp + viewer innerH + PTY +
 // instance reconcile) lives in its own after-update-phase module now; the loop
 // only gates it at depth-0 exit. One-way edge: loop → finalize.
@@ -134,6 +146,16 @@ function applyMsg(msg) {
         || (navBefore !== undefined && _navMsgSeq !== navBefore)
         || (jobsBefore !== undefined && getModel().jobs !== jobsBefore)
         || (overlayBefore !== undefined && _overlayClockOn(getModel()) !== overlayBefore)) finalizeDispatch();
+      // Trailing paint for every top-level applyMsg (migration plan Release 1):
+      // the input pump dispatches via paintNow after each chunk, but applyMsg
+      // can also land from async paths — setImmediate'd effects (do_run,
+      // run_action, unrouted_preempt_and_run) and the jobs/metrics store
+      // mirrors — where no pump-owned trailing render follows. The scheduled
+      // paint rides the render-queue's 50 ms debounce + _renderPending guard,
+      // so a pump-driven applyMsg's own paintNow coalesces with it (one paint
+      // per gesture, not two). Nested applyMsg / dispatchMsg / dispatchKeyToFocused
+      // never reach this branch (depth > 0).
+      _renderQueue.scheduleRender();
     }
   }
 }

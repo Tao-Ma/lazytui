@@ -380,24 +380,12 @@ function update(model, msg) {
           msg: { type: 'fabric_form_choices_request', port: field.port },
         });
       }
-      // v0.6.48 — paint-guarantee on reopen. The empty-resubmit cycle
-      // (fabric_form_submit emits do_run → setImmediate → doRun →
-      // _promptMissing → applyMsg(fabric_form_enter)) dispatches this arm
-      // from INSIDE a setImmediate, not from the input pump — so there's
-      // NO trailing render after the model update. Pre-fix, the reopened
-      // form was sometimes invisible (operator saw idle screen, every
-      // key was eaten by the invisible modal — field-caught 2026-10-27
-      // against the consumer `session enable` action).
-      //
-      // Fix: emit `force_full_repaint` (invalidates diff cache so a
-      // close+reopen cycle can't leave outgoing cells as ghost chrome —
-      // the v0.6.33 shrink class) PLUS `render` (schedules a paint via
-      // the 50ms-debounced queue). Harmless on the first-open path too —
-      // the pump's trailing render coalesces with the scheduled one.
-      const paintCmds = [
-        { type: 'force_full_repaint' },
-        { type: 'render' },
-      ];
+      // Trailing paint is scheduled by applyMsg at depth-0 exit (overlay-
+      // compositor migration Release 1 — docs/overlay-compositor-migration.md).
+      // Prior to that, this arm had to emit `force_full_repaint` + `render`
+      // Cmds itself to survive the setImmediate'd reopen path (v0.6.48 fix).
+      // Class A (overlays bypass cell-diff) still rides its sig trackers in
+      // paint.js until Release 2; the applyMsg schedule covers Class C.
       return [withModalMode(model, { fabricFormMode: true }, {
         fabricForm: {
           fields,
@@ -406,7 +394,7 @@ function update(model, msg) {
           picking: null,       // choices-popover state; opened via fabric_form_choices_open
           requestSeq: 0,       // monotonic counter for choices-request ids (replay-safe)
         },
-      }), [...paintCmds, ...initialRequests]];
+      }), initialRequests];
     }
     case 'fabric_form_key': {
       if (!model.modes.fabricFormMode) return [model, []];

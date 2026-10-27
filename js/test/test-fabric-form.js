@@ -634,40 +634,35 @@ describe('[fabric-form] KEY path integration — choices popover (slice 2)', () 
 });
 
 // -------------------------------------------------------------------------
-// [10] fabric_form_enter PAINT-GUARANTEE — v0.6.48 BUG fix.
+// [10] fabric_form_enter PAINT-GUARANTEE — v0.6.48 BUG fix, Release-1
+//      migration (docs/overlay-compositor-migration.md).
 //
-// The empty-resubmit cycle on a required-missing-port action:
-//   user Enter on empty field → submit arm closes form + emits do_run →
-//   setImmediate → doRun → _promptMissing → applyMsg(fabric_form_enter)
-// The last applyMsg lands INSIDE a setImmediate, OUTSIDE the input
-// pump's trailing-render span. Pre-fix, no paint was scheduled — the
-// reopened form was invisible but alive (every subsequent key eaten
-// by it). Fix: fabric_form_enter arm emits force_full_repaint + render
-// Cmds so a reopen reliably paints, and the diff cache invalidation
-// prevents the v0.6.33 overlay-shrink class (ghost chrome from a
-// close+reopen pair).
+// The setImmediate'd reopen cycle used to drop the trailing paint, so the
+// reducer arm emitted its own force_full_repaint + render Cmds (v0.6.48).
+// Overlay-compositor Release 1 moved that guarantee UP into applyMsg's
+// depth-0 trailing scheduleRender(), so EVERY top-level root dispatch
+// schedules a paint — the reducer arm no longer carries per-arm paint
+// Cmds for Class C (the setImmediate hazard). This section inverts the
+// invariant: the arm must emit NO per-arm paint Cmds, so a drift back
+// to the old shape is caught in test. The paint-after-dispatch guarantee
+// is pinned at the loop level in test-loop-schedule.js.
 // -------------------------------------------------------------------------
 
-describe('[10] fabric_form_enter paint-guarantee', () => {
-  it('REGRESSION — fabric_form_enter emits force_full_repaint + render Cmds', () => {
+describe('[10] fabric_form_enter paint-guarantee moved to the loop', () => {
+  it('REGRESSION — fabric_form_enter emits NO per-arm paint Cmds', () => {
     let m = freshModel();
     const [, cmds] = runtime.update(m, { type: 'fabric_form_enter',
       fields: fieldsFor(), pendingAction: PENDING });
     const types = cmds.map((c) => c && c.type);
-    assert(types.includes('force_full_repaint'),
-      `fabric_form_enter must emit force_full_repaint (diff-cache invalidation ` +
-      `prevents the v0.6.33 ghost-chrome class on close+reopen). Got: ${JSON.stringify(types)}`);
-    assert(types.includes('render'),
-      `fabric_form_enter must emit render (schedules a paint for the reopen ` +
-      `path which lands inside setImmediate, outside the input pump's trailing ` +
-      `render). Got: ${JSON.stringify(types)}`);
+    assert(!types.includes('force_full_repaint'),
+      `fabric_form_enter must NOT emit force_full_repaint — the loop's ` +
+      `trailing scheduleRender owns the paint. Got: ${JSON.stringify(types)}`);
+    assert(!types.includes('render'),
+      `fabric_form_enter must NOT emit render — the loop's trailing ` +
+      `scheduleRender owns the paint. Got: ${JSON.stringify(types)}`);
   });
 
-  it('paint Cmds come BEFORE any initial choices fetch requests', () => {
-    // Not a correctness requirement (both effects are idempotent on the
-    // render-queue level), but a diagnostic one — a reader walking the
-    // cmd list should see "ensure painted" before "fetch choices" so the
-    // intent is obvious.
+  it('first-open with a computed-choices field: only fetch Cmds, no paint Cmds', () => {
     const choicesField = {
       port: 'section', text: '', required: true, default: null, desc: '',
       choicesFnRef: 'edit.sections_of', dependsOn: [],
@@ -676,50 +671,26 @@ describe('[10] fabric_form_enter paint-guarantee', () => {
     const [, cmds] = runtime.update(m, { type: 'fabric_form_enter',
       fields: [choicesField], pendingAction: PENDING });
     const types = cmds.map((c) => c && c.type);
-    const paintIdx = Math.min(types.indexOf('force_full_repaint'), types.indexOf('render'));
-    const fetchIdx = types.findIndex((t) => t === 'msg');
-    assert(paintIdx >= 0 && fetchIdx >= 0,
-      `both paint and fetch cmds expected. Got: ${JSON.stringify(types)}`);
-    assert(paintIdx < fetchIdx,
-      `paint cmds should precede fetch cmds. Got: ${JSON.stringify(types)}`);
+    assert(!types.includes('force_full_repaint') && !types.includes('render'),
+      `no paint Cmds expected. Got: ${JSON.stringify(types)}`);
+    assert(types.every((t) => t === 'msg'),
+      `only choices-request Cmds expected on first open. Got: ${JSON.stringify(types)}`);
   });
 
-  it('non-empty resubmit cycle (model side): fabric_form_enter emits paint Cmds on reopen', () => {
-    // v0.6.49 — the v0.6.48 original scope ("empty resubmit close+reopen")
-    // is now caught by the Brief 2 no-churn short-circuit (see [11]
-    // below), so this test pins the paint-guarantee invariant for a
-    // DIFFERENT reopen path: an action with a confirm, where the submit
-    // routes through the confirm overlay and the form reopens for a
-    // different port on retry. Simpler shape here — directly dispatch
-    // a second fabric_form_enter and assert the paint Cmds on both
-    // the first open AND the re-enter.
+  it('close + reopen cycle: reopen arm still emits no per-arm paint Cmds', () => {
     let m = freshModel();
-    const [m1, firstCmds] = runtime.update(m, { type: 'fabric_form_enter',
+    const [m1] = runtime.update(m, { type: 'fabric_form_enter',
       fields: [{ port: 'name', text: '', required: true, default: null, desc: '' }],
       pendingAction: PENDING });
     assert(m1.modes.fabricFormMode, 'open');
-    assert(firstCmds.some((c) => c && c.type === 'force_full_repaint'),
-      `first open emits force_full_repaint`);
-    assert(firstCmds.some((c) => c && c.type === 'render'),
-      `first open emits render`);
-    // Reopen (simulating e.g. config_swap-triggered re-prompt).
-    const [m2, reopenCmds] = runtime.update(m1, { type: 'fabric_form_enter',
-      fields: [{ port: 'name', text: '', required: true, default: null, desc: '' }],
-      pendingAction: PENDING });
-    // The flat-modals guard (isChainActive) actually drops this reopen
-    // when the first form is still open — the reducer early-returns
-    // [model, []]. That's a defensive guard, NOT the v0.6.48 fix target.
-    // The reopen path the fix targets is through a close + reopen cycle;
-    // simulate it by closing first.
     const [m2closed] = runtime.update(m1, { type: 'fabric_form_cancel' });
-    const [m3, reopenCmds2] = runtime.update(m2closed, { type: 'fabric_form_enter',
+    const [m3, reopenCmds] = runtime.update(m2closed, { type: 'fabric_form_enter',
       fields: [{ port: 'name', text: '', required: true, default: null, desc: '' }],
       pendingAction: PENDING });
     assert(m3.modes.fabricFormMode, 'reopened after close + fabric_form_enter');
-    assert(reopenCmds2.some((c) => c && c.type === 'force_full_repaint'),
-      `reopen must emit force_full_repaint — v0.6.48 paint-guarantee invariant`);
-    assert(reopenCmds2.some((c) => c && c.type === 'render'),
-      `reopen must emit render — v0.6.48 paint-guarantee invariant`);
+    const types = reopenCmds.map((c) => c && c.type);
+    assert(!types.includes('force_full_repaint') && !types.includes('render'),
+      `reopen arm must not emit per-arm paint Cmds. Got: ${JSON.stringify(types)}`);
   });
 });
 
