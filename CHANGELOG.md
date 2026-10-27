@@ -6,6 +6,94 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+Four shipped feature arcs on the v0.6.43 train — one CLI (completion
+disk cache) + three TUI (literal-choices popover fix, `[last]` chip,
+type-to-filter popover). Not tagged yet; see the SHAs in each section
+below. Pre-release review landed three correctness fixes before cut
+(T1 of a four-track sweep on `3e130883..c6e40d1d`).
+
+### Added
+
+- **On-disk TTL cache for the shell completion helper (`3e130883`).**
+  `./do session worktree <repo> <TAB>` and friends paid a full
+  `choices_cmd` spawn + up to 2.5s timeout on every TAB press — the
+  v0.6.41 model-resident cache was TUI-only, invisible to `--complete`
+  which is a one-shot process. A hit within TTL now prints cached items
+  and skips the spawn.
+  - **Default TTL 15s**, LRU cap 64 cache files, path
+    `$XDG_CACHE_HOME/lazytui/complete/<sha1-of-realpath>.json`
+    (fallback `~/.cache`). Atomic tmp+rename, chmod 0600.
+  - **Escape hatch**: set `LAZYTUI_COMPLETE_NO_CACHE=1` to skip both
+    read and write (debug an edited `choices_cmd` without 15s of stale
+    cache in the way).
+  - Never caches: timeouts, errors, empty item lists. Shape mirrors
+    the TUI's `_cachePut` LRU through a shared key-derivation leaf
+    (`js/leaves/ports/choices-cache-key.js`) so TUI + helper hash to
+    byte-identical keys — a future convergence point.
+
+- **`[last]` chip + per-action formHistory (`0b4f7c51`).** Reopening a
+  form for the same action pre-fills each field with the user's prior
+  submitted text under a `[last]` chip. Precedence
+  **resolved → last → default → empty** — explicit plumbing
+  (inject/wire) still wins; the memory outranks only the YAML author's
+  placeholder.
+  - **Model shape**: `model.formHistory = { entries: {}, order: [], cap: 64 }`
+    (LRU, shape mirrors `choicesCache`). Session-resident, never
+    persisted. Key is `${group}.${actionKey}` so two environments with
+    the same action name don't share slots.
+  - **Chip**: `[last]` paints under `accent`, distinct from `[default]`
+    (dim) / `[modified]` (warning) / `[unset]` (dim). Any edit clears
+    `isLast` → chip flips back to `[modified]`.
+  - **Inject invariant**: a `[last]`-seeded field untouched this
+    session STILL writes a one-shot inject on submit (the text differs
+    from the decl default — that's why it was remembered). Otherwise
+    the chip would lie: form paints memory, spawn runs the default.
+  - **Opt-out port key**: `remember: false` honored at BOTH read and
+    write time (passphrases, must-be-unique names, `--force`-style
+    confirmation ports whose friction is the contract). Parser rejects
+    non-boolean values via warn-drop code `port.bad_remember`
+    (`remember: "no"` would be truthy and defeat the opt-out).
+  - **`set_config` clears formHistory**: the action universe just
+    changed; stale pre-fills under a `[last]` chip against a redefined
+    action is exactly the trap this avoids.
+
+- **Type-to-filter in the choices popover (`c6e40d1d`).** Printable
+  keystrokes while the popover is open APPEND to a filter; the popover
+  renders only the matching rows. Case-insensitive substring match
+  against VALUE and LABEL (labeled lists filter on what the user sees).
+  Replaces the "any other key closes the popover" fall-through that
+  shipped with slice-2 — real lists like branch names, session nodes,
+  client certs made arrow-scroll the slowest part of form entry.
+  - **Chrome**: `/<filter>` row above the choices list; `(no match)`
+    row when the filter kills every candidate (Enter there closes
+    rather than commits an empty string); help line swaps
+    `[esc] close popover` ↔ `[esc] clear filter` while active.
+  - **Esc two-step**: first Esc clears a non-empty filter, second Esc
+    closes the popover. Prevents a reflex-cancel from a search tearing
+    the whole popover down.
+  - **Shared leaf** (`js/leaves/ports/choices-filter.js`): reducer
+    nav-clamp + dispatch Enter-value lookup + overlay row-painting all
+    read ONE source. Three channels (fn / cmd / literal) behave
+    identically.
+  - **128-char filter cap** (post-concat, surrogate-split guarded),
+    `idx` resets to 0 on every filter change AND on a mid-filter
+    resolved reply that would otherwise land past the narrowed view.
+  - Keys unchanged: Space still closes, Tab/Shift-Tab still
+    close + fall-through, Enter still commits the VALUE (not label).
+
+### Fixed
+
+- **Literal `choices:` fields now open the popover on Space (`fff88025`).**
+  Pre-fix, a field declared with literal `choices: { items: [...] }`
+  advertised a `[N choices]` chip but the popover never actually
+  opened — the reducer `fabric_form_choices_open` guard and the
+  dispatch SPACE handler both checked only `choicesFnRef || choicesCmd`.
+  New shared leaf `js/leaves/ports/has-choices.js` with
+  `declHasChoices(pdef)` is the single truth source for all four
+  consumer sites (open-guard, SPACE branch, action-runner's
+  `anyChoices` lane split, overlay footer-hint). Same drift class as
+  v0.6.29's CLI/TUI parity miss; the leaf is the preventative version.
+
 ## [0.6.42] — 2026-10-26
 
 ### Added
@@ -4438,7 +4526,7 @@ release tarballs. Full pre-squash development history is preserved
 on the internal gitea mirror under the `backup/main-history` branch
 and the `v0.1.0-pre-squash` tag.
 
-[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.36...HEAD
+[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.42...HEAD
 [0.6.36]: https://github.com/Tao-Ma/lazytui/compare/v0.6.35...v0.6.36
 [0.6.32]: https://github.com/Tao-Ma/lazytui/compare/v0.6.31...v0.6.32
 [0.6.31]: https://github.com/Tao-Ma/lazytui/compare/v0.6.30...v0.6.31

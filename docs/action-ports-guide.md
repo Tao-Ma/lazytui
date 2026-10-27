@@ -1,6 +1,6 @@
 # Action ports — a guide for component authors (humans and AI)
 
-**Status:** shipped — slice 1 (v0.6.34) + slice 2 (v0.6.35) + slice 3 (v0.6.36) + literal `choices:` (`[Unreleased]`). The multi-field form is live for any action with 2+ declared `ports.in`; actions with a single port keep the pre-slice-1 one-field popup. **Computed choices (`choices_fn:` + `depends_on:`)** ship in slice 2 — see the "Computed choices" section. **Shell-backed choices (`choices_cmd:` + `choices_labeled:` + `choices_timeout:`)** ship in slice 3 — see the "Shell-backed choices" section. **Static literal choices (`choices:`)** ship under `[Unreleased]` — see the "Literal choices" section (the static sibling of the two dynamic channels). The review page + section grouping are planned follow-ups and are flagged inline below.
+**Status:** shipped — slice 1 (v0.6.34) + slice 2 (v0.6.35) + slice 3 (v0.6.36) + literal `choices:` (v0.6.41) + variadic port (v0.6.42) + three v0.6.43-unreleased briefs: literal-choices popover fix (same drift class as Brief 1 of the v0.6.43 arc), `[last]` chip + per-action formHistory, type-to-filter in the choices popover. The multi-field form is live for any action with 2+ declared `ports.in` OR any port carrying a choices affordance; actions without those keep the lean one-field popup. **Computed choices (`choices_fn:` + `depends_on:`)** ship in slice 2 — see the "Computed choices" section. **Shell-backed choices (`choices_cmd:` + `choices_labeled:` + `choices_timeout:`)** ship in slice 3 — see the "Shell-backed choices" section. **Static literal choices (`choices:`)** ship in v0.6.41 — see the "Literal choices" section (the static sibling of the two dynamic channels). The review page + section grouping are planned follow-ups and are flagged inline below.
 
 **For:** anyone writing a lazytui component or shell action — including AI assistants generating them. If you declare `ports.in` on an action, this doc tells you how your choices will render in the invoke-time form and how they'll bind at run time. The authoritative reference for the dataflow mechanics stays in [`docs/ports-and-wires.md`](ports-and-wires.md).
 
@@ -60,13 +60,14 @@ Each entry in `ports.in` is `{ name: { ...decl } }` where `name` is a strict ide
 | `required` | bool | `true` | If false, resolution can complete without this value and the shell receives an unset env var; if true, running the action without a resolved value re-opens the invoke-time popup. The form does not block Enter on an empty required field — submit emits do_run and the resolver re-triggers the prompt. |
 | `default` | string \| number | — | Pre-fills the field in the form and lets the resolver fall back when nothing upstream supplies the value. **Not type-checked in slice 1** — the raw literal is stringified and used as-is. |
 | `desc` | string | `''` | One-line hint. Rendered under the field name in the form; keep it ≤ 60 chars for narrow terminals. |
-| `choices` | list | — | (planned) Static enum of allowed values; renders as inline cycle or popover depending on list length. |
 | `choices` | list | — | Static list of valid values. Each entry is either a scalar (string / number / boolean coerced to string) or a `{value, label}` map (label shown in the TUI popover; `value` is submitted). No shell, no timeout. Mutually exclusive with `choices_fn:` / `choices_cmd:` — setting both is a parse error. See "Literal choices" below. |
 | `choices_fn` | string | — | Dotted ref `<component>.<fnName>` to a registered function the component ships; the fn returns the choices list at invoke time. Reachable only from Components / feature plugins (JS). See "Computed choices" below. |
 | `choices_cmd` | string | — | Shell command whose stdout provides the choices list at invoke time (one choice per line). Reachable from pure YAML. Mutually exclusive with `choices_fn:` / `choices:` — setting multiple is a parse error. See "Shell-backed choices" below. |
 | `choices_labeled` | bool | `false` | Only with `choices_cmd:`. When `true`, each output line is split on the first `\t` into `value\tlabel`; the overlay shows `label`, submits `value`. |
 | `choices_timeout` | int (ms) | `5000` | Only with `choices_cmd:`. Hard timeout for the shell command; SIGTERM at expiry → `[timeout]` chip. Max 60000. |
 | `depends_on` | list | — | Sibling port names this port's `choices_fn:` / `choices_cmd:` reads. Edits to a depended-on port, on blur, trigger a reactive refetch. For `choices_cmd:`, dep values are bound onto the child env (port name → env var, verbatim). |
+| `variadic` | bool | `false` | Opts an input port into "command + arbitrary args" mode (one line of text tokenized into argv items via the shared `fabric/command.tokenize` leaf). Must be LAST in declaration order; mutex with `choices` / `choices_fn:` / `choices_cmd:` / `depends_on:` / `default:` (all hard parse errors). Replaces the legacy `"$@"` surface. See the v0.6.42 CHANGELOG for the full rules. |
+| `remember` | bool | `true` | Opt a port out of the per-action **formHistory** cache (the `[last]` chip on form re-open). Set `remember: false` for ports whose last value is wrong to pre-fill — passphrases, must-be-unique names, `--force`-style typed-confirmation ports whose friction IS the contract. **Strictly boolean**; `remember: "no"` warn-drops under code `port.bad_remember` because `"no"` is truthy in JS and would defeat the opt-out. See "Last-used values" below. |
 | `section` | string | — | (planned) Logical grouping for actions with 10+ ports. |
 
 Unknown port-level keys are **not** rejected at config load today — they're
@@ -99,7 +100,7 @@ The form groups fields by requiredness, required first:
 - Field order within each section mirrors declaration order (your YAML order wins).
 - The port's `name` is the left-column label — pick names that read well there. `source_url` beats `src`.
 - `desc` is a dim one-liner under the input. Users scan it; don't repeat the port name.
-- Chips: `[default]` when text equals the declared default; `[modified]` when edited; `[unset]` when empty and no default.
+- Chips: `[default]` when text equals the declared default; `[modified]` when edited; `[unset]` when empty and no default; **`[last]`** (accent, v0.6.43-unreleased) when the field was seeded from the per-action formHistory (your prior submit) and you haven't touched it this session. Any edit clears `[last]` → chip flips to `[modified]`. See "Last-used values" below.
 - An action with **exactly one** declared port opens the lean single-field `fabric-field` popup instead — no form chrome. Design one-port actions with that in mind: a long `desc` has room to breathe. **Exception:** a one-port action whose port declares any of `choices:` / `choices_fn:` / `choices_cmd:` opens the (one-field) form instead so the choices chip and `[space]` popover are reachable — the lean popup has no choices machinery. The fetch fires on invoke-time form-open, so `confirm:` + `choices_cmd:` on a 1-port action still runs the choices command between the confirm accept and the script spawn (see "Shells at form-open time: `confirm:` does NOT gate `choices_cmd:`" below).
 
 ---
@@ -435,7 +436,7 @@ module.exports = {
 What the user sees:
 
 1. Open the form — the computed field's chip reads `[fetching…]` while the fn is in flight; `[N choices]` once ok; `[error]` if the fn threw or rejected.
-2. `[space]` on the focused computed field opens an inline popover under the row. Up/Down highlight; Enter picks; Esc closes without picking. The user can also type freely — the choices are a shortcut, never a hard constraint.
+2. `[space]` on the focused computed field opens an inline popover under the row. **Up/Down** highlight; **Enter** picks the highlighted value (commits the VALUE, not the label); **Esc** closes — or if the user has typed a filter, first-Esc clears the filter and second-Esc closes. **Type-to-filter** (v0.6.43-unreleased) narrows the list to rows whose value OR label contains the typed string (case-insensitive substring); the popover paints a `/<filter>` row above the list and swaps the help line to `[esc] clear filter`. **(no match)** paints when the filter kills every candidate; Enter on that row closes without committing an empty string. Space still closes the popover (filter matching is substring, so multi-word labels are reachable without typing a space). Tab/Shift-Tab close + fall-through to the next field. The user can also keep typing printable characters to narrow further, or backspace to widen. Choices stay a shortcut, never a hard constraint — Esc + type overrides them.
 3. Tab away from a depended-on port after editing it — the computed field refetches on blur. Tabbing away without editing the dep is a no-op (no flicker).
 
 A few rules the parser enforces (warn+drop, not throw — your YAML keeps loading on upgrade):
@@ -519,7 +520,7 @@ Default (`choices_labeled: false`): one line = one choice. CRLF normalized; blan
 
 With `choices_labeled: true`: split each line on the FIRST `\t` into `value\tlabel`. The overlay shows `label`, submits `value`. A line without a tab means label falls back to value — convenient for mixed lists where some entries don't need a long label.
 
-The popover is up/down + enter today (no filter). If you expect to add one later, keep the value text inside the label so a filter you'd want to type (`foo`) matches a visible label (`foo (expires 2027-01)`) rather than an invisible value.
+The popover supports **type-to-filter** (v0.6.43-unreleased): the user narrows the list by typing a substring. Match is case-insensitive against the VALUE AND the LABEL, so labels like `foo (expires 2027-01)` are reachable by typing `expires` even if the value is a bare id — but keeping the value's identifying text inside the label stays the best style (one fewer thing for the user to translate).
 
 ### Cap: 32 items
 
@@ -603,11 +604,39 @@ A port with a `default:` AND a `choices_cmd:` paints `[N choices]` (or `[fetchin
 
 Action `confirm:` gates the action's `script:` — not the choices_cmd that fires at form-open. If a user tabs to an action with `confirm: true`, the form opens and any choicesCmd on a required port runs immediately (same as `choices_fn:`'s behavior). Author trust bar is already "YAML write = full shell"; the asymmetry is worth noting so you don't put side-effecting shells in `choices_cmd:` and assume `confirm:` fences them off. If the choices command has a cost (an API call, a slow query), consider adding `depends_on:` on a cheap sibling port so the fetch doesn't fire until the user actually interacts.
 
+## Last-used values — the `[last]` chip (v0.6.43-unreleased)
+
+Submitting a form writes each remember-eligible port's text into a session-resident per-action LRU on `model.formHistory` (shape mirrors `choicesCache`, cap 64 `(group, actionKey)` entries, never persisted). Reopening the SAME action in the SAME group seeds each field with the remembered text under a `[last]` chip, with precedence **resolved → last → default → empty**:
+
+- Resolved values (inject, wire) still win — explicit plumbing beats memory.
+- Last-used outranks the decl `default:` on purpose — a value you submitted once is a stronger signal of intent than the YAML author's placeholder. If the author later changes the default, your pin survives (the chip still reads `[last]`, text is your prior value).
+- Any edit to a `[last]` field clears the flag — chip flips to `[modified]` and stays there.
+- A `[last]`-seeded field you do NOT touch STILL writes a one-shot inject on submit (the text differs from the decl default; that's why it was remembered). The form never paints a value the spawn silently ignores.
+- Changing config scopes (via `set_config`, i.e. picking up a new config file) clears formHistory — the action universe just changed; a stale pre-fill under `[last]` against a redefined action is exactly the trap this avoids.
+- The history key is `${group}.${actionKey}`, so two environments with the same action name (`deploy` in `prod` and in `stage`) do not share slots.
+
+**Opt out per port with `remember: false`:**
+
+```yaml
+reissue-cert:
+  ports:
+    in:
+      name:   { type: string, required: true, desc: "cert name" }
+      force:  { type: bool,   required: true, remember: false, desc: "overwrite existing cert" }
+      pass:   { type: string, required: true, remember: false, desc: "key passphrase" }
+```
+
+A `remember: false` port is never written to history AND never seeded from a stale slot (defense-in-depth: a prior opt-in that later became opt-out drops its memory on first read). Parser accepts strictly boolean; a `remember: "no"` warn-drops under code `port.bad_remember` with no truthy coercion (`"no"` is truthy in JS).
+
+The chip renderer paints `[last]` under `accent`, distinct from `[default]` (dim), `[modified]` (warning), and `[unset]` (dim). On a computed-choices field, `[fetching…]` and `[error]` take precedence while the fetch is live (the user needs to see the fetch state), but once the fetch settles with text differing from the default (the usual `[last]`-seeded case), the chip reads `[last]` and the popover is still reachable via `[space]`.
+
+---
+
 ## Known limitations
 
 Two cases where the computed-choices surface currently falls short — both apply to `choices_fn:` AND `choices_cmd:`, and both are planned work for later slices, documented here so you can design around them:
 
-- **Sticky-filled forms never open.** If every required port is already filled by a sticky inject (from a prior invocation's ports-pane edit) or a wire, the resolver reports `ready: true` and the form never opens — so the user can't reach the choices popover for a port that *would* have one. The `[a] edit args` keybind (listed under "Looking ahead" below) will open the form on demand even when every port is resolved; until it ships, a user who wants fresh choices has to clear the sticky inject via the ports pane first.
+- **Sticky-filled forms never open.** If every required port is already filled by a sticky inject (from a prior invocation's ports-pane edit) or a wire, the resolver reports `ready: true` and the form never opens — so the user can't reach the choices popover for a port that *would* have one. Press `[a]` (edit args, shipped in v0.6.41) to open the form on demand even when every port is resolved. Otherwise, clear the sticky inject via the ports pane first.
 - **Wire-fed deps don't retrigger `choices_fn:` / `choices_cmd:` on new producer output.** The form snapshots a dep's text at open time; if a producer streams a fresh value to a wired dep after the form is up, the computed field keeps serving choices derived from the opened-at value. No reactive refetch fires until the user tabs through the dep (which, for a wire-fed field, they rarely do). A `wire_updated` subscription arm would fix this; it isn't in slice 3 either.
 
 Neither case corrupts data — the submit path binds whatever's currently in the field — but both can leave the user looking at stale choices.
@@ -616,10 +645,9 @@ Neither case corrupts data — the submit path binds whatever's currently in the
 
 Slices after this one add the following, in rough order. All are purely additive — nothing in this doc goes stale.
 
-- `choices: [...]` — static enum ports render as inline-cycle (short list) or anchored popover (long list), reusing the choices chip + popover rendering (now channel-agnostic) as the degenerate case.
 - A review page before run — Enter from the form opens a read-only "about to run" screen with the resolved argv/env.
-- A `[a] edit args` keybind on actions — opens the form even when nothing's missing, so the user can tweak defaults on a one-shot run.
 - `section: '…'` — opt-in grouping key for 10+ port actions.
+- Per-port `choices_cache_ttl:` — override the completion disk cache's 15s default per port. Deferred until a real need appears.
 
 When any of those land, this doc gains a new section; existing guidance stays correct.
 

@@ -61,6 +61,40 @@ exec node tui.js config.yml "$@"
 
 The `"$@"` passthrough is enough; no special handling for the two new flags.
 
+## On-disk TTL cache (v0.6.43-unreleased)
+
+The `--complete` helper is a one-shot process — the v0.6.41 model-resident `choicesCache` (stale-while-refetch for the TUI) is invisible to it. Without a store that outlives the process, every TAB press respawns `choices_cmd:` and pays up to the port's `choices_timeout` (default 5000ms, max 60000ms) each time. Example pain: `./do session worktree <repo> <TAB>` on dev9 fires `docker exec ... git branch` per press.
+
+Fix: a per-config on-disk LRU TTL cache sitting between the helper and `choices_cmd:`. A hit within the TTL (default **15 seconds**) prints cached items and skips the spawn.
+
+**Shape**
+- Path: `$XDG_CACHE_HOME/lazytui/complete/<sha1-of-realpath>.json` (fallback `~/.cache/lazytui/complete/...`).
+- Directory permissions: 0700. File permissions: 0600.
+- Atomic write: tmp + rename (never a partially-written file).
+- LRU cap: 64 entries per cache file (one per `(actionKey, port, source, deps-hash)` key).
+- Key shape: `${actionKey}|${port}|${source}|${depsHash}` where `source` is `cmd:<cmd>`. Dep values go into `depsHash` so same-port fetches with different deps (worktree.branch for repo A vs repo B) stay apart.
+
+**Never cached**
+- Timeouts (`[timeout]` chip equivalent) — a timeout is "the author's command was too slow", caching it would pin the slow outcome. Next TAB retries fresh.
+- Non-zero exits / errors — same reasoning.
+- Empty item lists — an empty result is often transient (dep not yet filled), caching it hides the real list when it lands.
+
+**Escape hatch**
+
+```sh
+LAZYTUI_COMPLETE_NO_CACHE=1 ./do session worktree <repo> <TAB>
+```
+
+Skips both read AND write. Use this when debugging an edited `choices_cmd:` so the 15s stale window doesn't hide the change, or when you specifically want to measure a cold spawn. The env var is only consulted by the completion helper; the TUI's own cache is unaffected.
+
+**Cache invalidation = you**
+
+The cache is **time-bounded only** — no mtime watch on the config, no SIGUSR trigger, no file-watcher. If you need an immediate retry on an edited `choices_cmd:` without waiting out the TTL, either set `LAZYTUI_COMPLETE_NO_CACHE=1` for the next TAB, or wipe the cache file by hand (`rm "$XDG_CACHE_HOME/lazytui/complete/<sha1>.json"`).
+
+**Shared with the TUI**
+
+The key derivation (`js/leaves/ports/choices-cache-key.js`) is shared between this on-disk cache and the TUI's `_cacheKeyFor` so the two hash to byte-identical keys. The STORES stay separate (model-resident for TUI, process-local for CLI) because the TUI needs WAL-replay determinism and the CLI helper has no model to carry — but the key format is a convergence point for future unification.
+
 ## Error handling
 
 **Completion must stay silent during TAB.** The `--complete` helper:
