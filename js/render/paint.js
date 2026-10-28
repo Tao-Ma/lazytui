@@ -999,6 +999,7 @@ function render(model) {
   if (md.confirmMode) renderConfirmOverlay(newRows, COLS);
   if (md.copyMode)    renderCopyMenu(newRows, COLS);
   if (md.diagLogMode) require('../overlay/diag-log').renderDiagLog(now, newRows, COLS);
+  if (md.jobsMode)    renderJobsOverlay(now, newRows, COLS);
   const mainDidFull = _paintMainFrame(newRows, COLS);
   // Only force the terminal-overlay repaint when main paint actually
   // cleared the screen (resize, overlay-close, first frame). In the steady
@@ -1054,7 +1055,9 @@ function render(model) {
   // via the modeChain; lazy-required so paint-time cost is zero when
   // closed and the require doesn't widen the paint tree at boot.
   if (md.paletteMode) require('../overlay/action-palette').renderActionPalette();
-  if (md.jobsMode)    renderJobsOverlay(now);
+  // jobsMode moved up (overlay-compositor Release 2 Phase 2.a #4): it
+  // composites into newRows BEFORE paintFrame. See the
+  // `renderJobsOverlay(now, newRows, COLS)` call above.
   // diagLogMode moved up (overlay-compositor Release 2 Phase 2.a #3): it
   // composites into newRows BEFORE paintFrame. See the
   // `renderDiagLog(now, newRows, COLS)` call above.

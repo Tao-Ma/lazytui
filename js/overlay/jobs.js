@@ -107,7 +107,13 @@ function viewportRows() {
 // clock; docs/model-now-tick.md) so this render is a pure function of
 // (jobs registry, model, now). No Date.now() default: the one caller
 // (paint.render) always threads model.now; a bare call should fail loudly.
-function renderJobsOverlay(now) {
+//
+// Overlay-compositor migration (Release 2 Phase 2.a #4). When `newRows` +
+// `cols` are threaded in by paint.js, the overlay composites into the
+// main-frame row buffer through `renderOverlay`'s `targetRows` path —
+// cell-diff then handles both the leading paint AND the clean-up on
+// close/resize from the natural row delta. Omitted → stdout fallback.
+function renderJobsOverlay(now, newRows, cols) {
   if (!getModel().modes.jobsMode) return;
   // FIX-1 stage 3 — read the store-mirror'd snapshot off the model, not the
   // off-model feature/jobs registry live. The store-mirror cb keeps model.jobs
@@ -148,6 +154,7 @@ function renderJobsOverlay(now) {
     lines, title: 'Running',
     maxWidth: wantW,
     count: list.length ? [cursor + 1, list.length] : undefined,
+    targetRows: newRows || null, targetCols: cols || 0,
   });
 }
 
