@@ -36,14 +36,14 @@ const { resolveForRender } = require('../leaves/ports/resolve-for-render');
 // values (functions, Date, Set, Map) onto an action would break BOTH
 // the preview AND the run — so the preview's accuracy is coupled to
 // the invariant the run already needs. No separate pin required.
-// Overlay-compositor migration (Release 2, Phase 2.a #1 — Overlay #1 of 9
+// Overlay-compositor migration (Release 2, Phase 2.a #1 — Overlay #1 of 8
 // simple overlays). `newRows` + `cols` thread through to `renderOverlay`
-// which composites the overlay rows into the main-frame row buffer instead
-// of writing ANSI directly to stdout. The cell-diff then catches both the
-// overlay's leading paint AND the clean-up on close/resize from the natural
-// row delta — one of the two paths that will eventually let paint.js drop
-// its per-overlay sig trackers. Omitted (unit tests / migration-period
-// paths) → stdout fallback through the same `renderOverlay` call.
+// which composites the overlay rows into the main-frame row buffer. The
+// cell-diff then catches both the overlay's leading paint AND the clean-
+// up on close/resize from the natural row delta — the mechanism that let
+// paint.js drop its per-overlay sig trackers. End-of-Release-2 cleanup
+// (`47c6b0fe`) removed the stdout fallback; a call that omits newRows
+// now crashes loudly inside `compositeRow` (intentional).
 function renderConfirmOverlay(newRows, cols) {
   const model = getModel();
   const c = model.modal.confirm;

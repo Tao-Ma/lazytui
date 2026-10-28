@@ -70,11 +70,13 @@ function viewportRows() {
 // (diag ring buffer, model, now). No Date.now() default: the one caller
 // (paint.render) always threads model.now; a bare call should fail loudly.
 //
-// Overlay-compositor migration (Release 2 Phase 2.a #3). When `newRows` +
-// `cols` are threaded in by paint.js, the overlay composites into the
-// main-frame row buffer through `renderOverlay`'s `targetRows` path —
-// cell-diff then handles both the leading paint AND the clean-up on
-// close/resize from the natural row delta. Omitted → stdout fallback.
+// Overlay-compositor migration (Release 2 Phase 2.a #3). `newRows` +
+// `cols` are threaded in by paint.js; the overlay composites into the
+// main-frame row buffer through `renderOverlay`'s `targetRows` path.
+// Cell-diff then handles both the leading paint AND the clean-up on
+// close/resize from the natural row delta. End-of-Release-2 cleanup
+// (`47c6b0fe`) removed the stdout fallback; a call that omits newRows
+// crashes loudly inside `compositeRow`.
 function renderDiagLog(now, newRows, cols) {
   if (!getModel().modes.diagLogMode) return;
   // FIX-1 stage 2 — read the store-mirror'd snapshot off the model, not the

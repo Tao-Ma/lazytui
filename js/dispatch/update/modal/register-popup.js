@@ -81,9 +81,13 @@ function update(model, msg) {
         register: nextReg,
         modal: { ...model.modal, registerPopup: nextRp },
       };
-      // force_full_repaint reclaims the row the shrunk overlay no longer
-      // covers (the main diff can't see the overlay geometry).
-      return [next, [{ type: 'force_full_repaint' }]];
+      // Overlay-compositor Release 2 Phase 2.a #7: register-popup composites
+      // into newRows now; cell-diff emits per-cell writes for the shrunk
+      // rect on the natural row delta. The former per-arm
+      // `force_full_repaint` here (Class A workaround for the overlay
+      // bypassing newRows) is retired. applyMsg's depth-0 trailing paint
+      // (Release 1) still fires on the drop frame.
+      return [next, []];
     }
     case 'register_popup_commit': {
       if (!model.modes.registerPopupMode) return [model, []];

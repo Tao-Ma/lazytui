@@ -1138,12 +1138,12 @@ function update(msg, slice) {
     // the layout Component via a dispatch_msg Cmd so the existing
     // handlers do the work (single source of truth).
     //
-    // Toggle paths emit `force_full_repaint` — the panel-list overlay
-    // is a sub-state of the layout slice (not its own mode flag), so
-    // the render layer's overlay-set fingerprint doesn't change on
-    // toggle. Without the repaint, closing leaves the modal's pixels
-    // on screen (residue) and opening can race with the diff-painter
-    // skipping rows it thinks are unchanged.
+    // Overlay-compositor Release 2 Phase 2.a #6 (`e5eaed3a`): the former
+    // toggle-path `force_full_repaint` Cmds (open/close/pick, plus the
+    // free_config_enter auto-open) are retired — the overlay now
+    // composites into newRows, so cell-diff emits per-cell writes for
+    // the overlay rect from the natural row delta. See each arm's own
+    // comment for the per-arm retirement note.
     case 'panel_list_open': {
       // Refuse mid-drag: opening the overlay over an in-flight drag
       // hides the preview and the drag-source feedback, leaving the

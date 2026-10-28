@@ -262,7 +262,7 @@ identity-preserves on no-op. **All 30 arms are pure** — verified.
 | `escape` | Esc handler | `modes.listSelectMode→false` (if set) | `msg→multisel_clear` (focused nav) when `msg.route` set & had selection | shell¹ |
 | `list_select` | `v` (toggle) / `*` (on) | `modes.listSelectMode` | `msg→multisel_clear` when toggled OFF | shell¹ |
 | `enter_prefix` | leader key | `modes.prefixMode→true`, `prefixSeq=[]` (live node re-derived via `kb.nodeForSeq`, never stored — it holds closures) | — | ✓ |
-| `prefix_key` | key in prefix mode | `prefixSeq` (descend) or clears prefix (leaf/cancel) | `force_full_repaint` (descend) · `run_binding` (leaf) | ✓² |
+| `prefix_key` | key in prefix mode | `prefixSeq` (descend) or clears prefix (leaf/cancel) | `run_binding` (leaf) | ✓² |
 | `next_tab` / `prev_tab` | `]` / `[` | — | `msg→set_active_tab` (layout — cycle the content slot's position-tabs) | shell³ |
 | `nav_select` | row select (kbd/mouse) | — | `msg→set_cursor` + `show_selected_info` (+ `msg→groups_selected` if groups) | shell⁴ |
 | `terminal_enter` | enter-terminal verb | `modes.terminalMode→true` | `kkp_suspend` (child owns the terminal → legacy encoding) | ✓ |
@@ -918,7 +918,9 @@ Cmds, NEVER directly — clean cross-layer single-writer.** Verified.
 
 Three recurring patterns (footnoted as ★ below): **★f** emits
 `force_full_repaint` because the changed state is a slice-subfield overlay
-(panelList/paneMenu/drag-preview) the diff-painter can't see; **★w** routes a
+the diff-painter can't see on its own (paneMenu close/pane-swap, drag-preview
+target shift; panelList retired this emit in overlay-compositor Release 2,
+Phase 2.a #6); **★w** routes a
 focus change through `_withFocus` (stamps `focus` + sticky `halfLeftPanel` +
 `lastViewerTab`) and emits `show_selected_info`; **★m** flips a root mode flag
 via a `mode_set`/`mode_clear` Cmd.
@@ -961,15 +963,15 @@ via a `mode_set`/`mode_clear` Cmd.
 
 | Msg | Writes | Emits | Purity |
 |---|---|---|---|
-| `free_config_enter` | resets `freeConfig`, opens `panelList` (if hidden panes), focus | `mode_set{freeConfigMode}` ★m + `force_full_repaint` ★f (on open) | ✓⁶ |
+| `free_config_enter` | resets `freeConfig`, opens `panelList` (if hidden panes), focus | `mode_set{freeConfigMode}` ★m | ✓⁶ |
 | `free_config_exit` | commits focus ★w, clears `freeConfig`/`panelList` | `mode_clear{freeConfigMode}` + `mode_clear{freeConfigTitleEditMode}` ★m + `show_selected_info` | ✓ |
 | `free_config_nav`/`reorder`/`move_col`/`resize`/`panel_height`/`undo`/`redo` | `arrange`/`focus` (via `mfc`/`mfcCore` pure leaves) | — | ✓ |
 | `free_config_title_enter`/`submit`/`key`/`cancel` | `freeConfig.titleEdit` (+ commits title) | `mode_set`/`mode_clear{freeConfigTitleEditMode}` ★m | shell⁷ |
 | `free_config_mouse_press`/`motion`/`release` | `freeConfig.drag` (+ `previewArrange` on target change) | `force_full_repaint` ★f (on target shift) | ✓ |
 | `pool_drag_start`/`motion`/`release` | `freeConfig.drag` (+ `previewArrange`) | start/motion `force_full_repaint` ★f; release re-emits `pool_hide`/`pool_show` | ✓ |
 | `free_config_clear_undo` | clears undo/redo stacks | — | ✓ |
-| `panel_list_open{cursor}`/`close`/`nav{dir}` | `panelList` | `force_full_repaint` ★f (on open/close transition) | ✓ |
-| `panel_list_pick` | closes `panelList` | re-emits `pool_hide`/`pool_show` + `force_full_repaint` | ✓ |
+| `panel_list_open{cursor}`/`close`/`nav{dir}` | `panelList` | — | ✓ |
+| `panel_list_pick` | closes `panelList` | re-emits `pool_hide`/`pool_show` | ✓ |
 
 ⁰ Graph hover-for-value (mouse mode 1003). `input._handleHover` resolves the body
   cell under a button-less move over a `stats`/`composite` pane and dispatches this

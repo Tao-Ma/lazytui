@@ -1,9 +1,10 @@
 # Overlay compositor migration — v0.6.50 → v0.6.52
 
-> **Status**: planned, not started. Written 2026-10-27 after the
-> fifth same-day field-caught repaint fix (v0.6.49 shrink class #3).
-> User asked for an architectural review; this is the three-release
-> plan that resulted.
+> **Status**: Release 1 shipped v0.6.50 (`54b5bbf1`); Release 2
+> shipped v0.6.51 (`54b5bbf1..6d1e7f53` — 20 commits, see CHANGELOG);
+> Release 3 is next. Written 2026-10-27 after the fifth same-day
+> field-caught repaint fix (v0.6.49 shrink class #3). User asked for
+> an architectural review; this is the three-release plan that resulted.
 
 ## Motivation
 
@@ -79,6 +80,8 @@ No paint.js edits, no sig trackers, no explicit paint Cmds. Flat-modal
 
 ## Release 1 — v0.6.50 — schedule render after every applyMsg
 
+**Status**: **Shipped v0.6.50** (`54b5bbf1`, 2026-10-28). Class C closed.
+
 **Target**: close Class C globally.
 
 **Scope** (small, mostly `js/dispatch/runtime/loop.js`):
@@ -102,6 +105,15 @@ No paint.js edits, no sig trackers, no explicit paint Cmds. Flat-modal
 ---
 
 ## Release 2 — v0.6.51 — overlays composite into `newRows` (Option 1 plumbing)
+
+**Status**: **Shipped v0.6.51** (`ba971715..6d1e7f53` — 20 commits,
+2026-10-28). All 15 overlays migrated; all 4 sig trackers
+(`prevPaletteSig / prevMenuItems / prevFabricPickingSig / prevReplayView`)
+retired; 5 explicit `force_full_repaint` Cmds dropped; renderOverlay
+stdout fallback + pane-menu writeOut + cmdline dropdown fallback +
+global overlay-flag-drop forceFull all deleted. Hover tooltip migrated
+as part of end-of-Release-2 cleanup (`5349f9d5`). Perf — realistic
+−0.8%, stress −20.4%, stress+search +0.5% (bench-render-construction).
 
 **Target**: close Classes A + B. Delete all four sig trackers.
 
@@ -200,6 +212,14 @@ End of Release 2: after all 15 overlays migrated, delete the `if (targetRows) {.
 
 ## Release 3 — v0.6.52 — compositor registry (Option 4)
 
+**Status**: NEXT. Pre-release architectural review for v0.6.51 flagged
+two FYIs that Release 3's `zIndex` structurally absorbs: paint.js's
+composite order (`paint.js:943-956`) doesn't match `modes.js`
+CHAIN_MODES precedence (latent today — modeChain enforces mutual
+exclusion at the reducer); replay-scrubber stacking relative to modal
+overlays is implicit. Release 3's descriptor-with-zIndex is the
+structural fix for both.
+
 **Target**: close the pattern-level loop. paint.js's imperative if-chain goes away. Overlays become declarative.
 
 **Scope**: new `js/render/overlay-compositor.js` + each overlay's `registerSelf` export + paint.js if-chain replacement.
@@ -284,7 +304,13 @@ Decision point: delete the per-arm checks (compositor is single source of truth)
 
 ## Open questions / known uncertainties
 
-1. **Fabric-form choices popover sub-rect protocol.** The picker-within-form composites into a sub-region of the form overlay. In Release 2 this becomes "the form overlay's `render` composites itself into newRows, then internally composites the picker into a child rect inside its own output." Does this stay inside the form overlay's render fn (self-contained), or does the picker register as its own overlay with the compositor and the compositor enforces z-order? **Prefer the former** (self-contained) because the picker is semantically PART of the form, not a sibling overlay. Decide during Release 2.c.
+1. **Fabric-form choices popover sub-rect protocol.** **RESOLVED
+   during Release 2.c (`3ec1eb3a`).** The picker-within-form is
+   self-contained inside the form overlay's single `renderOverlay`
+   call — no sub-overlay registration needed. The form overlay's
+   `render` composites both the form chrome AND the picker rect into
+   its own output, then that output composites into newRows as one
+   overlay. `prevFabricPickingSig` deleted in the same commit.
 
 2. **Terminal pane overlay.** The embedded PTY pane's cells are updated out-of-band by the PTY data stream, bypassing `newRows` entirely. The compositor model assumes all overlays composite into `newRows`. Terminal panes are not quite overlays today — they live as pane kinds. Confirm this during Release 3 planning; they probably stay out of the compositor and keep their session.prevFrame caching.
 
@@ -310,4 +336,8 @@ Rough: 1–2 weeks of focused work total, across 6–11 sessions. Not time-bound
 
 ## Session kickstart
 
-Next session (fresh, zero context) should start with Release 1. Reference docs: this file, plus the five topic files from the 2026-10-27 fix run (project_v0645…v0649) that motivated the plan.
+Next session (fresh, zero context) should start with **Release 3**
+(§Release 3 above). Releases 1 and 2 shipped v0.6.50 / v0.6.51 on
+2026-10-28; see each §Status line for commit refs. Reference docs:
+this file, plus the five topic files from the 2026-10-27 fix run
+(project_v0645…v0649) that motivated the plan.

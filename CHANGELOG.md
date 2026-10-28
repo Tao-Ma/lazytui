@@ -6,6 +6,90 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.51] — 2026-10-28
+
+Overlay-compositor migration — **Release 2 of 3**
+(`docs/overlay-compositor-migration.md`). Closes **Classes A + B**:
+overlays no longer bypass the cell-diff baseline, and the four
+bespoke sig trackers that patched the symptom are gone. 20 commits
+(`54b5bbf1..6d1e7f53`).
+
+### Changed (architecture)
+
+- **All 15 overlays composite into `newRows`** instead of writing
+  ANSI direct to stdout. The paint pipeline is now: view-mode
+  dispatcher returns `{newRows, COLS}` → every overlay composites
+  between the return and `_paintMainFrame(newRows, COLS)` → cell-
+  diff emits ANSI once per frame, covering BOTH the overlay's
+  leading paint AND the clean-up on close/resize from the natural
+  row delta. Covers: confirm, copy, diag-log, jobs, pane-menu,
+  panel-list, register-popup, which-key, action-palette, menu,
+  cmdline dropdown, fabric-form (+ picker), fabric-field, replay-
+  scrubber, hover tooltip. Cmdline prompt row + cursor stay direct
+  `writeOut` by design (they sit on the footer row, outside newRows).
+
+- **Four sig trackers retired** from `js/render/paint.js`:
+  `prevPaletteSig`, `prevMenuItems`, `prevFabricPickingSig`,
+  `prevReplayView`. Each had been a per-overlay residue workaround
+  for the Class-B pattern; the compositor path makes them redundant.
+
+- **Six explicit `force_full_repaint` Cmds dropped** (migration-
+  earned Class-A workaround retirements): `prefix_key` subtree
+  descend (`4f953661`); `panel_list_open`, `panel_list_close`,
+  `panel_list_pick`, `free_config_enter` auto-open (`e5eaed3a`);
+  `register_popup_drop` (this release).
+
+- **Deletions**: `renderOverlay`'s stdout fallback (`47c6b0fe`),
+  pane-menu `writeOut` path + residue tracker (`61d656a8`), cmdline
+  dropdown stdout fallback + residue tracker (`4c2e35ce`), global
+  overlay-flag-drop `forceFull` + `_frame.prevOverlayFlags`
+  (`6d1e7f53`). `renderOverlay` is buffer-only now; a call that
+  omits `targetRows`/`targetCols` crashes loudly inside `compositeRow`.
+
+### Added
+
+- `js/leaves/render/row-compositor.js` — shared pure helper
+  (`compositeRow` + `_splitAt`) used by `renderOverlay` plus the
+  two overlays with anchored geometry (pane-menu, cmdline dropdown).
+- 14 companion `test-<overlay>-overlay-composite.js` pins — each
+  asserts the composite path mutates newRows + writes zero stdout +
+  the paint pipeline doesn't emit a `FULL_CLEAR` on
+  open/close/shrink. Hover tooltip gets `test-hover-tooltip-overlay-
+  composite.js` as part of this release's closure pass.
+
+### Changed (tests)
+
+- `test-fabric-form-popover-repaint.js` — the shared
+  `assertOverlayShrinkForcesRepaint` harness retired (nothing on the
+  pre-compositor path to use it); the "action palette" it-block
+  INVERTED per the plan's §Test strategy (asserts cells are naturally
+  cleared WITHOUT `FULL_CLEAR`).
+- `smoke/mouse-gestures.js [2]` "menu paints near anchor" — mouse
+  gesture and render now capture under one `sm.capture` call: post-
+  migration the overlay only emits bytes when cells CHANGE.
+
+### Performance
+
+Interleaved A/B vs pre-Phase-2.a baseline on
+`bench-render-construction [A1]`:
+- realistic:       1047.5 → 1039.3 µs/frame (−0.8%)
+- stress:          1101.2 →  876.5 µs/frame (**−20.4%**)
+- stress + search: 1110.8 → 1116.4 µs/frame (+0.5%)
+
+The 20% stress-case win is the compositor paying off exactly where
+the plan predicted: previously every overlay close forced a whole-
+screen repaint; now cell-diff emits ANSI only for the vacated rect.
+
+### Not changed
+
+- `renderTerminalOverlay` (PTY) and `renderFooter` stay on their
+  own paths — out of scope for Release 2. The embedded PTY surface
+  keeps its per-session `prevFrame` cache.
+- Class C stays closed by the Release 1 `applyMsg` depth-0 trailing
+  render; a few arms still emit an explicit `render` Cmd for a
+  semantic "focus-change paints now" signal (coalesces with the
+  trailing schedule via `_renderPending`).
+
 ## [0.6.50] — 2026-10-28
 
 Overlay-compositor migration — **Release 1 of 3**

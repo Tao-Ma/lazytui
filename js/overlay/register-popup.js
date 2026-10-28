@@ -50,11 +50,13 @@ function _previewOf(text) {
   return String(text).replace(/\n/g, '↵').replace(/\t/g, ' ');
 }
 
-// Overlay-compositor migration (Release 2 Phase 2.a #7). When `newRows` +
-// `cols` are threaded in by paint.js, the overlay composites into the
-// main-frame row buffer through `renderOverlay`'s `targetRows` path — cell-
-// diff then handles both the leading paint AND the clean-up on
-// close/resize from the natural row delta. Omitted → stdout fallback.
+// Overlay-compositor migration (Release 2 Phase 2.a #7). `newRows` +
+// `cols` are threaded in by paint.js; the overlay composites into the
+// main-frame row buffer through `renderOverlay`'s `targetRows` path.
+// Cell-diff then handles both the leading paint AND the clean-up on
+// close/resize from the natural row delta. End-of-Release-2 cleanup
+// (`47c6b0fe`) removed the stdout fallback; a call that omits newRows
+// crashes loudly inside `compositeRow`.
 function render(newRows, cols) {
   if (!getModel().modes.registerPopupMode) return;
   const { idx: _idx, scroll: _scroll } = getModel().modal.registerPopup;

@@ -148,14 +148,23 @@ greppable.
      2. composeRects: for each panel in arrange,
           _safeRender(panel, w, h)
             (renderer resolved by the pane's ACTIVE-tab instance kind,
-             U2f; slice via sliceForPane)
-     3. painter.composeRows + paintFrame
-                                  (per-cell diff vs _frame.prevRows,
-                                    cell-grid.js; LAZYTUI_CELL_DIFF=0 =
-                                    whole-row diff)
-     4. renderTerminalOverlay     (PTY buffer per-row diff)
-     5. renderFooter
-     6. modal overlays (cmdline, menu, confirm, prompt, ...)
+             U2f; slice via sliceForPane) → newRows (per-cell row buffer)
+     3. overlays composite INTO newRows
+          (confirm, copy, diag-log, jobs, pane-menu, panel-list,
+           register-popup, which-key, action-palette, menu, cmdline
+           dropdown, fabric-form, fabric-field, replay-scrubber, hover
+           tooltip — overlay-compositor Release 2). Cmdline prompt row
+           + cursor stay direct writeOut (sit outside newRows).
+     4. painter.composeRows + paintFrame
+                                  (per-cell diff vs _frame.prevRows;
+                                   now includes overlay cells from the
+                                   natural row delta — no sig trackers,
+                                   no per-overlay force_full_repaint;
+                                   cell-grid.js; LAZYTUI_CELL_DIFF=0 =
+                                   whole-row diff)
+     5. renderTerminalOverlay     (PTY buffer per-row diff — out-of-
+                                   band surface, bypasses newRows)
+     6. renderFooter              (footer row writes direct)
         │
         ▼
    stdout (ANSI, diff'd writes only)

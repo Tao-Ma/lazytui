@@ -216,7 +216,11 @@ describe('[immutable] root reducer — register popup + push', () => {
       armed,
     );
     eq(next.register.history.length, 1, 'one entry dropped');
-    eq(cmds[0].type, 'force_full_repaint');
+    // Overlay-compositor Release 2 Phase 2.a #7 — register-popup composites
+    // into newRows, so the former per-arm `force_full_repaint` here (Class A
+    // workaround for the overlay bypassing newRows) is retired. applyMsg's
+    // depth-0 trailing paint (Release 1) still fires on the drop frame.
+    eq(cmds.length, 0, 'register_popup_drop emits no Cmds post-R2 Phase 2.a #7');
   });
 });
 
