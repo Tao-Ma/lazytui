@@ -160,4 +160,18 @@ function renderJobsOverlay(now, newRows, cols) {
   });
 }
 
-module.exports = { renderJobsOverlay, viewportRows };
+// Overlay-compositor R3 descriptor. zIndex=40 preserves jobs's
+// historical position (fourth in the retired paint.js if-chain —
+// over diag-log, under pane-menu). Non-modal — closable info popup.
+// render fn pulls `now` from model.now (single frame clock).
+function registerSelf(compositor) {
+  compositor.register({
+    id: 'jobs',
+    isActive: (m) => !!(m && m.modes && m.modes.jobsMode),
+    render: (m, newRows, cols) => renderJobsOverlay(m && m.now, newRows, cols),
+    modal: false,
+    zIndex: 40,
+  });
+}
+
+module.exports = { renderJobsOverlay, viewportRows, registerSelf };

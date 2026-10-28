@@ -32,6 +32,8 @@ function registerAll() {
   // if-chain's historical paint order.
   require('../overlay/confirm').registerSelf(compositor);          //  10
   require('../overlay/copy').registerSelf(compositor);             //  20
+  require('../overlay/diag-log').registerSelf(compositor);         //  30
+  require('../overlay/jobs').registerSelf(compositor);             //  40
   require('../overlay/pane-menu').registerSelf(compositor);        //  50
   require('../overlay/panel-list').registerSelf(compositor);       //  60
   require('../overlay/register-popup').registerSelf(compositor);   //  70

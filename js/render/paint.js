@@ -77,7 +77,6 @@ const { renderCmdline } = require('../overlay/cmdline');
 // confirm (R3 c2), copy (c3), pane-menu (c4), panel-list (c5),
 // register-popup (c6), which-key (c7), action-palette (c8), menu (c9).
 require('./overlay-compositor-boot');
-const { renderJobsOverlay } = require('../overlay/jobs');
 // v0.6.4 Theme B — the footer row (~180 LOC) lives in its own module;
 // geometry only calls renderFooter() once per frame from render().
 const { renderFooter } = require('./footer');
@@ -950,8 +949,10 @@ function render(model) {
   // `ba971715` role).
   // copy migrated — R3 commit 3. See overlay-compositor-boot.registerAll
   // and `js/overlay/copy.js#registerSelf`.
-  if (md.diagLogMode) require('../overlay/diag-log').renderDiagLog(now, newRows, COLS);
-  if (md.jobsMode)    renderJobsOverlay(now, newRows, COLS);
+  // diag-log + jobs migrated to compositor in R3 commit 10. The
+  // compositor's render fn thunks `(m, newRows, cols) =>
+  // render(m.now, newRows, cols)` so `now` still rides the model
+  // clock (model-now-tick.md).
   // pane-menu / panel-list / register-popup / which-key / action-palette
   // / menu — all migrated to compositor registry in R3 commits 4-9.
   // See overlay-compositor-boot.registerAll + each overlay's registerSelf.

@@ -125,4 +125,19 @@ function renderDiagLog(now, newRows, cols) {
   });
 }
 
-module.exports = { renderDiagLog, viewportRows };
+// Overlay-compositor R3 descriptor. zIndex=30 preserves diag-log's
+// historical position (third in the retired paint.js if-chain —
+// over copy, under jobs). Non-modal — this is a closable info popup.
+// render fn pulls `now` from model.now (single frame clock); descriptor
+// contract is `(model, newRows, cols)`.
+function registerSelf(compositor) {
+  compositor.register({
+    id: 'diag-log',
+    isActive: (m) => !!(m && m.modes && m.modes.diagLogMode),
+    render: (m, newRows, cols) => renderDiagLog(m && m.now, newRows, cols),
+    modal: false,
+    zIndex: 30,
+  });
+}
+
+module.exports = { renderDiagLog, viewportRows, registerSelf };
