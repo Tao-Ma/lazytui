@@ -69,7 +69,8 @@ const { getInstanceSlice, sliceForPane, getComponent,
        getComponentOwningPanel } = require('../panel/api');
 const modes = require('../leaves/input/modes');
 const { getModel } = require('../model/store');
-const { renderCmdline } = require('../overlay/cmdline');
+// renderCmdline import retired — cmdline migrated to compositor
+// registry in R3 commit 11. Registered via overlay-compositor-boot.
 // Overlay-compositor R3 — side-effect require; registerAll() runs at
 // module load and populates the compositor registry with every
 // migrated overlay's descriptor (`js/render/overlay-compositor-boot.js`).
@@ -956,9 +957,10 @@ function render(model) {
   // pane-menu / panel-list / register-popup / which-key / action-palette
   // / menu — all migrated to compositor registry in R3 commits 4-9.
   // See overlay-compositor-boot.registerAll + each overlay's registerSelf.
-  if (md.cmdMode)     renderCmdline(newRows, COLS);
-  if (md.fabricFormMode) require('../overlay/fabric-form').renderFabricFormOverlay(newRows, COLS);
-  if (md.fabricFieldMode) require('../overlay/fabric-field').renderFabricFieldOverlay(newRows, COLS);
+  // cmdline / fabric-form / fabric-field migrated to compositor
+  // registry in R3 commit 11. The mixed cmdline path (dropdown
+  // composites, prompt + cursor stay writeOut) is preserved inside
+  // the overlay body — compositor is agnostic to that.
   if (replayData && replayView !== 'hidden') require('../overlay/replay-scrubber').render(replayData, newRows, COLS);
   // Hover tooltip — composites LAST so it floats over every other overlay.
   // Suppressed under a modal (keeps the invariant from before the

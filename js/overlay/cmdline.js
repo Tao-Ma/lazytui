@@ -117,4 +117,20 @@ function renderCmdline(newRows, cols) {
 /** Reset module-local render state. Called from dispatch/cmdline#clear
  *  on cmdline_clear (submit/cancel) so the next cmd-mode open doesn't
  *  inherit residue-tracker state from the previous session. */
-module.exports = { renderCmdline };
+// Overlay-compositor R3 descriptor. zIndex=110. cmdline is a MIXED
+// path: the dropdown panel composites into newRows (R2 Phase 2.b #3),
+// but the prompt row + cursor stay direct `writeOut` because they sit
+// on the footer row — OUTSIDE newRows. The compositor sees only the
+// newRows-side; the writeOut-side still runs inside the render fn
+// synchronously, as before (no behavior change).
+function registerSelf(compositor) {
+  compositor.register({
+    id: 'cmdline',
+    isActive: (m) => !!(m && m.modes && m.modes.cmdMode),
+    render: (m, newRows, cols) => renderCmdline(newRows, cols),
+    modal: true,
+    zIndex: 110,
+  });
+}
+
+module.exports = { renderCmdline, registerSelf };

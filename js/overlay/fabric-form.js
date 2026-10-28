@@ -485,4 +485,19 @@ function renderFabricFormOverlay(newRows, cols) {
                   targetRows: newRows || null, targetCols: cols || 0 });
 }
 
-module.exports = { renderFabricFormOverlay, _scrollFor };
+// Overlay-compositor R3 descriptor. zIndex=120 preserves fabric-form's
+// historical position (twelfth in the retired paint.js if-chain).
+// The choices-popover sub-rect composites INSIDE this overlay's single
+// renderOverlay call (R2 §Open question #1 resolved in `3ec1eb3a`) —
+// no sub-descriptor registration needed.
+function registerSelf(compositor) {
+  compositor.register({
+    id: 'fabric-form',
+    isActive: (m) => !!(m && m.modes && m.modes.fabricFormMode),
+    render: (m, newRows, cols) => renderFabricFormOverlay(newRows, cols),
+    modal: true,
+    zIndex: 120,
+  });
+}
+
+module.exports = { renderFabricFormOverlay, _scrollFor, registerSelf };

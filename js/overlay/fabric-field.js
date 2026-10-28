@@ -85,4 +85,19 @@ function renderFabricFieldOverlay(newRows, cols) {
                   targetRows: newRows || null, targetCols: cols || 0 });
 }
 
-module.exports = { renderFabricFieldOverlay };
+// Overlay-compositor R3 descriptor. zIndex=130 preserves fabric-field's
+// historical position (thirteenth in the retired paint.js if-chain —
+// the invoke-time 1-port popup). The in-grid editor path lives inside
+// ports-pane's own render (gated on `paneId != null` inside the overlay
+// fn), so it's unaffected by compositor migration.
+function registerSelf(compositor) {
+  compositor.register({
+    id: 'fabric-field',
+    isActive: (m) => !!(m && m.modes && m.modes.fabricFieldMode),
+    render: (m, newRows, cols) => renderFabricFieldOverlay(newRows, cols),
+    modal: true,
+    zIndex: 130,
+  });
+}
+
+module.exports = { renderFabricFieldOverlay, registerSelf };

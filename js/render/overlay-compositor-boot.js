@@ -40,6 +40,9 @@ function registerAll() {
   require('../overlay/which-key').registerSelf(compositor);        //  80
   require('../overlay/action-palette').registerSelf(compositor);   //  90
   require('../overlay/menu').registerSelf(compositor);             // 100
+  require('../overlay/cmdline').registerSelf(compositor);          // 110
+  require('../overlay/fabric-form').registerSelf(compositor);      // 120
+  require('../overlay/fabric-field').registerSelf(compositor);     // 130
 }
 
 module.exports = { registerAll };
