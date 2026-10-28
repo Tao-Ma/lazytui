@@ -141,7 +141,14 @@ function _formatRow(row, cols) {
   return parts.join(' ');
 }
 
-function renderActionPalette() {
+// Overlay-compositor migration (Release 2 Phase 2.b #1 — first medium
+// overlay). When `newRows` + `cols` are threaded in by paint.js, the
+// overlay composites into the main-frame row buffer through
+// `renderOverlay`'s `targetRows` path. The cell-diff then handles both
+// the leading paint AND the clean-up on close/shrink from the natural
+// row delta — which is why THIS commit also deletes the `prevPaletteSig`
+// sig tracker from paint.js (the first of four sig trackers to go).
+function renderActionPalette(newRows, cols) {
   const model = getModel();
   if (!model.modes.paletteMode) return;
   const { filter, idx } = model.modal.palette;
@@ -222,6 +229,7 @@ function renderActionPalette() {
     title: 'Action palette',
     maxWidth: PALETTE_MAX_WIDTH,
     count: total ? [clamped + 1, total] : undefined,
+    targetRows: newRows || null, targetCols: cols || 0,
   });
 }
 

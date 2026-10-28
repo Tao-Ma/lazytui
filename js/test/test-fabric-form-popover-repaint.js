@@ -153,22 +153,25 @@ describe('[overlay-shrink-invariant] generic harness pins each variable-size ove
     });
   });
 
-  it('action palette: filter narrows → shrink forces repaint (v0.6.49)', () => {
-    // Close the fabric form so the palette can open (modals are flat).
+  it('action palette: filter narrows → cell-diff clears vacated cells WITHOUT a full-clear (v0.6.49 → Phase 2.b inverted)', () => {
+    // Overlay-compositor Release 2 Phase 2.b #1 migrated the action
+    // palette into newRows and retired `prevPaletteSig`. The pre-
+    // migration assertion was that the sig tracker forces a full-clear
+    // on shrink; the plan calls out this invariant inversion as the
+    // mechanism-level pin that proves the compositor path works
+    // (docs/overlay-compositor-migration.md §Release 2 — Test strategy).
+    //
+    // Direction inverted; the describe/it labels stay to preserve
+    // continuity in the regression history (same purpose, new mechanism).
     sm.applyMsg({ type: 'fabric_form_cancel' });
     sm.capture(sm.render);              // settle after close
-    // The palette needs some actions to filter against. The default bootFresh
-    // config carries an `a1` action under group `g`; sm.applyMsg here walks
-    // iterActions which reads live config state. Open the palette (grow) then
-    // type a filter that narrows the view (shrink).
-    assertOverlayShrinkForcesRepaint({
-      overlayName: 'action palette filter',
-      grow: () => sm.applyMsg({ type: 'palette_open' }),
-      // Any filter mutation shrinks the overlay by at least one row (and the
-      // typical case is harsher: 97 actions → 1 match). The sig tracker
-      // catches ALL filter mutations, not just shrinks.
-      shrink: () => sm.applyMsg({ type: 'palette_filter', seq: 'z' }),
-    });
+    sm.applyMsg({ type: 'palette_open' });
+    sm.capture(sm.render);              // settle at grown state
+    sm.capture(sm.render);
+    sm.applyMsg({ type: 'palette_filter', seq: 'z' });
+    const out = sm.capture(sm.render).raw;
+    assert(!out.includes(FULL_CLEAR),
+      'palette filter mutation emitted a full-clear — the compositor path (prevPaletteSig retired, overlay composites into newRows) promises cell-diff clears the vacated rect from the natural row delta');
   });
 
   // Future variable-size overlays go here. Each is one block ≈ 6 lines.

@@ -263,22 +263,13 @@ const _frame = {
   // the outgoing LARGER border's cells when the overlay shrinks. See the
   // forceFull trigger below for the sig shape + reasoning.
   prevFabricPickingSig: '',
-  // Palette signature from the previous frame ('' when palette closed). The
-  // palette's filter-mutation arms (filter append / backspace / Esc-clear)
-  // re-render the SAME overlay at a NEW, SMALLER height when the filter
-  // narrows (the visible row count drops). paletteMode stays set, so the
-  // flag-set check misses it, and the cell-diff cache keeps the outgoing
-  // LARGER box's cells — ghost chrome around the live smaller box.
-  //
-  // v0.6.33 class, third strike (v0.6.33 panels / v0.6.48 form reopen /
-  // v0.6.49 palette filter — this). The three sig trackers above
-  // (prevMenuItems / prevFabricPickingSig) + this one each cover one
-  // overlay's shrink surface. TODO (brief's recommended class-fix): factor
-  // this out into a per-overlay-id registry at renderOverlay so a new
-  // overlay type adds itself to the registry rather than requiring a hand-
-  // written tracker here. Until then, every new SHRINKABLE overlay owes a
-  // sig entry — this pattern is the canonical shape.
-  prevPaletteSig: '',
+  // prevPaletteSig retired in overlay-compositor Release 2 Phase 2.b #1
+  // (action-palette migration): the overlay now composites into newRows,
+  // so cell-diff emits per-cell writes for the vacated rect on filter
+  // mutation / close naturally. See the paint() `md.paletteMode →
+  // renderActionPalette(newRows, COLS)` composite call. The v0.6.33 class
+  // (prevMenuItems / prevFabricPickingSig) still has two instances;
+  // Phase 2.b (menu) + 2.c (fabric-form) retire them.
   // PTY-overlay force-state is NOT here — it moved per-session (U2d P0a). With
   // N visible terminal panes there is no single "last overlay": each session
   // tracks its own displayed dims (session.prevW/prevH) + viewport
@@ -884,21 +875,9 @@ function render(model) {
     _frame.forceFull = true;
   }
   _frame.prevFabricPickingSig = pickingSig;
-  // Palette shrink/grow: filter narrowing (fewer visible rows) shrinks the
-  // overlay; a close shrinks it to zero. The sig captures `filter` + the
-  // paletteMode flag so both filter mutations and open/close transitions
-  // trigger a full repaint. Pre-fix (v0.6.49), typing a narrowing filter
-  // left the taller pre-filter overlay's cells on screen around the smaller
-  // live box. See prevPaletteSig's declaration above for the full class note.
-  let paletteSig = '';
-  if (md.paletteMode && model.modal.palette) {
-    const p = model.modal.palette;
-    paletteSig = `on#${typeof p.filter === 'string' ? p.filter : ''}`;
-  }
-  if (_frame.prevPaletteSig && _frame.prevPaletteSig !== paletteSig) {
-    _frame.forceFull = true;
-  }
-  _frame.prevPaletteSig = paletteSig;
+  // (prevPaletteSig retired — overlay-compositor Release 2 Phase 2.b #1;
+  // cell-diff now handles palette filter mutation / close transitions
+  // from the natural newRows delta.)
   // v0.6.6 replay arc — the replay-control pane is module-flagged (not in
   // model.modes), so track its view state here. full/mini/hidden cover different
   // regions, so ANY transition (incl. exit → no pane) must force a full repaint
@@ -989,9 +968,10 @@ function render(model) {
   // before `_paintMainFrame` runs the shared diff emit, so overlay cells land
   // in `prevRows` and the cell-diff catches close/shrink naturally — one of
   // the two paths that lets paint.js eventually drop its per-overlay sig
-  // trackers (prevMenuItems / prevFabricPickingSig / prevPaletteSig /
-  // prevReplayView). Phase 2.a #1 migrates `confirm`; later per-overlay
-  // commits add themselves one by one here.
+  // trackers (prevMenuItems / prevFabricPickingSig / prevReplayView —
+  // prevPaletteSig already retired by Phase 2.b #1). Phase 2.a migrated
+  // the simple overlays; Phase 2.b retires each remaining sig tracker
+  // alongside the matching overlay.
   const main = viewMode === 'half' ? renderHalf(model, previewArrange)
              : viewMode === 'full' ? renderFull(model, previewArrange)
              : renderNormal(model, previewArrange);
@@ -1004,6 +984,7 @@ function render(model) {
   if (md.freeConfigMode) renderPanelListOverlay(newRows, COLS);
   if (md.registerPopupMode) renderRegisterPopup(newRows, COLS);
   if (md.prefixMode)  renderWhichKey(newRows, COLS);
+  if (md.paletteMode) require('../overlay/action-palette').renderActionPalette(newRows, COLS);
   const mainDidFull = _paintMainFrame(newRows, COLS);
   // Only force the terminal-overlay repaint when main paint actually
   // cleared the screen (resize, overlay-close, first frame). In the steady
@@ -1065,7 +1046,9 @@ function render(model) {
   // over every group:action. Mutually exclusive with the other overlays
   // via the modeChain; lazy-required so paint-time cost is zero when
   // closed and the require doesn't widen the paint tree at boot.
-  if (md.paletteMode) require('../overlay/action-palette').renderActionPalette();
+  // paletteMode moved up (overlay-compositor Release 2 Phase 2.b #1): it
+  // composites into newRows BEFORE paintFrame; prevPaletteSig retired. See
+  // the `renderActionPalette(newRows, COLS)` call above.
   // jobsMode moved up (overlay-compositor Release 2 Phase 2.a #4): it
   // composites into newRows BEFORE paintFrame. See the
   // `renderJobsOverlay(now, newRows, COLS)` call above.
