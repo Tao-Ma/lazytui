@@ -28,6 +28,7 @@ const compositor = require('./overlay-compositor');
  */
 function registerAll() {
   require('../overlay/confirm').registerSelf(compositor);
+  require('../overlay/copy').registerSelf(compositor);
 }
 
 module.exports = { registerAll };

@@ -151,8 +151,24 @@ function renderCopyMenu(newRows, cols) {
   });
 }
 
+// Overlay-compositor Release 3 descriptor (docs/overlay-compositor-
+// migration.md §Release 3). Registered via overlay-compositor-boot's
+// `registerAll()`. zIndex=20 preserves copy's historical position
+// (second in the retired paint.js if-chain — paints over confirm,
+// under everything else in the modal stack).
+function registerSelf(compositor) {
+  compositor.register({
+    id: 'copy',
+    isActive: (m) => !!(m && m.modes && m.modes.copyMode),
+    render: (m, newRows, cols) => renderCopyMenu(newRows, cols),
+    modal: true,
+    zIndex: 20,
+  });
+}
+
 module.exports = {
   collectOptions, copyOption, copySelect, clearOptions, renderCopyMenu, emitOSC52,
+  registerSelf,
   // Test-only — pins the #F4.4 index↔projection alignment invariant
   // (test-index-align.js): the guard predicate + a setter to drive the live
   // copySelect() guard with controllable options.

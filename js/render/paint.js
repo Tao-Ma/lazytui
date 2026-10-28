@@ -67,17 +67,17 @@ const { visibleTerminalSurfaces } = require('../panel/terminal-surfaces');
 const { getSession, sessionScrollInfo, sessionViewportRows, sessionCursor } = require('../io/terminal');
 const { getInstanceSlice, sliceForPane, getComponent,
        getComponentOwningPanel } = require('../panel/api');
-const { renderCopyMenu } = require('../overlay/copy');
 const { render: renderRegisterPopup } = require('../overlay/register-popup');
 const { renderMenu } = require('../overlay/menu');
 const { renderWhichKey } = require('../overlay/which-key');
 const modes = require('../leaves/input/modes');
 const { getModel } = require('../model/store');
 const { renderCmdline } = require('../overlay/cmdline');
-// renderConfirmOverlay import retired — confirm migrated to the
-// compositor registry in overlay-compositor R3 commit 2
-// (`js/overlay/confirm.js#registerSelf` → `paintActive`). Registered
-// at module load via `./overlay-compositor-boot`.
+// Overlay-compositor R3 — side-effect require; `registerAll()` runs
+// at module load and populates the compositor registry with every
+// migrated overlay's descriptor. Retired imports:
+// - renderConfirmOverlay (R3 commit 2)
+// - renderCopyMenu       (R3 commit 3)
 require('./overlay-compositor-boot');
 const { renderPanelListOverlay } = require('../overlay/panel-list');
 const { renderJobsOverlay } = require('../overlay/jobs');
@@ -951,7 +951,8 @@ function render(model) {
   // the compositor paints it in zIndex order with every other
   // migrated overlay. R3 pattern-establishing commit (mirrors R2's
   // `ba971715` role).
-  if (md.copyMode)    renderCopyMenu(newRows, COLS);
+  // copy migrated — R3 commit 3. See overlay-compositor-boot.registerAll
+  // and `js/overlay/copy.js#registerSelf`.
   if (md.diagLogMode) require('../overlay/diag-log').renderDiagLog(now, newRows, COLS);
   if (md.jobsMode)    renderJobsOverlay(now, newRows, COLS);
   if (md.paneMenuMode) _paneMenu().render(newRows, COLS);
