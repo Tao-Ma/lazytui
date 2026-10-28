@@ -41,12 +41,7 @@
 'use strict';
 
 const { shEscape } = require('../leaves/text/sh-escape');
-
-// Pick a checksum tool at runtime so the same script works on macOS
-// (shasum) and Linux (sha256sum) without per-host config.
-const PICK_SUM =
-  "if command -v sha256sum >/dev/null 2>&1; then SUM='sha256sum'; " +
-  "else SUM='shasum -a 256'; fi";
+const { PICK_SUM } = require('../leaves/text/pick-sum');
 
 function groupActions(group) {
   if (!group || !group.archive) return {};
