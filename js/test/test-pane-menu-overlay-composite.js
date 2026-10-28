@@ -88,52 +88,8 @@ describe('[pane-menu-overlay-composite] composites into newRows + no FULL_CLEAR 
   });
 });
 
-describe('[pane-menu-overlay-composite] stdout fallback still works', () => {
-  const sm = require('./smoke/_helpers/smoke');
-  sm.bootFresh();
-  sm.resize(100, 30);
-  sm.capture(sm.render);
-  sm.capture(sm.render);
-
-  it('render() without newRows takes the writeOut fallback (migration-period compatibility)', () => {
-    const api = require('../panel/api');
-    const slice = api.getInstanceSlice('layout');
-    const mpool = require('../leaves/wm/pool');
-    let chosen = null;
-    for (const p of mpool.allPanesInColumns(slice.arrange)) {
-      if (paneMenu.triggerVisible(p.paneId)) { chosen = p.paneId; break; }
-    }
-    assert(chosen != null, 'bootFresh default layout should expose a usable pane');
-    dispatchMsg(api.wrap('layout', { type: 'pane_menu_open', paneId: chosen, cursor: 0, scroll: 0 }));
-
-    // Hijack draw's injected writer so writeOut lands somewhere we can
-    // inspect. The leaf has no `_writer` getter, so re-wire at the end
-    // of the test to paint.js's production hook (stdout).
-    const chunks = [];
-    draw.setWriter((buf) => chunks.push(String(buf)));
-
-    // Reset the residue tracker so this test's output doesn't inherit a
-    // stale _lastPanelH from the previous describe block.
-    paneMenu._resetRenderState();
-    try {
-      // Call render() with NO newRows — the fallback is the writeOut path.
-      paneMenu.render();
-    } finally {
-      // Restore the writer to the stdout path (same as paint.js's boot
-      // wiring and overlay-capture.js's helper install), so no subsequent
-      // test is left with a swallowed sink.
-      draw.setWriter((buf) => term.stdout.write(buf));
-    }
-    const bytes = chunks.join('');
-    assert(bytes.length > 0,
-      'stdout fallback wrote nothing — writeOut must still fire when render() is called without targetRows');
-    const stripped = bytes
-      .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '')
-      .replace(/\x1b\][^\x07]*\x07/g, '');
-    const sawDropdown = /Pane select|Tabs/.test(stripped);
-    assert(sawDropdown,
-      `stdout fallback must still paint the dropdown title — got: ${JSON.stringify(stripped.slice(0, 200))}`);
-  });
-});
+// (The pre-cleanup "stdout fallback still works" case retired —
+// end-of-Release-2 cleanup; pane-menu's writeOut path + residue
+// tracker are gone, so render() is buffer-only.)
 
 report();

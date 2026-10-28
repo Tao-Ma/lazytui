@@ -33,10 +33,10 @@
 
 const { getModel } = require('../model/store');
 const { getInstanceSlice, theme } = require('../panel/api');
-const { renderPanel, viewportDims, writeOut } = require('../leaves/render/draw');
+const { renderPanel, viewportDims } = require('../leaves/render/draw');
 const { compositeRow } = require('../leaves/render/row-compositor');
 const chromeRegions = require('../panel/chrome-regions');
-const { richToAnsi, RESET, esc, visibleLen } = require('../leaves/text/ansi');
+const { esc, visibleLen } = require('../leaves/text/ansi');
 const { isChainActive } = require('../leaves/input/modes');
 const mpool = require('../leaves/wm/pool');
 const { visibleBoundsFor } = require('../leaves/wm/geometry');
@@ -49,12 +49,9 @@ const VIEWPORT = 12;
 // it at — hotkey-dependent via draw.leftBorderPrefix). The local `_triggerX` width
 // proxy retired with the phantom-hit fix; hitTestTrigger reads the published range.
 
-// Residue tracking — the dropdown shrinks/closes by overwriting only
-// the rows it painted last frame (same pattern as overlay/cmdline).
-let _lastPanelH = 0;
-let _lastTop = 0;
-let _lastLeft = 0;
-let _lastWidth = 0;
+// (Residue tracking retired — overlay-compositor end-of-Release-2
+// cleanup; the overlay composites into newRows and cell-diff handles
+// shrink/close/vanish from the natural row delta.)
 
 // --- Item model --------------------------------------------------------
 //
@@ -314,25 +311,21 @@ function _formatRow(it, paneId, width) {
   return _formatPaneRow(it, width);
 }
 
-/** Paint the dropdown if paneMenuMode is active. Residue-blanks the
- *  rows the previous frame painted that this one doesn't (stdout path only).
+/** Paint the dropdown if paneMenuMode is active.
  *
- *  Overlay-compositor migration (Release 2 Phase 2.a #5). When `newRows` +
- *  `cols` are threaded in by paint.js, each `renderPanel` row composites
+ *  Overlay-compositor Release 2 end-of-cleanup: the dropdown composites
  *  into `newRows` via `row-compositor.compositeRow` at the anchored
- *  (`g.x`, `g.y+i`, `g.w`) rect. The cell-diff then handles both the
- *  leading paint AND the clean-up on shrink/close from the natural row
- *  delta — so the composite path SKIPS the per-overlay residue tracker +
- *  `invalidateRows` entirely (those were this overlay's local Class-B
- *  workaround for the same `bypasses newRows` class the migration
- *  retires). The stdout path (omitted targetRows) keeps the residue
- *  tracker alive as the migration-period fallback; it dies at the end
- *  of Release 2 when every overlay routes through newRows. */
+ *  (`g.x`, `g.y+i`, `g.w`) rect. Cell-diff handles the leading paint,
+ *  the shrink/close, AND the vanish (mode closes → render returns
+ *  early, `newRows` carries only the underlying pane cells, cell-diff
+ *  emits per-cell clears over the previous frame's overlay rect).
+ *  The pre-cleanup residue tracker (`_last*` + `_maybeBlank` +
+ *  `invalidateRows`) is retired. */
 function render(newRows, cols) {
-  if (!getModel().modes.paneMenuMode) { _maybeBlank(); return; }
+  if (!getModel().modes.paneMenuMode) return;
   const paneId = _targetPaneId();
   const g = _geom(paneId);
-  if (!g) { _maybeBlank(); return; }
+  if (!g) return;
   const layoutSlice = getInstanceSlice('layout');
   const pm = (layoutSlice && layoutSlice.paneMenu) || { cursor: 0, scroll: 0 };
   const cursor = Math.max(0, Math.min(g.items.length - 1, pm.cursor || 0));
@@ -366,59 +359,13 @@ function render(newRows, cols) {
     count: g.items.length > 0 ? [cursor + 1, g.items.length] : null,
   });
   const panelLines = content.split('\n');
-
-  if (newRows) {
-    // Composite path (overlay-compositor Release 2). Each panel row lands in
-    // newRows at the anchored (g.x, g.y+i, g.w) rect; paintFrame's cell-diff
-    // emits ANSI for both the leading paint AND the vacated cells on
-    // shrink/close. No residue tracker, no invalidateRows, no stdout
-    // write — the tracker state is a stdout-path concern only, so we also
-    // skip updating `_last*` here (production never falls back once paint.js
-    // threads newRows + cols, so letting the tracker go stale is fine; the
-    // `_maybeBlank` close-path still works because `_lastPanelH` would stay 0
-    // from a cold start of the composite path).
-    for (let i = 0; i < panelLines.length; i++) {
-      compositeRow(newRows, cols, panelLines[i], g.x, g.y + i, g.w);
-    }
-    return;
-  }
-
-  // Stdout fallback — the pre-compositor path, preserved during the
-  // migration period for direct callers and tests that invoke render()
-  // without the composite buffer. Deletes when the stdout fallback goes
-  // away at the end of Release 2.
-  let buf = '';
   for (let i = 0; i < panelLines.length; i++) {
-    buf += `\x1b[${g.y + i + 1};${g.x + 1}H` + richToAnsi(panelLines[i]) + RESET;
+    compositeRow(newRows, cols, panelLines[i], g.x, g.y + i, g.w);
   }
-  // Residue-blank rows the prior frame painted but this one doesn't.
-  if (_lastPanelH > g.h && _lastTop === g.y && _lastLeft === g.x) {
-    const { invalidateRows } = require('../leaves/infra/render-queue');
-    invalidateRows(g.y + g.h, _lastTop + _lastPanelH);
-    for (let y = g.y + g.h; y < _lastTop + _lastPanelH; y++) {
-      buf += `\x1b[${y + 1};${g.x + 1}H${' '.repeat(_lastWidth)}`;
-    }
-  }
-  _lastPanelH = g.h;
-  _lastTop = g.y;
-  _lastLeft = g.x;
-  _lastWidth = g.w;
-  // Through draw's injected writer → paint's depth funnel (P3) — never raw
-  // stdout: this overlay's rows carry theme hex since the truecolor arc.
-  writeOut(buf);
 }
-
-function _maybeBlank() {
-  if (_lastPanelH === 0) return;
-  const { invalidateRows } = require('../leaves/infra/render-queue');
-  invalidateRows(_lastTop, _lastTop + _lastPanelH);
-  _lastPanelH = 0;
-}
-
-function _resetRenderState() { _lastPanelH = 0; _lastTop = 0; _lastLeft = 0; _lastWidth = 0; }
 
 module.exports = {
   hitTestTrigger, hitTest, render, items, viewportRows,
   triggerVisible, _triggerState, _isViewer,
-  _resetRenderState, _formatPaneRow,
+  _formatPaneRow,
 };
