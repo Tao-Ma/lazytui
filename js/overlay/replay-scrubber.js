@@ -35,10 +35,20 @@ function _sym(data) {
   return data.playing === 'fwd' ? '▶' : data.playing === 'rev' ? '◀' : '⏸';
 }
 
-function render(data) {
+// Overlay-compositor migration (Release 2 Phase 2.d — closes Phase 2.d).
+// When `newRows` + `cols` are threaded in by paint.js, both the mini bar
+// AND the full box composite into the main-frame row buffer through
+// `renderOverlay`'s `targetRows` path. The three paneView transitions
+// (`full ↔ mini ↔ hidden`) each change which cells carry the overlay —
+// cell-diff emits per-cell writes for every differing cell, so a
+// `full → mini` switch clears the full box's vacated rect AND paints
+// the mini bar's cells in one diff. This commit also deletes paint.js's
+// `prevReplayView` sig tracker — the view-mode-transition forceFull that
+// was the Class-A workaround for the overlay bypassing newRows.
+function render(data, newRows, cols) {
   if (!data || data.paneView === 'hidden') return;
-  if (data.paneView === 'mini') return renderMini(data);
-  return renderFull(data);
+  if (data.paneView === 'mini') return renderMini(data, newRows, cols);
+  return renderFull(data, newRows, cols);
 }
 
 // The mini line's text pieces — shared by the renderer AND the click hit-test so
@@ -84,7 +94,7 @@ function hitTestSeek(mx, my, data) {
 // shows position; pressing j/k/up/down (or clicking the bar) jumps to that
 // position and `cp X/N` gives the checkpoint index (no per-checkpoint tick
 // glyphs — they buried the fill when dense and added a glyph dependency).
-function renderMini(data) {
+function renderMini(data, newRows, cols) {
   const { rows: ROWS } = viewportDims();
   const { head, tail } = _miniParts(data);
   const total = data.total;
@@ -95,11 +105,12 @@ function renderMini(data) {
     lines: [`[bold]${head}[/]${tail}${bar}`], title: '',
     maxWidth: _miniGeom(data).maxWidth,
     anchor: { x: 1, y: ROWS },   // same inputs _miniGeom feeds overlayBox → same box
+    targetRows: newRows || null, targetCols: cols || 0,
   });
 }
 
 // Full pane — status + checkpoint list + key legend.
-function renderFull(data) {
+function renderFull(data, newRows, cols) {
   const t = theme();
   const cps = data.checkpoints || [];
   const total = cps.length;
@@ -160,6 +171,7 @@ function renderFull(data) {
     lines, title: 'Replay',
     maxWidth,
     count: total ? [data.cursor + 1, total] : undefined,
+    targetRows: newRows || null, targetCols: cols || 0,
   });
 }
 

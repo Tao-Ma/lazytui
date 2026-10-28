@@ -256,11 +256,13 @@ const _frame = {
   // paints via cell-diff: menu A's cells land in newRows for frame A, menu
   // B's cells for frame B; the diff emits only the changed cells, so A's
   // residue is cleared without a whole-screen forceFull.)
-  // (prevPaletteSig retired by Phase 2.b #1, prevMenuItems by Phase
-  // 2.b #2, prevFabricPickingSig by Phase 2.c #1 — the v0.6.33 shrink
-  // class is fully retired. The last paint.js sig tracker in play is
-  // prevReplayView, which Phase 2.d retires alongside the replay-
-  // scrubber migration.)
+  // (All four paint.js sig trackers retired: prevPaletteSig by Phase
+  // 2.b #1, prevMenuItems by Phase 2.b #2, prevFabricPickingSig by Phase
+  // 2.c #1, prevReplayView by Phase 2.d. The v0.6.33 shrink class is
+  // fully gone; every overlay rides on cell-diff from the natural
+  // newRows delta. The global overlay-flag-drop forceFull in render()'s
+  // head is the only remaining whole-screen force; it retires once all
+  // `overlay: true` modes verify shrink-safe end-to-end.)
   // PTY-overlay force-state is NOT here — it moved per-session (U2d P0a). With
   // N visible terminal panes there is no single "last overlay": each session
   // tracks its own displayed dims (session.prevW/prevH) + viewport
@@ -850,13 +852,13 @@ function render(model) {
   // cell-diff now handles palette filter mutation / close transitions
   // from the natural newRows delta.)
   // v0.6.6 replay arc — the replay-control pane is module-flagged (not in
-  // model.modes), so track its view state here. full/mini/hidden cover different
-  // regions, so ANY transition (incl. exit → no pane) must force a full repaint
-  // to clear the area the previous state painted.
+  // model.modes); its paneView (`full`/`mini`/`hidden`) carries the view
+  // state. (prevReplayView sig tracker retired — overlay-compositor
+  // Release 2 Phase 2.d; the full↔mini↔hidden transitions now ride on
+  // cell-diff from the natural newRows delta, since the overlay composites
+  // into newRows and each view mode fills a different cell set.)
   const replayData = _replaySource ? _replaySource() : null;
   const replayView = replayData ? replayData.paneView : 'none';
-  if (_frame.prevReplayView && _frame.prevReplayView !== replayView) _frame.forceFull = true;
-  _frame.prevReplayView = replayView;
   // v0.6.6 replay arc — change-highlight mode (off/line/cell) drives whether the
   // main-frame paintFrame tints what each step/seek changed. Replay-only: null
   // when not replaying, so the live paint path is byte-for-byte unchanged.
@@ -939,11 +941,13 @@ function render(model) {
   // before `_paintMainFrame` runs the shared diff emit, so overlay cells land
   // in `prevRows` and the cell-diff catches close/shrink naturally — one of
   // the two paths that lets paint.js eventually drop its per-overlay sig
-  // tracker (prevReplayView — prevPaletteSig retired by Phase 2.b #1,
-  // prevMenuItems by Phase 2.b #2, prevFabricPickingSig by Phase 2.c #1).
-  // Phase 2.a migrated the simple overlays; Phase 2.b/c retired the
-  // medium/complex overlays' sig trackers; Phase 2.d retires the last
-  // one alongside the replay-scrubber migration.
+  // trackers — Phase 2.a migrated the simple overlays; Phase 2.b/c/d
+  // retired every paint.js sig tracker alongside the matching overlay
+  // (prevPaletteSig in 2.b #1, prevMenuItems in 2.b #2,
+  // prevFabricPickingSig in 2.c #1, prevReplayView in 2.d). The one
+  // remaining whole-screen forceFull in this head is the global
+  // overlay-flag-drop check below, which retires once the stdout
+  // fallback is removed (end of Release 2 per the plan).
   const main = viewMode === 'half' ? renderHalf(model, previewArrange)
              : viewMode === 'full' ? renderFull(model, previewArrange)
              : renderNormal(model, previewArrange);
@@ -961,6 +965,7 @@ function render(model) {
   if (md.cmdMode)     renderCmdline(newRows, COLS);
   if (md.fabricFormMode) require('../overlay/fabric-form').renderFabricFormOverlay(newRows, COLS);
   if (md.fabricFieldMode) require('../overlay/fabric-field').renderFabricFieldOverlay(newRows, COLS);
+  if (replayData && replayView !== 'hidden') require('../overlay/replay-scrubber').render(replayData, newRows, COLS);
   const mainDidFull = _paintMainFrame(newRows, COLS);
   // Only force the terminal-overlay repaint when main paint actually
   // cleared the screen (resize, overlay-close, first frame). In the steady
@@ -1042,8 +1047,11 @@ function render(model) {
   // diagLogMode moved up (overlay-compositor Release 2 Phase 2.a #3): it
   // composites into newRows BEFORE paintFrame. See the
   // `renderDiagLog(now, newRows, COLS)` call above.
-  // v0.6.6 replay arc — interactive replay-control pane (floats over all).
-  if (replayData && replayView !== 'hidden') require('../overlay/replay-scrubber').render(replayData);
+  // v0.6.6 replay arc — interactive replay-control pane moved up to
+  // the pre-paintFrame composite block (overlay-compositor Release 2
+  // Phase 2.d; prevReplayView retired). See the
+  // `require('../overlay/replay-scrubber').render(replayData, newRows, COLS)`
+  // call above.
 
   // Graph hover value tooltip (Phase 2) — a small box at the cursor showing the value
   // stats.render resolved + published this frame. Non-modal, painted last so it floats
