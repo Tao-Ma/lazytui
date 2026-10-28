@@ -236,7 +236,11 @@ function _renderCollapsed(p, w, chrome) {
 // diffing — same trick the terminal overlay's session.prevFrame does
 // (per-session cache, NOT folded into Frame here — different lifecycle).
 //
-// prevOverlayFlags tracks the overlay-flag set active on the previous
+// (prevOverlayFlags retired — overlay-compositor end-of-Release-2
+// cleanup; the global overlay-flag-drop forceFull it fed is gone, and
+// cell-diff handles overlay close/transition from the natural newRows
+// delta.) Original note below for history:
+// prevOverlayFlags tracked the overlay-flag set active on the previous
 // frame. Used to detect close + transition (any flag dropping out →
 // force full repaint to wipe the closed overlay's pixels). Pure-open
 // transitions don't force — the new overlay paints cleanly on the
@@ -245,7 +249,6 @@ const _frame = {
   prevRows:         [],
   prevCols:         0,
   forceFull:        true,
-  prevOverlayFlags: new Set(),
   // (prevMenuItems retired in overlay-compositor Release 2 Phase 2.b #2
   // alongside the menu overlay migration. The menu-in-place replace case
   // — right-click → "Send to port…" picker swapping items + anchor — now
@@ -819,22 +822,15 @@ function render(model) {
   // thunk below (`render: () => render(getModel())`) — the runtime boundary
   // where "repaint now" reads the latest model — plus the app shell
   // (suspend resume) and the test harness, all impure-shell by definition.
-  // Force-full-repaint when any overlay drops out — close OR transition.
-  // Pure opens (no overlay → some overlay) don't trigger: the new overlay
-  // paints cleanly on top of the still-valid frame, no flash. A transition
-  // overlay-A → overlay-B drops A AND adds B in the same dispatch cycle;
-  // the old logic only caught "all overlays gone", so A's pixels lingered
-  // beneath B (visible as e.g. cmdline residue under the free-config footer
-  // when :free-config typed from cmdMode). Computing the active-overlay
-  // SET (not just a single bool) catches every drop including nested
-  // closes (A,B → A) and same-cycle swaps.
+  // (Global overlay-flag-drop forceFull retired — overlay-compositor
+  // end-of-Release-2 cleanup. Every overlay with `overlay: true` composites
+  // into newRows now, so the "any overlay dropped from the prev frame's
+  // active set → forceFull every cell on screen" universal backstop is
+  // redundant: cell-diff emits per-cell writes for exactly the vacated
+  // overlay rect from the natural row delta. Pre-cleanup this fired on
+  // every overlay close + every A→B transition; its removal is the final
+  // whole-screen forceFull going away from render()'s head.)
   const md = model.modes;
-  const curOverlayFlags = new Set();
-  for (const m of modes.MODES) if (m.overlay && md[m.flag]) curOverlayFlags.add(m.flag);
-  for (const flag of _frame.prevOverlayFlags) {
-    if (!curOverlayFlags.has(flag)) { _frame.forceFull = true; break; }
-  }
-  _frame.prevOverlayFlags = curOverlayFlags;
   // (Menu-replace-in-place sig tracker retired — overlay-compositor
   // Release 2 Phase 2.b #2; cell-diff now handles the menu-A → menu-B
   // swap from the natural newRows delta.)
