@@ -102,14 +102,10 @@ let _decorRef; const _decor = () => (_decorRef ||= require('../leaves/render/dra
 // vanish/move reclaim. The box is a fixed 3 rows tall (one value line + borders), so
 // its rows depend ONLY on the anchor y — pre-pane (raw hover position) and post-pane
 // (resolved value) row math agree. `bottom` is EXCLUSIVE (one past the last box row)
-// to match invalidateRows' half-open [start, end) loop — else the box's bottom border
-// row never clears and leaves a `╰──╯` residue.
-let _prevHoverRows = null;
-function _hoverBoxRows(h) {
-  if (!h || !Number.isFinite(h.y)) return null;
-  const box = _decor().overlayBox({ linesLen: 1, anchor: { x: h.x, y: h.y + 1 }, maxWidth: 60 });
-  return { top: box.offY, bottom: box.offY + box.menuH };
-}
+// (Hover tooltip residue tracker retired — overlay-compositor end-of-
+// Release-2 cleanup; the hover box composites into newRows via the
+// pre-paintFrame composite block, and cell-diff handles vanish/move
+// from the natural row delta.)
 let _paneMenuRef; const _paneMenu = () => (_paneMenuRef ||= require('../overlay/pane-menu'));
 let _selViewRef; const _selView = () => (_selViewRef ||= require('../panel/select-view'));
 
@@ -917,15 +913,11 @@ function render(model) {
   // Drop last frame's drawn-chrome map before the pane pass repopulates it, so a
   // pane that stopped rendering (off-screen in half/full) leaves no stale hit
   // region. Repopulated synchronously below; hit-tests only read between frames.
-  // Hover tooltip vanish/move reclaim (mirrors the terminal-overlay reclaim above):
-  // the box writes directly to the screen, so its previous cells must be invalidated
-  // for THIS frame's diff pass to rewrite them from the panes underneath — else a move
-  // or clear leaves border residue. Reclaim UNCONDITIONALLY when a box was drawn last
-  // frame: a HORIZONTAL move keeps the same rows (so a row-change check would miss it),
-  // and invalidateRows repaints the FULL rows (all columns), covering any column shift.
-  // The box (if hover is still live) redraws after the pane pass. Cheap: only fires on
-  // frames that actually repaint, and the hover handler coalesces to cell changes.
-  if (_prevHoverRows) invalidateRows(_prevHoverRows.top, _prevHoverRows.bottom);
+  // (Hover tooltip vanish/move reclaim retired — overlay-compositor
+  // end-of-Release-2 cleanup; the hover box now composites into newRows
+  // alongside every other overlay, so cell-diff emits per-cell writes
+  // for the vacated OLD-position cells AND the new-position cells from
+  // the natural row delta.)
   chromeRegions.clear();
   // Same discipline for the per-row tree fold markers (panel/tree-regions): a
   // table in tree mode republishes its `▾`/`▸` glyph ranges each paint.
@@ -966,6 +958,24 @@ function render(model) {
   if (md.fabricFormMode) require('../overlay/fabric-form').renderFabricFormOverlay(newRows, COLS);
   if (md.fabricFieldMode) require('../overlay/fabric-field').renderFabricFieldOverlay(newRows, COLS);
   if (replayData && replayView !== 'hidden') require('../overlay/replay-scrubber').render(replayData, newRows, COLS);
+  // Hover tooltip — composites LAST so it floats over every other overlay.
+  // Suppressed under a modal (keeps the invariant from before the
+  // migration). Reads live state from hoverRegion / stats.render fed in
+  // the pane pass earlier this frame.
+  if (!modes.isModal(md)) {
+    const hv = hoverRegion.get();
+    if (hv && hv.text) {
+      // esc() the resolved text (matches the footer) — it may carry user
+      // data (a mode:multi row label like `[kworker/0]`) whose `[` would
+      // else read as markup.
+      _decor().renderOverlay({
+        lines: [`[accent]${esc(hv.text)}[/]`],
+        anchor: { x: hv.x, y: hv.y + 1 },
+        maxWidth: Math.min(60, hv.text.length + 4),
+        targetRows: newRows, targetCols: COLS,
+      });
+    }
+  }
   const mainDidFull = _paintMainFrame(newRows, COLS);
   // Only force the terminal-overlay repaint when main paint actually
   // cleared the screen (resize, overlay-close, first frame). In the steady
@@ -1053,20 +1063,9 @@ function render(model) {
   // `require('../overlay/replay-scrubber').render(replayData, newRows, COLS)`
   // call above.
 
-  // Graph hover value tooltip (Phase 2) — a small box at the cursor showing the value
-  // stats.render resolved + published this frame. Non-modal, painted last so it floats
-  // over the panes; anchored one row below the cursor so it doesn't cover the point.
-  // _prevHoverRows records the drawn rows for next frame's vanish/move reclaim.
-  _prevHoverRows = null;
-  if (!modes.isModal(md)) {
-    const hv = hoverRegion.get();
-    if (hv && hv.text) {
-      // esc the resolved text (matches the footer) — it may carry user data (a
-      // mode:multi row label like `[kworker/0]`) whose `[` would else read as markup.
-      _decor().renderOverlay({ lines: [`[accent]${esc(hv.text)}[/]`], anchor: { x: hv.x, y: hv.y + 1 }, maxWidth: Math.min(60, hv.text.length + 4) });
-      _prevHoverRows = _hoverBoxRows(hv);
-    }
-  }
+  // (Hover tooltip moved up into the pre-paintFrame composite block —
+  // overlay-compositor end-of-Release-2 cleanup; it composites into
+  // newRows alongside every other overlay now.)
 
   // Cursor visibility — derived from mode state, single emission site.
   // Cursor *position* is set inline by renderTerminalOverlay (when in
