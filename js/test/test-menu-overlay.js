@@ -33,7 +33,7 @@ describe('[menu-overlay] paints model.modal.menu contents', () => {
   it('menuOpen on → all non-separator items visible, title defaults to "Menu"', () => {
     let m = freshOverlayModel();
     [m] = runtime.update(m, { type: 'menu_open', items: ITEMS });
-    const out = captureOverlay(m, () => renderMenu());
+    const out = captureOverlay(m, (nr, c) => renderMenu(nr, c));
     assert(out.includes('Open'), `Open absent — got: ${JSON.stringify(out)}`);
     assert(out.includes('Rename'), `Rename absent — got: ${JSON.stringify(out)}`);
     assert(out.includes('Delete'), `Delete absent — got: ${JSON.stringify(out)}`);
@@ -43,7 +43,7 @@ describe('[menu-overlay] paints model.modal.menu contents', () => {
   it('msg.title override replaces the "Menu" default (right-click uses "Actions")', () => {
     let m = freshOverlayModel();
     [m] = runtime.update(m, { type: 'menu_open', items: ITEMS, title: 'Actions' });
-    const out = captureOverlay(m, () => renderMenu());
+    const out = captureOverlay(m, (nr, c) => renderMenu(nr, c));
     assert(out.includes('Actions'), `custom title absent — got: ${JSON.stringify(out)}`);
     // Nothing in the sample items is called "Menu" so a leaked default would show.
     assert(!/\bMenu\b/.test(out), `default title leaked past override — got: ${JSON.stringify(out)}`);
@@ -57,7 +57,7 @@ describe('[menu-overlay] paints model.modal.menu contents', () => {
     // No render assertion on the specific SGR; renderOverlay's exact markup
     // isn't the point. We assert on reducer-visible state via the painted
     // text + the count stripe (count: [selPos, selCount] → "3/3").
-    const out = captureOverlay(m, () => renderMenu());
+    const out = captureOverlay(m, (nr, c) => renderMenu(nr, c));
     assert(/3\s*\/\s*3|3 of 3|3\/3/.test(out), `expected 3/3 count stripe for 3rd selectable row, got: ${JSON.stringify(out)}`);
   });
 
@@ -67,7 +67,7 @@ describe('[menu-overlay] paints model.modal.menu contents', () => {
     [m] = runtime.update(m, { type: 'menu_close' });
     // The reducer wipes items on close so if a stale caller somehow invokes
     // renderMenu post-close, it paints an empty title-only box, not stale rows.
-    const out = captureOverlay(m, () => renderMenu());
+    const out = captureOverlay(m, (nr, c) => renderMenu(nr, c));
     assert(!out.includes('Delete'), `post-close call still paints stale items — got: ${JSON.stringify(out)}`);
     assert(!out.includes('Open'), `post-close call still paints stale items — got: ${JSON.stringify(out)}`);
   });
@@ -78,7 +78,7 @@ describe('[menu-overlay] paints model.modal.menu contents', () => {
       type: 'menu_open',
       items: [['Copy [selection]', 'copy', null]],
     });
-    const out = captureOverlay(m, () => renderMenu());
+    const out = captureOverlay(m, (nr, c) => renderMenu(nr, c));
     assert(out.includes('[selection]'), `literal brackets consumed by markup — got: ${JSON.stringify(out)}`);
   });
 });

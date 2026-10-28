@@ -76,28 +76,8 @@ describe('[panel-list-overlay-composite] composites into newRows when invoked wi
     // Close the overlay so the next describe starts clean.
     dispatchMsg(api.wrap('layout', { type: 'panel_list_close' }));
   });
-
-  it('stdout fallback still fires when invoked without targetRows', () => {
-    freshOverlayModel();
-    dispatchMsg(api.wrap('layout', { type: 'panel_list_open', cursor: 0 }));
-    const chunks = [];
-    const orig = term.stdout.write;
-    term.stdout.write = (s) => { chunks.push(String(s)); return true; };
-    try {
-      renderPanelListOverlay();
-    } finally {
-      term.stdout.write = orig;
-    }
-    const bytes = chunks.join('');
-    assert(bytes.length > 0,
-      'stdout fallback wrote nothing — the fallback keeps the pre-compositor path alive for migration-period callers');
-    const stripped = bytes
-      .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '')
-      .replace(/\x1b\][^\x07]*\x07/g, '');
-    assert(stripped.includes('Panels'),
-      `stdout fallback must still paint the title — got: ${JSON.stringify(stripped.slice(0, 120))}`);
-    dispatchMsg(api.wrap('layout', { type: 'panel_list_close' }));
-  });
+  // (The pre-cleanup "stdout fallback still fires" case retired —
+  // end-of-Release-2 cleanup; the overlay fn no longer has a stdout path.)
 });
 
 describe('[panel-list-overlay-composite] no FULL_CLEAR on open/close through the paint pipeline', () => {

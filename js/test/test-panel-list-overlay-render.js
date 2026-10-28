@@ -28,17 +28,34 @@ function openPanelListOverSmoke() {
   dispatchMsg(api.wrap('layout', { type: 'panel_list_open' }));
 }
 
+// Overlay-compositor Release 2 end-of-cleanup: renderPanelListOverlay is
+// buffer-only now, so the test composites into a local newRows buffer
+// then asserts on the joined visible text. Equivalent assertions to the
+// pre-cleanup sm.capture(stdout) shape (same content lands on-screen),
+// just via newRows instead of stdout.
+const { viewportDims, stripMarkup: _sm_unused } = require('../leaves/render/draw');
+const { stripMarkup } = require('../leaves/text/ansi');
+function paintPanelList() {
+  const vp = viewportDims();
+  const availH = Math.max(1, vp.rows - 1);
+  const newRows = new Array(availH).fill(' '.repeat(vp.cols));
+  renderPanelListOverlay(newRows, vp.cols);
+  return newRows
+    .map(r => stripMarkup(r).replace(/\s+$/, ''))
+    .filter(r => r.length > 0)
+    .join('\n');
+}
+
 describe('[panel-list-overlay] paints iff slice.panelList.open', () => {
-  it('open=false → zero bytes written', () => {
+  it('open=false → nothing composited into newRows', () => {
     sm.bootFresh();
-    const out = sm.capture(() => renderPanelListOverlay()).raw;
+    const out = paintPanelList();
     assert(out === '', `expected no output when panelList closed, got ${JSON.stringify(out).slice(0, 200)}`);
   });
 
   it('open=true → "Panels" title + at least one item visible', () => {
     openPanelListOverSmoke();
-    const cap = sm.capture(() => renderPanelListOverlay());
-    const frame = cap.frame;
+    const frame = paintPanelList();
     assert(frame.includes('Panels'), `title absent — got: ${JSON.stringify(frame).slice(0, 300)}`);
     // The smoke default-config layout has at least `groups` + `detail` panels;
     // detail is always-present. Pin on detail — portable across layout tweaks.
@@ -48,7 +65,7 @@ describe('[panel-list-overlay] paints iff slice.panelList.open', () => {
   it('close → paints nothing (slice.panelList.open flips to false)', () => {
     openPanelListOverSmoke();
     dispatchMsg(api.wrap('layout', { type: 'panel_list_close' }));
-    const out = sm.capture(() => renderPanelListOverlay()).raw;
+    const out = paintPanelList();
     assert(out === '', `after close: no overlay, got: ${JSON.stringify(out).slice(0, 200)}`);
   });
 
@@ -56,8 +73,7 @@ describe('[panel-list-overlay] paints iff slice.panelList.open', () => {
     sm.bootFresh();
     sm.resize(70, 30);                                   // below MIN_SIDE_BY_SIDE
     dispatchMsg(api.wrap('layout', { type: 'panel_list_open' }));
-    const cap = sm.capture(() => renderPanelListOverlay());
-    const frame = cap.frame;
+    const frame = paintPanelList();
     assert(frame.includes('Panels'), `title absent in list-only mode — got: ${JSON.stringify(frame).slice(0, 300)}`);
     // The side-by-side branch would include a preview sub-pane that lists a
     // 'column:' label from the preview renderer; list-only drops it.

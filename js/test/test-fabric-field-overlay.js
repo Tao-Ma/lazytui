@@ -45,12 +45,12 @@ function enterInvoke(pending) {
 
 describe('[fabric-field-overlay] invoke-time prompt paints a real overlay (P2 render fix)', () => {
   it('paints nothing when fabricFieldMode is off', () => {
-    const out = captureWith(freshModel(), () => renderFabricFieldOverlay());
+    const out = captureWith(freshModel(), (nr, c) => renderFabricFieldOverlay(nr, c));
     assert(out === '', `expected no output when mode is off, got ${JSON.stringify(out)}`);
   });
 
   it('paints an overlay when the modal opened with paneId=null + pendingAction (invoke-time)', () => {
-    const out = captureWith(enterInvoke(PENDING), () => renderFabricFieldOverlay());
+    const out = captureWith(enterInvoke(PENDING), (nr, c) => renderFabricFieldOverlay(nr, c));
     assert(out.includes('enable.name'), `addr absent — got: ${JSON.stringify(out)}`);
     assert(out.includes('node to enable'), `port desc absent — got: ${JSON.stringify(out)}`);
     assert(/enter|esc/i.test(out), `footer absent — got: ${JSON.stringify(out)}`);
@@ -61,7 +61,7 @@ describe('[fabric-field-overlay] invoke-time prompt paints a real overlay (P2 re
     let m = enterInvoke(PENDING);
     [m] = runtime.update(m, { type: 'fabric_field_key', seq: '[', key: '[' });
     [m] = runtime.update(m, { type: 'fabric_field_key', seq: 'x', key: 'x' });
-    const out = captureWith(m, () => renderFabricFieldOverlay());
+    const out = captureWith(m, (nr, c) => renderFabricFieldOverlay(nr, c));
     assert(out.includes('[x'), `buffer text absent — got: ${JSON.stringify(out)}`);
   });
 
@@ -70,12 +70,12 @@ describe('[fabric-field-overlay] invoke-time prompt paints a real overlay (P2 re
     [m] = runtime.update(m, {
       type: 'fabric_field_enter', paneId: 'pane-ports', addr: 'xlogminer.start_lsn', text: '',
     });
-    const out = captureWith(m, () => renderFabricFieldOverlay());
+    const out = captureWith(m, (nr, c) => renderFabricFieldOverlay(nr, c));
     assert(out === '', `ports-pane path must stay in-grid, got: ${JSON.stringify(out)}`);
   });
 
   it('paints the hyphenated action addr intact (ddns-ping.host from v0.6.31)', () => {
-    const out = captureWith(enterInvoke(HYPHENATED_PENDING), () => renderFabricFieldOverlay());
+    const out = captureWith(enterInvoke(HYPHENATED_PENDING), (nr, c) => renderFabricFieldOverlay(nr, c));
     assert(out.includes('ddns-ping.host'), `hyphenated addr absent — got: ${JSON.stringify(out)}`);
     assert(out.includes('hostname to ping'), `desc for hyphenated absent — got: ${JSON.stringify(out)}`);
   });
@@ -83,7 +83,7 @@ describe('[fabric-field-overlay] invoke-time prompt paints a real overlay (P2 re
   it('closes the overlay after fabric_field_cancel', () => {
     let m = enterInvoke(PENDING);
     [m] = runtime.update(m, { type: 'fabric_field_cancel' });
-    const out = captureWith(m, () => renderFabricFieldOverlay());
+    const out = captureWith(m, (nr, c) => renderFabricFieldOverlay(nr, c));
     assert(out === '', `after cancel: no overlay, got: ${JSON.stringify(out)}`);
   });
 });

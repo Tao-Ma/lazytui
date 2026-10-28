@@ -25,14 +25,14 @@ function freshWithHistory(entries) {
 
 describe('[register-popup-overlay] paints iff registerPopupMode is on', () => {
   it('mode off → zero bytes written', () => {
-    const out = captureOverlay(freshOverlayModel(), () => renderRegisterPopup());
+    const out = captureOverlay(freshOverlayModel(), (nr, c) => renderRegisterPopup(nr, c));
     assert(out === '', `expected no output when mode is off, got ${JSON.stringify(out)}`);
   });
 
   it('mode on, empty history → empty-state line + footer', () => {
     let m = freshWithHistory([]);
     [m] = runtime.update(m, { type: 'register_popup_enter' });
-    const out = captureOverlay(m, () => renderRegisterPopup());
+    const out = captureOverlay(m, (nr, c) => renderRegisterPopup(nr, c));
     assert(out.includes('empty register'), `empty-state message absent — got: ${JSON.stringify(out)}`);
     assert(/Enter promote/.test(out), `footer hint absent — got: ${JSON.stringify(out)}`);
     assert(/Register history \(0\)/.test(out), `title absent — got: ${JSON.stringify(out)}`);
@@ -41,7 +41,7 @@ describe('[register-popup-overlay] paints iff registerPopupMode is on', () => {
   it('mode on, history populated → entries visible + title counts entries', () => {
     let m = freshWithHistory(['alpha', 'beta', 'gamma']);
     [m] = runtime.update(m, { type: 'register_popup_enter' });
-    const out = captureOverlay(m, () => renderRegisterPopup());
+    const out = captureOverlay(m, (nr, c) => renderRegisterPopup(nr, c));
     assert(out.includes('alpha'), `entry 'alpha' absent — got: ${JSON.stringify(out)}`);
     assert(out.includes('beta'), `entry 'beta' absent — got: ${JSON.stringify(out)}`);
     assert(out.includes('gamma'), `entry 'gamma' absent — got: ${JSON.stringify(out)}`);
@@ -51,7 +51,7 @@ describe('[register-popup-overlay] paints iff registerPopupMode is on', () => {
   it('newline + tab in a yanked entry are rendered as visible glyphs (↵ + space)', () => {
     let m = freshWithHistory(['line1\nline2', 'tabbed\there']);
     [m] = runtime.update(m, { type: 'register_popup_enter' });
-    const out = captureOverlay(m, () => renderRegisterPopup());
+    const out = captureOverlay(m, (nr, c) => renderRegisterPopup(nr, c));
     assert(out.includes('↵'), `newline glyph absent — got: ${JSON.stringify(out)}`);
     // Tab becomes a plain space; harder to assert on positively since the
     // overlay has many spaces. Pin via the preceding + following chars.
@@ -61,7 +61,7 @@ describe('[register-popup-overlay] paints iff registerPopupMode is on', () => {
   it('literal `[` in a yanked entry stays visible (markup-safe esc)', () => {
     let m = freshWithHistory(['foo [bar] baz']);
     [m] = runtime.update(m, { type: 'register_popup_enter' });
-    const out = captureOverlay(m, () => renderRegisterPopup());
+    const out = captureOverlay(m, (nr, c) => renderRegisterPopup(nr, c));
     assert(out.includes('foo [bar] baz'), `literal brackets consumed by markup — got: ${JSON.stringify(out)}`);
   });
 });

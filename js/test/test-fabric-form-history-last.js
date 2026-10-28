@@ -243,7 +243,7 @@ describe('[form-history] [last] seeded field is isLast + inject-worthy', () => {
     const [m2] = runtime.update(m, { type: 'fabric_form_enter',
       fields: [field({ port: 'dir', text: '/srv/repo', isLast: true, required: true })],
       pendingAction: PENDING() });
-    const out = captureOverlay(m2, () => renderFabricFormOverlay());
+    const out = captureOverlay(m2, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(out.includes('[last]'), `overlay should paint "[last]" chip; got: ${JSON.stringify(out.slice(0, 400))}`);
     assert(!out.includes('[modified]'), 'should NOT paint [modified] on an unedited [last] field');
     assert(!out.includes('[default]'), 'should NOT paint [default]');
@@ -256,7 +256,7 @@ describe('[form-history] [last] seeded field is isLast + inject-worthy', () => {
       fields: [field({ port: 'dir', text: '/srv/repo', isLast: true, required: true })],
       pendingAction: PENDING() });
     [m] = runtime.update(m, { type: 'fabric_form_key', key: 'z', seq: 'z' });
-    const out = captureOverlay(m, () => renderFabricFormOverlay());
+    const out = captureOverlay(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(!out.includes('[last]'), 'edit must flip the chip off [last]');
     assert(out.includes('[modified]'), `expected [modified] after edit; got: ${JSON.stringify(out.slice(0, 400))}`);
   });
@@ -440,7 +440,7 @@ describe('[form-history] [last] + choices field: chip paints [last] when text â‰
                  choices: { items: ['vpn-all', 'split-dns'], labels: null, truncated: false } }],
       pendingAction: PENDING('reissue', 'g'),
     });
-    const out = captureOverlay(mm, () => renderFabricFormOverlay());
+    const out = captureOverlay(mm, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(out.includes('[last]'), `expected [last] chip; got: ${JSON.stringify(out.slice(0, 500))}`);
     assert(!out.includes('[2 choices]'), 'must NOT paint [N choices] when isLast is set and isModified');
   });

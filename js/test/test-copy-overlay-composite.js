@@ -65,29 +65,8 @@ describe('[copy-overlay-composite] composites into newRows when invoked with tar
         `row ${i} visible width = ${w}, expected ${COLS}; row:\n  ${JSON.stringify(newRows[i].slice(0, 80))}`);
     }
   });
-
-  it('stdout fallback still fires when invoked without targetRows', () => {
-    let m = freshOverlayModel();
-    [m] = runtime.update(m, { type: 'copy_enter', options: _OPTS });
-    const store = require('../model/store');
-    store.setModel(m);
-    const chunks = [];
-    const orig = term.stdout.write;
-    term.stdout.write = (s) => { chunks.push(String(s)); return true; };
-    try {
-      renderCopyMenu();
-    } finally {
-      term.stdout.write = orig;
-    }
-    const bytes = chunks.join('');
-    assert(bytes.length > 0,
-      'stdout fallback wrote nothing — the fallback keeps the pre-compositor path alive for migration-period callers');
-    const stripped = bytes
-      .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '')
-      .replace(/\x1b\][^\x07]*\x07/g, '');
-    assert(stripped.includes('Container id'),
-      `stdout fallback must still paint the option list — got: ${JSON.stringify(stripped.slice(0, 120))}`);
-  });
+  // (The pre-cleanup "stdout fallback still fires" case retired —
+  // end-of-Release-2 cleanup; the overlay fn no longer has a stdout path.)
 });
 
 describe('[copy-overlay-composite] no FULL_CLEAR on copy_enter', () => {

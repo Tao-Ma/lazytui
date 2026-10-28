@@ -39,16 +39,35 @@ function freshModel() {
   term.refreshSize();
   return m;
 }
-function captureRaw(m, fn) {
+// Overlay-compositor Release 2 end-of-cleanup: renderOverlay is buffer-
+// only now. Capture composites into newRows and either joins touched
+// rows (`captureStripped`) or synthesizes a per-row MoveTo stream for
+// decodeRows callers (`captureRaw`).
+const { stripMarkup, richToAnsi } = require('../leaves/text/ansi');
+function _composeToRows(m, fn) {
   store.setModel(m);
-  const chunks = [];
-  const orig = term.stdout.write;
-  term.stdout.write = (s) => { chunks.push(String(s)); return true; };
-  try { fn(); } finally { term.stdout.write = orig; }
-  return chunks.join('');
+  const vp = draw.viewportDims();
+  const cols = vp.cols;
+  const availH = Math.max(1, vp.rows - 1);
+  const newRows = new Array(availH).fill(' '.repeat(cols));
+  fn(newRows, cols);
+  return newRows;
+}
+function captureRaw(m, fn) {
+  const newRows = _composeToRows(m, fn);
+  let buf = '';
+  for (let i = 0; i < newRows.length; i++) {
+    const stripped = stripMarkup(newRows[i]).replace(/\s+$/, '');
+    if (stripped.length === 0) continue;
+    buf += `\x1b[${i + 1};1H` + richToAnsi(newRows[i]);
+  }
+  return buf;
 }
 function captureStripped(m, fn) {
-  return captureRaw(m, fn).replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/\x1b\][^\x07]*\x07/g, '');
+  return _composeToRows(m, fn)
+    .map(r => stripMarkup(r).replace(/\s+$/, ''))
+    .filter(r => r.length > 0)
+    .join('\n');
 }
 
 const PENDING = {
@@ -83,7 +102,7 @@ describe('[fabric-form-choices-cmd-overlay] chips (channel-agnostic)', () => {
   it('[fetching…] while pending (shared with fn path)', () => {
     let m = openFormWithBranchFocused();
     [m] = runtime.update(m, { type: 'fabric_form_choices_request', port: 'branch', requestId: 1 });
-    const out = captureStripped(m, () => renderFabricFormOverlay());
+    const out = captureStripped(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(out.includes('[fetching…]'), `expected [fetching…] chip, got:\n${out}`);
   });
 
@@ -94,7 +113,7 @@ describe('[fabric-form-choices-cmd-overlay] chips (channel-agnostic)', () => {
       type: 'fabric_form_choices_resolved', port: 'branch', requestId: 2,
       items: ['main', 'dev', 'feature-x'], labels: null, error: null,
     });
-    const out = captureStripped(m, () => renderFabricFormOverlay());
+    const out = captureStripped(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(out.includes('[3 choices]'), `expected [3 choices], got:\n${out}`);
   });
 
@@ -105,7 +124,7 @@ describe('[fabric-form-choices-cmd-overlay] chips (channel-agnostic)', () => {
       type: 'fabric_form_choices_resolved', port: 'branch', requestId: 3,
       items: [], labels: null, error: 'exit=128: not a git repo',
     });
-    const out = captureStripped(m, () => renderFabricFormOverlay());
+    const out = captureStripped(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(out.includes('[error]'), `expected [error] chip, got:\n${out}`);
   });
 });
@@ -113,7 +132,7 @@ describe('[fabric-form-choices-cmd-overlay] chips (channel-agnostic)', () => {
 describe('[fabric-form-choices-cmd-overlay] [space] choices hint', () => {
   it('shows [space] choices when a choicesCmd field is focused', () => {
     const m = openFormWithBranchFocused();
-    const out = captureStripped(m, () => renderFabricFormOverlay());
+    const out = captureStripped(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(out.includes('[space] choices'),
       `focused choicesCmd field must advertise [space] choices, got:\n${out}`);
   });
@@ -122,7 +141,7 @@ describe('[fabric-form-choices-cmd-overlay] [space] choices hint', () => {
     let m = freshModel();
     [m] = runtime.update(m, { type: 'fabric_form_enter', fields: fieldsFor(), pendingAction: PENDING });
     // repo focused by default
-    const out = captureStripped(m, () => renderFabricFormOverlay());
+    const out = captureStripped(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(!out.includes('[space] choices'),
       `plain focused field should NOT advertise [space] choices, got:\n${out}`);
   });
@@ -166,7 +185,7 @@ describe('[fabric-form-choices-cmd-overlay] popover overflow cap — hint + foot
   it('30 items on a 30-row terminal: popover caps, hint line + footer visible, indicator paints', () => {
     const bigItems = Array.from({ length: 30 }, (_, i) => `item${i + 1}`);
     const m = openWithItems(bigItems);
-    const out = captureStripped(m, () => renderFabricFormOverlay());
+    const out = captureStripped(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(/\[\d+ of 30 — up\/down to scroll\]/.test(out),
       `expected "[N of 30 — up/down to scroll]" indicator, got:\n${out}`);
     assert(out.includes('[up/down] move'),
@@ -186,7 +205,7 @@ describe('[fabric-form-choices-cmd-overlay] popover overflow cap — hint + foot
     for (let i = 0; i < 25; i++) {
       [m] = runtime.update(m, { type: 'fabric_form_choices_nav', dir: 1 });
     }
-    const out = captureStripped(m, () => renderFabricFormOverlay());
+    const out = captureStripped(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(out.includes('item25'), `item25 (focus) visible after scroll, got:\n${out}`);
     assert(out.includes('[up/down] move'), 'help line still pinned');
   });
@@ -194,7 +213,7 @@ describe('[fabric-form-choices-cmd-overlay] popover overflow cap — hint + foot
   it('10 items on 30-row terminal: no cap applied, no overflow indicator', () => {
     const smallItems = Array.from({ length: 10 }, (_, i) => `item${i + 1}`);
     const m = openWithItems(smallItems);
-    const out = captureStripped(m, () => renderFabricFormOverlay());
+    const out = captureStripped(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(!out.includes('— up/down to scroll'),
       `no overflow indicator for 10 items on 30-row, got:\n${out}`);
     assert(out.includes('item10'), 'all 10 items visible');
@@ -228,7 +247,7 @@ describe('[fabric-form-choices-cmd-overlay] popover overflow cap — hint + foot
       items, labels: null, error: null,
     });
     [m] = runtime.update(m, { type: 'fabric_form_choices_open', port: 'ca' });
-    const out = captureStripped(m, () => renderFabricFormOverlay());
+    const out = captureStripped(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(out.includes('[up/down] move'),
       `3-field form (chrome ≈ 11): help line must stay visible, got:\n${out}`);
     assert(out.includes('required inputs still missing:'),
@@ -249,7 +268,7 @@ describe('[fabric-form-choices-cmd-overlay] 1-field form paints chip + help with
     // explicitly (the real dispatch loop would do this on enter for a
     // dep-less computed field).
     [m] = runtime.update(m, { type: 'fabric_form_choices_request', port: 'name', requestId: 1 });
-    const out = captureStripped(m, () => renderFabricFormOverlay());
+    const out = captureStripped(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(out.includes('name'), `field label present, got:\n${out}`);
     assert(out.includes('[fetching…]'), `expected [fetching…] on 1-field form, got:\n${out}`);
     assert(out.includes('[space] choices'),
@@ -264,7 +283,7 @@ describe('[fabric-form-choices-cmd-overlay] 1-field form paints chip + help with
       type: 'fabric_form_choices_resolved', port: 'name', actionKey: 'pick', requestId: 1,
       items: ['a', 'b'], labels: null, error: null,
     });
-    const out = captureStripped(m, () => renderFabricFormOverlay());
+    const out = captureStripped(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(out.includes('[2 choices]'),
       `expected [2 choices] after resolve on 1-field form, got:\n${out}`);
   });

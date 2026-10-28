@@ -22,6 +22,22 @@ const wal = path.join(TMP, `replay-diff-${process.pid}.jsonl`);
 const cap = (fn) => { const o = process.stdout.write; process.stdout.write = () => true; try { return fn(); } finally { process.stdout.write = o; } };
 const capOut = (fn) => { const o = process.stdout.write; const c = []; process.stdout.write = (s) => { c.push(String(s)); return true; }; try { fn(); } finally { process.stdout.write = o; } return c.join(''); };
 const stripAnsi = (s) => s.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
+// Overlay-compositor Release 2 end-of-cleanup: replay-scrubber is
+// buffer-only now. Composite into newRows, strip markup, return the
+// visible rows joined — equivalent to the pre-cleanup
+// `stripAnsi(capOut(...))` capture shape.
+const _draw = require('../leaves/render/draw');
+const { stripMarkup } = require('../leaves/text/ansi');
+const paintReplayScrubber = (data) => {
+  const vp = _draw.viewportDims();
+  const availH = Math.max(1, vp.rows - 1);
+  const newRows = new Array(availH).fill(' '.repeat(vp.cols));
+  require('../overlay/replay-scrubber').render(data, newRows, vp.cols);
+  return newRows
+    .map(r => stripMarkup(r).replace(/\s+$/, ''))
+    .filter(r => r.length > 0)
+    .join('\n');
+};
 const _grp = (n) => ({ name: n, label: n, containers: [], actions: {}, children: [], parent: null, depth: 0, quick: false });
 
 function boot() {
@@ -70,7 +86,7 @@ function boot() {
       eq(replay.snapshotState().model.now, 3000, 'reconstruction unchanged by the scratch fold');
     });
     it('the scrubber renders the changes section', () => {
-      const out = stripAnsi(capOut(() => require('../overlay/replay-scrubber').render(rc.renderData())));
+      const out = paintReplayScrubber(rc.renderData());
       assert(/changes @/.test(out), 'changes header rendered');
       assert(/model\.now/.test(out), 'the changed path rendered');
     });

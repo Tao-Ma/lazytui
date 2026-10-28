@@ -276,7 +276,7 @@ describe('[5] overlay — paints list, `/<filter>` affordance, (no match), help 
     m.configPath = '/tmp/lazytui-palette.yml';
     m.currentGroup = 'deploy';
     [m] = runtime.update(m, { type: 'palette_open' });
-    const out = captureOverlay(m, () => palette.renderActionPalette());
+    const out = captureOverlay(m, (nr, c) => palette.renderActionPalette(nr, c));
     assert(out.includes('deploy:build'), 'deploy:build visible');
     assert(out.includes('db:migrate'), 'db:migrate visible');
     assert(out.includes('ops:tail'), 'ops:tail visible');
@@ -296,7 +296,7 @@ describe('[5] overlay — paints list, `/<filter>` affordance, (no match), help 
     m.currentGroup = 'deploy';
     [m] = runtime.update(m, { type: 'palette_open' });
     [m] = runtime.update(m, { type: 'palette_filter', seq: 'db' });
-    const out = captureOverlay(m, () => palette.renderActionPalette());
+    const out = captureOverlay(m, (nr, c) => palette.renderActionPalette(nr, c));
     assert(out.includes('/db'), '/db affordance row above the list');
     assert(out.includes('db:migrate'), 'db:migrate matches');
     assert(out.includes('db:seed'),    'db:seed matches');
@@ -312,7 +312,7 @@ describe('[5] overlay — paints list, `/<filter>` affordance, (no match), help 
     m.currentGroup = 'deploy';
     [m] = runtime.update(m, { type: 'palette_open' });
     [m] = runtime.update(m, { type: 'palette_filter', seq: 'zzz' });
-    const out = captureOverlay(m, () => palette.renderActionPalette());
+    const out = captureOverlay(m, (nr, c) => palette.renderActionPalette(nr, c));
     assert(out.includes('(no match)'), '(no match) row painted');
     assert(out.includes('/zzz'), '/zzz still shown');
   });
@@ -324,7 +324,7 @@ describe('[5] overlay — paints list, `/<filter>` affordance, (no match), help 
     [m] = runtime.update(m, { type: 'palette_open' });
     // 'tail' matches ops:tail by path AND by label ("Tail logs")
     [m] = runtime.update(m, { type: 'palette_filter', seq: 'tail' });
-    const out = captureOverlay(m, () => palette.renderActionPalette());
+    const out = captureOverlay(m, (nr, c) => palette.renderActionPalette(nr, c));
     assert(out.includes('ops:tail'), 'ops:tail present on label match');
   });
   it('[dim] desc suffix appears when wide enough and action has desc', () => {
@@ -334,7 +334,7 @@ describe('[5] overlay — paints list, `/<filter>` affordance, (no match), help 
     m.currentGroup = 'deploy';
     [m] = runtime.update(m, { type: 'palette_open' });
     [m] = runtime.update(m, { type: 'palette_filter', seq: 'migrate' });
-    const out = captureOverlay(m, () => palette.renderActionPalette());
+    const out = captureOverlay(m, (nr, c) => palette.renderActionPalette(nr, c));
     assert(out.includes('Migrate'), 'label painted');
     assert(out.includes('Run pending migrations'), 'desc painted');
   });
@@ -548,7 +548,7 @@ describe('[9] scroll window — selection stays visible on tall lists', () => {
     for (let i = 0; i < 30; i++) {
       [m] = runtime.update(m, { type: 'palette_nav', dir: 1, total: 60 });
     }
-    const out = captureOverlay(m, () => palette.renderActionPalette());
+    const out = captureOverlay(m, (nr, c) => palette.renderActionPalette(nr, c));
     // The marker must be in the painted frame. Pre-fix, idx=30 would
     // paint rows 0..17 only — no `>` would appear.
     assert(out.includes('[reverse]')
@@ -572,7 +572,7 @@ describe('[9] scroll window — selection stays visible on tall lists', () => {
     m.configPath = '/tmp/lazytui-palette.yml';
     m.currentGroup = 'grp0';
     [m] = runtime.update(m, { type: 'palette_open' });
-    const out = captureOverlay(m, () => palette.renderActionPalette());
+    const out = captureOverlay(m, (nr, c) => palette.renderActionPalette(nr, c));
     assert(/\d+ of 60/.test(out),
       `overflow indicator with "N of 60" must paint when overflow fires. Got:\n${out}`);
     assert(out.includes('to scroll'),
@@ -586,7 +586,7 @@ describe('[9] scroll window — selection stays visible on tall lists', () => {
     m.configPath = '/tmp/lazytui-palette.yml';
     m.currentGroup = 'deploy';
     [m] = runtime.update(m, { type: 'palette_open' });
-    const out = captureOverlay(m, () => palette.renderActionPalette());
+    const out = captureOverlay(m, (nr, c) => palette.renderActionPalette(nr, c));
     assert(!/\d+ of 9 — .*scroll/.test(out),
       `no overflow indicator when list fits. Got:\n${out}`);
   });
@@ -601,7 +601,7 @@ describe('[9] scroll window — selection stays visible on tall lists', () => {
     for (let i = 0; i < 100; i++) {
       [m] = runtime.update(m, { type: 'palette_nav', dir: 1, total: 60 });
     }
-    const out = captureOverlay(m, () => palette.renderActionPalette());
+    const out = captureOverlay(m, (nr, c) => palette.renderActionPalette(nr, c));
     // Last-row content: grp5:act9 (if walker is group-then-action order).
     // Hedge: check SOMETHING from grp5 is visible (the window should
     // include it).
@@ -628,7 +628,7 @@ describe('[9] scroll window — selection stays visible on tall lists', () => {
     // Filter down to a handful of rows — reducer resets idx on filter
     // change (existing behavior).
     [m] = runtime.update(m, { type: 'palette_filter', seq: 'grp5' });
-    const out = captureOverlay(m, () => palette.renderActionPalette());
+    const out = captureOverlay(m, (nr, c) => palette.renderActionPalette(nr, c));
     assert(/grp5:act0/.test(out) || /g5a0/.test(out),
       `after filter the window must include the first match. Got:\n${out}`);
     // No overflow indicator — filtered list fits.
@@ -647,7 +647,7 @@ describe('[9] scroll window — selection stays visible on tall lists', () => {
     for (let i = 0; i < 20; i++) {
       [m] = runtime.update(m, { type: 'palette_nav', dir: 1, total: 60 });
     }
-    const out = captureOverlay(m, () => palette.renderActionPalette());
+    const out = captureOverlay(m, (nr, c) => palette.renderActionPalette(nr, c));
     // Selected (idx-20) row must be in the window somewhere.
     assert(out.length > 0, 'something painted even on tiny viewport');
     assert(/grp2/.test(out) || /grp1/.test(out),

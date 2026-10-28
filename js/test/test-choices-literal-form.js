@@ -111,7 +111,7 @@ describe('[form] chip paints `[N choices]` from the FIRST frame — no fetching 
     let m = freshOverlayModel();
     [m] = runtime.update(m, { type: 'fabric_form_enter', fields: [field],
       pendingAction: { actionKey: 'restart', action: { label: 'Restart' } } });
-    const out = captureOverlay(m, () => renderFabricFormOverlay());
+    const out = captureOverlay(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(/\[2 choices\]/.test(out), `expected '[2 choices]' chip in first frame — got: ${JSON.stringify(out).slice(0, 300)}`);
     assert(!/\[fetching/.test(out), `must NOT paint [fetching…] for literal — got: ${JSON.stringify(out).slice(0, 300)}`);
   });
@@ -124,7 +124,7 @@ describe('[form] chip paints `[N choices]` from the FIRST frame — no fetching 
     let m = freshOverlayModel();
     [m] = runtime.update(m, { type: 'fabric_form_enter', fields: [field],
       pendingAction: { actionKey: 'x', action: { label: 'X' } } });
-    const out = captureOverlay(m, () => renderFabricFormOverlay());
+    const out = captureOverlay(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(/\[1 choice\]/.test(out),
       `expected singular '[1 choice]' — got: ${JSON.stringify(out).slice(0, 300)}`);
   });
@@ -224,7 +224,7 @@ describe('[form] Brief-1 fix — literal `choices:` opens the popover on space',
       ['all traffic via VPN', 'split tunnel'],
     );
     [m] = runtime.update(m, { type: 'fabric_form_choices_open', port: 'tunnel' });
-    const out = captureOverlay(m, () => renderFabricFormOverlay());
+    const out = captureOverlay(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(out.includes('all traffic via VPN'),
       `expected label 'all traffic via VPN' in popover frame, got: ${JSON.stringify(out).slice(0, 400)}`);
     assert(out.includes('split tunnel'),
@@ -274,7 +274,7 @@ describe('[form] overlay footer-hint — literal field focused advertises [space
                        action: { label: 'Reissue', type: 'run', run: 'r {{tunnel}}',
                                  ports: { in: { tunnel: { type: 'string', required: true } } } } },
     });
-    const out = captureOverlay(after, () => renderFabricFormOverlay());
+    const out = captureOverlay(after, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(out.includes('[space] choices'),
       `expected "[space] choices" hint for literal field; got: ${JSON.stringify(out.slice(0, 500))}`);
   });
@@ -287,7 +287,7 @@ describe('[form] overlay footer-hint — literal field focused advertises [space
                        action: { label: 'Noop', type: 'run', run: 'n {{plain}}',
                                  ports: { in: { plain: { type: 'string', required: true } } } } },
     });
-    const out = captureOverlay(after, () => renderFabricFormOverlay());
+    const out = captureOverlay(after, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(!out.includes('[space] choices'), 'no choices hint on a plain field');
   });
 });

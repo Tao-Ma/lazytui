@@ -152,25 +152,8 @@ describe('[replay-scrubber-overlay-composite] composites both views into newRows
     const stillBlank = newRows.every(r => visibleLen(r) === COLS && r.trim() === '');
     assert(stillBlank, 'hidden view mutated newRows — expected a no-op');
   });
-
-  it('stdout fallback still fires when invoked without targetRows (full view)', () => {
-    const chunks = [];
-    const orig = term.stdout.write;
-    term.stdout.write = (s) => { chunks.push(String(s)); return true; };
-    try {
-      renderReplayScrubber(_synthData('full'));
-    } finally {
-      term.stdout.write = orig;
-    }
-    const bytes = chunks.join('');
-    assert(bytes.length > 0,
-      'stdout fallback wrote nothing — the fallback keeps the pre-compositor path alive for migration-period callers');
-    const stripped = bytes
-      .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '')
-      .replace(/\x1b\][^\x07]*\x07/g, '');
-    assert(stripped.includes('Replay'),
-      `stdout fallback must still paint the title — got: ${JSON.stringify(stripped.slice(0, 120))}`);
-  });
+  // (The pre-cleanup "stdout fallback still fires" case retired —
+  // end-of-Release-2 cleanup; the overlay fn no longer has a stdout path.)
 });
 
 describe('[replay-scrubber-overlay-composite] no FULL_CLEAR on paneView transitions through the paint pipeline', () => {

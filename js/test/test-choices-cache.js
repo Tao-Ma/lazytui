@@ -346,7 +346,7 @@ describe('[cache] chip renderer — `⟳` marker on stale ok and stale error', (
     openCmdForm();
     m = getModel();
     [m] = apply({ type: 'fabric_form_choices_request', port: 'name' });
-    const out = captureOverlay(m, () => renderFabricFormOverlay());
+    const out = captureOverlay(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(/\[2 choices ⟳\]/.test(out),
       `expected '[2 choices ⟳]' chip for stale ok — got: ${JSON.stringify(out).slice(0, 300)}`);
   });
@@ -368,7 +368,7 @@ describe('[cache] chip renderer — `⟳` marker on stale ok and stale error', (
     [m] = apply({ type: 'fabric_form_choices_resolved',
       port: 'name', actionKey: 'restart', requestId: r2,
       items: [], labels: null, error: 'choices_cmd timed out', truncated: false });
-    const out = captureOverlay(m, () => renderFabricFormOverlay());
+    const out = captureOverlay(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(/\[error ⟳\]/.test(out),
       `expected '[error ⟳]' chip for stale error — got: ${JSON.stringify(out).slice(0, 300)}`);
   });

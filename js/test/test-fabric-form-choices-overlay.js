@@ -53,16 +53,35 @@ function freshModel() {
   return m;
 }
 
-function captureRaw(m, fn) {
+// Overlay-compositor Release 2 end-of-cleanup: renderOverlay is buffer-
+// only now. Capture composites into newRows and either joins touched
+// rows (`captureStripped`) or synthesizes a per-row MoveTo stream for
+// decodeRows callers (`captureRaw`).
+const { stripMarkup, richToAnsi } = require('../leaves/text/ansi');
+function _composeToRows(m, fn) {
   store.setModel(m);
-  const chunks = [];
-  const orig = term.stdout.write;
-  term.stdout.write = (s) => { chunks.push(String(s)); return true; };
-  try { fn(); } finally { term.stdout.write = orig; }
-  return chunks.join('');
+  const vp = draw.viewportDims();
+  const cols = vp.cols;
+  const availH = Math.max(1, vp.rows - 1);
+  const newRows = new Array(availH).fill(' '.repeat(cols));
+  fn(newRows, cols);
+  return newRows;
+}
+function captureRaw(m, fn) {
+  const newRows = _composeToRows(m, fn);
+  let buf = '';
+  for (let i = 0; i < newRows.length; i++) {
+    const stripped = stripMarkup(newRows[i]).replace(/\s+$/, '');
+    if (stripped.length === 0) continue;
+    buf += `\x1b[${i + 1};1H` + richToAnsi(newRows[i]);
+  }
+  return buf;
 }
 function captureStripped(m, fn) {
-  return captureRaw(m, fn).replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/\x1b\][^\x07]*\x07/g, '');
+  return _composeToRows(m, fn)
+    .map(r => stripMarkup(r).replace(/\s+$/, ''))
+    .filter(r => r.length > 0)
+    .join('\n');
 }
 
 const PENDING = {
@@ -97,7 +116,7 @@ describe('[fabric-form-choices-overlay] chips', () => {
     [m] = runtime.update(m, {
       type: 'fabric_form_choices_request', port: 'section', requestId: 1,
     });
-    const out = captureStripped(m, () => renderFabricFormOverlay());
+    const out = captureStripped(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(out.includes('[fetching…]'), `expected [fetching…] chip, got:\n${out}`);
   });
 
@@ -108,7 +127,7 @@ describe('[fabric-form-choices-overlay] chips', () => {
       type: 'fabric_form_choices_resolved', port: 'section', requestId: 2,
       items: [], labels: null, error: 'file not found',
     });
-    const out = captureStripped(m, () => renderFabricFormOverlay());
+    const out = captureStripped(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(out.includes('[error]'), `expected [error] chip, got:\n${out}`);
   });
 
@@ -119,7 +138,7 @@ describe('[fabric-form-choices-overlay] chips', () => {
       type: 'fabric_form_choices_resolved', port: 'section', requestId: 3,
       items: ['a', 'b', 'c'], labels: null, error: null,
     });
-    let out = captureStripped(m, () => renderFabricFormOverlay());
+    let out = captureStripped(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(out.includes('[3 choices]'), `expected [3 choices], got:\n${out}`);
 
     // Single choice → singular.
@@ -128,7 +147,7 @@ describe('[fabric-form-choices-overlay] chips', () => {
       type: 'fabric_form_choices_resolved', port: 'section', requestId: 4,
       items: ['only'], labels: null, error: null,
     });
-    out = captureStripped(m, () => renderFabricFormOverlay());
+    out = captureStripped(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(out.includes('[1 choice]'), `expected [1 choice] (singular), got:\n${out}`);
   });
 
@@ -150,7 +169,7 @@ describe('[fabric-form-choices-overlay] chips', () => {
       type: 'fabric_form_choices_resolved', port: 'section', requestId: 10,
       items: ['intro', 'body'], labels: null, error: null,
     });
-    const out = captureStripped(m, () => renderFabricFormOverlay());
+    const out = captureStripped(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(out.includes('[2 choices]'),
       `expected [2 choices] chip even with default='body', got:\n${out}`);
   });
@@ -163,7 +182,7 @@ describe('[fabric-form-choices-overlay] chips', () => {
       items: ['body'], labels: null, error: null,
     });
     [m] = runtime.update(m, { type: 'fabric_form_choices_pick', port: 'section', value: 'body' });
-    const out = captureStripped(m, () => renderFabricFormOverlay());
+    const out = captureStripped(m, (nr, c) => renderFabricFormOverlay(nr, c));
     // After pick, section text='body', default=null → isModified; chip stops being [1 choice].
     assert(out.includes('[modified]'), `expected [modified] after pick, got:\n${out}`);
     assert(!out.includes('[1 choice]'), 'chip should flip away from [N choices] once picked');
@@ -173,7 +192,7 @@ describe('[fabric-form-choices-overlay] chips', () => {
 describe('[fabric-form-choices-overlay] help line', () => {
   it('shows [space] choices only when focused field has choicesFnRef', () => {
     const m = openFormWithSectionFocused();
-    const out = captureStripped(m, () => renderFabricFormOverlay());
+    const out = captureStripped(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(out.includes('[space] choices'), `expected [space] choices hint, got:\n${out}`);
   });
 
@@ -181,7 +200,7 @@ describe('[fabric-form-choices-overlay] help line', () => {
     let m = freshModel();
     [m] = runtime.update(m, { type: 'fabric_form_enter', fields: fieldsFor(), pendingAction: PENDING });
     // file is focused by default — plain port, no choicesFnRef.
-    const out = captureStripped(m, () => renderFabricFormOverlay());
+    const out = captureStripped(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(!out.includes('[space] choices'),
            `plain focused field should not advertise [space] choices, got:\n${out}`);
   });
@@ -201,7 +220,7 @@ describe('[fabric-form-choices-overlay] popover', () => {
 
   it('ok + items → rows render + help flips to picker keys', () => {
     const m = openPopoverWithItems(['intro', 'body', 'outro']);
-    const out = captureStripped(m, () => renderFabricFormOverlay());
+    const out = captureStripped(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(out.includes('intro'), 'intro row visible');
     assert(out.includes('body'),  'body row visible');
     assert(out.includes('outro'), 'outro row visible');
@@ -214,7 +233,7 @@ describe('[fabric-form-choices-overlay] popover', () => {
   it('highlighted entry wears [reverse] in RAW output', () => {
     let m = openPopoverWithItems(['a', 'b', 'c']);
     [m] = runtime.update(m, { type: 'fabric_form_choices_nav', dir: 1 });   // idx 1 → b
-    const raw = captureRaw(m, () => renderFabricFormOverlay());
+    const raw = captureRaw(m, (nr, c) => renderFabricFormOverlay(nr, c));
     // '[reverse]' expands to SGR 7 (`\x1b[7m`); the raw frame should carry it.
     assert(/\x1b\[7m[^]*?b/.test(raw),
            'inverse SGR precedes the highlighted entry');
@@ -222,7 +241,7 @@ describe('[fabric-form-choices-overlay] popover', () => {
 
   it('empty items → "(no choices)" row', () => {
     const m = openPopoverWithItems([]);
-    const out = captureStripped(m, () => renderFabricFormOverlay());
+    const out = captureStripped(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(out.includes('(no choices)'), `expected (no choices) row, got:\n${out}`);
   });
 
@@ -230,7 +249,7 @@ describe('[fabric-form-choices-overlay] popover', () => {
     let m = openFormWithSectionFocused();
     [m] = runtime.update(m, { type: 'fabric_form_choices_request', port: 'section', requestId: 7 });
     [m] = runtime.update(m, { type: 'fabric_form_choices_open', port: 'section' });
-    const out = captureStripped(m, () => renderFabricFormOverlay());
+    const out = captureStripped(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(out.includes('awaiting choices'), `expected awaiting-row, got:\n${out}`);
   });
 
@@ -242,7 +261,7 @@ describe('[fabric-form-choices-overlay] popover', () => {
       items: [], labels: null, error: 'ENOENT: /tmp/x.md',
     });
     [m] = runtime.update(m, { type: 'fabric_form_choices_open', port: 'section' });
-    const out = captureStripped(m, () => renderFabricFormOverlay());
+    const out = captureStripped(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(out.includes('ENOENT: /tmp/x.md'), `expected error text in popover, got:\n${out}`);
   });
 
@@ -254,7 +273,7 @@ describe('[fabric-form-choices-overlay] popover', () => {
       items: ['a', 'b', 'c'], labels: null, error: null, truncated: true,
     });
     [m] = runtime.update(m, { type: 'fabric_form_choices_open', port: 'section' });
-    const out = captureStripped(m, () => renderFabricFormOverlay());
+    const out = captureStripped(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(out.includes('[+more…]'), `expected +more affordance, got:\n${out}`);
   });
 });
@@ -279,7 +298,7 @@ describe('[fabric-form-choices-overlay] R1D-BUG1 — chip survives at N ≥ 10 i
 
   it('[10 choices] paints without truncation', () => {
     const m = openFormWithNItems(10);
-    const out = captureStripped(m, () => renderFabricFormOverlay());
+    const out = captureStripped(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(out.includes('[10 choices]'),
       `expected [10 choices] chip intact (not truncated to '[10 choice…'), got:\n${out}`);
     assert(!/\[10 choice…/.test(out), 'the slice-1 fixed CHIP_SLOT would truncate here');
@@ -287,7 +306,7 @@ describe('[fabric-form-choices-overlay] R1D-BUG1 — chip survives at N ≥ 10 i
 
   it('[1024 choices] paints without truncation', () => {
     const m = openFormWithNItems(1024);
-    const out = captureStripped(m, () => renderFabricFormOverlay());
+    const out = captureStripped(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(out.includes('[1024 choices]'),
       `expected [1024 choices] chip intact, got:\n${out}`);
   });
@@ -315,7 +334,7 @@ describe('[fabric-form-choices-overlay] R1D-BUG2 — popover scroll follows high
     for (let i = 0; i < 20; i++) {
       [m] = runtime.update(m, { type: 'fabric_form_choices_nav', dir: 1 });
     }
-    const raw = captureRaw(m, () => renderFabricFormOverlay());
+    const raw = captureRaw(m, (nr, c) => renderFabricFormOverlay(nr, c));
     // The highlighted entry (`opt20`) must appear in the raw output with the
     // reverse SGR. Pre-fix, scroll was anchored on the field row (near 0), so
     // only opt00..opt07 fit in a 15-row viewport.

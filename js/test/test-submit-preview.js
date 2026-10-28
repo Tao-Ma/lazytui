@@ -283,7 +283,7 @@ describe('[4] confirm overlay — preview block visibility', () => {
   it('action WITHOUT ports.in → no preview block painted', () => {
     const m = openConfirmWithStagedDoRun(
       { type: 'run', script: 'echo hi' }, 'simple');
-    const out = captureOverlay(m, () => renderConfirmOverlay());
+    const out = captureOverlay(m, (nr, c) => renderConfirmOverlay(nr, c));
     assert(out.includes('Are you sure?'), 'message painted');
     assert(!out.includes('preview'), 'no preview block without ports.in');
     assert(out.includes('[y] confirm'), 'y/n hint painted');
@@ -296,7 +296,7 @@ describe('[4] confirm overlay — preview block visibility', () => {
       } },
     };
     const m = openConfirmWithStagedDoRun(action, 'deploy');
-    const out = captureOverlay(m, () => renderConfirmOverlay());
+    const out = captureOverlay(m, (nr, c) => renderConfirmOverlay(nr, c));
     assert(out.includes('preview'), 'preview marker painted');
     assert(out.includes('deploy --env $env'), 'script line painted');
     assert(out.includes('env=staging'), 'port value painted (from default)');
@@ -309,7 +309,7 @@ describe('[4] confirm overlay — preview block visibility', () => {
       } },
     };
     const m = openConfirmWithStagedDoRun(action, 'rotate-ca');
-    const out = captureOverlay(m, () => renderConfirmOverlay());
+    const out = captureOverlay(m, (nr, c) => renderConfirmOverlay(nr, c));
     assert(out.includes(`passphrase=${SENSITIVE_MASK}`),
       `passphrase=${SENSITIVE_MASK} rendered`);
     assert(!out.includes('<pending>'), '<pending> suppressed for sensitive');
@@ -323,7 +323,7 @@ describe('[4] confirm overlay — preview block visibility', () => {
       } },
     };
     const m = openConfirmWithStagedDoRun(action, 'deploy');
-    const out = captureOverlay(m, () => renderConfirmOverlay());
+    const out = captureOverlay(m, (nr, c) => renderConfirmOverlay(nr, c));
     assert(out.includes('env=prod'), 'non-sensitive shows value');
     assert(out.includes(`token=${SENSITIVE_MASK}`), 'sensitive masked');
   });
@@ -351,7 +351,7 @@ describe('[4] confirm overlay — preview block visibility', () => {
     m.fabric = { injects: { g: { 'rotate-ca.passphrase':
       { value: 'hunter2-raw-leaked', at: 0, oneShot: true } } } };
     store.setModel(m);
-    const out = captureOverlay(m, () => renderConfirmOverlay());
+    const out = captureOverlay(m, (nr, c) => renderConfirmOverlay(nr, c));
     assert(out.includes(`passphrase=${SENSITIVE_MASK}`), 'sensitive mask applied');
     assert(!out.includes('hunter2-raw-leaked'),
       'raw inject value NEVER appears in the preview output');
@@ -361,7 +361,7 @@ describe('[4] confirm overlay — preview block visibility', () => {
     // The confirm should treat it the same as no ports.in at all.
     const action = { type: 'run', script: 'echo hi', ports: { in: {} } };
     const m = openConfirmWithStagedDoRun(action, 'empty-ports');
-    const out = captureOverlay(m, () => renderConfirmOverlay());
+    const out = captureOverlay(m, (nr, c) => renderConfirmOverlay(nr, c));
     assert(!out.includes('── preview ──'), 'no preview separator for empty ports.in');
     assert(out.includes('[y] confirm'), 'confirm still functional');
   });
@@ -454,7 +454,7 @@ describe('[5] form overlay — compact footer with sensitive mask', () => {
       { port: 'env',        text: 'staging',  required: false, default: 'staging' },
       { port: 'passphrase', text: '',         required: true,  default: null, remember: false },
     ]);
-    const out = captureOverlay(m, () => renderFabricFormOverlay());
+    const out = captureOverlay(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(out.includes('2 ports'), 'count rendered');
     assert(out.includes('rotate-ca'), 'script teaser visible');
   });
@@ -482,7 +482,7 @@ describe('[5] form overlay — compact footer with sensitive mask', () => {
       { port: 'env',        text: 'prod',     required: false, default: 'staging' },
       { port: 'passphrase', text: '',         required: true,  default: null, remember: false },
     ]);
-    const out = captureOverlay(m, () => renderFabricFormOverlay());
+    const out = captureOverlay(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(out.includes('2 ports'), 'count in overlay');
     assert(out.includes('1 sensitive'), 'sensitive count in overlay');
   });
@@ -695,7 +695,7 @@ describe('[7] confirm preview — END-TO-END through real submit + staging', () 
   it('REGRESSION — form-collected value appears RESOLVED in the preview, not <pending>', () => {
     const m = openFormFillSubmitStageConfirm(ROTATE_CA, 'rotate-ca',
       { force: '--refused', server_cn: 'ca.example.org' });
-    const out = captureOverlay(m, () => renderConfirmOverlay());
+    const out = captureOverlay(m, (nr, c) => renderConfirmOverlay(nr, c));
     assert(out.includes('force=--refused'),
       `BUG regression: force must show resolved value, not <pending>. Got overlay:\n${out}`);
     assert(out.includes('server_cn=ca.example.org'),
@@ -718,7 +718,7 @@ describe('[7] confirm preview — END-TO-END through real submit + staging', () 
     const spawnResolved = runner._resolvePortsForAction('rotate-ca', ROTATE_CA, m);
     eq(spawnResolved.values.force, '--refused',
       `spawn-side resolver finds the inject`);
-    const out = captureOverlay(m, () => renderConfirmOverlay());
+    const out = captureOverlay(m, (nr, c) => renderConfirmOverlay(nr, c));
     // The preview text contains `force=--refused` iff the preview reader
     // found the SAME value the spawn would. Byte-equality by substring
     // (the preview's row shape `  force=--refused  [inject]` is one line).
@@ -732,7 +732,7 @@ describe('[7] confirm preview — END-TO-END through real submit + staging', () 
     // Simulate the user navigating to a different group mid-confirm.
     const m2 = { ...m, currentGroup: 'completely-other-group' };
     store.setModel(m2);
-    const out = captureOverlay(m2, () => renderConfirmOverlay());
+    const out = captureOverlay(m2, (nr, c) => renderConfirmOverlay(nr, c));
     assert(out.includes('force=--refused'),
       `preview must read the STAGED group (continuation.group='g'), ` +
       `not the live currentGroup='completely-other-group' which has no injects`);
@@ -750,7 +750,7 @@ describe('[7] confirm preview — END-TO-END through real submit + staging', () 
     };
     const m = openFormFillSubmitStageConfirm(VARIADIC_ACTION, 'ssh',
       { host: 'h.example', cmd: 'ls -la /tmp' });
-    const out = captureOverlay(m, () => renderConfirmOverlay());
+    const out = captureOverlay(m, (nr, c) => renderConfirmOverlay(nr, c));
     assert(out.includes('host=h.example'),
       `host scalar resolved`);
     assert(!out.includes('[object Object]'),
@@ -781,7 +781,7 @@ describe('[7] confirm preview — END-TO-END through real submit + staging', () 
       message: ROTATE_CA.confirm,
       cmd: { type: 'do_run', actionKey: 'rotate-ca', action: ROTATE_CA, args: [], group: g },
     });
-    const out = captureOverlay(getModel(), () => renderConfirmOverlay());
+    const out = captureOverlay(getModel(), (nr, c) => renderConfirmOverlay(nr, c));
     assert(out.includes('force=<pending>'),
       `BUG: the rolled-back value must now show <pending> again on re-invoke. ` +
       `Pre-fix (round-1 of this fix) the preview wrongly showed the declined ` +
@@ -814,7 +814,7 @@ describe('[7] confirm preview — END-TO-END through real submit + staging', () 
       message: 'ok?',
       cmd: { type: 'do_run', actionKey: 'x', action, args: [] },   // no group
     });
-    const out = captureOverlay(getModel(), () => renderConfirmOverlay());
+    const out = captureOverlay(getModel(), (nr, c) => renderConfirmOverlay(nr, c));
     assert(out.includes('env=<pending>'),
       `empty staged group must NOT leak another group's injects into the preview. ` +
       `Got overlay:\n${out}`);

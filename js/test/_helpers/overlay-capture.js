@@ -2,19 +2,20 @@
  * Shared paint-capture harness for overlay tests.
  *
  * Factored from test-fabric-field-overlay.js — the pattern [[feedback_render_test_new_overlays]]
- * says every new overlay must ship with. Captures the stdout bytes written
- * by a renderer, strips ANSI, returns the visible text.
+ * says every new overlay must ship with. Hands the renderer a newRows
+ * buffer, lets it composite, strips markup/SGR, returns the visible text.
  *
  * Why this exists: a reducer-only test on an overlay misses the entire
  * class of "mode flag flipped but nothing paints" bugs (v0.6.32
  * fabric-field invisible, v0.6.33 fabricFieldMode registry stale). Every
  * overlay with a render entry should get one of these.
  *
- * Usage:
+ * Usage (overlay-compositor Release 2 and beyond — overlay fns take
+ * `(..., newRows, cols)`):
  *   const { freshOverlayModel, captureOverlay } = require('./_helpers/overlay-capture');
  *   const m = freshOverlayModel({ cols: 120, rows: 30 });
  *   // ...drive reducer...
- *   const out = captureOverlay(m, () => renderXxxOverlay());
+ *   const out = captureOverlay(m, (nr, c) => renderXxxOverlay(nr, c));
  *   assert(out.includes('expected text'));
  *
  * NOTE: this is for pure-overlay-render tests (one render fn, one model
@@ -26,10 +27,12 @@ const runtime = require('../../app/runtime');
 const store = require('../../model/store');
 const term = require('../../io/term');
 const draw = require('../../leaves/render/draw');
+const { stripMarkup } = require('../../leaves/text/ansi');
 
 // --- One-time install: mute OSC-52 noise, point draw.setWriter at
-// term.stdout.write so overlay renderers find their writer at boot (same
-// path production uses). captureOverlay below patches .write per call. ---
+// term.stdout.write so overlays that still write to stdout directly
+// (pane-menu, cmdline — their non-compositor cell-boundary writes) find
+// their writer at boot (same path production uses). ---
 let _installed = false;
 function _install() {
   if (_installed) return;
@@ -66,20 +69,37 @@ function freshOverlayModel(opts) {
 }
 
 /**
- * Install `m` as the live model and run `fn()`, capturing everything
- * written to term.stdout. Returns the output with ANSI stripped (CSI +
- * OSC) so assertions match plain visible text.
+ * Install `m` as the live model and run `fn(newRows, cols)`, giving the
+ * fn a blank newRows buffer sized to the model's dims. Returns the
+ * composited rows joined with `\n`, with Rich markup + SGR stripped so
+ * assertions match plain visible text.
+ *
+ * Overlay-compositor Release 2 shape — `renderOverlay`'s stdout fallback
+ * is gone; every overlay fn needs the buffer to paint anything.
  */
-function captureOverlay(m, fn) {
+function captureOverlay(m, fn, opts) {
   _install();
   store.setModel(m);
-  const chunks = [];
-  const orig = term.stdout.write;
-  term.stdout.write = (s) => { chunks.push(String(s)); return true; };
-  try { fn(); } finally { term.stdout.write = orig; }
-  return chunks.join('')
-    .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '')
-    .replace(/\x1b\][^\x07]*\x07/g, '');
+  opts = opts || {};
+  // Match the overlay's view of dims — `viewportDims()` reads from the
+  // injected provider (model's layout slice), which freshOverlayModel
+  // doesn't update. So size the buffer to viewportDims so the overlay
+  // paints into cells the buffer actually has.
+  const vp = draw.viewportDims();
+  const cols = opts.cols || vp.cols;
+  const availH = Math.max(1, (opts.rows || vp.rows) - 1);
+  const newRows = new Array(availH).fill(' '.repeat(cols));
+  fn(newRows, cols);
+  // Strip Rich markup + SGR via the shared `stripMarkup` leaf — it
+  // handles the `\[` → literal `[` round-trip correctly (via its own
+  // sentinel pass). Keep every row the overlay touched; filter blank
+  // rows so the "nothing painted" case returns an empty string the way
+  // the pre-migration captureOverlay (stdout-based) did.
+  const stripped = newRows
+    .map(r => stripMarkup(r).replace(/\s+$/, ''))
+    .filter(r => r.length > 0)
+    .join('\n');
+  return stripped;
 }
 
 module.exports = { freshOverlayModel, captureOverlay };

@@ -85,31 +85,8 @@ describe('[confirm-overlay-composite] composites into newRows when invoked with 
     }
   });
 
-  it('stdout fallback still fires when invoked without targetRows (migration-period compatibility)', () => {
-    let m = freshOverlayModel();
-    [m] = runtime.update(m, { type: 'confirm_enter', message: 'Fallback?', cmd: null });
-    const store = require('../model/store');
-    store.setModel(m);
-    const chunks = [];
-    const orig = term.stdout.write;
-    term.stdout.write = (s) => { chunks.push(String(s)); return true; };
-    try {
-      // No newRows/cols — overlay must take the stdout path (preserved
-      // until end of Release 2, needed for unit tests + the per-overlay
-      // migration cadence).
-      renderConfirmOverlay();
-    } finally {
-      term.stdout.write = orig;
-    }
-    const bytes = chunks.join('');
-    assert(bytes.length > 0,
-      'stdout fallback wrote nothing — the fallback keeps the pre-compositor path alive for migration-period callers; a regression here breaks the per-overlay cadence');
-    const stripped = bytes
-      .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '')
-      .replace(/\x1b\][^\x07]*\x07/g, '');
-    assert(stripped.includes('Fallback?'),
-      `stdout fallback must still paint the prompt — got: ${JSON.stringify(stripped.slice(0, 120))}`);
-  });
+  // (The pre-cleanup "stdout fallback still fires" case retired —
+  // end-of-Release-2 cleanup; renderOverlay is buffer-only now.)
 });
 
 describe('[confirm-overlay-composite] no FULL_CLEAR on confirm_enter (compositor rect handles OPEN naturally)', () => {

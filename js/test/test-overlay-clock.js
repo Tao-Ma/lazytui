@@ -27,13 +27,17 @@ function openJobsMode() {
   });
 }
 
-// Render the jobs overlay at a fixed `now`, capturing the bytes it writes.
+// Render the jobs overlay at a fixed `now` into a buffer and return the
+// buffer joined with `\n`. The overlay-compositor migration (Release 2)
+// made overlays buffer-only; this is byte-identical for comparison
+// purposes (same inputs → same composited rows → same joined string).
+const { viewportDims } = require('../leaves/render/draw');
 function paintAt(now) {
-  let buf = '';
-  const orig = process.stdout.write;
-  process.stdout.write = (s) => { buf += s; return true; };
-  try { renderJobsOverlay(now); } finally { process.stdout.write = orig; }
-  return buf;
+  const vp = viewportDims();
+  const availH = Math.max(1, vp.rows - 1);
+  const newRows = new Array(availH).fill(' '.repeat(vp.cols));
+  renderJobsOverlay(now, newRows, vp.cols);
+  return newRows.join('\n');
 }
 
 describe('[1] jobs overlay render is pure of wall-clock (threaded now)', () => {

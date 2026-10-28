@@ -335,7 +335,7 @@ describe('[form-filter] overlay paints `/<filter>` row + "no match" row', () => 
   it('paints `/<filter>` above the choices list when the filter is non-empty', () => {
     let m = openForRender(['alpha', 'beta', 'bravo']);
     [m] = runtime.update(m, { type: 'fabric_form_choices_filter', seq: 'b' });
-    const out = captureOverlay(m, () => renderFabricFormOverlay());
+    const out = captureOverlay(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(out.includes('/b'), `expected /b affordance; got: ${JSON.stringify(out.slice(0, 500))}`);
     assert(out.includes('beta'), 'filtered row "beta" visible');
     assert(out.includes('bravo'), 'filtered row "bravo" visible');
@@ -344,20 +344,20 @@ describe('[form-filter] overlay paints `/<filter>` row + "no match" row', () => 
   it('paints "no match" when the filter kills all candidates', () => {
     let m = openForRender(['alpha', 'beta']);
     [m] = runtime.update(m, { type: 'fabric_form_choices_filter', seq: 'z' });
-    const out = captureOverlay(m, () => renderFabricFormOverlay());
+    const out = captureOverlay(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(out.includes('(no match)'), `expected "(no match)" row; got: ${JSON.stringify(out.slice(0, 500))}`);
     assert(out.includes('/z'), 'filter row still painted');
   });
   it('help line swaps to "clear filter" while the filter is non-empty', () => {
     let m = openForRender(['alpha']);
     [m] = runtime.update(m, { type: 'fabric_form_choices_filter', seq: 'x' });
-    const out = captureOverlay(m, () => renderFabricFormOverlay());
+    const out = captureOverlay(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(out.includes('clear filter'), `expected "clear filter" hint; got: ${JSON.stringify(out.slice(0, 500))}`);
     assert(!out.includes('close popover'), 'close-popover hint hidden while filter active');
   });
   it('an empty filter paints neither /<filter> nor "no match"', () => {
     const m = openForRender(['alpha']);
-    const out = captureOverlay(m, () => renderFabricFormOverlay());
+    const out = captureOverlay(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(!out.includes('(no match)'), 'no match row NOT painted with empty filter');
     assert(out.includes('close popover'), 'empty-filter hint reads "close popover"');
   });

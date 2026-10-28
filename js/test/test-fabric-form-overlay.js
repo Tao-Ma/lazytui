@@ -48,23 +48,53 @@ function freshModel() {
   return m;
 }
 
-/** Install `m` as live model, capture raw stdout from `fn()`. */
-function captureRaw(m, fn) {
+// Overlay-compositor Release 2 end-of-cleanup: renderOverlay no longer
+// has a stdout path. `captureWith` composites the overlay into a newRows
+// buffer, strips Rich markup / SGR, and joins touched rows with `\n` —
+// matching the pre-cleanup `stripAnsi(stdoutBytes)` return shape.
+// `decodeRows` + `captureRaw` are preserved for the narrower column-
+// position tests below; they synthesize a MoveTo stream from the
+// composited buffer so decodeRows's sticky cursor-move splitter still
+// works.
+const { stripMarkup, visibleLen: _vl, richToAnsi } = require('../leaves/text/ansi');
+function _composeToRows(m, fn) {
   store.setModel(m);
-  const chunks = [];
-  const orig = term.stdout.write;
-  term.stdout.write = (s) => { chunks.push(String(s)); return true; };
-  try { fn(); } finally { term.stdout.write = orig; }
-  return chunks.join('');
+  const vp = draw.viewportDims();
+  const cols = vp.cols;
+  const availH = Math.max(1, vp.rows - 1);
+  const newRows = new Array(availH).fill(' '.repeat(cols));
+  fn(newRows, cols);
+  return { newRows, cols };
 }
-/** Install `m` as live model, capture stdout from `fn()`, strip ANSI/OSC. */
 function captureWith(m, fn) {
-  return captureRaw(m, fn).replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/\x1b\][^\x07]*\x07/g, '');
+  const { newRows } = _composeToRows(m, fn);
+  return newRows
+    .map(r => stripMarkup(r).replace(/\s+$/, ''))
+    .filter(r => r.length > 0)
+    .join('\n');
+}
+function captureRaw(m, fn) {
+  // Rebuild a MoveTo stream (`\x1b[<r>;<c>H<row>`) from the composite
+  // buffer so `decodeRows` can split per-row at the overlay's start
+  // column. Only emits rows the overlay actually touched.
+  const { newRows } = _composeToRows(m, fn);
+  let buf = '';
+  for (let i = 0; i < newRows.length; i++) {
+    const stripped = stripMarkup(newRows[i]).replace(/\s+$/, '');
+    if (stripped.length === 0) continue;
+    // Column 1 is the row's start — the pre-cleanup overlay wrote the
+    // whole row from its own `offX` cursor move, but the row's content
+    // already carries its leading blanks, so col=1 reads back the same
+    // visible-column positions as the pre-cleanup stream.
+    buf += `\x1b[${i + 1};1H` + richToAnsi(newRows[i]);
+  }
+  return buf;
 }
 
 /** Decode a raw capture into visible-only rows at the cells the overlay wrote.
- * `renderOverlay` emits one `\x1b[<r>;<c>H<row>` per line, then a reset. We split on
- * cursor-move headers so each row is intact; SGR within the row is then stripped.
+ * The composite-era captureRaw emits one `\x1b[<r>;<c>H<row>` per touched
+ * row. decodeRows splits on cursor-move headers so each row is intact;
+ * SGR within the row is then stripped.
  */
 function decodeRows(raw) {
   const { visibleLen } = require('../leaves/text/ansi');
@@ -105,7 +135,7 @@ function openForm(fields = fieldsMixed(), pending = PENDING_MIXED, m = freshMode
 
 describe('[fabric-form-overlay] paints a bordered popup with required+optional sections', () => {
   it('paints nothing when fabricFormMode is off', () => {
-    const out = captureWith(freshModel(), () => renderFabricFormOverlay());
+    const out = captureWith(freshModel(), (nr, c) => renderFabricFormOverlay(nr, c));
     assert(out === '', `expected no output, got: ${JSON.stringify(out)}`);
   });
 
@@ -113,19 +143,19 @@ describe('[fabric-form-overlay] paints a bordered popup with required+optional s
     const m = freshModel();
     m.modes.fabricFormMode = true;
     m.modal.fabricForm = { fields: [], focusIdx: 0, pendingAction: PENDING_MIXED };
-    const out = captureWith(m, () => renderFabricFormOverlay());
+    const out = captureWith(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(out === '', `empty fields → nothing painted, got: ${JSON.stringify(out)}`);
   });
 
   it('opens with Required and Optional section headers for a mixed action', () => {
-    const out = captureWith(openForm(), () => renderFabricFormOverlay());
+    const out = captureWith(openForm(), (nr, c) => renderFabricFormOverlay(nr, c));
     assert(out.includes('Required'), `Required header absent — got: ${JSON.stringify(out)}`);
     assert(out.includes('Optional'), `Optional header absent — got: ${JSON.stringify(out)}`);
     assert(out.includes('Provision node'), `title (action.label) absent — got: ${JSON.stringify(out)}`);
   });
 
   it('all port names + descs appear in the painted frame', () => {
-    const out = captureWith(openForm(), () => renderFabricFormOverlay());
+    const out = captureWith(openForm(), (nr, c) => renderFabricFormOverlay(nr, c));
     for (const name of ['host', 'role', 'port', 'tags']) {
       assert(out.includes(name), `port name "${name}" absent — got: ${JSON.stringify(out)}`);
     }
@@ -143,7 +173,7 @@ describe('[fabric-form-overlay] paints a bordered popup with required+optional s
       { port: 'port', text: '22',         required: false, default: '22',     desc: 'SSH port' },
       { port: 'tags', text: '',           required: false, default: null,     desc: 'comma-separated tags' },
     ];
-    const out = captureWith(openForm(fields), () => renderFabricFormOverlay());
+    const out = captureWith(openForm(fields), (nr, c) => renderFabricFormOverlay(nr, c));
     assert(out.includes('[modified]'), `[modified] chip absent — got: ${JSON.stringify(out)}`);
     assert(out.includes('[default]'),  `[default] chip absent — got: ${JSON.stringify(out)}`);
     assert(out.includes('[unset]'),    `[unset] chip absent — got: ${JSON.stringify(out)}`);
@@ -153,7 +183,7 @@ describe('[fabric-form-overlay] paints a bordered popup with required+optional s
     let m = openForm();
     [m] = runtime.update(m, { type: 'fabric_form_key', seq: '[', key: '[' });
     [m] = runtime.update(m, { type: 'fabric_form_key', seq: 'x', key: 'x' });
-    const out = captureWith(m, () => renderFabricFormOverlay());
+    const out = captureWith(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(out.includes('[x'), `buffer text absent — got: ${JSON.stringify(out)}`);
   });
 
@@ -162,7 +192,7 @@ describe('[fabric-form-overlay] paints a bordered popup with required+optional s
       { port: 'host', text: '', required: true, default: null, desc: 'target hostname' },
       { port: 'role', text: '', required: true, default: null, desc: 'node role' },
     ];
-    const out = captureWith(openForm(fields), () => renderFabricFormOverlay());
+    const out = captureWith(openForm(fields), (nr, c) => renderFabricFormOverlay(nr, c));
     assert(out.includes('Required'), 'Required header still there');
     assert(!out.includes('Optional'), `Optional header should be omitted — got: ${JSON.stringify(out)}`);
   });
@@ -172,13 +202,13 @@ describe('[fabric-form-overlay] paints a bordered popup with required+optional s
       { port: 'tags', text: '', required: false, default: null, desc: 'tags' },
       { port: 'opts', text: '', required: false, default: null, desc: 'options' },
     ];
-    const out = captureWith(openForm(fields), () => renderFabricFormOverlay());
+    const out = captureWith(openForm(fields), (nr, c) => renderFabricFormOverlay(nr, c));
     assert(!out.includes('Required'), `Required header should be omitted — got: ${JSON.stringify(out)}`);
     assert(out.includes('Optional'), 'Optional header still there');
   });
 
   it('footer shows the keybind hint', () => {
-    const out = captureWith(openForm(), () => renderFabricFormOverlay());
+    const out = captureWith(openForm(), (nr, c) => renderFabricFormOverlay(nr, c));
     assert(/tab/i.test(out), `tab hint absent — got: ${JSON.stringify(out)}`);
     assert(/enter/i.test(out), `enter hint absent — got: ${JSON.stringify(out)}`);
     assert(/esc/i.test(out), `esc hint absent — got: ${JSON.stringify(out)}`);
@@ -204,7 +234,7 @@ describe('[fabric-form-overlay] paints a bordered popup with required+optional s
     for (let i = 0; i < 10; i++) {
       [m] = runtime.update(m, { type: 'fabric_form_focus_next' });
     }
-    const raw = captureRaw(m, () => renderFabricFormOverlay());
+    const raw = captureRaw(m, (nr, c) => renderFabricFormOverlay(nr, c));
     const rows = decodeRows(raw);
     assert(rows.length > 0, 'something was painted');
     // The focused field is `port10`. On a non-scrolling renderer, port10 would
@@ -231,7 +261,7 @@ describe('[fabric-form-overlay] paints a bordered popup with required+optional s
     let m = freshModel();
     [m] = runtime.update(m, { type: 'fabric_form_enter', fields, pendingAction: SMALL });
     [m] = runtime.update(m, { type: 'fabric_form_focus_next' });
-    const raw = captureRaw(m, () => renderFabricFormOverlay());
+    const raw = captureRaw(m, (nr, c) => renderFabricFormOverlay(nr, c));
     const rows = decodeRows(raw);
     // Every field should be present AND the required section header.
     const painted = rows.map((r) => r.text).join('|');
@@ -260,7 +290,7 @@ describe('[fabric-form-overlay] paints a bordered popup with required+optional s
     const PENDING2 = { actionKey: 'two', action: { label: 'Two-field', ports: { in: {} } } };
     let m = freshModel();
     [m] = runtime.update(m, { type: 'fabric_form_enter', fields, pendingAction: PENDING2 });
-    const raw = captureRaw(m, () => renderFabricFormOverlay());
+    const raw = captureRaw(m, (nr, c) => renderFabricFormOverlay(nr, c));
     const rows = decodeRows(raw).filter((r) => r.text.includes('[modified]'));
     assert(rows.length === 2, `expected 2 [modified] chips, got ${rows.length}`);
     // Both chips should land their `]` at the same string position — compare
@@ -284,7 +314,7 @@ describe('[fabric-form-overlay] paints a bordered popup with required+optional s
     const PENDING_MIX = { actionKey: 'mix', action: { label: 'Mixed', ports: { in: {} } } };
     let m = freshModel();
     [m] = runtime.update(m, { type: 'fabric_form_enter', fields, pendingAction: PENDING_MIX });
-    const raw = captureRaw(m, () => renderFabricFormOverlay());
+    const raw = captureRaw(m, (nr, c) => renderFabricFormOverlay(nr, c));
     // Decode and find the three rows carrying the chips. Each row's end-col is
     // (row.c + row.visLen - 1) excluding the right border; the chip's rightmost
     // visible glyph should land at the SAME column across all three rows.
@@ -316,12 +346,12 @@ describe('[fabric-form-overlay] paints a bordered popup with required+optional s
     const P = { actionKey: 'prov', action: { label: 'Prov', ports: { in: {} } } };
     let m = freshModel();
     [m] = runtime.update(m, { type: 'fabric_form_enter', fields, pendingAction: P });
-    const out = captureWith(m, () => renderFabricFormOverlay());
+    const out = captureWith(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(/required inputs still missing: host/.test(out),
       `missing-hint absent — got: ${JSON.stringify(out)}`);
     // Fill in host → no more missing.
     for (const c of 'node-7.lan') [m] = runtime.update(m, { type: 'fabric_form_key', key: c, seq: c });
-    const out2 = captureWith(m, () => renderFabricFormOverlay());
+    const out2 = captureWith(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(!/required inputs still missing/.test(out2),
       `hint should disappear when nothing is missing — got: ${JSON.stringify(out2)}`);
   });
@@ -334,7 +364,7 @@ describe('[fabric-form-overlay] paints a bordered popup with required+optional s
     // raw (don't strip SGR) and assert `\x1b[7m` appears in the frame.
     let m = freshModel();
     [m] = runtime.update(m, { type: 'fabric_form_enter', fields: fieldsMixed(), pendingAction: PENDING_MIXED });
-    const raw = captureRaw(m, () => renderFabricFormOverlay());
+    const raw = captureRaw(m, (nr, c) => renderFabricFormOverlay(nr, c));
     assert(raw.includes('\x1b[7m'), 'focused row must emit SGR 7 (reverse video) for the caret glyph');
     // Belt-and-suspenders: a bare `[inverse]` would compile to `\x1b[0m \x1b[0m`
     // for the caret, which is zero-length visible. Assert no stripped-out literal.
@@ -351,7 +381,7 @@ describe('[fabric-form-overlay] paints a bordered popup with required+optional s
     ];
     const PENDING_TINY = { actionKey: 'tiny', action: { label: 'T', ports: { in: {} } } };
     const [opened] = runtime.update(m, { type: 'fabric_form_enter', fields, pendingAction: PENDING_TINY });
-    const raw = captureRaw(opened, () => renderFabricFormOverlay());
+    const raw = captureRaw(opened, (nr, c) => renderFabricFormOverlay(nr, c));
     const rows = decodeRows(raw);
     assert(rows.length > 0, 'something was painted on COLS=20');
     // The input row should contain 'host' (name survived) — the chip may be
@@ -367,7 +397,7 @@ describe('[fabric-form-overlay] paints a bordered popup with required+optional s
     process.stdout.columns = 40; process.stdout.rows = 24;
     term.refreshSize();
     const [opened] = runtime.update(m, { type: 'fabric_form_enter', fields: fieldsMixed(), pendingAction: PENDING_MIXED });
-    const raw = captureRaw(opened, () => renderFabricFormOverlay());
+    const raw = captureRaw(opened, (nr, c) => renderFabricFormOverlay(nr, c));
     const rows = decodeRows(raw);
     assert(rows.length > 0, 'something was painted');
     for (const row of rows) {

@@ -35,6 +35,22 @@ const enc = (s) => sessionLog.encodeJson(s);
 const cap = (fn) => { const o = process.stdout.write; process.stdout.write = () => true; try { fn(); } finally { process.stdout.write = o; } };
 const capOut = (fn) => { const o = process.stdout.write; const c = []; process.stdout.write = (s) => { c.push(String(s)); return true; }; try { fn(); } finally { process.stdout.write = o; } return c.join(''); };
 const stripAnsi = (s) => s.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/\x1b[=>]/g, '');
+// Overlay-compositor Release 2 end-of-cleanup: replay-scrubber is
+// buffer-only. Composite its render into a buffer, strip markup, return
+// the joined visible rows — equivalent to the pre-cleanup
+// `stripAnsi(capOut(...))` capture used throughout this file.
+const { viewportDims } = require('../leaves/render/draw');
+const { stripMarkup } = require('../leaves/text/ansi');
+const paintReplay = (data) => {
+  const vp = viewportDims();
+  const availH = Math.max(1, vp.rows - 1);
+  const newRows = new Array(availH).fill(' '.repeat(vp.cols));
+  require('../overlay/replay-scrubber').render(data, newRows, vp.cols);
+  return newRows
+    .map(r => stripMarkup(r).replace(/\s+$/, ''))
+    .filter(r => r.length > 0)
+    .join('\n');
+};
 const _grp = (name, label) => ({ name, label, containers: [], actions: { a1: { key: 'a1', label: 'A1', type: 'run', script: 'echo', tab: false } }, children: [], parent: null, depth: 0, quick: false });
 
 function boot() {
@@ -94,11 +110,11 @@ function boot() {
   const pausedNull = replayControl._state().playing;
 
   // overlay render (pane is open — default 'full')
-  const overlayFrame = stripAnsi(capOut(() => require('../overlay/replay-scrubber').render(replayControl.renderData())));
+  const overlayFrame = paintReplay(replayControl.renderData());
   const fullView = replayControl._state().paneView;
 
   // cycle the pane view: full → mini → hidden → full
-  const drawPane = () => stripAnsi(capOut(() => require('../overlay/replay-scrubber').render(replayControl.renderData())));
+  const drawPane = () => paintReplay(replayControl.renderData());
   replayControl.cyclePane();                       // → mini
   const miniView = replayControl._state().paneView;
   const miniFrame = drawPane();

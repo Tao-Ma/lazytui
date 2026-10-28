@@ -14,14 +14,14 @@ const { renderConfirmOverlay } = require('../overlay/confirm');
 
 describe('[confirm-overlay] paints iff confirmMode is on', () => {
   it('mode off → zero bytes written', () => {
-    const out = captureOverlay(freshOverlayModel(), () => renderConfirmOverlay());
+    const out = captureOverlay(freshOverlayModel(), (nr, c) => renderConfirmOverlay(nr, c));
     assert(out === '', `expected no output when mode is off, got ${JSON.stringify(out)}`);
   });
 
   it('mode on → prompt + y/n footer + Confirm title', () => {
     let m = freshOverlayModel();
     [m] = runtime.update(m, { type: 'confirm_enter', message: 'Really delete widget?', cmd: null });
-    const out = captureOverlay(m, () => renderConfirmOverlay());
+    const out = captureOverlay(m, (nr, c) => renderConfirmOverlay(nr, c));
     assert(out.includes('Really delete widget?'), `prompt absent — got: ${JSON.stringify(out)}`);
     assert(/y.*confirm/i.test(out), `y-confirm hint absent — got: ${JSON.stringify(out)}`);
     assert(/n.*cancel/i.test(out), `n-cancel hint absent — got: ${JSON.stringify(out)}`);
@@ -35,7 +35,7 @@ describe('[confirm-overlay] paints iff confirmMode is on', () => {
       message: 'This will drop the table.\nAre you SURE?',
       cmd: null,
     });
-    const out = captureOverlay(m, () => renderConfirmOverlay());
+    const out = captureOverlay(m, (nr, c) => renderConfirmOverlay(nr, c));
     assert(out.includes('This will drop the table.'), `line 1 absent — got: ${JSON.stringify(out)}`);
     assert(out.includes('Are you SURE?'), `line 2 absent — got: ${JSON.stringify(out)}`);
   });
@@ -43,7 +43,7 @@ describe('[confirm-overlay] paints iff confirmMode is on', () => {
   it('literal `[` in a prompt stays visible (markup-safe esc)', () => {
     let m = freshOverlayModel();
     [m] = runtime.update(m, { type: 'confirm_enter', message: 'Delete file [important.txt]?', cmd: null });
-    const out = captureOverlay(m, () => renderConfirmOverlay());
+    const out = captureOverlay(m, (nr, c) => renderConfirmOverlay(nr, c));
     assert(out.includes('[important.txt]'), `literal brackets consumed — got: ${JSON.stringify(out)}`);
   });
 
@@ -51,7 +51,7 @@ describe('[confirm-overlay] paints iff confirmMode is on', () => {
     let m = freshOverlayModel();
     [m] = runtime.update(m, { type: 'confirm_enter', message: 'Proceed?', cmd: null });
     [m] = runtime.update(m, { type: 'confirm_reject' });
-    const out = captureOverlay(m, () => renderConfirmOverlay());
+    const out = captureOverlay(m, (nr, c) => renderConfirmOverlay(nr, c));
     assert(out === '', `after reject: no overlay, got: ${JSON.stringify(out)}`);
   });
 });

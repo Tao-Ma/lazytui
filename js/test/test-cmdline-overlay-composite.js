@@ -78,33 +78,8 @@ describe('[cmdline-overlay-composite] composites dropdown into newRows + writes 
         `row ${i} visible width = ${w}, expected ${COLS}; row:\n  ${JSON.stringify(newRows[i].slice(0, 80))}`);
     }
   });
-
-  it('stdout fallback still fires when invoked without targetRows', () => {
-    const sm = require('./smoke/_helpers/smoke');
-    sm.bootFresh();
-    sm.resize(100, 30);
-    _resetRenderState();
-    sm.applyMsg({ type: 'cmdline_enter' });
-    sm.applyMsg({ type: 'cmdline_key', seq: 's' });
-    const chunks = [];
-    const orig = term.stdout.write;
-    term.stdout.write = (s) => { chunks.push(String(s)); return true; };
-    try {
-      renderCmdline();
-    } finally {
-      term.stdout.write = orig;
-    }
-    const bytes = chunks.join('');
-    assert(bytes.length > 0,
-      'stdout fallback wrote nothing — the fallback keeps the pre-compositor path alive for migration-period callers');
-    const stripped = bytes
-      .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '')
-      .replace(/\x1b\][^\x07]*\x07/g, '');
-    assert(stripped.includes('Commands'),
-      `stdout fallback must still paint the dropdown title — got: ${JSON.stringify(stripped.slice(0, 160))}`);
-    assert(stripped.includes(':s'),
-      `stdout fallback must still paint the prompt — got: ${JSON.stringify(stripped.slice(0, 160))}`);
-  });
+  // (The pre-cleanup "stdout fallback still fires" case retired —
+  // end-of-Release-2 cleanup; the overlay fn no longer has a stdout path.)
 });
 
 describe('[cmdline-overlay-composite] no FULL_CLEAR on cmdline_enter through the paint pipeline', () => {
