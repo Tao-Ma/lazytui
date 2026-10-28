@@ -28,7 +28,7 @@ process.stdout.columns = 100; process.stdout.rows = 30;
 const { describe, it, assert, report } = require('./test-runner');
 const term = require('../io/term');
 const draw = require('../leaves/render/draw');
-const { renderCmdline, _resetRenderState } = require('../overlay/cmdline');
+const { renderCmdline } = require('../overlay/cmdline');
 const { visibleLen } = require('../leaves/text/ansi');
 
 const FULL_CLEAR = '\x1b[2J';
@@ -39,7 +39,6 @@ describe('[cmdline-overlay-composite] composites dropdown into newRows + writes 
     const sm = require('./smoke/_helpers/smoke');
     sm.bootFresh();
     sm.resize(COLS, 30);
-    _resetRenderState();
     // Open cmd mode and type a prefix so the match list has entries.
     // The default bootFresh config carries `:show-hidden` + the standard
     // panel commands; `:s` resolves to a non-empty match set.

@@ -104,7 +104,9 @@ function runAt(sel, args, expectedDisplay) {
 function clear() {
   _full = [];
   _activeTeardown = null;
-  require('../../overlay/cmdline')._resetRenderState();
+  // (The cmdline overlay's `_resetRenderState()` call retired —
+  // end-of-Release-2 cleanup; the overlay's residue tracker is gone,
+  // so there's no module-local paint state left to reset.)
 }
 
 /** Drive the live preview for the selected match. Called from the
