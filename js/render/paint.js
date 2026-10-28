@@ -978,6 +978,7 @@ function render(model) {
   if (md.prefixMode)  renderWhichKey(newRows, COLS);
   if (md.paletteMode) require('../overlay/action-palette').renderActionPalette(newRows, COLS);
   if (md.menuOpen)    renderMenu(newRows, COLS);
+  if (md.cmdMode)     renderCmdline(newRows, COLS);
   const mainDidFull = _paintMainFrame(newRows, COLS);
   // Only force the terminal-overlay repaint when main paint actually
   // cleared the screen (resize, overlay-close, first frame). In the steady
@@ -1011,7 +1012,10 @@ function render(model) {
   // freeConfigMode's panel-list overlay moved up (overlay-compositor
   // Release 2 Phase 2.a #6): it composites into newRows BEFORE paintFrame.
   // See `renderPanelListOverlay(newRows, COLS)` above.
-  if (md.cmdMode)     renderCmdline();
+  // cmdMode moved up (overlay-compositor Release 2 Phase 2.b #3): the
+  // dropdown composites into newRows BEFORE paintFrame; prompt row + cursor
+  // positioning stay direct writeOut (they sit on the footer row + are
+  // terminal state). See the `renderCmdline(newRows, COLS)` call above.
   // confirmMode moved up (overlay-compositor Release 2 Phase 2.a #1): it
   // composites into newRows BEFORE paintFrame so cell-diff catches its
   // transitions. See the `renderConfirmOverlay(newRows, COLS)` call above.

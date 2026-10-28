@@ -18,6 +18,7 @@ const { getModel } = require('../model/store');
 const { richToAnsi, RESET, visibleLen, esc } = require('../leaves/text/ansi');
 const { theme } = require('../leaves/infra/themes');
 const { renderPanel, viewportDims, writeOut } = require('../leaves/render/draw');
+const { compositeRow } = require('../leaves/render/row-compositor');
 const { DROPDOWN_VIEWPORT: MAX_DROPDOWN } = require('../leaves/text/cmdline-split');
 
 // Panel height (including borders) painted by the previous render.
@@ -40,7 +41,19 @@ function _formatMatchLine(match) {
   return display;
 }
 
-function renderCmdline() {
+// Overlay-compositor migration (Release 2 Phase 2.b #3 — final medium
+// overlay, closes Phase 2.b). cmdline has an asymmetry vs the other
+// Phase-2.b overlays (action-palette, menu): the dropdown composites
+// into newRows via `row-compositor.compositeRow` (so cell-diff handles
+// the shrink/close), BUT the PROMPT ROW sits at row `ROWS` (the footer
+// row, outside newRows which spans availH rows), so it stays as a
+// direct writeOut. Cursor positioning stays direct too — it isn't a
+// cell to composite, it's a terminal state. The composite path skips
+// the per-overlay residue tracker + invalidateRows (cell-diff handles
+// the dropdown shrink); the stdout fallback keeps the pre-migration
+// path intact until the end of Release 2. No sig tracker to delete —
+// cmdline never had one in paint.js (its residue tracker lives here).
+function renderCmdline(newRows, cols) {
   if (!getModel().modes.cmdMode) return;
   // Buffer state lives on the model (folded onto update); the render-safe
   // match list (display/desc/kind) is enough to paint — run closures
@@ -70,33 +83,13 @@ function renderCmdline() {
   const panelH = k > 0 ? k + 2 : 0;
   const panelW = Math.max(40, COLS - 4);
 
-  // Invalidate the diff cache for rows the previous render painted
-  // but this one won't. The blanking writes here make THIS frame clean;
-  // the invalidate makes the NEXT render repaint from the underlying
-  // panels via the diff cache.
-  if (panelH < _lastPanelH) {
-    // T25 / R17 — clamp oldTop to >= 0. A resize that shrinks ROWS
-    // below the stashed _lastPanelH makes oldTop negative; the blanking
-    // loop would then write `\x1b[<negative>;1H` cursor moves, which
-    // terminals clamp to row 1 — cosmetic flicker but unintended.
-    const oldTop = Math.max(0, ROWS - _lastPanelH - 1);
-    const newTop = Math.max(0, ROWS - panelH - 1);
-    require('../leaves/infra/render-queue').invalidateRows(oldTop, newTop);
-    for (let y = oldTop; y < newTop; y++) {
-      // Themed screen colours before the erase so `\x1b[K` clears the vacated row
-      // to the theme bg (bce), not the terminal default — otherwise the shrinking
-      // dropdown flashes white on a light terminal before the base layer repaints.
-      // `richToAnsi('')` is the screen-colour prefix ('' when the feature is off).
-      buf += `\x1b[${y + 1};1H` + richToAnsi('') + '\x1b[K';
-    }
-  }
-  _lastPanelH = panelH;
-
-  if (k > 0) {
+  // Compositor path: the dropdown rows composite into newRows so cell-
+  // diff handles both the leading paint AND the clean-up on
+  // shrink/close from the natural row delta. The residue tracker /
+  // invalidateRows / vacated-row blanking are stdout-path-only
+  // (overlays bypassed newRows pre-migration); skip them here.
+  if (newRows && k > 0) {
     const lines = [];
-    // Order: top of panel = worst match, bottom of panel = best match
-    // (sel index 0), so the user's eye lands on the selected best-
-    // match nearest the prompt cursor.
     for (let i = 0; i < k; i++) {
       const matchIdx = _scroll + k - 1 - i;
       const m = _matches[matchIdx];
@@ -108,23 +101,78 @@ function renderCmdline() {
       title: 'Commands', focused: true,
       count: [_sel + 1, _matches.length],
     });
-    const offY = Math.max(0, ROWS - panelH - 1);  // just above prompt row
+    const offY = Math.max(0, ROWS - panelH - 1);
     const offX = Math.max(0, Math.floor((COLS - panelW) / 2));
     const panelLines = content.split('\n');
     for (let i = 0; i < panelLines.length; i++) {
-      buf += `\x1b[${offY + i + 1};${offX + 1}H` + richToAnsi(panelLines[i]) + RESET;
+      compositeRow(newRows, cols || COLS, panelLines[i], offX, offY + i, panelW);
     }
   }
 
-  // Prompt row (replaces footer). Rich-style markup mirrors
-  // renderFooter() so the cmdline blends with the chrome it covers.
+  // Stdout path (fallback) — only runs when `newRows` is omitted.
+  // Preserves the pre-migration residue-tracker-driven dropdown paint;
+  // deletes at the end of Release 2 when every overlay routes through
+  // newRows.
+  if (!newRows) {
+    // Invalidate the diff cache for rows the previous render painted
+    // but this one won't. The blanking writes here make THIS frame clean;
+    // the invalidate makes the NEXT render repaint from the underlying
+    // panels via the diff cache.
+    if (panelH < _lastPanelH) {
+      // T25 / R17 — clamp oldTop to >= 0. A resize that shrinks ROWS
+      // below the stashed _lastPanelH makes oldTop negative; the blanking
+      // loop would then write `\x1b[<negative>;1H` cursor moves, which
+      // terminals clamp to row 1 — cosmetic flicker but unintended.
+      const oldTop = Math.max(0, ROWS - _lastPanelH - 1);
+      const newTop = Math.max(0, ROWS - panelH - 1);
+      require('../leaves/infra/render-queue').invalidateRows(oldTop, newTop);
+      for (let y = oldTop; y < newTop; y++) {
+        // Themed screen colours before the erase so `\x1b[K` clears the vacated row
+        // to the theme bg (bce), not the terminal default — otherwise the shrinking
+        // dropdown flashes white on a light terminal before the base layer repaints.
+        // `richToAnsi('')` is the screen-colour prefix ('' when the feature is off).
+        buf += `\x1b[${y + 1};1H` + richToAnsi('') + '\x1b[K';
+      }
+    }
+    _lastPanelH = panelH;
+
+    if (k > 0) {
+      const lines = [];
+      // Order: top of panel = worst match, bottom of panel = best match
+      // (sel index 0), so the user's eye lands on the selected best-
+      // match nearest the prompt cursor.
+      for (let i = 0; i < k; i++) {
+        const matchIdx = _scroll + k - 1 - i;
+        const m = _matches[matchIdx];
+        const label = _formatMatchLine(m);
+        lines.push(matchIdx === _sel ? `[${t.selected}]  ${label}` : `  ${label}`);
+      }
+      const content = renderPanel({
+        width: panelW, height: panelH, lines,
+        title: 'Commands', focused: true,
+        count: [_sel + 1, _matches.length],
+      });
+      const offY = Math.max(0, ROWS - panelH - 1);  // just above prompt row
+      const offX = Math.max(0, Math.floor((COLS - panelW) / 2));
+      const panelLines = content.split('\n');
+      for (let i = 0; i < panelLines.length; i++) {
+        buf += `\x1b[${offY + i + 1};${offX + 1}H` + richToAnsi(panelLines[i]) + RESET;
+      }
+    }
+  }
+
+  // Prompt row sits at row ROWS (the footer row, outside newRows which
+  // spans only availH rows), so it stays as a direct writeOut on BOTH
+  // paths. Rich-style markup mirrors renderFooter() so the cmdline
+  // blends with the chrome it covers.
   const prompt = ` :${_text}`;
   const padded = prompt + ' '.repeat(Math.max(0, COLS - visibleLen(prompt)));
   buf += `\x1b[${ROWS};1H` + richToAnsi(`[${t.footer}]${padded}[/]`) + RESET;
 
   // Cursor at end of typed text. column = 1 (leading space) + ':' + _text.
   // Visibility is derived in layout.render() — only the *position* is
-  // set here (and only while cmd mode is active).
+  // set here (and only while cmd mode is active). Cursor positioning
+  // is terminal state, not a cell, so it stays direct too.
   const cursorCol = 2 + 1 + _text.length;
   buf += `\x1b[${ROWS};${cursorCol}H`;
 
