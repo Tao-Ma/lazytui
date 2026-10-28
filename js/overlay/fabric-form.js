@@ -178,7 +178,20 @@ function _scrollFor(focusLineIdx, totalLines, innerH) {
   return scroll;
 }
 
-function renderFabricFormOverlay() {
+// Overlay-compositor migration (Release 2 Phase 2.c #1 — the pacing
+// item). When `newRows` + `cols` are threaded in by paint.js, the whole
+// form composites into the main-frame row buffer through renderOverlay's
+// `targetRows` path. The choices POPOVER is semantically PART of the
+// form (not a sibling overlay) — its rows are inlined into the single
+// `rows[]` array below, so the compositor sees them as just more rows
+// to paint. That matches the plan's recommendation on §Open question #1
+// (picker self-contained inside the form's render fn), with no need for
+// a sub-overlay registration or a sub-rect protocol: `renderOverlay`'s
+// single composite path handles both the form chrome AND the popover
+// rows. This commit also deletes paint.js's `prevFabricPickingSig` sig
+// tracker (the picker-open/items-count shrink class) — cell-diff emits
+// per-cell writes for the vacated popover rows naturally.
+function renderFabricFormOverlay(newRows, cols) {
   const m = getModel();
   if (!m.modes || !m.modes.fabricFormMode) return;
   const f = m.modal && m.modal.fabricForm;
@@ -468,7 +481,8 @@ function renderFabricFormOverlay() {
   const anchorLineIdx = pickingLineIdx >= 0 ? pickingLineIdx : focusLineIdx;
   const scrollOffset = anchorLineIdx < 0 ? 0 : _scrollFor(anchorLineIdx, rows.length, innerH);
 
-  renderOverlay({ lines: rows, title, maxWidth: MAX_WIDTH, scrollOffset });
+  renderOverlay({ lines: rows, title, maxWidth: MAX_WIDTH, scrollOffset,
+                  targetRows: newRows || null, targetCols: cols || 0 });
 }
 
 module.exports = { renderFabricFormOverlay, _scrollFor };

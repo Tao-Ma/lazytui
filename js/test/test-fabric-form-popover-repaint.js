@@ -1,20 +1,20 @@
 /**
  * Regression: closing (or shrinking) the fabric-form choices popover must
- * force a full repaint so the outgoing LARGER overlay border's cells get
- * cleared.
+ * clear the outgoing LARGER overlay border's cells.
  *
- * The fabric-form overlay stays open (fabricFormMode remains true) while the
- * popover opens/closes INSIDE it — the mode-flag drop check in paint.js
- * can't catch it. Items are rendered as rows while picking is active, so
- * opening the popover grows the overlay (menuH scales with rows.length) and
- * closing it shrinks the overlay back. The cell-diff cache keeps the
- * outgoing larger border's cells, so after close the OLD border visibly
- * lingers around the new smaller overlay. User-caught v0.6.38.
+ * Pre-overlay-compositor-migration this invariant was held by paint.js's
+ * `prevFabricPickingSig` sig tracker — the fabric-form overlay stayed open
+ * (fabricFormMode remained true) while the popover opened/closed INSIDE
+ * it; the mode-flag drop check in paint.js couldn't catch the shape
+ * change, so a per-frame signature of (picking port + items count)
+ * forced a whole-screen repaint on any transition. User-caught v0.6.38.
  *
- * Fix: paint.js tracks a per-frame signature of the picker state (port +
- * items count); any transition forces a full repaint on the next render.
- * Mirrors the menu-items-replaced-in-place force trigger (same reason:
- * mode stays set while the overlay's contents change).
+ * Post-migration (overlay-compositor Release 2 Phase 2.c #1): the form
+ * composites into newRows, so cell-diff emits per-cell writes for the
+ * vacated popover rows on close / items-count-change. The sig tracker
+ * is retired; THIS test's assertions are inverted — pre-migration
+ * asserted `FULL_CLEAR` fires on shrink, post-migration asserts it
+ * does NOT fire (the mechanism this file pins is now cell-diff).
  *
  * Run: node js/test/test-fabric-form-popover-repaint.js
  */
@@ -27,7 +27,7 @@ const sm = require('./smoke/_helpers/smoke');
 
 const FULL_CLEAR = '\x1b[2J';   // painter.paintFrame's full-repaint marker
 
-describe('[fabric-form-popover-repaint] close/shrink forces a full repaint', () => {
+describe('[fabric-form-popover-repaint] close/shrink does NOT force a full repaint (compositor path)', () => {
   sm.bootFresh({ groups: { g: {
     name: 'g', label: 'G', containers: [], children: [], parent: null, depth: 0, quick: false,
     actions: {}
@@ -61,11 +61,11 @@ describe('[fabric-form-popover-repaint] close/shrink forces a full repaint', () 
   sm.capture(sm.render);
   sm.capture(sm.render);
 
-  it('opening the popover does NOT force full (overlay grows → new region paints cleanly over existing)', () => {
+  it('opening the popover does NOT force full (overlay grows → compositor paints new region via cell-diff)', () => {
     sm.applyMsg({ type: 'fabric_form_choices_open', port: 'name' });
     const out = sm.capture(sm.render).raw;
     assert(!out.includes(FULL_CLEAR),
-      'popover open → overlay grows → the enlarged render covers everything within the new border; no need for force-full (would waste a frame on every open)');
+      'popover open → overlay grows → cell-diff emits per-cell writes for the new popover rows; no need for force-full');
   });
 
   it('a no-op re-render while popover stays open is diff-only (no force)', () => {
@@ -74,17 +74,18 @@ describe('[fabric-form-popover-repaint] close/shrink forces a full repaint', () 
       'steady state while picker is open must stay diff-only, got a full clear');
   });
 
-  it('closing the popover forces a full repaint (overlay shrinks: items dropped)', () => {
+  it('closing the popover does NOT force full — cell-diff clears the vacated popover rows (Phase 2.c #1 inverted)', () => {
     sm.applyMsg({ type: 'fabric_form_choices_close' });
     const out = sm.capture(sm.render).raw;
-    assert(out.includes(FULL_CLEAR),
-      'popover close → overlay shrinks → MUST force-full to clear the larger outgoing border (user-reported bug)');
+    assert(!out.includes(FULL_CLEAR),
+      'popover close emitted a full-clear — the compositor path (prevFabricPickingSig retired, form composites into newRows) promises cell-diff clears the vacated popover rows from the natural row delta');
   });
 
-  it('a resolver reply that CHANGES items count while popover is open forces a full repaint', () => {
+  it('a resolver reply that CHANGES items count while popover is open does NOT force full either (Phase 2.c #1 inverted)', () => {
     // Reopen the popover and bump the request so the next resolver reply's
-    // requestId matches (fabric-form.js:559 drops stale replies). The
-    // popover's shrink/grow mid-flight has the same residue risk as close.
+    // requestId matches (fabric-form.js drops stale replies). The
+    // popover's shrink/grow mid-flight is the same residue-risk shape as
+    // close — pre-migration it tripped `prevFabricPickingSig`.
     sm.applyMsg({ type: 'fabric_form_choices_open', port: 'name' });
     sm.applyMsg({ type: 'fabric_form_choices_request', port: 'name', requestId: 2 });
     sm.capture(sm.render);                   // reach steady state at count=3 → pending re-render
@@ -93,75 +94,32 @@ describe('[fabric-form-popover-repaint] close/shrink forces a full repaint', () 
       items: ['x'], labels: null, error: null,
     });
     const out = sm.capture(sm.render).raw;
-    assert(out.includes(FULL_CLEAR),
-      'items count change (3 → 1) → overlay shrinks → must force-full');
+    assert(!out.includes(FULL_CLEAR),
+      'items count change (3 → 1) emitted a full-clear — the compositor path handles the overlay shrink via cell-diff from the natural row delta');
   });
 });
 
 // -------------------------------------------------------------------------
-// Reusable harness: `assertOverlayShrinkForcesRepaint` — PRE-COMPOSITOR
-// INVARIANT. Only still exercised by the fabric-form choices popover
-// below, which hasn't migrated yet (Phase 2.c). Callers for already-
-// migrated overlays have been inverted inline — see the "action palette"
-// it block above, which asserts NO FULL_CLEAR per the compositor
-// migration (docs/overlay-compositor-migration.md). This harness retires
-// in full once the fabric-form popover migrates.
-//
-// Why a MECHANISM test (FULL_CLEAR), not a SYMPTOM test (visible residue
-// in a captured frame): the test harness captures per-render stdout
-// deltas, not accumulated terminal state. In the real terminal, residue
-// happens because the shrink delta doesn't emit "clear these cells"
-// instructions — the terminal still shows the old overlay cells from
-// previous frames. A test that captures just one render's output can't
-// catch this because the "residue" lives in the terminal's retained
-// state, not in the delta. Catching it would require a terminal-state
-// emulator (significant investment). The pre-compositor mechanism was
-// force-full-repaint on shrink; post-compositor it's cell-diff emitting
-// per-cell writes for the vacated rect — the inverted assertion checks
-// no FULL_CLEAR AND lets the surrounding frames paint via diff.
+// The shared `assertOverlayShrinkForcesRepaint` harness retired with
+// Phase 2.c #1 — every overlay in the regression suite has migrated to
+// the compositor path. The residue-risk discipline for a NEW variable-
+// size overlay is now:
+//   1. Thread (newRows, cols) through renderOverlay in the overlay fn.
+//   2. Add paint.js's `md.XxxMode → renderXxx(newRows, COLS)` call to
+//      the pre-paintFrame composite block.
+//   3. Add a no-FULL_CLEAR assertion to the overlay's companion
+//      composite test — see test-action-palette-overlay-composite.js
+//      and test-fabric-form-overlay-composite.js for the shape.
+// A sig tracker in paint.js is NO LONGER an acceptable fix.
 // -------------------------------------------------------------------------
 
-function assertOverlayShrinkForcesRepaint({ overlayName, grow, shrink }) {
-  // Capture at steady state after the grow stimulus so the "before"
-  // reference is a stable larger overlay.
-  grow();
-  sm.capture(sm.render);                              // paint the grown state
-  sm.capture(sm.render);                              // and reach diff-steady
-
-  shrink();
-  const out = sm.capture(sm.render).raw;
-  assert(out.includes(FULL_CLEAR),
-    `RESIDUE RISK for ${overlayName}: shrink/close did NOT emit a full-repaint. This overlay is still on the PRE-COMPOSITOR path (not yet migrated — see docs/overlay-compositor-migration.md). Without the force the outgoing LARGER overlay's cells linger in the terminal because the overlay bypasses newRows. The fix once this overlay migrates is to composite into newRows (overlay-compositor Release 2); until then, the sig tracker in paint.js that force-fulls on shrink is the mechanism. The last remaining sig tracker is 'prevFabricPickingSig' (Phase 2.c target).`);
-}
-
-describe('[overlay-shrink-invariant] generic harness pins each variable-size overlay', () => {
-  // Reset state for a clean harness run (previous describe block mutated it).
-  sm.applyMsg({ type: 'fabric_form_choices_close' });
-  sm.applyMsg({ type: 'fabric_form_choices_request', port: 'name', requestId: 100 });
-  sm.applyMsg({
-    type: 'fabric_form_choices_resolved', port: 'name', actionKey: 'pick', requestId: 100,
-    items: ['alpha', 'bravo', 'charlie'], labels: null, error: null,
-  });
-  sm.capture(sm.render);                       // settle
-
-  it('fabric-form choices popover: close forces repaint', () => {
-    assertOverlayShrinkForcesRepaint({
-      overlayName: 'fabric-form choices popover',
-      grow: () => sm.applyMsg({ type: 'fabric_form_choices_open', port: 'name' }),
-      shrink: () => sm.applyMsg({ type: 'fabric_form_choices_close' }),
-    });
-  });
-
-  it('action palette: filter narrows → cell-diff clears vacated cells WITHOUT a full-clear (v0.6.49 → Phase 2.b inverted)', () => {
+describe('[overlay-shrink-invariant] migrated overlays stay shrink-safe via cell-diff', () => {
+  it('action palette: filter narrows → cell-diff clears vacated cells WITHOUT a full-clear (Phase 2.b #1 inverted)', () => {
     // Overlay-compositor Release 2 Phase 2.b #1 migrated the action
-    // palette into newRows and retired `prevPaletteSig`. The pre-
-    // migration assertion was that the sig tracker forces a full-clear
-    // on shrink; the plan calls out this invariant inversion as the
-    // mechanism-level pin that proves the compositor path works
-    // (docs/overlay-compositor-migration.md §Release 2 — Test strategy).
-    //
-    // Direction inverted; the describe/it labels stay to preserve
-    // continuity in the regression history (same purpose, new mechanism).
+    // palette into newRows and retired `prevPaletteSig`. This is the
+    // original inversion from the Phase 2.b #1 commit (04701dba);
+    // preserved here because it exercises a different shrink shape
+    // (filter mutation) than the fabric-form popover tests above.
     sm.applyMsg({ type: 'fabric_form_cancel' });
     sm.capture(sm.render);              // settle after close
     sm.applyMsg({ type: 'palette_open' });
@@ -170,17 +128,8 @@ describe('[overlay-shrink-invariant] generic harness pins each variable-size ove
     sm.applyMsg({ type: 'palette_filter', seq: 'z' });
     const out = sm.capture(sm.render).raw;
     assert(!out.includes(FULL_CLEAR),
-      'palette filter mutation emitted a full-clear — the compositor path (prevPaletteSig retired, overlay composites into newRows) promises cell-diff clears the vacated rect from the natural row delta');
+      'palette filter mutation emitted a full-clear — the compositor path promises cell-diff clears the vacated rect from the natural row delta');
   });
-
-  // Future variable-size overlays — if any — go here. Each new overlay
-  // that adopts the compositor path (overlay-compositor Release 2
-  // onwards) is shrink-safe BY CONSTRUCTION: cell-diff emits per-cell
-  // writes for the vacated rect from the natural newRows delta. The
-  // residue-risk discipline shifts from "add a sig tracker to paint.js"
-  // to "thread newRows+cols through renderOverlay"; the companion test
-  // for a new overlay is a no-FULL_CLEAR-on-shrink assertion (see
-  // test-action-palette-overlay-composite.js for the shape).
 });
 
 report();

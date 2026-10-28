@@ -256,16 +256,11 @@ const _frame = {
   // paints via cell-diff: menu A's cells land in newRows for frame A, menu
   // B's cells for frame B; the diff emits only the changed cells, so A's
   // residue is cleared without a whole-screen forceFull.)
-  // Fabric-form popover signature from the previous frame ('' when no picker).
-  // The popover opens/closes/items-change INSIDE the fabricFormMode overlay —
-  // the flag-set check misses it (mode stays set) and the cell-diff cache keeps
-  // the outgoing LARGER border's cells when the overlay shrinks. See the
-  // forceFull trigger below for the sig shape + reasoning.
-  prevFabricPickingSig: '',
-  // (prevPaletteSig retired by Phase 2.b #1, prevMenuItems retired by
-  // Phase 2.b #2.) The v0.6.33 class now has ONE remaining instance —
-  // prevFabricPickingSig — which Phase 2.c retires alongside the fabric-
-  // form popover migration.
+  // (prevPaletteSig retired by Phase 2.b #1, prevMenuItems by Phase
+  // 2.b #2, prevFabricPickingSig by Phase 2.c #1 — the v0.6.33 shrink
+  // class is fully retired. The last paint.js sig tracker in play is
+  // prevReplayView, which Phase 2.d retires alongside the replay-
+  // scrubber migration.)
   // PTY-overlay force-state is NOT here — it moved per-session (U2d P0a). With
   // N visible terminal panes there is no single "last overlay": each session
   // tracks its own displayed dims (session.prevW/prevH) + viewport
@@ -845,28 +840,12 @@ function render(model) {
   // (Menu-replace-in-place sig tracker retired — overlay-compositor
   // Release 2 Phase 2.b #2; cell-diff now handles the menu-A → menu-B
   // swap from the natural newRows delta.)
-  // Fabric-form popover close/resize: the fabric-form overlay stays open
-  // (fabricFormMode remains true), but opening the popover grows the overlay
-  // (items added as rows), and closing or shrinking the item list shrinks it.
-  // The flag-set check can't catch it (same mode), the cell-diff cache keeps
-  // the outgoing LARGER border's cells, so after close/shrink the old border
-  // visibly lingers around the new smaller overlay. User-caught v0.6.38:
-  // "popover close doesn't clean the larger old border." Signature: picking
-  // field + its items count; any transition forces a full repaint so the old
-  // border's cells get cleared. Mirrors the menuItemsNow pattern above.
-  let pickingSig = '';
-  if (md.fabricFormMode && model.modal.fabricForm && model.modal.fabricForm.picking) {
-    const picking = model.modal.fabricForm.picking;
-    const pickedField = model.modal.fabricForm.fields
-      && model.modal.fabricForm.fields.find((x) => x.port === picking.port);
-    const itemCount = (pickedField && pickedField.computed
-      && Array.isArray(pickedField.computed.items)) ? pickedField.computed.items.length : 0;
-    pickingSig = `${picking.port}#${itemCount}`;
-  }
-  if (_frame.prevFabricPickingSig && _frame.prevFabricPickingSig !== pickingSig) {
-    _frame.forceFull = true;
-  }
-  _frame.prevFabricPickingSig = pickingSig;
+  // (Fabric-form popover sig tracker retired — overlay-compositor
+  // Release 2 Phase 2.c #1; cell-diff now handles the picker
+  // open/close/items-count transitions from the natural newRows delta.
+  // The picker rows are inlined into the form's single lines array, so
+  // the compositor sees them as just more rows to paint — the "self-
+  // contained" picker design the plan recommended.)
   // (prevPaletteSig retired — overlay-compositor Release 2 Phase 2.b #1;
   // cell-diff now handles palette filter mutation / close transitions
   // from the natural newRows delta.)
@@ -960,10 +939,11 @@ function render(model) {
   // before `_paintMainFrame` runs the shared diff emit, so overlay cells land
   // in `prevRows` and the cell-diff catches close/shrink naturally — one of
   // the two paths that lets paint.js eventually drop its per-overlay sig
-  // trackers (prevFabricPickingSig / prevReplayView — prevPaletteSig
-  // retired by Phase 2.b #1, prevMenuItems by Phase 2.b #2). Phase 2.a
-  // migrated the simple overlays; Phase 2.b/c/d retire each remaining
-  // sig tracker alongside the matching overlay.
+  // tracker (prevReplayView — prevPaletteSig retired by Phase 2.b #1,
+  // prevMenuItems by Phase 2.b #2, prevFabricPickingSig by Phase 2.c #1).
+  // Phase 2.a migrated the simple overlays; Phase 2.b/c retired the
+  // medium/complex overlays' sig trackers; Phase 2.d retires the last
+  // one alongside the replay-scrubber migration.
   const main = viewMode === 'half' ? renderHalf(model, previewArrange)
              : viewMode === 'full' ? renderFull(model, previewArrange)
              : renderNormal(model, previewArrange);
@@ -979,6 +959,7 @@ function render(model) {
   if (md.paletteMode) require('../overlay/action-palette').renderActionPalette(newRows, COLS);
   if (md.menuOpen)    renderMenu(newRows, COLS);
   if (md.cmdMode)     renderCmdline(newRows, COLS);
+  if (md.fabricFormMode) require('../overlay/fabric-form').renderFabricFormOverlay(newRows, COLS);
   const mainDidFull = _paintMainFrame(newRows, COLS);
   // Only force the terminal-overlay repaint when main paint actually
   // cleared the screen (resize, overlay-close, first frame). In the steady
@@ -1029,7 +1010,11 @@ function render(model) {
   // `choices_fn:`/`choices_cmd:` (slice-3 follow-up: the lean popup has no
   // choices machinery, so 1-port + choices routes here). Mutually exclusive
   // with fabricFieldMode via the modeChain; only one is ever active in a frame.
-  if (md.fabricFormMode) require('../overlay/fabric-form').renderFabricFormOverlay();
+  // fabricFormMode moved up (overlay-compositor Release 2 Phase 2.c #1):
+  // it composites into newRows BEFORE paintFrame; prevFabricPickingSig
+  // retired. The choices popover rows are inlined into the form's single
+  // lines array (self-contained picker), so no sub-overlay rect protocol
+  // is needed. See the `renderFabricFormOverlay(newRows, COLS)` call above.
   // registerPopupMode moved up (overlay-compositor Release 2 Phase 2.a #7):
   // it composites into newRows BEFORE paintFrame. See the
   // `renderRegisterPopup(newRows, COLS)` call above.
