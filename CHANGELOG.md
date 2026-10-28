@@ -6,6 +6,103 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.53] — 2026-10-28
+
+image-backup plugin lifted to the same `.sha256` sidecar discipline
+`archive.js` has had, closing three dev9-env field incidents: half-save
+truncating the previous good backup; legacy-named files silently
+stealing tags on full restore; and the complete absence of a check
+surface. 1 commit (`73ad4cdd`).
+
+### Added
+
+- **`js/leaves/text/pick-sum.js`** — shared leaf holding the POSIX
+  "pick `sha256sum` or fall back to `shasum -a 256`" snippet. Hoisted
+  out of `feature/archive.js`; now imported by both archive and
+  image-backup.
+- **`verify` verb (synthesized)** — docker-free integrity gate over
+  every `<output_dir>/*.tar.gz`. Sidecar present → `$SUM -c`; absent
+  → `gzip -t` + `UNVERIFIED (no sidecar)`. Warns on leftover
+  `*.partial`. rc 1 on any FAIL (bad sum or failed `gzip -t`);
+  UNVERIFIED alone stays rc 0. Cron/CI-friendly.
+- **`status` verb (synthesized, read-only)** — per configured ref:
+  live `docker inspect --format {{.Id}}` vs the ID baked INTO the
+  tar. Matches EITHER layout — containerd store (`index.json`'s
+  `manifests[].digest`) OR classic graphdriver (`manifest.json`'s
+  `Config` as `<id>.json` OR `blobs/sha256/<id>`) — by grepping any
+  64-hex id from both files and any-matching against the live hex.
+  Comparing only `Config` reports every image STALE on
+  containerd-store daemons (the dev9 incident on the first live run
+  of their interim status script). Verdict: `CURRENT` / `STALE` /
+  `MISSING` / `UNVERIFIED` / `ARCHIVED` (no live image). Trailing
+  **strays** section surfaces files that aren't `<safe>.tar.gz` /
+  its `.sha256` for any configured ref and aren't `*.partial`. No
+  mutations — deleting backups stays a human decision.
+- **`force` port on `load`** — optional, `remember: false`. Set to any
+  non-empty value to load sidecar-less (legacy / pre-upgrade) files
+  with a `(unverified — force)` notice. A safety override must not
+  prefill from form history.
+
+### Changed
+
+- **Atomic save.** Per image, the gzip pipeline now redirects to
+  `<safe>.tar.gz.partial`, never the final name — an interrupt
+  (SIGKILL / SSH drop / power) can never truncate the previous good
+  backup under `<safe>.tar.gz`. On pipeline success: compute sha256
+  from the partial, `mv` partial → final, then write
+  `<safe>.tar.gz.sha256` LAST. Sidecar presence is now the
+  authoritative "complete + summed" marker. On pipeline failure:
+  `rm -f` the partial (unchanged SKIP semantics for missing images).
+- **Verified load.** `$SUM -c` runs BEFORE `docker load`, with
+  `cwd` = output dir so the sidecar's final basename resolves. Bad
+  sum ABORTS the whole batch rc 1 — restoring a corrupt image is a
+  worse outcome than stopping. Files without a sidecar are skipped
+  loudly without `force` (neutralizing the "legacy files steal tags
+  during full restore" class by construction: no sidecar ⇒ no load),
+  loaded with a notice when `force` is set. End summary: `done.
+  loaded N, skipped M.`; rc 1 if nothing loaded (parity with the
+  existing "no .tar.gz files" error).
+
+### Back-compat
+
+- Naming scheme (`<safe>.tar.gz` with 8-char hash suffix), `images:`
+  schema, `output_dir` default, and SKIP semantics for missing
+  images are all unchanged. The only behavioral delta an existing
+  user sees: sidecar-less (pre-upgrade) backups no longer load
+  without `force` — that is the point. One `save` run regenerates
+  everything with sidecars.
+
+### Not changed
+
+- `feature/archive.js`'s atomic-save pattern. Archive is less exposed
+  (date-stamped filenames can't clobber a previous good archive, and
+  a truncated file has no sidecar so its `verify` already catches
+  it). Hoisting the atomic-save shell idiom to a shared leaf is
+  recorded as a follow-up candidate if a second consumer emerges;
+  PICK_SUM already serves both.
+
+### Tests
+
+`js/test/test-image-backup.js` extended end-to-end: script-shape pins
+for save (partial-target, mv-before-sidecar order, sidecar carries
+final basename, both failure branches `rm` the partial) and load
+(`$SUM -c` lexically precedes `docker load`, bad-sum exits 1,
+no-sidecar branch gated on `${force:-}`); behavioral tests via a
+PATH-injected fake `docker` for save/load/verify/status including
+bit-flip tamper, sidecar removal, leftover `.partial`. Status tests
+construct tiny `.tar.gz` fixtures in BOTH tar layouts and BOTH
+`Config` forms (`<id>.json` AND `blobs/sha256/<id>`) → each returns
+`CURRENT`; a stale-ID fixture returns `STALE`; a legacy-named file
+surfaces as a stray while `.partial` does not. 91 passed across 37
+tests. Full suite (278 files) and smoke (22 scenarios) green.
+
+### Heads-up for dev9
+
+`tools/cli/plugins/image.yml` carries a note that the interim
+`verify`/`status` script actions on the dev9 side will collide with
+upstream's synthesized verbs — resolve at bump time (retire the
+interim scripts, or have upstream skip synthesis for declared names).
+
 ## [0.6.52] — 2026-10-28
 
 Overlay-compositor migration — **Release 3 of 3** — COMPLETE
