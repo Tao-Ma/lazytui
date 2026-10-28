@@ -998,6 +998,7 @@ function render(model) {
   const { newRows, COLS } = main;
   if (md.confirmMode) renderConfirmOverlay(newRows, COLS);
   if (md.copyMode)    renderCopyMenu(newRows, COLS);
+  if (md.diagLogMode) require('../overlay/diag-log').renderDiagLog(now, newRows, COLS);
   const mainDidFull = _paintMainFrame(newRows, COLS);
   // Only force the terminal-overlay repaint when main paint actually
   // cleared the screen (resize, overlay-close, first frame). In the steady
@@ -1054,7 +1055,9 @@ function render(model) {
   // closed and the require doesn't widen the paint tree at boot.
   if (md.paletteMode) require('../overlay/action-palette').renderActionPalette();
   if (md.jobsMode)    renderJobsOverlay(now);
-  if (md.diagLogMode) require('../overlay/diag-log').renderDiagLog(now);
+  // diagLogMode moved up (overlay-compositor Release 2 Phase 2.a #3): it
+  // composites into newRows BEFORE paintFrame. See the
+  // `renderDiagLog(now, newRows, COLS)` call above.
   // v0.6.6 replay arc — interactive replay-control pane (floats over all).
   if (replayData && replayView !== 'hidden') require('../overlay/replay-scrubber').render(replayData);
 

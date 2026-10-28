@@ -69,7 +69,13 @@ function viewportRows() {
 // clock; docs/model-now-tick.md) so this render is a pure function of
 // (diag ring buffer, model, now). No Date.now() default: the one caller
 // (paint.render) always threads model.now; a bare call should fail loudly.
-function renderDiagLog(now) {
+//
+// Overlay-compositor migration (Release 2 Phase 2.a #3). When `newRows` +
+// `cols` are threaded in by paint.js, the overlay composites into the
+// main-frame row buffer through `renderOverlay`'s `targetRows` path —
+// cell-diff then handles both the leading paint AND the clean-up on
+// close/resize from the natural row delta. Omitted → stdout fallback.
+function renderDiagLog(now, newRows, cols) {
   if (!getModel().modes.diagLogMode) return;
   // FIX-1 stage 2 — read the store-mirror'd snapshot off the model, not the
   // off-model io/diag-log buffer live. The store-mirror cb keeps model.diagLog
@@ -113,6 +119,7 @@ function renderDiagLog(now) {
     lines, title: 'Diagnostics',
     maxWidth: wantW,
     count: list.length ? [cursor + 1, list.length] : undefined,
+    targetRows: newRows || null, targetCols: cols || 0,
   });
 }
 
