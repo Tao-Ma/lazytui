@@ -28,7 +28,17 @@ const { getModel } = require('../model/store');
 const { esc } = require('../leaves/text/ansi');
 const { renderOverlay } = require('../leaves/render/draw');
 
-function renderFabricFieldOverlay() {
+// Overlay-compositor migration (Release 2 Phase 2.c #2 — closes
+// Phase 2.c). The 1-port invoke-time popup, sibling of fabric-form (the
+// action-runner routes 1-port actions here, 2+ to fabric-form). When
+// `newRows` + `cols` are threaded in by paint.js, the overlay composites
+// into the main-frame row buffer through `renderOverlay`'s `targetRows`
+// path. No sig tracker to delete — fabric-field never had one; it never
+// changed shape within fabricFieldMode (fixed row count), so the v0.6.33
+// shrink class didn't catch it. The in-grid editor path (ports-pane
+// paneId match at line ~37) stays unchanged; this overlay only paints
+// the invoke-time case.
+function renderFabricFieldOverlay(newRows, cols) {
   const m = getModel();
   if (!m.modes || !m.modes.fabricFieldMode) return;
   const f = m.modal && m.modal.fabricField;
@@ -71,7 +81,8 @@ function renderFabricFieldOverlay() {
   lines.push('');
   lines.push('[dim]\\[enter] run   \\[esc] cancel[/]');
 
-  renderOverlay({ lines, title, maxWidth: 60 });
+  renderOverlay({ lines, title, maxWidth: 60,
+                  targetRows: newRows || null, targetCols: cols || 0 });
 }
 
 module.exports = { renderFabricFieldOverlay };

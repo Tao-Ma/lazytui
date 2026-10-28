@@ -960,6 +960,7 @@ function render(model) {
   if (md.menuOpen)    renderMenu(newRows, COLS);
   if (md.cmdMode)     renderCmdline(newRows, COLS);
   if (md.fabricFormMode) require('../overlay/fabric-form').renderFabricFormOverlay(newRows, COLS);
+  if (md.fabricFieldMode) require('../overlay/fabric-field').renderFabricFieldOverlay(newRows, COLS);
   const mainDidFull = _paintMainFrame(newRows, COLS);
   // Only force the terminal-overlay repaint when main paint actually
   // cleared the screen (resize, overlay-close, first frame). In the steady
@@ -1004,7 +1005,9 @@ function render(model) {
   // gated on paneId equality inside the ports-pane's render — see
   // overlay/fabric-field.js). Modes are mutually exclusive via the modeChain,
   // so position next to confirmMode is safe.
-  if (md.fabricFieldMode) require('../overlay/fabric-field').renderFabricFieldOverlay();
+  // fabricFieldMode moved up (overlay-compositor Release 2 Phase 2.c #2):
+  // it composites into newRows BEFORE paintFrame. See the
+  // `renderFabricFieldOverlay(newRows, COLS)` call above.
   // Fabric multi-field FORM (args→ports slice 1) — invoke-time popup for an
   // action with 2+ `ports.in`, OR a 1-port action whose port declares
   // `choices_fn:`/`choices_cmd:` (slice-3 follow-up: the lean popup has no
