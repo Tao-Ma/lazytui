@@ -74,7 +74,11 @@ const { renderWhichKey } = require('../overlay/which-key');
 const modes = require('../leaves/input/modes');
 const { getModel } = require('../model/store');
 const { renderCmdline } = require('../overlay/cmdline');
-const { renderConfirmOverlay } = require('../overlay/confirm');
+// renderConfirmOverlay import retired — confirm migrated to the
+// compositor registry in overlay-compositor R3 commit 2
+// (`js/overlay/confirm.js#registerSelf` → `paintActive`). Registered
+// at module load via `./overlay-compositor-boot`.
+require('./overlay-compositor-boot');
 const { renderPanelListOverlay } = require('../overlay/panel-list');
 const { renderJobsOverlay } = require('../overlay/jobs');
 // v0.6.4 Theme B — the footer row (~180 LOC) lives in its own module;
@@ -940,7 +944,13 @@ function render(model) {
              : viewMode === 'full' ? renderFull(model, previewArrange)
              : renderNormal(model, previewArrange);
   const { newRows, COLS } = main;
-  if (md.confirmMode) renderConfirmOverlay(newRows, COLS);
+  // confirm migrated to overlay-compositor R3 commit 2 — see
+  // `overlay-compositor.paintActive(model, newRows, COLS)` below. The
+  // former `if (md.confirmMode) renderConfirmOverlay(newRows, COLS)`
+  // moved into `js/overlay/confirm.js#registerSelf`'s descriptor;
+  // the compositor paints it in zIndex order with every other
+  // migrated overlay. R3 pattern-establishing commit (mirrors R2's
+  // `ba971715` role).
   if (md.copyMode)    renderCopyMenu(newRows, COLS);
   if (md.diagLogMode) require('../overlay/diag-log').renderDiagLog(now, newRows, COLS);
   if (md.jobsMode)    renderJobsOverlay(now, newRows, COLS);
@@ -1022,7 +1032,9 @@ function render(model) {
   // terminal state). See the `renderCmdline(newRows, COLS)` call above.
   // confirmMode moved up (overlay-compositor Release 2 Phase 2.a #1): it
   // composites into newRows BEFORE paintFrame so cell-diff catches its
-  // transitions. See the `renderConfirmOverlay(newRows, COLS)` call above.
+  // transitions. In Release 3 commit 2 the if-check moved into the
+  // compositor registry; the paint still happens before _paintMainFrame
+  // via `paintActive`.
   // Invoke-time fabric-field popup (ports-pane in-grid edits paint themselves,
   // gated on paneId equality inside the ports-pane's render — see
   // overlay/fabric-field.js). Modes are mutually exclusive via the modeChain,

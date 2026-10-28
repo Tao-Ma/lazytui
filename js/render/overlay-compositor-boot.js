@@ -1,0 +1,38 @@
+/**
+ * Overlay-compositor boot — the one place that imports each migrated
+ * overlay module and calls its `registerSelf(compositor)`. Imported
+ * for side effect from `paint.js`'s module load, so every path that
+ * ends up requiring paint.js (app/tui.js production boot, the smoke
+ * harness, headless unit tests, replay fold) gets the same registry.
+ *
+ * Keeping the loop here (not inline in tui.js) means the test harness
+ * doesn't duplicate the list. Each new migration adds exactly one
+ * line to `registerAll()`.
+ *
+ * Idempotent: compositor.register uses an id-keyed replace, so
+ * re-running `registerAll` (e.g. test harness that re-boots paint.js)
+ * is safe. See `js/test/test-overlay-compositor.js`'s "register with
+ * existing id REPLACES" pin for the shape.
+ *
+ * Overlay-compositor-migration Release 3 (docs/overlay-compositor-
+ * migration.md §Release 3).
+ */
+'use strict';
+
+const compositor = require('./overlay-compositor');
+
+/**
+ * Register every migrated overlay descriptor. Called at paint.js
+ * module load; also safe to call again from app boot or a test
+ * harness setup fn.
+ */
+function registerAll() {
+  require('../overlay/confirm').registerSelf(compositor);
+}
+
+module.exports = { registerAll };
+
+// Side effect at module load: the common path (paint.js requires us,
+// we register everything). A caller that wants to _reset() + rebuild
+// in a test can do so and then call registerAll() again.
+registerAll();

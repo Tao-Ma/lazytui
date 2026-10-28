@@ -342,6 +342,11 @@ function bootInteractive(opts) {
   // the `renderTerminalOverlay` import used by the overlay-poll setInterval;
   // that poll is now a model-conditional Sub, but the load-order anchor stays.)
   require('../render/paint');
+  // Overlay-compositor Release 3 (docs/overlay-compositor-migration.md
+  // §Release 3) — paint.js's module load already requires
+  // `overlay-compositor-boot`, which registers every migrated
+  // overlay's descriptor. No explicit wire needed here; the id-keyed
+  // registry handles replay fold + headless harness boot the same way.
   // v0.6.6 replay arc — wire the interactive replay-control pane's render-data
   // seam (module-held controller → render, by injection, no dispatch import).
   require('../render/paint').setReplaySource(require('../dispatch/runtime/replay-control').renderData);

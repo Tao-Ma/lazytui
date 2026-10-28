@@ -118,4 +118,31 @@ function renderConfirmOverlay(newRows, cols) {
                   targetRows: newRows || null, targetCols: cols || 0 });
 }
 
-module.exports = { renderConfirmOverlay };
+/**
+ * Overlay-compositor Release 3 (docs/overlay-compositor-migration.md
+ * §Release 3) — descriptor for the compositor registry. One call at
+ * boot from app/tui.js. First overlay migrated in Release 3; mirrors
+ * the pattern-establishing role R2's `ba971715` played.
+ *
+ * - `isActive(model)` reads the mode flag the retired if-chain tested.
+ * - `render(model, newRows, cols)` thunks to the existing render fn
+ *   (which still reads `getModel()` internally — Release 3 plumbing
+ *   doesn't change overlay bodies, only the dispatch path).
+ * - `modal: true` — confirm is a y/N gate; two concurrent confirms
+ *   would be a reducer-level bug the compositor logs loudly.
+ * - `zIndex: 10` — bottom of the modal stack; preserves confirm's
+ *   historical position (first in paint.js's old if-chain). Other
+ *   overlays migrate in ascending z-order to keep paint order stable
+ *   as the chain drains.
+ */
+function registerSelf(compositor) {
+  compositor.register({
+    id: 'confirm',
+    isActive: (m) => !!(m && m.modes && m.modes.confirmMode),
+    render: (m, newRows, cols) => renderConfirmOverlay(newRows, cols),
+    modal: true,
+    zIndex: 10,
+  });
+}
+
+module.exports = { renderConfirmOverlay, registerSelf };
