@@ -1000,6 +1000,7 @@ function render(model) {
   if (md.copyMode)    renderCopyMenu(newRows, COLS);
   if (md.diagLogMode) require('../overlay/diag-log').renderDiagLog(now, newRows, COLS);
   if (md.jobsMode)    renderJobsOverlay(now, newRows, COLS);
+  if (md.paneMenuMode) _paneMenu().render(newRows, COLS);
   const mainDidFull = _paintMainFrame(newRows, COLS);
   // Only force the terminal-overlay repaint when main paint actually
   // cleared the screen (resize, overlay-close, first frame). In the steady
@@ -1046,10 +1047,11 @@ function render(model) {
   if (md.fabricFormMode) require('../overlay/fabric-form').renderFabricFormOverlay();
   if (md.registerPopupMode) renderRegisterPopup();
   if (md.prefixMode)  renderWhichKey();
-  // Tab list overlay (only when active). The `[≡]` trigger glyph is
-  // composed inline by renderPanel({chrome}) per P4.2; the painter
+  // paneMenuMode moved up (overlay-compositor Release 2 Phase 2.a #5): it
+  // composites into newRows BEFORE paintFrame. See the
+  // `_paneMenu().render(newRows, COLS)` call above. The `[≡]` trigger glyph
+  // is still composed inline by renderPanel({chrome}) per P4.2; the painter
   // stamps it atomically alongside the rest of the top border.
-  if (md.paneMenuMode) _paneMenu().render();
   // Fuzzy action palette (v0.6.44 Brief 2) — centered type-to-jump list
   // over every group:action. Mutually exclusive with the other overlays
   // via the modeChain; lazy-required so paint-time cost is zero when

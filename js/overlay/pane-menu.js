@@ -34,6 +34,7 @@
 const { getModel } = require('../model/store');
 const { getInstanceSlice, theme } = require('../panel/api');
 const { renderPanel, viewportDims, writeOut } = require('../leaves/render/draw');
+const { compositeRow } = require('../leaves/render/row-compositor');
 const chromeRegions = require('../panel/chrome-regions');
 const { richToAnsi, RESET, esc, visibleLen } = require('../leaves/text/ansi');
 const { isChainActive } = require('../leaves/input/modes');
@@ -314,8 +315,20 @@ function _formatRow(it, paneId, width) {
 }
 
 /** Paint the dropdown if paneMenuMode is active. Residue-blanks the
- *  rows the previous frame painted that this one doesn't. */
-function render() {
+ *  rows the previous frame painted that this one doesn't (stdout path only).
+ *
+ *  Overlay-compositor migration (Release 2 Phase 2.a #5). When `newRows` +
+ *  `cols` are threaded in by paint.js, each `renderPanel` row composites
+ *  into `newRows` via `row-compositor.compositeRow` at the anchored
+ *  (`g.x`, `g.y+i`, `g.w`) rect. The cell-diff then handles both the
+ *  leading paint AND the clean-up on shrink/close from the natural row
+ *  delta — so the composite path SKIPS the per-overlay residue tracker +
+ *  `invalidateRows` entirely (those were this overlay's local Class-B
+ *  workaround for the same `bypasses newRows` class the migration
+ *  retires). The stdout path (omitted targetRows) keeps the residue
+ *  tracker alive as the migration-period fallback; it dies at the end
+ *  of Release 2 when every overlay routes through newRows. */
+function render(newRows, cols) {
   if (!getModel().modes.paneMenuMode) { _maybeBlank(); return; }
   const paneId = _targetPaneId();
   const g = _geom(paneId);
@@ -353,6 +366,27 @@ function render() {
     count: g.items.length > 0 ? [cursor + 1, g.items.length] : null,
   });
   const panelLines = content.split('\n');
+
+  if (newRows) {
+    // Composite path (overlay-compositor Release 2). Each panel row lands in
+    // newRows at the anchored (g.x, g.y+i, g.w) rect; paintFrame's cell-diff
+    // emits ANSI for both the leading paint AND the vacated cells on
+    // shrink/close. No residue tracker, no invalidateRows, no stdout
+    // write — the tracker state is a stdout-path concern only, so we also
+    // skip updating `_last*` here (production never falls back once paint.js
+    // threads newRows + cols, so letting the tracker go stale is fine; the
+    // `_maybeBlank` close-path still works because `_lastPanelH` would stay 0
+    // from a cold start of the composite path).
+    for (let i = 0; i < panelLines.length; i++) {
+      compositeRow(newRows, cols, panelLines[i], g.x, g.y + i, g.w);
+    }
+    return;
+  }
+
+  // Stdout fallback — the pre-compositor path, preserved during the
+  // migration period for direct callers and tests that invoke render()
+  // without the composite buffer. Deletes when the stdout fallback goes
+  // away at the end of Release 2.
   let buf = '';
   for (let i = 0; i < panelLines.length; i++) {
     buf += `\x1b[${g.y + i + 1};${g.x + 1}H` + richToAnsi(panelLines[i]) + RESET;
