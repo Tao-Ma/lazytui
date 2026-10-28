@@ -972,6 +972,17 @@ function render(model) {
       });
     }
   }
+  // Overlay-compositor Release 3 commit 1 (docs/overlay-compositor-
+  // migration.md §Release 3). Every migrated overlay registers a
+  // descriptor via `registerSelf(compositor)` at boot (app/tui.js) and
+  // paints here, in zIndex order, instead of carrying its own if-check
+  // above. Until commit 2 (first migration), the registry is empty and
+  // this call is a no-op; the if-chain + inline hover above still own
+  // every overlay paint. As overlays migrate commit-by-commit, their
+  // if-check moves from the chain to a descriptor and their paint
+  // moves from here into the compositor's loop. End-of-Release-3 the
+  // if-chain + inline hover are deleted.
+  require('./overlay-compositor').paintActive(model, newRows, COLS);
   const mainDidFull = _paintMainFrame(newRows, COLS);
   // Only force the terminal-overlay repaint when main paint actually
   // cleared the screen (resize, overlay-close, first frame). In the steady
