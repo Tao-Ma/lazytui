@@ -27,8 +27,17 @@ const compositor = require('./overlay-compositor');
  * harness setup fn.
  */
 function registerAll() {
-  require('../overlay/confirm').registerSelf(compositor);
-  require('../overlay/copy').registerSelf(compositor);
+  // Simple overlays — each exports `registerSelf` + a render fn thunked
+  // from the descriptor. zIndex ascends to match the retired paint.js
+  // if-chain's historical paint order.
+  require('../overlay/confirm').registerSelf(compositor);          //  10
+  require('../overlay/copy').registerSelf(compositor);             //  20
+  require('../overlay/pane-menu').registerSelf(compositor);        //  50
+  require('../overlay/panel-list').registerSelf(compositor);       //  60
+  require('../overlay/register-popup').registerSelf(compositor);   //  70
+  require('../overlay/which-key').registerSelf(compositor);        //  80
+  require('../overlay/action-palette').registerSelf(compositor);   //  90
+  require('../overlay/menu').registerSelf(compositor);             // 100
 }
 
 module.exports = { registerAll };

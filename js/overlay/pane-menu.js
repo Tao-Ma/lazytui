@@ -364,8 +364,21 @@ function render(newRows, cols) {
   }
 }
 
+// Overlay-compositor R3 descriptor. zIndex=50 preserves pane-menu's
+// historical position (fifth in the retired paint.js if-chain).
+function registerSelf(compositor) {
+  compositor.register({
+    id: 'pane-menu',
+    isActive: (m) => !!(m && m.modes && m.modes.paneMenuMode),
+    render: (m, newRows, cols) => render(newRows, cols),
+    modal: true,
+    zIndex: 50,
+  });
+}
+
 module.exports = {
   hitTestTrigger, hitTest, render, items, viewportRows,
   triggerVisible, _triggerState, _isViewer,
   _formatPaneRow,
+  registerSelf,
 };

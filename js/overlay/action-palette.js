@@ -233,7 +233,19 @@ function renderActionPalette(newRows, cols) {
   });
 }
 
+// Overlay-compositor R3 descriptor. zIndex=90 preserves action-palette's
+// historical position (ninth in the retired paint.js if-chain).
+function registerSelf(compositor) {
+  compositor.register({
+    id: 'action-palette',
+    isActive: (m) => !!(m && m.modes && m.modes.paletteMode),
+    render: (m, newRows, cols) => renderActionPalette(newRows, cols),
+    modal: true,
+    zIndex: 90,
+  });
+}
+
 module.exports = {
   renderActionPalette, currentView, _collectRows, filteredRows,
-  setConfigAccessors, resolve,
+  setConfigAccessors, resolve, registerSelf,
 };

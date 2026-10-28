@@ -102,4 +102,16 @@ function render(newRows, cols) {
   });
 }
 
-module.exports = { render, viewportRows };
+// Overlay-compositor R3 descriptor. zIndex=70 preserves register-popup's
+// historical position (seventh in the retired paint.js if-chain).
+function registerSelf(compositor) {
+  compositor.register({
+    id: 'register-popup',
+    isActive: (m) => !!(m && m.modes && m.modes.registerPopupMode),
+    render: (m, newRows, cols) => render(newRows, cols),
+    modal: true,
+    zIndex: 70,
+  });
+}
+
+module.exports = { render, viewportRows, registerSelf };

@@ -347,4 +347,18 @@ function hitTest(mx, my) {
   return { bounds, itemIdx };
 }
 
-module.exports = { renderPanelListOverlay, hitTest };
+// Overlay-compositor R3 descriptor. zIndex=60 preserves panel-list's
+// historical position (sixth in the retired paint.js if-chain —
+// `md.freeConfigMode` gated the paint; the overlay's own open flag
+// gates whether anything is drawn inside, same as before).
+function registerSelf(compositor) {
+  compositor.register({
+    id: 'panel-list',
+    isActive: (m) => !!(m && m.modes && m.modes.freeConfigMode),
+    render: (m, newRows, cols) => renderPanelListOverlay(newRows, cols),
+    modal: true,
+    zIndex: 60,
+  });
+}
+
+module.exports = { renderPanelListOverlay, hitTest, registerSelf };

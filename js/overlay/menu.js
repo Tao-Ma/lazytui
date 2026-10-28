@@ -95,4 +95,16 @@ function hitTest(mx, my) {
   return { itemIdx: lineIdx };
 }
 
-module.exports = { renderMenu, hitTest };
+// Overlay-compositor R3 descriptor. zIndex=100 preserves menu's
+// historical position (tenth in the retired paint.js if-chain).
+function registerSelf(compositor) {
+  compositor.register({
+    id: 'menu',
+    isActive: (m) => !!(m && m.modes && m.modes.menuOpen),
+    render: (m, newRows, cols) => renderMenu(newRows, cols),
+    modal: true,
+    zIndex: 100,
+  });
+}
+
+module.exports = { renderMenu, hitTest, registerSelf };

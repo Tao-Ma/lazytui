@@ -67,4 +67,17 @@ function _padKey(tok) {
   return shown + ' '.repeat(pad);
 }
 
-module.exports = { renderWhichKey, whichKeyLines, _padKey };
+// Overlay-compositor R3 descriptor. zIndex=80. which-key is the
+// leader-chord hint — non-modal (shown while a chord is in progress;
+// doesn't block other modal overlays from opening on top of it).
+function registerSelf(compositor) {
+  compositor.register({
+    id: 'which-key',
+    isActive: (m) => !!(m && m.modes && m.modes.prefixMode),
+    render: (m, newRows, cols) => renderWhichKey(newRows, cols),
+    modal: false,
+    zIndex: 80,
+  });
+}
+
+module.exports = { renderWhichKey, whichKeyLines, _padKey, registerSelf };

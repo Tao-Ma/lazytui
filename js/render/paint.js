@@ -67,19 +67,16 @@ const { visibleTerminalSurfaces } = require('../panel/terminal-surfaces');
 const { getSession, sessionScrollInfo, sessionViewportRows, sessionCursor } = require('../io/terminal');
 const { getInstanceSlice, sliceForPane, getComponent,
        getComponentOwningPanel } = require('../panel/api');
-const { render: renderRegisterPopup } = require('../overlay/register-popup');
-const { renderMenu } = require('../overlay/menu');
-const { renderWhichKey } = require('../overlay/which-key');
 const modes = require('../leaves/input/modes');
 const { getModel } = require('../model/store');
 const { renderCmdline } = require('../overlay/cmdline');
-// Overlay-compositor R3 — side-effect require; `registerAll()` runs
-// at module load and populates the compositor registry with every
-// migrated overlay's descriptor. Retired imports:
-// - renderConfirmOverlay (R3 commit 2)
-// - renderCopyMenu       (R3 commit 3)
+// Overlay-compositor R3 — side-effect require; registerAll() runs at
+// module load and populates the compositor registry with every
+// migrated overlay's descriptor (`js/render/overlay-compositor-boot.js`).
+// Overlay-side `renderX` imports are retired as each one migrates:
+// confirm (R3 c2), copy (c3), pane-menu (c4), panel-list (c5),
+// register-popup (c6), which-key (c7), action-palette (c8), menu (c9).
 require('./overlay-compositor-boot');
-const { renderPanelListOverlay } = require('../overlay/panel-list');
 const { renderJobsOverlay } = require('../overlay/jobs');
 // v0.6.4 Theme B — the footer row (~180 LOC) lives in its own module;
 // geometry only calls renderFooter() once per frame from render().
@@ -955,12 +952,9 @@ function render(model) {
   // and `js/overlay/copy.js#registerSelf`.
   if (md.diagLogMode) require('../overlay/diag-log').renderDiagLog(now, newRows, COLS);
   if (md.jobsMode)    renderJobsOverlay(now, newRows, COLS);
-  if (md.paneMenuMode) _paneMenu().render(newRows, COLS);
-  if (md.freeConfigMode) renderPanelListOverlay(newRows, COLS);
-  if (md.registerPopupMode) renderRegisterPopup(newRows, COLS);
-  if (md.prefixMode)  renderWhichKey(newRows, COLS);
-  if (md.paletteMode) require('../overlay/action-palette').renderActionPalette(newRows, COLS);
-  if (md.menuOpen)    renderMenu(newRows, COLS);
+  // pane-menu / panel-list / register-popup / which-key / action-palette
+  // / menu — all migrated to compositor registry in R3 commits 4-9.
+  // See overlay-compositor-boot.registerAll + each overlay's registerSelf.
   if (md.cmdMode)     renderCmdline(newRows, COLS);
   if (md.fabricFormMode) require('../overlay/fabric-form').renderFabricFormOverlay(newRows, COLS);
   if (md.fabricFieldMode) require('../overlay/fabric-field').renderFabricFieldOverlay(newRows, COLS);
