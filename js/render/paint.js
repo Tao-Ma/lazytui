@@ -997,6 +997,7 @@ function render(model) {
              : renderNormal(model, previewArrange);
   const { newRows, COLS } = main;
   if (md.confirmMode) renderConfirmOverlay(newRows, COLS);
+  if (md.copyMode)    renderCopyMenu(newRows, COLS);
   const mainDidFull = _paintMainFrame(newRows, COLS);
   // Only force the terminal-overlay repaint when main paint actually
   // cleared the screen (resize, overlay-close, first frame). In the steady
@@ -1021,7 +1022,9 @@ function render(model) {
   // second write and no cursor-move-back-and-overpaint flicker.
   // Overlays are mutually exclusive in practice (modeChain enforces it).
   // Order matches dispatch.js's modeChain: free-config > menu > copy.
-  if (md.copyMode)    renderCopyMenu();
+  // copyMode moved up (overlay-compositor Release 2 Phase 2.a #2): it
+  // composites into newRows BEFORE paintFrame. See `renderCopyMenu(newRows,
+  // COLS)` call above.
   if (md.menuOpen)    renderMenu();
   if (md.freeConfigMode)  { renderPanelListOverlay(); }
   if (md.cmdMode)     renderCmdline();
