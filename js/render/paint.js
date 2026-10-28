@@ -1002,6 +1002,7 @@ function render(model) {
   if (md.jobsMode)    renderJobsOverlay(now, newRows, COLS);
   if (md.paneMenuMode) _paneMenu().render(newRows, COLS);
   if (md.freeConfigMode) renderPanelListOverlay(newRows, COLS);
+  if (md.registerPopupMode) renderRegisterPopup(newRows, COLS);
   const mainDidFull = _paintMainFrame(newRows, COLS);
   // Only force the terminal-overlay repaint when main paint actually
   // cleared the screen (resize, overlay-close, first frame). In the steady
@@ -1048,7 +1049,9 @@ function render(model) {
   // choices machinery, so 1-port + choices routes here). Mutually exclusive
   // with fabricFieldMode via the modeChain; only one is ever active in a frame.
   if (md.fabricFormMode) require('../overlay/fabric-form').renderFabricFormOverlay();
-  if (md.registerPopupMode) renderRegisterPopup();
+  // registerPopupMode moved up (overlay-compositor Release 2 Phase 2.a #7):
+  // it composites into newRows BEFORE paintFrame. See the
+  // `renderRegisterPopup(newRows, COLS)` call above.
   if (md.prefixMode)  renderWhichKey();
   // paneMenuMode moved up (overlay-compositor Release 2 Phase 2.a #5): it
   // composites into newRows BEFORE paintFrame. See the

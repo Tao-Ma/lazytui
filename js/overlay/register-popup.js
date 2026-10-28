@@ -50,7 +50,12 @@ function _previewOf(text) {
   return String(text).replace(/\n/g, '↵').replace(/\t/g, ' ');
 }
 
-function render() {
+// Overlay-compositor migration (Release 2 Phase 2.a #7). When `newRows` +
+// `cols` are threaded in by paint.js, the overlay composites into the
+// main-frame row buffer through `renderOverlay`'s `targetRows` path — cell-
+// diff then handles both the leading paint AND the clean-up on
+// close/resize from the natural row delta. Omitted → stdout fallback.
+function render(newRows, cols) {
   if (!getModel().modes.registerPopupMode) return;
   const { idx: _idx, scroll: _scroll } = getModel().modal.registerPopup;
   const n = register.historyLen(getModel().register);
@@ -91,6 +96,7 @@ function render() {
     title: `Register history (${n})`,
     count: n > 0 ? [_idx + 1, n] : null,
     maxWidth: overlayMaxW,
+    targetRows: newRows || null, targetCols: cols || 0,
   });
 }
 
