@@ -1001,6 +1001,7 @@ function render(model) {
   if (md.diagLogMode) require('../overlay/diag-log').renderDiagLog(now, newRows, COLS);
   if (md.jobsMode)    renderJobsOverlay(now, newRows, COLS);
   if (md.paneMenuMode) _paneMenu().render(newRows, COLS);
+  if (md.freeConfigMode) renderPanelListOverlay(newRows, COLS);
   const mainDidFull = _paintMainFrame(newRows, COLS);
   // Only force the terminal-overlay repaint when main paint actually
   // cleared the screen (resize, overlay-close, first frame). In the steady
@@ -1029,7 +1030,9 @@ function render(model) {
   // composites into newRows BEFORE paintFrame. See `renderCopyMenu(newRows,
   // COLS)` call above.
   if (md.menuOpen)    renderMenu();
-  if (md.freeConfigMode)  { renderPanelListOverlay(); }
+  // freeConfigMode's panel-list overlay moved up (overlay-compositor
+  // Release 2 Phase 2.a #6): it composites into newRows BEFORE paintFrame.
+  // See `renderPanelListOverlay(newRows, COLS)` above.
   if (md.cmdMode)     renderCmdline();
   // confirmMode moved up (overlay-compositor Release 2 Phase 2.a #1): it
   // composites into newRows BEFORE paintFrame so cell-diff catches its

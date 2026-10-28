@@ -68,10 +68,13 @@ describe('[panel_list_open / close] simple toggles', () => {
     const [next, cmds] = layout.update({ type: 'panel_list_open' }, s);
     eq(next.panelList.open, true);
     eq(next.panelList.cursor, 0);
-    eq(cmds.length, 1);
-    eq(cmds[0].type, 'force_full_repaint');
+    // Overlay-compositor Release 2 Phase 2.a #6: the overlay composites
+    // into newRows, so cell-diff handles the open transition from the
+    // natural row delta — the pre-migration `force_full_repaint` Cmd is
+    // retired. applyMsg's depth-0 trailing paint (Release 1) still fires.
+    eq(cmds.length, 0, 'no per-arm paint Cmd — compositor path');
   });
-  it('close sets open=false (cursor preserved) + force repaint', () => {
+  it('close sets open=false (cursor preserved), no per-arm force Cmd', () => {
     const s = buildSlice({
       left:  [['groups', 'groups']],
       right: [['actions', 'actions'], ['detail', 'detail']],
@@ -80,7 +83,9 @@ describe('[panel_list_open / close] simple toggles', () => {
     const [closed, cmds] = layout.update({ type: 'panel_list_close' }, opened);
     eq(closed.panelList.open, false);
     eq(closed.panelList.cursor, 2);
-    eq(cmds[0].type, 'force_full_repaint');
+    // Mirror of the open case — compositor path, cell-diff handles the
+    // vacated overlay rect from the natural row delta.
+    eq(cmds.length, 0, 'no per-arm paint Cmd — compositor path');
   });
 });
 
@@ -117,7 +122,7 @@ describe('[panel_list_pick] context-dependent: hide / show / no-op', () => {
     for (let i = 0; i < cursorIdx; i++) opened = layout.update({ type: 'panel_list_nav', dir: +1 }, opened);
     return opened;
   }
-  it('pick on a placed item returns a pool_hide dispatch_msg + force_full_repaint, closes', () => {
+  it('pick on a placed item returns a pool_hide dispatch_msg Cmd, closes', () => {
     // groups @ cursor 0
     const s = setupCursor({
       left:   [['groups', 'groups']],
@@ -128,12 +133,14 @@ describe('[panel_list_pick] context-dependent: hide / show / no-op', () => {
     assert(Array.isArray(result), 'returns [slice, cmds] tuple');
     const [next, cmds] = result;
     eq(next.panelList.open, false, 'overlay closes on pick');
-    eq(cmds.length, 2, 'dispatch_msg + force_full_repaint');
+    // Overlay-compositor Release 2 Phase 2.a #6: close rides on cell-diff
+    // via the compositor path; the former trailing `force_full_repaint`
+    // Cmd is retired. Only the pool_hide re-dispatch remains.
+    eq(cmds.length, 1, 'dispatch_msg only — no per-arm paint Cmd');
     eq(cmds[0].type, 'msg');
     eq(cmds[0].msg.kind, 'layout');
     eq(cmds[0].msg.msg.type, 'pool_hide');
     eq(cmds[0].msg.msg.id, 'groups');
-    eq(cmds[1].type, 'force_full_repaint');
   });
   it('pick on a hidden item returns a pool_show dispatch_msg Cmd', () => {
     // After 3 nav steps: cursor on 'notes' (groups,actions,detail,notes)
@@ -144,9 +151,9 @@ describe('[panel_list_pick] context-dependent: hide / show / no-op', () => {
     }, 3);
     const [next, cmds] = layout.update({ type: 'panel_list_pick' }, s);
     eq(next.panelList.open, false);
+    eq(cmds.length, 1, 'dispatch_msg only — no per-arm paint Cmd');
     eq(cmds[0].msg.msg.type, 'pool_show');
     eq(cmds[0].msg.msg.id, 'notes');
-    eq(cmds[1].type, 'force_full_repaint');
   });
   it('pick on detail (essential) is a no-op — slice unchanged, overlay stays open', () => {
     // detail @ cursor 2: groups, actions, detail

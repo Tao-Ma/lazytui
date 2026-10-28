@@ -211,7 +211,16 @@ function _padRight(row, w) {
   return row + ' '.repeat(w - vl) + '[/]';
 }
 
-function renderPanelListOverlay() {
+// Overlay-compositor migration (Release 2 Phase 2.a #6). When `newRows` +
+// `cols` are threaded in by paint.js, both `renderOverlay` call sites
+// (list-only + side-by-side) composite into the main-frame row buffer
+// through `renderOverlay`'s `targetRows` path. The cell-diff then handles
+// both the leading paint AND the clean-up on close/resize from the natural
+// row delta — which is why this commit ALSO drops the explicit
+// `force_full_repaint` Cmds from `panel_list_open`, `panel_list_close`,
+// and `free_config_enter`'s auto-open conditional in `js/panel/layout.js`
+// (those were Class A workarounds for the overlay bypassing newRows).
+function renderPanelListOverlay(newRows, cols) {
   const slice = _slice();
   if (!slice || !slice.panelList || !slice.panelList.open) return;
   const items = mpool.panelListItems(slice.arrange);
@@ -233,6 +242,7 @@ function renderPanelListOverlay() {
       lines: listLines, title: 'Panels',
       maxWidth: wantW,
       count: items.length ? [cursor + 1, items.length] : undefined,
+      targetRows: newRows || null, targetCols: cols || 0,
     });
     return;
   }
@@ -271,6 +281,7 @@ function renderPanelListOverlay() {
     lines: composed, title: 'Panels',
     maxWidth: wantW,
     count: items.length ? [cursor + 1, items.length] : undefined,
+    targetRows: newRows || null, targetCols: cols || 0,
   });
 }
 

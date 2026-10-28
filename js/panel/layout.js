@@ -803,15 +803,12 @@ function update(msg, slice) {
         freeConfig: { drag: null, undo: [], redo: [], titleEdit: { text: '' }, notice: null, noticeKind: null },
         panelList: { open: hasHidden, cursor: 0 },
       };
-      // Auto-opening the panel-list overlay needs force_full_repaint
-      // — the overlay's slice-subfield fingerprint doesn't change in a
-      // way the diff painter sees, same reasoning as `panel_list_open`.
-      // Only emit on the actual false→true transition (R4.14 — matches
-      // panel_list_open's `wasOpen` check; was conditioned on hasHidden
-      // alone before, which over-emitted on re-entries that didn't
-      // change overlay state).
+      // Overlay-compositor Release 2 Phase 2.a #6: panel-list composites
+      // into newRows now, so the auto-open path (hasHidden && !wasOpen)
+      // no longer needs a `force_full_repaint` either — cell-diff emits
+      // per-cell writes for the overlay rect on the natural row delta.
+      // Mirror of the drop in `panel_list_open` / `panel_list_close`.
       const cmds = [{ type: 'msg', msg: { type: 'mode_set', flag: 'freeConfigMode' } }];
-      if (hasHidden && !wasOpen) cmds.push({ type: 'force_full_repaint' });
       return [next, cmds];
     }
     case 'free_config_exit': {
@@ -1153,19 +1150,22 @@ function update(msg, slice) {
       // user with a stuck drag they can't see. The user releases the
       // mouse first, THEN opens `w`.
       if (slice.freeConfig && slice.freeConfig.drag) return slice;
-      const wasOpen = slice.panelList && slice.panelList.open;
       const next = { ...slice, panelList: { open: true, cursor: msg.cursor || 0 } };
-      // Only force_full_repaint on actual open transition. A cursor-only
-      // update (overlay already open) doesn't need the repaint — the
-      // overlay's own diff cache handles cursor moves. Saves one of
-      // the two repaints on the input.js overlay-row click path that
-      // dispatches panel_list_open(new cursor) → pool_drag_start.
-      const cmds = wasOpen ? [] : [{ type: 'force_full_repaint' }];
-      return [next, cmds];
+      // Overlay-compositor Release 2 Phase 2.a #6: the overlay now
+      // composites into newRows, so cell-diff emits per-cell writes for
+      // the overlay rect on both the open AND close transitions
+      // (new rect → prevRows had none → diff fires; close → newRows
+      // has none → prevRows did → diff clears). The former per-arm
+      // `force_full_repaint` here (Class A workaround for the overlay
+      // bypassing newRows) is retired. applyMsg's depth-0 trailing
+      // paint (Release 1) still fires, so the open frame still
+      // paints — just via diff instead of a whole-screen clear.
+      return [next, []];
     }
     case 'panel_list_close': {
       const next = { ...slice, panelList: { ...slice.panelList, open: false } };
-      return [next, [{ type: 'force_full_repaint' }]];
+      // Overlay-compositor Release 2 Phase 2.a #6 — see panel_list_open.
+      return [next, []];
     }
     case 'panel_list_nav': {
       const items = mpool.panelListItems(slice.arrange);
@@ -1187,9 +1187,11 @@ function update(msg, slice) {
       if (!item || item.status === 'essential') return slice;
       const closed = { ...slice, panelList: { ...slice.panelList, open: false } };
       const verb = item.status === 'placed' ? 'pool_hide' : 'pool_show';
+      // Overlay-compositor Release 2 Phase 2.a #6 — panel-list composites
+      // into newRows now, so the close transition rides on cell-diff.
+      // Mirror of the drop in `panel_list_open` / `panel_list_close`.
       return [closed, [
         { type: 'msg', msg: { kind: 'layout', msg: { type: verb, id: item.id } } },
-        { type: 'force_full_repaint' },
       ]];
     }
     // v0.6 — collapse toggle. Flips placement.collapsed for the given
