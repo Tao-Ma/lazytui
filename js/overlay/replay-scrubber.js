@@ -175,4 +175,36 @@ function renderFull(data, newRows, cols) {
   });
 }
 
-module.exports = { render, hitTestSeek, _miniGeom };
+// Overlay-compositor R3 descriptor. zIndex=140 preserves replay-scrubber's
+// historical position (fourteenth in the retired paint.js if-chain).
+// Non-modal — scrubber coexists with normal panel renders beneath.
+//
+// The overlay's PURE-of-dispatch invariant (render(data) takes a
+// controller snapshot, no module-local state read) is preserved via
+// an INJECTED data source: paint.js already injects
+// `_replaySource = replay-control.renderData` at boot for its OWN
+// diffMode read. We inject the same source into THIS module via
+// `setDataSource(fn)` — tui.js wires it next to the paint-side injection.
+// `isActive` / registered render fn read `_dataSource()` and gate the
+// paint on the same `paneView !== 'hidden'` condition the retired
+// if-chain tested.
+let _dataSource = null;
+function setDataSource(fn) { _dataSource = fn; }
+
+function registerSelf(compositor) {
+  compositor.register({
+    id: 'replay-scrubber',
+    isActive: () => {
+      const d = _dataSource ? _dataSource() : null;
+      return !!(d && d.paneView !== 'hidden');
+    },
+    render: (_m, newRows, cols) => {
+      const d = _dataSource ? _dataSource() : null;
+      if (d && d.paneView !== 'hidden') render(d, newRows, cols);
+    },
+    modal: false,
+    zIndex: 140,
+  });
+}
+
+module.exports = { render, hitTestSeek, _miniGeom, setDataSource, registerSelf };

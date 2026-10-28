@@ -350,6 +350,11 @@ function bootInteractive(opts) {
   // v0.6.6 replay arc — wire the interactive replay-control pane's render-data
   // seam (module-held controller → render, by injection, no dispatch import).
   require('../render/paint').setReplaySource(require('../dispatch/runtime/replay-control').renderData);
+  // Overlay-compositor R3 commit 12 — the replay-scrubber overlay reads
+  // its data via the SAME injected source paint.js uses for diffMode.
+  // Keeps the overlay pure-of-dispatch at render time; wiring stays in
+  // tui.js so overlay/ doesn't import upward into dispatch/.
+  require('../overlay/replay-scrubber').setDataSource(require('../dispatch/runtime/replay-control').renderData);
   // v0.6.4 Phase F — redraw (dispatch-then-paint) lives in the dispatch
   // layer now; paint.js is a pure view. tui orchestrates both.
   const { redraw } = require('../dispatch/control/dispatch');

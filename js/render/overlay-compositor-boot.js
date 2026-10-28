@@ -43,6 +43,8 @@ function registerAll() {
   require('../overlay/cmdline').registerSelf(compositor);          // 110
   require('../overlay/fabric-form').registerSelf(compositor);      // 120
   require('../overlay/fabric-field').registerSelf(compositor);     // 130
+  require('../overlay/replay-scrubber').registerSelf(compositor);  // 140
+  require('../overlay/hover-tooltip').registerSelf(compositor);    // 999 — floats above all
 }
 
 module.exports = { registerAll };

@@ -941,55 +941,13 @@ function render(model) {
              : viewMode === 'full' ? renderFull(model, previewArrange)
              : renderNormal(model, previewArrange);
   const { newRows, COLS } = main;
-  // confirm migrated to overlay-compositor R3 commit 2 — see
-  // `overlay-compositor.paintActive(model, newRows, COLS)` below. The
-  // former `if (md.confirmMode) renderConfirmOverlay(newRows, COLS)`
-  // moved into `js/overlay/confirm.js#registerSelf`'s descriptor;
-  // the compositor paints it in zIndex order with every other
-  // migrated overlay. R3 pattern-establishing commit (mirrors R2's
-  // `ba971715` role).
-  // copy migrated — R3 commit 3. See overlay-compositor-boot.registerAll
-  // and `js/overlay/copy.js#registerSelf`.
-  // diag-log + jobs migrated to compositor in R3 commit 10. The
-  // compositor's render fn thunks `(m, newRows, cols) =>
-  // render(m.now, newRows, cols)` so `now` still rides the model
-  // clock (model-now-tick.md).
-  // pane-menu / panel-list / register-popup / which-key / action-palette
-  // / menu — all migrated to compositor registry in R3 commits 4-9.
-  // See overlay-compositor-boot.registerAll + each overlay's registerSelf.
-  // cmdline / fabric-form / fabric-field migrated to compositor
-  // registry in R3 commit 11. The mixed cmdline path (dropdown
-  // composites, prompt + cursor stay writeOut) is preserved inside
-  // the overlay body — compositor is agnostic to that.
-  if (replayData && replayView !== 'hidden') require('../overlay/replay-scrubber').render(replayData, newRows, COLS);
-  // Hover tooltip — composites LAST so it floats over every other overlay.
-  // Suppressed under a modal (keeps the invariant from before the
-  // migration). Reads live state from hoverRegion / stats.render fed in
-  // the pane pass earlier this frame.
-  if (!modes.isModal(md)) {
-    const hv = hoverRegion.get();
-    if (hv && hv.text) {
-      // esc() the resolved text (matches the footer) — it may carry user
-      // data (a mode:multi row label like `[kworker/0]`) whose `[` would
-      // else read as markup.
-      _decor().renderOverlay({
-        lines: [`[accent]${esc(hv.text)}[/]`],
-        anchor: { x: hv.x, y: hv.y + 1 },
-        maxWidth: Math.min(60, hv.text.length + 4),
-        targetRows: newRows, targetCols: COLS,
-      });
-    }
-  }
-  // Overlay-compositor Release 3 commit 1 (docs/overlay-compositor-
-  // migration.md §Release 3). Every migrated overlay registers a
-  // descriptor via `registerSelf(compositor)` at boot (app/tui.js) and
-  // paints here, in zIndex order, instead of carrying its own if-check
-  // above. Until commit 2 (first migration), the registry is empty and
-  // this call is a no-op; the if-chain + inline hover above still own
-  // every overlay paint. As overlays migrate commit-by-commit, their
-  // if-check moves from the chain to a descriptor and their paint
-  // moves from here into the compositor's loop. End-of-Release-3 the
-  // if-chain + inline hover are deleted.
+  // Overlay-compositor Release 3 — single site that paints every
+  // overlay. Replaces the 15-entry if-chain + inline hover tooltip
+  // retired through R3 (`docs/overlay-compositor-migration.md`
+  // §Release 3). Each overlay registers a descriptor via
+  // `registerSelf(compositor)`; `overlay-compositor-boot.registerAll()`
+  // calls each one at module load. paintActive walks the registry in
+  // zIndex order with the flat-modal invariant enforced structurally.
   require('./overlay-compositor').paintActive(model, newRows, COLS);
   const mainDidFull = _paintMainFrame(newRows, COLS);
   // Only force the terminal-overlay repaint when main paint actually
@@ -1024,65 +982,12 @@ function render(model) {
   // freeConfigMode's panel-list overlay moved up (overlay-compositor
   // Release 2 Phase 2.a #6): it composites into newRows BEFORE paintFrame.
   // See `renderPanelListOverlay(newRows, COLS)` above.
-  // cmdMode moved up (overlay-compositor Release 2 Phase 2.b #3): the
-  // dropdown composites into newRows BEFORE paintFrame; prompt row + cursor
-  // positioning stay direct writeOut (they sit on the footer row + are
-  // terminal state). See the `renderCmdline(newRows, COLS)` call above.
-  // confirmMode moved up (overlay-compositor Release 2 Phase 2.a #1): it
-  // composites into newRows BEFORE paintFrame so cell-diff catches its
-  // transitions. In Release 3 commit 2 the if-check moved into the
-  // compositor registry; the paint still happens before _paintMainFrame
-  // via `paintActive`.
-  // Invoke-time fabric-field popup (ports-pane in-grid edits paint themselves,
-  // gated on paneId equality inside the ports-pane's render — see
-  // overlay/fabric-field.js). Modes are mutually exclusive via the modeChain,
-  // so position next to confirmMode is safe.
-  // fabricFieldMode moved up (overlay-compositor Release 2 Phase 2.c #2):
-  // it composites into newRows BEFORE paintFrame. See the
-  // `renderFabricFieldOverlay(newRows, COLS)` call above.
-  // Fabric multi-field FORM (args→ports slice 1) — invoke-time popup for an
-  // action with 2+ `ports.in`, OR a 1-port action whose port declares
-  // `choices_fn:`/`choices_cmd:` (slice-3 follow-up: the lean popup has no
-  // choices machinery, so 1-port + choices routes here). Mutually exclusive
-  // with fabricFieldMode via the modeChain; only one is ever active in a frame.
-  // fabricFormMode moved up (overlay-compositor Release 2 Phase 2.c #1):
-  // it composites into newRows BEFORE paintFrame; prevFabricPickingSig
-  // retired. The choices popover rows are inlined into the form's single
-  // lines array (self-contained picker), so no sub-overlay rect protocol
-  // is needed. See the `renderFabricFormOverlay(newRows, COLS)` call above.
-  // registerPopupMode moved up (overlay-compositor Release 2 Phase 2.a #7):
-  // it composites into newRows BEFORE paintFrame. See the
-  // `renderRegisterPopup(newRows, COLS)` call above.
-  // prefixMode moved up (overlay-compositor Release 2 Phase 2.a #8): it
-  // composites into newRows BEFORE paintFrame. See the
-  // `renderWhichKey(newRows, COLS)` call above.
-  // paneMenuMode moved up (overlay-compositor Release 2 Phase 2.a #5): it
-  // composites into newRows BEFORE paintFrame. See the
-  // `_paneMenu().render(newRows, COLS)` call above. The `[≡]` trigger glyph
-  // is still composed inline by renderPanel({chrome}) per P4.2; the painter
-  // stamps it atomically alongside the rest of the top border.
-  // Fuzzy action palette (v0.6.44 Brief 2) — centered type-to-jump list
-  // over every group:action. Mutually exclusive with the other overlays
-  // via the modeChain; lazy-required so paint-time cost is zero when
-  // closed and the require doesn't widen the paint tree at boot.
-  // paletteMode moved up (overlay-compositor Release 2 Phase 2.b #1): it
-  // composites into newRows BEFORE paintFrame; prevPaletteSig retired. See
-  // the `renderActionPalette(newRows, COLS)` call above.
-  // jobsMode moved up (overlay-compositor Release 2 Phase 2.a #4): it
-  // composites into newRows BEFORE paintFrame. See the
-  // `renderJobsOverlay(now, newRows, COLS)` call above.
-  // diagLogMode moved up (overlay-compositor Release 2 Phase 2.a #3): it
-  // composites into newRows BEFORE paintFrame. See the
-  // `renderDiagLog(now, newRows, COLS)` call above.
-  // v0.6.6 replay arc — interactive replay-control pane moved up to
-  // the pre-paintFrame composite block (overlay-compositor Release 2
-  // Phase 2.d; prevReplayView retired). See the
-  // `require('../overlay/replay-scrubber').render(replayData, newRows, COLS)`
-  // call above.
-
-  // (Hover tooltip moved up into the pre-paintFrame composite block —
-  // overlay-compositor end-of-Release-2 cleanup; it composites into
-  // newRows alongside every other overlay now.)
+  // Every overlay (15 of them, hover tooltip included) composites into
+  // newRows BEFORE `_paintMainFrame` via `overlay-compositor.paintActive`
+  // above. Historical R2 "moved up" retirement notes retired here in R3
+  // commit 13 (end of §Release 3); overlay routing lives in the
+  // compositor registry (`overlay-compositor-boot.registerAll`), not in
+  // paint.js.
 
   // Cursor visibility — derived from mode state, single emission site.
   // Cursor *position* is set inline by renderTerminalOverlay (when in
