@@ -250,26 +250,22 @@ const _frame = {
   prevCols:         0,
   forceFull:        true,
   prevOverlayFlags: new Set(),
-  // Menu-overlay items reference from the previous frame (null when the menu was
-  // closed). A menu-in-place REPLACE keeps the `menuOpen` flag in the set (so the
-  // flag-drop check misses it) but swaps the items array + anchor — e.g. the
-  // right-click "Send selection to port…" opening its port picker. Force a full
-  // repaint on that swap so the outgoing menu's pixels are wiped. Menu NAV (j/k)
-  // preserves the items identity, so it still cell-diffs (no flicker).
-  prevMenuItems:    null,
+  // (prevMenuItems retired in overlay-compositor Release 2 Phase 2.b #2
+  // alongside the menu overlay migration. The menu-in-place replace case
+  // — right-click → "Send to port…" picker swapping items + anchor — now
+  // paints via cell-diff: menu A's cells land in newRows for frame A, menu
+  // B's cells for frame B; the diff emits only the changed cells, so A's
+  // residue is cleared without a whole-screen forceFull.)
   // Fabric-form popover signature from the previous frame ('' when no picker).
   // The popover opens/closes/items-change INSIDE the fabricFormMode overlay —
   // the flag-set check misses it (mode stays set) and the cell-diff cache keeps
   // the outgoing LARGER border's cells when the overlay shrinks. See the
   // forceFull trigger below for the sig shape + reasoning.
   prevFabricPickingSig: '',
-  // prevPaletteSig retired in overlay-compositor Release 2 Phase 2.b #1
-  // (action-palette migration): the overlay now composites into newRows,
-  // so cell-diff emits per-cell writes for the vacated rect on filter
-  // mutation / close naturally. See the paint() `md.paletteMode →
-  // renderActionPalette(newRows, COLS)` composite call. The v0.6.33 class
-  // (prevMenuItems / prevFabricPickingSig) still has two instances;
-  // Phase 2.b (menu) + 2.c (fabric-form) retire them.
+  // (prevPaletteSig retired by Phase 2.b #1, prevMenuItems retired by
+  // Phase 2.b #2.) The v0.6.33 class now has ONE remaining instance —
+  // prevFabricPickingSig — which Phase 2.c retires alongside the fabric-
+  // form popover migration.
   // PTY-overlay force-state is NOT here — it moved per-session (U2d P0a). With
   // N visible terminal panes there is no single "last overlay": each session
   // tracks its own displayed dims (session.prevW/prevH) + viewport
@@ -846,13 +842,9 @@ function render(model) {
     if (!curOverlayFlags.has(flag)) { _frame.forceFull = true; break; }
   }
   _frame.prevOverlayFlags = curOverlayFlags;
-  // Menu replaced in place (open→open, different items array): the flag-set check
-  // above can't catch it (menuOpen stays set), so force a full repaint to wipe the
-  // outgoing menu's pixels (context menu → send_to_port port picker). A fresh
-  // menu_open always builds a new items array; menu_nav preserves it (no force).
-  const menuItemsNow = (md.menuOpen && model.modal.menu) ? model.modal.menu.items : null;
-  if (menuItemsNow && _frame.prevMenuItems && menuItemsNow !== _frame.prevMenuItems) _frame.forceFull = true;
-  _frame.prevMenuItems = menuItemsNow;
+  // (Menu-replace-in-place sig tracker retired — overlay-compositor
+  // Release 2 Phase 2.b #2; cell-diff now handles the menu-A → menu-B
+  // swap from the natural newRows delta.)
   // Fabric-form popover close/resize: the fabric-form overlay stays open
   // (fabricFormMode remains true), but opening the popover grows the overlay
   // (items added as rows), and closing or shrinking the item list shrinks it.
@@ -968,10 +960,10 @@ function render(model) {
   // before `_paintMainFrame` runs the shared diff emit, so overlay cells land
   // in `prevRows` and the cell-diff catches close/shrink naturally — one of
   // the two paths that lets paint.js eventually drop its per-overlay sig
-  // trackers (prevMenuItems / prevFabricPickingSig / prevReplayView —
-  // prevPaletteSig already retired by Phase 2.b #1). Phase 2.a migrated
-  // the simple overlays; Phase 2.b retires each remaining sig tracker
-  // alongside the matching overlay.
+  // trackers (prevFabricPickingSig / prevReplayView — prevPaletteSig
+  // retired by Phase 2.b #1, prevMenuItems by Phase 2.b #2). Phase 2.a
+  // migrated the simple overlays; Phase 2.b/c/d retire each remaining
+  // sig tracker alongside the matching overlay.
   const main = viewMode === 'half' ? renderHalf(model, previewArrange)
              : viewMode === 'full' ? renderFull(model, previewArrange)
              : renderNormal(model, previewArrange);
@@ -985,6 +977,7 @@ function render(model) {
   if (md.registerPopupMode) renderRegisterPopup(newRows, COLS);
   if (md.prefixMode)  renderWhichKey(newRows, COLS);
   if (md.paletteMode) require('../overlay/action-palette').renderActionPalette(newRows, COLS);
+  if (md.menuOpen)    renderMenu(newRows, COLS);
   const mainDidFull = _paintMainFrame(newRows, COLS);
   // Only force the terminal-overlay repaint when main paint actually
   // cleared the screen (resize, overlay-close, first frame). In the steady
@@ -1012,7 +1005,9 @@ function render(model) {
   // copyMode moved up (overlay-compositor Release 2 Phase 2.a #2): it
   // composites into newRows BEFORE paintFrame. See `renderCopyMenu(newRows,
   // COLS)` call above.
-  if (md.menuOpen)    renderMenu();
+  // menuOpen moved up (overlay-compositor Release 2 Phase 2.b #2): it
+  // composites into newRows BEFORE paintFrame; prevMenuItems retired. See
+  // the `renderMenu(newRows, COLS)` call above.
   // freeConfigMode's panel-list overlay moved up (overlay-compositor
   // Release 2 Phase 2.a #6): it composites into newRows BEFORE paintFrame.
   // See `renderPanelListOverlay(newRows, COLS)` above.

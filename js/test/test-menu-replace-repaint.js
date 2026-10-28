@@ -3,11 +3,17 @@
  * its "Send selection to port…" port picker — must not leave the first menu's
  * pixels ghosting on screen.
  *
- * The menu overlay is stamped ON TOP of the cell-diffed base frame each paint;
- * the base diff can't clear a MOVED overlay (the base under the old position
- * didn't change), so only a full repaint wipes it. A menu→menu swap keeps the
- * `menuOpen` flag set, so the overlay-drop force-full check misses it — paint.js
- * forces a full repaint when the menu items array is swapped while open.
+ * Pre-overlay-compositor-migration this invariant was held by paint.js's
+ * `prevMenuItems` sig tracker — a menu→menu swap kept `menuOpen` set, so the
+ * flag-drop forceFull missed it, and a per-menu-items signature forced a
+ * whole-screen repaint on the swap.
+ *
+ * Post-migration (overlay-compositor Release 2 Phase 2.b #2) the overlay
+ * composites into newRows: menu A's cells land in newRows for frame A, menu
+ * B's for frame B. The cell-diff emits per-cell writes for every differing
+ * cell, so A's residue is cleared without a whole-screen clear. The SYMPTOM
+ * this test pins ("menu A text no longer on screen after the replace")
+ * holds under both mechanisms — the terminal state reads the same.
  *
  * Verified for real: replay the render bytes into @xterm/headless (its write is
  * async — awaited) and read the screen. Run: node js/test/test-menu-replace-repaint.js
@@ -77,7 +83,7 @@ function screenText() {
     });
     it('the replacement wipes menu A and shows the picker', () => {
       assert(afterB.includes('QQBRAVOROW'), 'picker B is on screen');
-      assert(!afterB.includes('ZZALPHAROW'), 'first menu left NO ghost (full repaint wiped it)');
+      assert(!afterB.includes('ZZALPHAROW'), 'first menu left NO ghost (cell-diff cleared the vacated cells; pre-migration this was prevMenuItems forcing a full repaint)');
     });
   });
   report();

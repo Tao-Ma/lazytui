@@ -99,15 +99,13 @@ describe('[fabric-form-popover-repaint] close/shrink forces a full repaint', () 
 });
 
 // -------------------------------------------------------------------------
-// Reusable harness: `assertOverlayShrinkForcesRepaint` — any new or existing
-// overlay that can grow/shrink within a single mode flag can pin this
-// invariant with a few lines. Rationale: the fabric-form popover bug
-// (user-caught v0.6.38) is one instance of a bug class. Other candidate
-// overlays with variable size within a stable mode flag include: `menu`
-// (replaced items — already pinned by the `prevMenuItems` tracker in
-// paint.js:837), `diagLog` (variable rows — unpinned), `jobs` (variable
-// rows — unpinned), `replayScrubber` (view mode — already pinned by
-// `prevReplayView`), and anything a future overlay author introduces.
+// Reusable harness: `assertOverlayShrinkForcesRepaint` — PRE-COMPOSITOR
+// INVARIANT. Only still exercised by the fabric-form choices popover
+// below, which hasn't migrated yet (Phase 2.c). Callers for already-
+// migrated overlays have been inverted inline — see the "action palette"
+// it block above, which asserts NO FULL_CLEAR per the compositor
+// migration (docs/overlay-compositor-migration.md). This harness retires
+// in full once the fabric-form popover migrates.
 //
 // Why a MECHANISM test (FULL_CLEAR), not a SYMPTOM test (visible residue
 // in a captured frame): the test harness captures per-render stdout
@@ -117,9 +115,10 @@ describe('[fabric-form-popover-repaint] close/shrink forces a full repaint', () 
 // previous frames. A test that captures just one render's output can't
 // catch this because the "residue" lives in the terminal's retained
 // state, not in the delta. Catching it would require a terminal-state
-// emulator (significant investment). Instead, pin the mechanism: force-
-// full-repaint on shrink is what BOTH clears residue AND is testable
-// without a terminal emulator.
+// emulator (significant investment). The pre-compositor mechanism was
+// force-full-repaint on shrink; post-compositor it's cell-diff emitting
+// per-cell writes for the vacated rect — the inverted assertion checks
+// no FULL_CLEAR AND lets the surrounding frames paint via diff.
 // -------------------------------------------------------------------------
 
 function assertOverlayShrinkForcesRepaint({ overlayName, grow, shrink }) {
@@ -132,7 +131,7 @@ function assertOverlayShrinkForcesRepaint({ overlayName, grow, shrink }) {
   shrink();
   const out = sm.capture(sm.render).raw;
   assert(out.includes(FULL_CLEAR),
-    `RESIDUE RISK for ${overlayName}: shrink/close did NOT emit a full-repaint. Without it, the outgoing LARGER overlay's cells linger in the terminal because the cell-diff ONLY tracks the main-frame content layer — overlays paint directly to stdout bypassing newRows, so the diff can't emit "clear these cells". Fix: track a per-frame signature of this overlay's state in paint.js and set _frame.forceFull=true on any shrink transition. See the fabric-form popover sig tracker (paint.js, 'prevFabricPickingSig') and the menu-items-replaced trigger ('prevMenuItems') for templates.`);
+    `RESIDUE RISK for ${overlayName}: shrink/close did NOT emit a full-repaint. This overlay is still on the PRE-COMPOSITOR path (not yet migrated — see docs/overlay-compositor-migration.md). Without the force the outgoing LARGER overlay's cells linger in the terminal because the overlay bypasses newRows. The fix once this overlay migrates is to composite into newRows (overlay-compositor Release 2); until then, the sig tracker in paint.js that force-fulls on shrink is the mechanism. The last remaining sig tracker is 'prevFabricPickingSig' (Phase 2.c target).`);
 }
 
 describe('[overlay-shrink-invariant] generic harness pins each variable-size overlay', () => {
@@ -174,15 +173,14 @@ describe('[overlay-shrink-invariant] generic harness pins each variable-size ove
       'palette filter mutation emitted a full-clear — the compositor path (prevPaletteSig retired, overlay composites into newRows) promises cell-diff clears the vacated rect from the natural row delta');
   });
 
-  // Future variable-size overlays go here. Each is one block ≈ 6 lines.
-  //
-  // When adding a new overlay that can change size while its mode flag
-  // stays set, add an `it()` block here with its grow/shrink stimuli.
-  // That exercise forces the author to think about residue before
-  // merging — same discipline as [[feedback_render_test_new_overlays]].
-  // The harness fails with a specific, actionable message pointing at
-  // the two template implementations in paint.js (prevFabricPickingSig
-  // + prevMenuItems).
+  // Future variable-size overlays — if any — go here. Each new overlay
+  // that adopts the compositor path (overlay-compositor Release 2
+  // onwards) is shrink-safe BY CONSTRUCTION: cell-diff emits per-cell
+  // writes for the vacated rect from the natural newRows delta. The
+  // residue-risk discipline shifts from "add a sig tracker to paint.js"
+  // to "thread newRows+cols through renderOverlay"; the companion test
+  // for a new overlay is a no-FULL_CLEAR-on-shrink assertion (see
+  // test-action-palette-overlay-composite.js for the shape).
 });
 
 report();

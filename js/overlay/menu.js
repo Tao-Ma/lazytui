@@ -45,7 +45,16 @@ function menuScroll(idx, total, innerH) {
   return Math.max(0, Math.min(idx - Math.floor(innerH / 2), total - innerH));
 }
 
-function renderMenu() {
+// Overlay-compositor migration (Release 2 Phase 2.b #2 — second medium
+// overlay). When `newRows` + `cols` are threaded in by paint.js, the
+// overlay composites into the main-frame row buffer through
+// `renderOverlay`'s `targetRows` path. THIS commit also deletes the
+// `prevMenuItems` sig tracker from paint.js — the one that force-fulled
+// on a menu-replace-in-place (right-click → "Send to port…" picker).
+// Cell-diff now emits per-cell writes for the exact changed cells, so a
+// menu-A → menu-B swap paints only the cells that differ (the two menus'
+// disjoint rects + any shared-rect text that changed).
+function renderMenu(newRows, cols) {
   const { items, idx, anchor, title } = getModel().modal.menu;
   const { lines, selPos, selCount } = _menuLines(items, idx);
   // v0.6.4 Theme F Phase 3 — a right-click threads a cursor anchor; the menu
@@ -54,7 +63,9 @@ function renderMenu() {
   // 'Menu' (command list); the right-click context menu passes 'Actions'.
   const { menuH } = overlayBox({ linesLen: lines.length, anchor, maxWidth: MENU_MAX_WIDTH });
   const scrollOffset = menuScroll(idx, lines.length, Math.max(1, menuH - 2));
-  renderOverlay({ lines, title: title || 'Menu', count: [selPos, selCount], anchor, maxWidth: MENU_MAX_WIDTH, scrollOffset });
+  renderOverlay({ lines, title: title || 'Menu', count: [selPos, selCount], anchor,
+                  maxWidth: MENU_MAX_WIDTH, scrollOffset,
+                  targetRows: newRows || null, targetCols: cols || 0 });
 }
 
 /**

@@ -134,8 +134,17 @@ describe('[2] right-click opens the context menu at the cursor', () => {
     // distinguishable from the centered placement.
     const ax = 3, ay = 2;
     sm.capture(() => sm.render());
-    sm.capture(() => sm.handleMouse('right', ax, ay));
-    const { raw } = sm.capture(() => sm.render());
+    // Capture the ANSI the mouse+render pair writes. Overlay-compositor
+    // Release 2 Phase 2.b #2 (menu migrated to the newRows path): the
+    // menu now paints via cell-diff rather than a re-emit-every-render
+    // stdout write, so the menu bytes land in the same frame as the
+    // applyMsg's scheduleRender (Release 1 trailing paint). A later
+    // explicit sm.render() is a diff no-op. Grouping both into one
+    // capture is behaviourally identical pre- AND post-migration.
+    const { raw } = sm.capture(() => {
+      sm.handleMouse('right', ax, ay);
+      sm.render();
+    });
     // Decode the painted frame onto a 1-based cursor grid (same technique
     // as smoke/hit-zones.js) and find the row carrying the context-menu
     // title ("Actions" — the right-click menu; the `x` command list is "Menu").
