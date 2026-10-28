@@ -27,9 +27,15 @@ const compositor = require('./overlay-compositor');
  * harness setup fn.
  */
 function registerAll() {
-  // Simple overlays — each exports `registerSelf` + a render fn thunked
-  // from the descriptor. zIndex ascends to match the retired paint.js
-  // if-chain's historical paint order.
+  // zIndex bands:
+  //    10-140: mode-flag-driven overlays, zIndex-ascending matches the
+  //            retired paint.js if-chain's historical paint order (the
+  //            compositor paints low→high so a user sees the same stack).
+  //    141-998: reserved for future tiered overlays (toasts, banners).
+  //    999+:   "always on top" tier — currently just hover-tooltip.
+  //
+  // Mode-flag overlays — descriptor's render fn thunks the overlay's
+  // existing render fn; isActive reads a single `model.modes.*` flag.
   require('../overlay/confirm').registerSelf(compositor);          //  10
   require('../overlay/copy').registerSelf(compositor);             //  20
   require('../overlay/diag-log').registerSelf(compositor);         //  30
@@ -43,8 +49,11 @@ function registerAll() {
   require('../overlay/cmdline').registerSelf(compositor);          // 110
   require('../overlay/fabric-form').registerSelf(compositor);      // 120
   require('../overlay/fabric-field').registerSelf(compositor);     // 130
-  require('../overlay/replay-scrubber').registerSelf(compositor);  // 140
-  require('../overlay/hover-tooltip').registerSelf(compositor);    // 999 — floats above all
+  // State-driven overlays — isActive reads injected or singleton state
+  // instead of a model.modes flag. Each wire-up lives next to the
+  // descriptor registration site that depends on it.
+  require('../overlay/replay-scrubber').registerSelf(compositor);  // 140 — isActive gates on injected replay data (setDataSource at tui.js boot)
+  require('../overlay/hover-tooltip').registerSelf(compositor);    // 999 — isActive gates on hoverRegion.get() + modal-suppression
 }
 
 module.exports = { registerAll };

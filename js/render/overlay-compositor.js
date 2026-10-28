@@ -67,9 +67,12 @@ function _active(model) {
     const sorted = modals.slice().sort((a, b) => (b.zIndex | 0) - (a.zIndex | 0));
     const kept = sorted[0];
     const dropped = sorted.slice(1).map(d => d.id);
-    // Dev-warn only. In production this surfaces in the diag-log via
-    // the global console.warn capture; in tests it goes to stderr and
-    // the test can assert on it by stubbing console.warn.
+    // Dev-warn only — goes to stderr in both production and tests. The
+    // compositor is the structural safety net; the message names the
+    // kept + dropped ids so a dev scanning stderr can trace back to the
+    // broken reducer Msg that flipped two modal flags concurrently.
+    // Tests can assert on this by stubbing console.warn (see
+    // test-overlay-compositor.js's flat-modal pins).
     console.warn('[overlay-compositor] two modal overlays active — this is a bug',
       { kept: kept.id, dropped });
     keep = act.filter(d => !d.modal || d === kept);

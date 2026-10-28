@@ -1,10 +1,12 @@
 # Overlay compositor migration — v0.6.50 → v0.6.52
 
-> **Status**: Release 1 shipped v0.6.50 (`54b5bbf1`); Release 2
-> shipped v0.6.51 (`54b5bbf1..6d1e7f53` — 20 commits, see CHANGELOG);
-> Release 3 is next. Written 2026-10-27 after the fifth same-day
-> field-caught repaint fix (v0.6.49 shrink class #3). User asked for
-> an architectural review; this is the three-release plan that resulted.
+> **Status**: COMPLETE. Release 1 shipped v0.6.50 (`54b5bbf1`);
+> Release 2 shipped v0.6.51 (`54b5bbf1..6d1e7f53` — 20 commits);
+> Release 3 shipped v0.6.52 (`baee7d7b..f19e92cb` — 8 commits).
+> See CHANGELOG for each release's scorecard. Written 2026-10-27
+> after the fifth same-day field-caught repaint fix (v0.6.49
+> shrink class #3). User asked for an architectural review; this
+> is the three-release plan that resulted.
 
 ## Motivation
 
@@ -59,10 +61,10 @@ composite overlays into their main frame buffer. We took a shortcut
 to avoid composition complexity; the bill comes due in sig trackers.
 The fix is literally "do what a GUI compositor does."
 
-## End state (after v0.6.52)
+## End state (shipped v0.6.52)
 
 ```
-                          BEFORE (now)                       AFTER (v0.6.52)
+                          BEFORE (v0.6.49)                   AFTER (shipped v0.6.52)
 paint.js overlay dispatch 15 if-statements                   compositor.paintActive(model, newRows)
 Overlay write target      stdout (side-channel)              newRows buffer (same as main frame)
 Sig trackers              prevMenuItems, prevFabricPicking,  deleted
@@ -212,13 +214,21 @@ End of Release 2: after all 15 overlays migrated, delete the `if (targetRows) {.
 
 ## Release 3 — v0.6.52 — compositor registry (Option 4)
 
-**Status**: NEXT. Pre-release architectural review for v0.6.51 flagged
-two FYIs that Release 3's `zIndex` structurally absorbs: paint.js's
-composite order (`paint.js:943-956`) doesn't match `modes.js`
-CHAIN_MODES precedence (latent today — modeChain enforces mutual
-exclusion at the reducer); replay-scrubber stacking relative to modal
-overlays is implicit. Release 3's descriptor-with-zIndex is the
-structural fix for both.
+**Status**: **Shipped v0.6.52** (`baee7d7b..f19e92cb` — 8 commits,
+2026-10-28). All 15 overlays migrated to a declarative registry;
+paint.js's 15-entry if-chain is zero. New files:
+`js/render/overlay-compositor.js` (registry primitives +
+flat-modal gate + zIndex sort), `js/render/overlay-compositor-boot.js`
+(the one site that lists every migrated overlay), `js/overlay/
+hover-tooltip.js` (factored out of the paint.js inline block).
+Replay-scrubber uses an injected data source (`setDataSource` wired
+at tui.js boot) to preserve its pure-of-dispatch invariant. Two
+new test files pin the pipeline: `test-overlay-compositor.js`
+(registry primitives) + `test-overlay-compositor-registry.js`
+(all-15-descriptors integration pin + flat-modal gate + zIndex
+sort). The two FYIs from v0.6.51's pre-release review (composite
+order vs modeChain precedence; replay-scrubber implicit stacking)
+are structurally resolved by the new descriptor zIndex.
 
 **Target**: close the pattern-level loop. paint.js's imperative if-chain goes away. Overlays become declarative.
 
@@ -312,7 +322,14 @@ Decision point: delete the per-arm checks (compositor is single source of truth)
    its own output, then that output composites into newRows as one
    overlay. `prevFabricPickingSig` deleted in the same commit.
 
-2. **Terminal pane overlay.** The embedded PTY pane's cells are updated out-of-band by the PTY data stream, bypassing `newRows` entirely. The compositor model assumes all overlays composite into `newRows`. Terminal panes are not quite overlays today — they live as pane kinds. Confirm this during Release 3 planning; they probably stay out of the compositor and keep their session.prevFrame caching.
+2. **Terminal pane overlay.** **RESOLVED during Release 3.** The
+   embedded PTY pane stays out of the compositor: no descriptor was
+   registered for it, and its per-session `prevFrame` caching +
+   `renderTerminalOverlay` call-site (paint.js, after `paintActive`)
+   are unchanged. The compositor's model (every overlay composites
+   into `newRows`) doesn't fit the PTY's out-of-band write path.
+   Future toast / banner overlays follow the compositor path; the
+   PTY surface keeps its own.
 
 3. **Toast / ephemeral overlays.** Compositor pattern makes toasts (notifications that fade) possible. Not planned for this migration; mentioned so a future "add toasts" task has a known home.
 
@@ -336,8 +353,13 @@ Rough: 1–2 weeks of focused work total, across 6–11 sessions. Not time-bound
 
 ## Session kickstart
 
-Next session (fresh, zero context) should start with **Release 3**
-(§Release 3 above). Releases 1 and 2 shipped v0.6.50 / v0.6.51 on
-2026-10-28; see each §Status line for commit refs. Reference docs:
-this file, plus the five topic files from the 2026-10-27 fix run
-(project_v0645…v0649) that motivated the plan.
+The three-release overlay-compositor migration is **COMPLETE** as
+of v0.6.52 (2026-10-28). The pattern-level loop that motivated the
+plan (overlays bypassing cell-diff → sig-tracker proliferation →
+force_full_repaint cascades) is closed. See each release's §Status
+line above for commit refs + CHANGELOG for scorecards. Future
+overlay author: register a descriptor via `registerSelf(compositor)`
+and add one line to `overlay-compositor-boot.registerAll()`; the
+compositor handles paint ordering, flat-modal enforcement, and
+cell-diff integration automatically. For toast / ephemeral overlays
+see §Open question #3 — not planned for this arc.

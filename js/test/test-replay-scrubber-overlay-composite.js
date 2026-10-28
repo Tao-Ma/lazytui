@@ -157,13 +157,22 @@ describe('[replay-scrubber-overlay-composite] composites both views into newRows
 });
 
 describe('[replay-scrubber-overlay-composite] no FULL_CLEAR on paneView transitions through the paint pipeline', () => {
-  // Wire a module-level replay source so paint.js's render() sees the
-  // synthesized data; the real setReplaySource lives in paint.js, which
-  // is loaded on sm.render's first import. We mutate the source by
-  // swapping which synthData the thunk returns before each render.
+  // Wire BOTH the paint.js data source AND the overlay module's own
+  // injected source (R3 commit 12 — the overlay reads its data via
+  // `_dataSource` set at tui.js boot, same source paint.js uses for
+  // diffMode). Pre-R3 only `paint.setReplaySource` existed, which
+  // directly drove the scrubber's if-check inside render(). Post-R3
+  // the compositor's descriptor `isActive` reads `overlay-side
+  // _dataSource` — a test that only wires paint-side would see
+  // `isActive === false` always → the scrubber never activates →
+  // these transitions pass VACUOUSLY. Wire both so the pipeline
+  // actually exercises the overlay.
   const { setReplaySource } = require('../render/paint');
+  const { setDataSource: setOverlayDataSource } = require('../overlay/replay-scrubber');
   let currentView = 'hidden';
-  setReplaySource(() => currentView === 'hidden' ? null : _synthData(currentView));
+  const _thunk = () => currentView === 'hidden' ? null : _synthData(currentView);
+  setReplaySource(_thunk);
+  setOverlayDataSource(_thunk);
 
   process.stdout.columns = 100; process.stdout.rows = 30;
   const sm = require('./smoke/_helpers/smoke');
@@ -196,8 +205,9 @@ describe('[replay-scrubber-overlay-composite] no FULL_CLEAR on paneView transiti
       'mini → hidden emitted a full-clear — the compositor path promises cell-diff clears the vacated mini-bar cells');
   });
 
-  // Restore the seam so later tests in the file loader don't see our hook.
+  // Restore both seams so later tests in the file loader don't see our hook.
   setReplaySource(null);
+  setOverlayDataSource(null);
 });
 
 report();

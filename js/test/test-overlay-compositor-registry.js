@@ -81,7 +81,13 @@ describe('[overlay-compositor-registry] registerAll produces the expected shape'
     },
   };
 
-  it('every expected id is reachable via activeOverlayIds (with a mode-everything model)', () => {
+  it('flat-modal gate + zIndex sort: mode-everything surfaces (non-modals + highest-zIndex modal), zIndex-ascending', () => {
+    // NAME NOTE — the "every expected id reachable" claim this test
+    // used to carry overclaimed. The per-overlay single-flag pin below
+    // is what reaches each id in isolation; THIS pin is specifically
+    // about (a) the flat-modal gate selecting the highest zIndex and
+    // (b) the active list sort order. See code review R3 for the
+    // naming clarification.
     const ids = compositor.activeOverlayIds(everything);
     // modal-flat-invariant: with 11 modals all active, 10 are dropped,
     // only the HIGHEST zIndex modal (fabric-field, z=130) survives.

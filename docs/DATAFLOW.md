@@ -149,12 +149,18 @@ greppable.
           _safeRender(panel, w, h)
             (renderer resolved by the pane's ACTIVE-tab instance kind,
              U2f; slice via sliceForPane) → newRows (per-cell row buffer)
-     3. overlays composite INTO newRows
-          (confirm, copy, diag-log, jobs, pane-menu, panel-list,
-           register-popup, which-key, action-palette, menu, cmdline
-           dropdown, fabric-form, fabric-field, replay-scrubber, hover
-           tooltip — overlay-compositor Release 2). Cmdline prompt row
-           + cursor stay direct writeOut (sit outside newRows).
+     3. overlays composite INTO newRows via
+          `overlay-compositor.paintActive(model, newRows, COLS)`
+          (overlay-compositor Release 3 — the compositor walks a
+           declarative registry populated at module load by
+           `overlay-compositor-boot.registerAll()`; descriptors are
+           sorted zIndex-ascending with the flat-modal invariant
+           structurally enforced). 15 overlays: confirm, copy, diag-
+           log, jobs, pane-menu, panel-list, register-popup, which-
+           key, action-palette, menu, cmdline dropdown, fabric-form
+           (+ embedded picker), fabric-field, replay-scrubber, hover
+           tooltip. Cmdline prompt row + cursor stay direct writeOut
+           (sit outside newRows).
      4. painter.composeRows + paintFrame
                                   (per-cell diff vs _frame.prevRows;
                                    now includes overlay cells from the

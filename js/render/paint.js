@@ -250,19 +250,12 @@ const _frame = {
   prevRows:         [],
   prevCols:         0,
   forceFull:        true,
-  // (prevMenuItems retired in overlay-compositor Release 2 Phase 2.b #2
-  // alongside the menu overlay migration. The menu-in-place replace case
-  // — right-click → "Send to port…" picker swapping items + anchor — now
-  // paints via cell-diff: menu A's cells land in newRows for frame A, menu
-  // B's cells for frame B; the diff emits only the changed cells, so A's
-  // residue is cleared without a whole-screen forceFull.)
-  // (All four paint.js sig trackers retired: prevPaletteSig by Phase
-  // 2.b #1, prevMenuItems by Phase 2.b #2, prevFabricPickingSig by Phase
-  // 2.c #1, prevReplayView by Phase 2.d. The v0.6.33 shrink class is
-  // fully gone; every overlay rides on cell-diff from the natural
-  // newRows delta. The global overlay-flag-drop forceFull in render()'s
-  // head is the only remaining whole-screen force; it retires once all
-  // `overlay: true` modes verify shrink-safe end-to-end.)
+  // All four paint.js overlay sig trackers (`prevPaletteSig`,
+  // `prevMenuItems`, `prevFabricPickingSig`, `prevReplayView`) retired
+  // in overlay-compositor R2 Phase 2.b/c/d (CHANGELOG v0.6.51); the
+  // global overlay-flag-drop forceFull went in R2 cleanup `6d1e7f53`.
+  // Every overlay rides on cell-diff from the natural newRows delta
+  // now, with the compositor registry (R3) as the single dispatch site.
   // PTY-overlay force-state is NOT here — it moved per-session (U2d P0a). With
   // N visible terminal panes there is no single "last overlay": each session
   // tracks its own displayed dims (session.prevW/prevH) + viewport
@@ -832,24 +825,17 @@ function render(model) {
   // every overlay close + every A→B transition; its removal is the final
   // whole-screen forceFull going away from render()'s head.)
   const md = model.modes;
-  // (Menu-replace-in-place sig tracker retired — overlay-compositor
-  // Release 2 Phase 2.b #2; cell-diff now handles the menu-A → menu-B
-  // swap from the natural newRows delta.)
-  // (Fabric-form popover sig tracker retired — overlay-compositor
-  // Release 2 Phase 2.c #1; cell-diff now handles the picker
-  // open/close/items-count transitions from the natural newRows delta.
-  // The picker rows are inlined into the form's single lines array, so
-  // the compositor sees them as just more rows to paint — the "self-
-  // contained" picker design the plan recommended.)
-  // (prevPaletteSig retired — overlay-compositor Release 2 Phase 2.b #1;
-  // cell-diff now handles palette filter mutation / close transitions
-  // from the natural newRows delta.)
-  // v0.6.6 replay arc — the replay-control pane is module-flagged (not in
-  // model.modes); its paneView (`full`/`mini`/`hidden`) carries the view
-  // state. (prevReplayView sig tracker retired — overlay-compositor
-  // Release 2 Phase 2.d; the full↔mini↔hidden transitions now ride on
-  // cell-diff from the natural newRows delta, since the overlay composites
-  // into newRows and each view mode fills a different cell set.)
+  // R2 sig-tracker retirements (prevPaletteSig / prevMenuItems /
+  // prevFabricPickingSig / prevReplayView) collectively covered here —
+  // see CHANGELOG v0.6.51 for the per-overlay rationale. Cell-diff on
+  // newRows is the shared mechanism; the compositor (R3) is where the
+  // dispatch lives now.
+  //
+  // v0.6.6 replay arc — the replay-control pane is module-flagged (not
+  // in model.modes); its paneView (`full`/`mini`/`hidden`) carries the
+  // view state. The overlay reads it via its own injected data source
+  // (R3 commit 12); paint.js reads the same source here for the
+  // diffMode highlight below.
   const replayData = _replaySource ? _replaySource() : null;
   const replayView = replayData ? replayData.paneView : 'none';
   // v0.6.6 replay arc — change-highlight mode (off/line/cell) drives whether the
@@ -971,21 +957,11 @@ function render(model) {
   // regex injection (injectTopRowChrome / injectTabTrigger). The
   // painter stamps the row with the glyphs already in place, so no
   // second write and no cursor-move-back-and-overpaint flicker.
-  // Overlays are mutually exclusive in practice (modeChain enforces it).
-  // Order matches dispatch.js's modeChain: free-config > menu > copy.
-  // copyMode moved up (overlay-compositor Release 2 Phase 2.a #2): it
-  // composites into newRows BEFORE paintFrame. See `renderCopyMenu(newRows,
-  // COLS)` call above.
-  // menuOpen moved up (overlay-compositor Release 2 Phase 2.b #2): it
-  // composites into newRows BEFORE paintFrame; prevMenuItems retired. See
-  // the `renderMenu(newRows, COLS)` call above.
-  // freeConfigMode's panel-list overlay moved up (overlay-compositor
-  // Release 2 Phase 2.a #6): it composites into newRows BEFORE paintFrame.
-  // See `renderPanelListOverlay(newRows, COLS)` above.
   // Every overlay (15 of them, hover tooltip included) composites into
   // newRows BEFORE `_paintMainFrame` via `overlay-compositor.paintActive`
-  // above. Historical R2 "moved up" retirement notes retired here in R3
-  // commit 13 (end of §Release 3); overlay routing lives in the
+  // above. Overlays are mutually exclusive in practice (modeChain enforces
+  // it); the compositor's flat-modal invariant is the structural safety
+  // net. Overlay routing lives in the
   // compositor registry (`overlay-compositor-boot.registerAll`), not in
   // paint.js.
 

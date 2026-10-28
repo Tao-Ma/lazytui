@@ -6,6 +6,90 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.52] — 2026-10-28
+
+Overlay-compositor migration — **Release 3 of 3** — COMPLETE
+(`docs/overlay-compositor-migration.md`). Closes the pattern-level
+loop that motivated the three-release arc: overlays are now
+declarative; paint.js's 15-entry if-chain is zero. 8 commits
+(`baee7d7b..f19e92cb`).
+
+### Added
+
+- **`js/render/overlay-compositor.js`** — descriptor registry +
+  `paintActive(model, newRows, cols)` + `activeOverlayIds(model)` +
+  the structural flat-modal invariant. Two `modal: true` descriptors
+  active simultaneously → keep the higher `zIndex`, drop the other,
+  log a dev-warn to stderr naming kept + dropped. zIndex-ascending
+  paint order (low → under, high → on top).
+- **`js/render/overlay-compositor-boot.js`** — the one site that
+  lists every migrated overlay. `registerAll()` runs once at module
+  load (side-effect `require` from `paint.js`) so every path that
+  reaches the render pipeline — production boot, smoke harness,
+  headless unit tests, replay fold — gets the same registry.
+- **`js/overlay/hover-tooltip.js`** — factored out of paint.js's
+  inline hover block. Reads `hoverRegion.get()` directly (hoverRegion
+  is a pure panel-layer singleton); zIndex=999 preserves the "floats
+  above every other overlay" invariant.
+- **`js/test/test-overlay-compositor.js`** — unit pins for registry
+  primitives (register/activeOverlayIds/paintActive/flat-modal).
+- **`js/test/test-overlay-compositor-registry.js`** — integration pin:
+  all 15 descriptors reachable + zIndex order + per-overlay
+  single-flag isolation + end-to-end paintActive call.
+
+### Changed (architecture)
+
+- **Every overlay registers a descriptor** via `registerSelf(compositor)`:
+  `{id, isActive, render, modal, zIndex}`. Each overlay's render fn
+  thunks to the existing render fn (overlay bodies untouched; this
+  release is plumbing-only). 15 descriptors total (confirm, copy,
+  diag-log, jobs, pane-menu, panel-list, register-popup, which-key,
+  action-palette, menu, cmdline, fabric-form, fabric-field,
+  replay-scrubber, hover-tooltip).
+
+- **paint.js's 15-entry if-chain is gone.** The 15 `if (md.XMode)
+  renderX(...)` statements plus the inline hover block collapsed to
+  one `overlay-compositor.paintActive(model, newRows, COLS)` call
+  between the main-frame compose pass and `_paintMainFrame`'s
+  cell-diff. Dead imports retired. ~60 lines of "moved up" R2
+  retirement comments collapsed to a single pointer.
+
+- **Replay-scrubber uses an injected data source** (`setDataSource(fn)`)
+  wired at tui.js boot from the SAME `replay-control.renderData`
+  that paint.js uses for diffMode. Preserves the overlay's
+  pure-of-dispatch invariant: overlay/ never imports upward into
+  dispatch/. The descriptor's `isActive` reads the injected source
+  and gates on `paneView !== 'hidden'`.
+
+### Changed (tests)
+
+- **`test-replay-scrubber-overlay-composite.js`** — wires BOTH
+  `paint.setReplaySource` AND the new overlay-side
+  `replay-scrubber.setDataSource`. Pre-R3 only paint-side existed;
+  post-R3 the compositor reads overlay-side, so a test wiring only
+  paint would pass vacuously (overlay never activates). Caught by
+  the pre-release review.
+
+### Performance
+
+No measured regression. Previously the if-chain was `n` branches
+with mostly-cheap `md.X` checks; the registry is a filter + sort over
+15 descriptors. Both are O(n) with tiny constants.
+
+### Not changed
+
+- The embedded PTY pane stays out of the compositor (plan §Open
+  question #2 confirmed-resolved). Its `renderTerminalOverlay` runs
+  after `paintActive` + `_paintMainFrame`; per-session `prevFrame`
+  caching unchanged.
+- Reducer-side `isChainActive` guards remain as belt-and-suspenders
+  (plan's recommended Decision point). The compositor's flat-modal
+  gate is the structural net; the reducer guard prevents a broken
+  Msg from flipping two flags in the first place.
+- Overlay BODIES untouched. Only paint.js, boot wiring, and the
+  retired if-check sites changed. Behavior-preserving across the
+  whole suite.
+
 ## [0.6.51] — 2026-10-28
 
 Overlay-compositor migration — **Release 2 of 3**

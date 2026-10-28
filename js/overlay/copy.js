@@ -125,14 +125,13 @@ function clearOptions() { _options = []; }
  * Centered popup overlay listing the copy options — reads the render-safe
  * options + idx the reducer mirrors into model.modal.copy.
  *
- * Overlay-compositor migration (Release 2 Phase 2.a #2 — Overlay #2 of 9
- * simple overlays). When `newRows` + `cols` are threaded in by paint.js,
- * the overlay composites into the main-frame row buffer through
- * `renderOverlay`'s `targetRows` path — cell-diff then handles both the
- * leading paint AND the clean-up on close/resize from the natural row
- * delta. Omitted (unit tests / migration-period callers) → `renderOverlay`
- * falls back to the stdout path. Same shape as `renderConfirmOverlay`;
- * see docs/overlay-compositor-migration.md §Release 2 Phase 2.a.
+ * Overlay-compositor migration (Release 2 Phase 2.a #2 — Overlay #2 of 8
+ * simple overlays). `newRows` + `cols` are threaded in by the compositor
+ * (R3) through `renderOverlay`'s `targetRows` path; cell-diff then
+ * handles both the leading paint AND the clean-up on close/resize from
+ * the natural row delta. End-of-Release-2 cleanup (`47c6b0fe`) removed
+ * the stdout fallback; a call that omits newRows now crashes loudly
+ * inside `compositeRow`. See docs/overlay-compositor-migration.md.
  */
 function renderCopyMenu(newRows, cols) {
   if (!getModel().modes.copyMode) return;
