@@ -34,7 +34,16 @@ function whichKeyLines(node) {
   });
 }
 
-function renderWhichKey() {
+// Overlay-compositor migration (Release 2 Phase 2.a #8 — final simple
+// overlay). When `newRows` + `cols` are threaded in by paint.js, the
+// overlay composites into the main-frame row buffer through
+// `renderOverlay`'s `targetRows` path — cell-diff then handles both the
+// leading paint AND the clean-up on close/resize from the natural row
+// delta. This commit also drops the explicit `force_full_repaint` the
+// `prefix_key` reducer arm emitted on subtree descent (the overlay
+// resizing when a subtree has fewer continuations — a Class-A workaround
+// the compositor path makes redundant).
+function renderWhichKey(newRows, cols) {
   // Re-derive the live tree node from the serializable prefixSeq (the node
   // itself is never model-resident — it holds run closures). A broken/empty
   // path falls back to the root.
@@ -44,7 +53,8 @@ function renderWhichKey() {
   const seq = (getModel().prefixSeq && getModel().prefixSeq.length)
     ? 'leader ' + getModel().prefixSeq.join(' ')
     : 'leader';
-  renderOverlay({ lines: whichKeyLines(node), title: `\\[${seq}]`, count: null });
+  renderOverlay({ lines: whichKeyLines(node), title: `\\[${seq}]`, count: null,
+                  targetRows: newRows || null, targetCols: cols || 0 });
 }
 
 /**

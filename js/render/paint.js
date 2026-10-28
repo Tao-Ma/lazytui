@@ -1003,6 +1003,7 @@ function render(model) {
   if (md.paneMenuMode) _paneMenu().render(newRows, COLS);
   if (md.freeConfigMode) renderPanelListOverlay(newRows, COLS);
   if (md.registerPopupMode) renderRegisterPopup(newRows, COLS);
+  if (md.prefixMode)  renderWhichKey(newRows, COLS);
   const mainDidFull = _paintMainFrame(newRows, COLS);
   // Only force the terminal-overlay repaint when main paint actually
   // cleared the screen (resize, overlay-close, first frame). In the steady
@@ -1052,7 +1053,9 @@ function render(model) {
   // registerPopupMode moved up (overlay-compositor Release 2 Phase 2.a #7):
   // it composites into newRows BEFORE paintFrame. See the
   // `renderRegisterPopup(newRows, COLS)` call above.
-  if (md.prefixMode)  renderWhichKey();
+  // prefixMode moved up (overlay-compositor Release 2 Phase 2.a #8): it
+  // composites into newRows BEFORE paintFrame. See the
+  // `renderWhichKey(newRows, COLS)` call above.
   // paneMenuMode moved up (overlay-compositor Release 2 Phase 2.a #5): it
   // composites into newRows BEFORE paintFrame. See the
   // `_paneMenu().render(newRows, COLS)` call above. The `[≡]` trigger glyph

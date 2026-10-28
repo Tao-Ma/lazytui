@@ -181,12 +181,15 @@ function update(model, msg) {
       const nextNode = kb.resolve(kb.nodeForSeq(model.prefixSeq), tok);
       if (!nextNode) return [cancelled(), []];
       const seq = model.prefixSeq.concat(tok);
-      // Descend: which-key popup re-renders with the subtree's
-      // continuations. If the subtree shrinks, prior overlay border rows
-      // are exposed under-content the diff cache treats as unchanged
-      // (panels are frozen during prefix mode), so prior pixels stick.
-      // Force a full repaint on every descend.
-      if (nextNode.children) return [{ ...model, prefixSeq: seq }, [{ type: 'force_full_repaint' }]];
+      // Overlay-compositor Release 2 Phase 2.a #8: which-key composites
+      // into newRows now, so the subtree-descend transition rides on
+      // cell-diff. A smaller subtree shrinks the overlay rect; the
+      // vacated border rows differ from prevRows → cell-diff emits
+      // per-cell writes to clear them. The former per-arm
+      // `force_full_repaint` (Class-A workaround for the overlay
+      // bypassing newRows) is retired. applyMsg's depth-0 trailing
+      // paint (Release 1) still fires, so the descend still paints.
+      if (nextNode.children) return [{ ...model, prefixSeq: seq }, []];
       // leaf — exit prefix mode and emit the binding. The `run` closure rides
       // the run_binding Cmd (an effect, discarded after firing), never the model.
       return [{ ..._withModes(model, { prefixMode: false }), prefixSeq: [] },
