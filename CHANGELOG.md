@@ -6,6 +6,49 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.54] — 2026-10-30
+
+`feature/archive.js` adopts v0.6.53's atomic-save pattern, closing
+the follow-up the image-backup brief flagged. 1 commit (`0139056f`).
+
+### Changed
+
+- **Atomic save in the synthesized `archive` action.** The tar step
+  now writes to `<OUT>.partial`; the sha256 is computed from the
+  partial; `mv` partial → final; the sidecar is written LAST. An
+  interrupt (Ctrl-C / SSH drop / power loss) during a same-day
+  re-run can no longer truncate the previous good archive under
+  `<name>-<date>.tar.xz`. Stale `.partial` siblings are swept by
+  the next run's scoped `rm -f <dir>/<name>-*.tar.xz.partial`.
+  Mirrors the invariants image-backup established in v0.6.53; `set
+  -e` suffices (no pipeline), so no bash subshell or `pipefail`
+  needed — simpler than image-backup's save.
+
+### Not changed — zero migration for existing sidecars
+
+- **Sidecar line format.** The pre-v0.6.54 line was `<hash>  <OUT>`
+  (output of `$SUM "$OUT"`, where `$OUT` is the project_dir-relative
+  archive path). v0.6.54 uses `printf '%s  %s\n' "$HASH" "$OUT"`,
+  which produces byte-identical output. The synthesized `verify`
+  runs `$SUM -c "$file.sha256"` from project_dir, so the recorded
+  path has to resolve from there — copying image-backup's basename
+  shape would break every new archive while old ones still verified.
+  All existing `.sha256` sidecars on disk stay valid without
+  re-saving.
+- **`verify` script bytes unchanged.** Pinned by a new byte-shape
+  assertion in `test-archive.js`.
+
+### Tests
+
+`test-archive.js` extended with shape pins for the atomic invariants
+(tar target is `.partial`; mv precedes sidecar; sidecar line uses
+`printf` with pre-mv hash and the full relative path, not basename;
+stale-partial cleanup is scoped and its glob metacharacter sits
+outside the single-quoted literals; `*.tar.xz` doesn't match
+`.tar.xz.partial`) and a byte-shape pin for `verify`. End-to-end
+`archive → verify` round-trip still green. 37 passed across 17
+tests; full suite 278 files + smoke 22 scenarios green.
+
 ## [0.6.53] — 2026-10-28
 
 image-backup plugin lifted to the same `.sha256` sidecar discipline
