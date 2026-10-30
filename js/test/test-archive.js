@@ -70,6 +70,67 @@ describe('[2] groupActions synthesizes archive + verify', () => {
   });
 });
 
+describe('[2b] archive script shape — atomic-save invariants pinned textually (v0.6.54)', () => {
+  const a = archive.groupActions({ archive: { target: 'src', output_dir: 'archives', name: 'snap' } });
+  const scr = a.archive.script;
+  it('tar writes to "$OUT.partial", never "$OUT" directly', () => {
+    assert(/tar -cJf "\$OUT\.partial" -C 'src' \./.test(scr),
+      'tar target is $OUT.partial (atomic invariant 1 — never truncate the previous good archive)');
+    assert(!/tar -cJf "\$OUT" /.test(scr),
+      'no legacy `tar -cJf "$OUT" ...` form remains');
+  });
+  it('mv "$OUT.partial" → "$OUT" appears BEFORE the sidecar write (textual order)', () => {
+    const mvIdx = scr.indexOf('mv "$OUT.partial" "$OUT"');
+    const sidecarIdx = scr.indexOf('> "$OUT.sha256"');
+    assert(mvIdx > 0, 'mv step appears');
+    assert(sidecarIdx > 0, 'sidecar write appears');
+    assert(mvIdx < sidecarIdx, 'sidecar is written AFTER the mv (completed-marker last)');
+  });
+  it('sidecar line is printf-built from pre-mv hash + the FINAL RELATIVE PATH ($OUT)', () => {
+    // Constraint 1 in the brief: the sidecar carries `<hash>  <OUT>` where
+    // $OUT is the relative-to-project-dir path (what `verify`'s `$SUM -c`
+    // resolves). Byte-identical to the pre-v0.6.54 `$SUM "$OUT" > "$OUT.sha256"`
+    // output — zero migration for existing sidecars on disk.
+    assert(scr.includes(`HASH=$($SUM "$OUT.partial" | awk '{print $1}')`),
+      'hash captured from the partial, pre-mv');
+    assert(scr.includes(`printf '%s  %s\\n' "$HASH" "$OUT" > "$OUT.sha256"`),
+      'sidecar line names the FINAL $OUT (relative path, not basename)');
+    assert(!/printf '[^']*basename/.test(scr), 'does NOT use basename-style sidecar');
+  });
+  it('stale-partial cleanup is scoped to <dir>/<name>-*.tar.xz.partial', () => {
+    // Scoping matters: unrelated files sharing the dir must be untouched.
+    assert(scr.includes(`rm -f 'archives'/'snap'-*.tar.xz.partial`),
+      'rm -f targets exactly <dir>/<name>-*.tar.xz.partial');
+    // The `*` sits outside the single-quoted parts so the shell globs it.
+    assert(!/rm -f 'archives\/snap-\*/.test(scr),
+      'glob metacharacter is NOT inside a single-quoted literal');
+  });
+  it('*.tar.xz glob does not match <name>-<date>.tar.xz.partial — invariant 1 (sanity)', () => {
+    const matches = (name, glob) => {
+      const re = new RegExp('^' + glob.replace(/\./g, '\\.').replace(/\*/g, '.*') + '$');
+      return re.test(name);
+    };
+    assert(matches('snap-20261030.tar.xz', '*.tar.xz'), 'sanity: glob matches a .tar.xz');
+    assert(!matches('snap-20261030.tar.xz.partial', '*.tar.xz'),
+      '`*.tar.xz` does NOT match `.tar.xz.partial` — any downstream consumer globbing archives skips partials');
+  });
+});
+
+describe('[2c] verify script byte-shape unchanged — zero migration (constraint 2)', () => {
+  it('verify script is EXACTLY the pre-v0.6.54 three-line form', () => {
+    // The brief fixes verify as a hard constraint: all existing archives +
+    // sidecars must verify before and after the bump. Pin the exact bytes
+    // so an accidental refactor can't drift the shape.
+    const a = archive.groupActions({ archive: { target: 'src', name: 'snap' } });
+    const EXPECTED = [
+      'set -e',
+      "if command -v sha256sum >/dev/null 2>&1; then SUM='sha256sum'; else SUM='shasum -a 256'; fi",
+      '$SUM -c "$file.sha256"',
+    ].join('\n');
+    eq(a.verify.script, EXPECTED, 'verify script bytes unchanged');
+  });
+});
+
 // --- End-to-end: build fixture YAML, run --exec archive, then verify ---
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'archive-test-'));

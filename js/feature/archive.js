@@ -65,13 +65,48 @@ function groupActions(group) {
       type: 'run',
       label: 'Archive',
       desc: `tar.xz ${target}/ → ${out}/${name}-<date>.tar.xz (+ .sha256)`,
+      // ATOMIC SAVE — same pattern image-backup adopted in v0.6.53. Names
+      // are date-stamped, so cross-day runs never collide, but the
+      // same-day re-run-before-risky-change case did: `tar -cJf "$OUT"`
+      // truncated the previous good archive at t=0, and an interrupt
+      // (Ctrl-C / SSH drop / power loss) mid-tar left a truncated file
+      // under the final name beside a now-stale sidecar — the dir looked
+      // superficially fine, verify would also pass against the old hash
+      // for a byte prefix. Three invariants being pinned:
+      //   1. The `tar` target is never the final name — any interrupt
+      //      leaves the previous same-day archive intact; worst case is
+      //      a stale `.partial` sibling, removed by the next run's `rm`.
+      //   2. The sidecar is written LAST, from the pre-mv hash. Sidecar
+      //      presence ⇒ `<OUT>` is a complete tar.xz whose bytes hash to
+      //      the recorded value. The mv → printf window replaces both
+      //      generations together; an interrupt there leaves the NEW
+      //      file with the OLD sidecar — verify correctly FAILs
+      //      (fail-closed), not silently loads a drifted archive.
+      //   3. Sidecar line keeps the current `<hash>  <OUT>` format (OUT
+      //      = relative-to-project-dir path), NOT the basename. The
+      //      synthesized `verify` runs `$SUM -c "$file.sha256"` from
+      //      project_dir — the recorded path has to resolve from there.
+      //      Copying image-backup's basename-style sidecar would break
+      //      every new archive while old ones still verified. Explicit
+      //      `printf '%s  %s\n' "$HASH" "$OUT"` reproduces the pre-v0.6.54
+      //      `$SUM "$OUT" > "$OUT.sha256"` bytes exactly, so every
+      //      existing sidecar on disk stays valid — zero migration.
+      // `set -e` suffices: single commands only (no pipeline), so no
+      // pipefail/dash concern and no bash subshell needed. Simpler than
+      // image-backup's save (which had a `docker | gzip` pipeline).
       script: [
         'set -e',
         PICK_SUM,
         `mkdir -p ${dir}`,
+        // Stale-partial cleanup — scoped to <dir>/<name>-*.tar.xz.partial
+        // so unrelated files sharing the dir are untouched. The `*` sits
+        // OUTSIDE the single-quoted parts so the shell globs it.
+        `rm -f ${dir}/${nm}-*.tar.xz.partial`,
         `OUT=${dir}/${nm}-$(date -u +%Y%m%d).tar.xz`,
-        `tar -cJf "$OUT" -C ${tgt} .`,
-        '$SUM "$OUT" > "$OUT.sha256"',
+        `tar -cJf "$OUT.partial" -C ${tgt} .`,
+        `HASH=$($SUM "$OUT.partial" | awk '{print $1}')`,
+        'mv "$OUT.partial" "$OUT"',
+        `printf '%s  %s\\n' "$HASH" "$OUT" > "$OUT.sha256"`,
         'echo "wrote $OUT (+ .sha256)"',
       ].join('\n'),
     },
