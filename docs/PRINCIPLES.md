@@ -340,7 +340,7 @@ resolved both:
   size from the model clock (`layoutSlice.dims`, resize-as-Msg) via
   `leaves/render/draw.js#viewportDims()`, with `io/term.cols()/rows()` kept only as
   a boot fallback. Previously the panel grid read `layoutSlice.dims` while the
-  footer + all 8 overlays + `renderOverlay` read the `io/term` singleton (the
+  footer + every overlay + `renderOverlay` read the `io/term` singleton (the
   upstream terminal cache), which could lead the model by a frame on resize.
   The source-of-truth is now unified. (Since the render-exit arc moved the panel
   renderer to the `leaves/render/draw` leaf, the model-read is an injected

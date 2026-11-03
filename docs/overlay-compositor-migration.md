@@ -151,7 +151,7 @@ paint.js passes `newRows` + `COLS` to each overlay call site.
 
 ### Migration order (10 commits for the simple group, then 5 for complex)
 
-**Phase 2.a — simple overlays** (text + title + help line, no sub-overlays): confirm, copy, diag-log, jobs, pane-menu, panel-list, register-popup, which-key. One commit each. (`help` was listed in the original plan but it's a VIEWER-TAB CONTENT PRODUCER, not an overlay — `showHelp()` calls `setViewerContent(helpLines().join('\n'), …)` and the text paints through the normal viewer pane's `composeRects`→`newRows` path, no `renderOverlay` involved. Dropped from the Phase 2.a list; the leader-chord popup `which-key` is the actual help-flavored overlay here.) Pattern:
+**Phase 2.a — simple overlays** (text + title + help line, no sub-overlays): confirm, copy, diag-log, jobs, pane-menu, panel-list, register-popup, which-key. One commit each. (`help` was listed in the original plan but it's a VIEWER-TAB CONTENT PRODUCER, not an overlay — `showHelp()` calls `setViewerContent(helpLines().join('\n'), …)` and the text paints through the normal viewer pane's `composeRects`→`newRows` path, no `renderOverlay` involved. Dropped from the Phase 2.a list; the leader-chord popup `which-key` is the actual help-flavored overlay here. **v0.6.55 follow-up:** help.js was moved out of `js/overlay/` to `js/panel/content/help.js` for exactly this reason — the overlay-compositor migration made the mis-sort visible as "the one file in `js/overlay/` with no compositor descriptor".) Pattern:
 
 ```
 refactor(overlay/confirm): composite into newRows

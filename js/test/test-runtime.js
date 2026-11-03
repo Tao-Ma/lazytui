@@ -314,7 +314,7 @@ describe('[3] update — (model, msg) → [model, cmds], pure + Cmd descriptors'
     const m = runtime.init();
     const snap = JSON.stringify(m.focus);
     // show_help / quit no longer go through the reducer (R4.8) —
-    // actions.js calls overlay/help.showHelp() / cleanup() + process.exit
+    // actions.js calls panel/content/help.showHelp() / cleanup() + process.exit
     // directly. U2e P1b — next_tab / prev_tab cycle the content slot's VISIBLE
     // position-tabs: the handler stamps { slotPaneId, tabPoolIds, curIdx } and
     // the arm emits a `set_active_tab` (wrapped to layout) targeting the next

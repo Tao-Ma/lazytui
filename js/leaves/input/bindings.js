@@ -8,7 +8,7 @@
  * from it — the same declarative-table-kills-drift pattern as
  * `leaves/input/modes.js`.
  *
- * NOT consumed by `overlay/help.js`: the help overlay is a separate, more
+ * NOT consumed by `panel/content/help.js`: the help viewer tab is a separate, more
  * detailed reference (`x  Open menu popup`, not the terse `x menu`), built from
  * each panel def's `keyHints` + the dynamic leader-chord walk over
  * `leaves/input/keybindings` — a different, already-single source. Routing it

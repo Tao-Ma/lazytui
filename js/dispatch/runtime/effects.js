@@ -51,7 +51,7 @@ function _effectHost() {
     const { wrap } = require('../../panel/route');
     const { streamCommand } = require('./stream');
     const { cleanup } = require('./cleanup');
-    const { showHelp } = require('../../overlay/help');
+    const { showHelp } = require('../../panel/content/help');
     const rc = require('./record-control');
     _host = {
       dispatchMsg, applyMsg, wrap, streamCommand,

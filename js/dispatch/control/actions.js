@@ -373,7 +373,7 @@ function handleAction(action, arg, from) {
     case 'show_help':
       // Direct call (R4.5-deliberate, same rationale as 'refresh' above) —
       // a show_help Cmd would add a no-op runtime arm for no gain.
-      require('../../overlay/help').showHelp();
+      require('../../panel/content/help').showHelp();
       break;
     case 'next_tab': applyMsg({ type: 'next_tab', ..._viewerTabBundle() }); break;
     case 'prev_tab': applyMsg({ type: 'prev_tab', ..._viewerTabBundle() }); break;

@@ -1530,7 +1530,7 @@ this is the producer-side completeness check.
 | `ctx_run_action` | `_runActionByKey` → `_runResolvedAction` → `runAction` (ports.in missing → `fabric_field_enter` with pendingAction, P2) |
 | `ctx_run_command` | `cmdline.runCommandString` |
 | `refresh` | `api.refreshAll()` (direct async — broadcasts `refresh`) |
-| `show_help` | `overlay/help.showHelp()` (direct) |
+| `show_help` | `panel/content/help.showHelp()` (direct) |
 | `quit` | `cleanup()` + `process.exit(0)` — **the one terminal action that is NOT a Msg** |
 
 `_viewerTabBundle` / the groups `ctx` build / `freeConfigMode` reads here are the

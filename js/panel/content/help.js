@@ -5,25 +5,35 @@
  *
  * v0.6.2 N7 — moved from dispatch/ to overlay/. The file builds
  * viewer-bound content (setViewerContent(helpLines)) — a
- * render-side content producer, not a Msg dispatcher. Peer to
- * overlay/which-key.js (the leader-chord popup, another
- * help-flavored content surface). Pre-N7 the file was in dispatch/
- * "to dodge an api → dispatch → api cycle"; that's no longer a
- * concern because the file doesn't reach into dispatch/ at all
- * (only panel/nav-state, model/store, leaves/ansi, panel/api, leaves/pane,
- * panel/route, and the leaves/keybindings registry for chord enumeration).
+ * render-side content producer, not a Msg dispatcher.
+ *
+ * v0.6.55 — moved from overlay/ to panel/content/. help.js is NOT
+ * an overlay (it never calls `renderOverlay`; `showHelp()` writes a
+ * viewer-pane tab via `setViewerContent`, and that text paints
+ * through the normal viewer pane's `composeRects` → `newRows` path).
+ * It was mis-sorted into `js/overlay/` under the N7 move; the
+ * overlay-compositor migration (v0.6.50..v0.6.52) made the drift
+ * visible — help.js was the one file in `js/overlay/` that didn't
+ * register a compositor descriptor. Now sits beside its real peers
+ * `panel/content/search.js` + `panel/content/pty-lifecycle.js`.
+ * The leader-chord popup `overlay/which-key.js` is the actual
+ * overlay in the help-flavored neighborhood.
+ *
+ * The file doesn't reach into dispatch/ at all (only panel/nav-state,
+ * model/store, leaves/ansi, panel/api, leaves/pane, panel/route, and
+ * the leaves/keybindings registry for chord enumeration).
  *
  * Zero npm deps.
  */
 'use strict';
 
-const { allPanels, setViewerContent } = require('../panel/nav-state');
-const { getModel } = require('../model/store');
-const { esc } = require('../leaves/text/ansi');
-const {getCommands, getPanelDef, getInstanceSlice, getFocus } = require('../panel/api');
-const kb = require('../leaves/input/keybindings');
-const mpane = require('../leaves/wm/pane');
-const route = require('../panel/route');
+const { allPanels, setViewerContent } = require('../nav-state');
+const { getModel } = require('../../model/store');
+const { esc } = require('../../leaves/text/ansi');
+const {getCommands, getPanelDef, getInstanceSlice, getFocus } = require('../api');
+const kb = require('../../leaves/input/keybindings');
+const mpane = require('../../leaves/wm/pane');
+const route = require('../route');
 
 /** Walk the leader-tree depth-first, emitting `{seq, label}` for every
  *  LEAF (the actual bindings). Subtrees recurse; their internal labels
