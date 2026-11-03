@@ -6,6 +6,33 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.55] — 2026-11-03
+
+`--exec` error messages now say what to type when an action lookup
+misses (dev9 brief), plus one file-layout cleanup. 2 commits
+(`81447e7d`, `7399023d`).
+
+### Fixed
+
+- **`--exec <group>:<child> …` names the child group.** Typing a
+  child group where an action belongs (`service:vpnclient build`) used
+  to report `"vpnclient"` as a missing action and dump every action in
+  the config. It now says `"vpnclient" is a sub-group of "service", not
+  an action.`, adds `Did you mean: service.vpnclient build` when the
+  next word is one of that sub-group's actions, and lists the
+  sub-group's actions.
+- **Plain unknown action lists only its group.** The first line
+  (`group "X" has no action "Y"`) is unchanged; the listing below it
+  narrows from the whole config to the group's own actions and direct
+  sub-groups, with a single `Did you mean "<key>"?` for an unambiguous
+  prefix / near-miss typo. Unknown group and exit code 1 are unchanged.
+
+### Changed
+
+- **`js/overlay/help.js` → `js/panel/content/help.js`.** It produces
+  viewer-tab content, not an overlay; it now sits beside its peers
+  (`search.js`, `pty-lifecycle.js`). No behavior change.
+
 ## [0.6.54] — 2026-10-30
 
 `feature/archive.js` adopts v0.6.53's atomic-save pattern, closing
