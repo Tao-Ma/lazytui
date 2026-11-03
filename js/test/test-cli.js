@@ -127,6 +127,60 @@ describe('[4] resolution errors → rc 1, stderr message, action listing', () =>
   });
 });
 
+describe('[4b] action miss names the child group / scopes the listing', () => {
+  it('child-group miss + valid next word → "Did you mean", nothing spawned', () => {
+    const r = runCli('nested:deep', 'ping');
+    eq(r.status, 1, 'rc 1');
+    eq(r.stdout, '', 'nothing spawned');
+    assert(r.stderr.includes('"deep" is a sub-group of "nested", not an action.'), r.stderr);
+    assert(r.stderr.includes('Did you mean: nested.deep ping'), r.stderr);
+    assert(r.stderr.includes('Actions in nested.deep: ping'), r.stderr);
+    assert(!r.stderr.includes('Available actions'), 'no whole-config dump');
+  });
+  it('child-group miss + invalid next word → actions line only', () => {
+    const r = runCli('nested:deep', 'pin');
+    eq(r.status, 1, 'rc 1');
+    assert(!r.stderr.includes('Did you mean'), r.stderr);
+    assert(r.stderr.includes('Actions in nested.deep: ping'), r.stderr);
+  });
+  it('child-group miss with no next word → actions line', () => {
+    const r = runCli('nested:deep');
+    eq(r.status, 1, 'rc 1');
+    assert(r.stderr.includes('Actions in nested.deep: ping'), r.stderr);
+  });
+  it('plain unknown action → original first line + group-scoped list', () => {
+    const r = runCli('echo:nonexistent');
+    eq(r.status, 1, 'rc 1');
+    eq(r.stderr.split('\n')[0], 'tui --exec: group "echo" has no action "nonexistent"', 'first line verbatim');
+    assert(r.stderr.includes('  echo:hello'), 'lists own group action');
+    assert(!r.stderr.includes('nested.deep:ping'), 'other group NOT listed');
+    assert(!r.stderr.includes('composey:'), 'other group NOT listed');
+  });
+  it('unknown action in a parent group lists its direct sub-groups', () => {
+    const r = runCli('nested:nope');
+    eq(r.status, 1, 'rc 1');
+    assert(r.stderr.includes('Sub-groups of nested:\n  nested.deep'), r.stderr);
+  });
+  it('near-miss typo → single "Did you mean" suggestion', () => {
+    const r = runCli('echo:helo');
+    eq(r.status, 1, 'rc 1');
+    assert(r.stderr.includes('Did you mean "hello"?'), r.stderr);
+  });
+  it('prefix typo → suggestion', () => {
+    const r = runCli('echo:hel');
+    assert(r.stderr.includes('Did you mean "hello"?'), r.stderr);
+  });
+  it('far-off key → no suggestion', () => {
+    const r = runCli('echo:zzzzzz');
+    assert(!r.stderr.includes('Did you mean'), r.stderr);
+  });
+  it('canonical dotted form still runs', () => {
+    const r = runCli('nested.deep:ping');
+    eq(r.status, 0, 'rc 0');
+    eq(r.stdout.trim(), 'nested-ping');
+  });
+});
+
 describe('[5] type other than run is refused', () => {
   it('background action errors out', () => {
     const r = runCli('echo:bg');

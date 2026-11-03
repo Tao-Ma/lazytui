@@ -138,11 +138,79 @@ function resolveAction(config, actionPath) {
   if (!group) {
     return { error: `no group at "${groupPath}"` };
   }
-  const action = _mergeForGroup(group, groupPath, config)[actionKey];
+  const actions = _mergeForGroup(group, groupPath, config);
+  const action = actions[actionKey];
   if (!action) {
-    return { error: `group "${groupPath}" has no action "${actionKey}"` };
+    const childPath = `${groupPath}.${actionKey}`;
+    const child = config.groups[childPath];
+    if (child) {
+      return {
+        error: `"${actionKey}" is a sub-group of "${groupPath}", not an action.`,
+        childGroup: {
+          path: childPath,
+          actionKeys: Object.keys(_mergeForGroup(child, childPath, config)),
+        },
+      };
+    }
+    return {
+      error: `group "${groupPath}" has no action "${actionKey}"`,
+      group: {
+        path: groupPath,
+        actionKeys: Object.keys(actions),
+        childPaths: _directChildPaths(config, groupPath),
+        suggestion: _suggestKey(actionKey, Object.keys(actions)),
+      },
+    };
   }
   return { groupPath, actionKey, action };
+}
+
+function _directChildPaths(config, groupPath) {
+  const prefix = `${groupPath}.`;
+  return Object.keys(config.groups || {})
+    .filter((p) => p.startsWith(prefix) && !p.slice(prefix.length).includes('.'));
+}
+
+function _editDistance(a, b) {
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+// A suggestion only when exactly one key is a prefix match or ≤2 edits away —
+// an ambiguous guess is worse than the scoped list that follows it.
+function _suggestKey(typed, keys) {
+  const maxEdits = typed.length <= 4 ? 1 : 2;
+  const hits = keys.filter((k) => k.startsWith(typed) || _editDistance(typed, k) <= maxEdits);
+  return hits.length === 1 ? hits[0] : null;
+}
+
+function _formatResolveError(config, r, actionArgs) {
+  const lines = [`tui --exec: ${r.error}`];
+  if (r.childGroup) {
+    const { path: cp, actionKeys } = r.childGroup;
+    const next = actionArgs && actionArgs[0];
+    if (next && actionKeys.includes(next)) lines.push(`Did you mean: ${cp} ${next}`);
+    lines.push(`Actions in ${cp}: ${actionKeys.join(' ') || '(none)'}`);
+    return lines.join('\n') + '\n';
+  }
+  if (r.group) {
+    const { path: gp, actionKeys, childPaths, suggestion } = r.group;
+    if (suggestion) lines.push(`Did you mean "${suggestion}"?`);
+    lines.push('', `Actions in ${gp}:`);
+    lines.push(actionKeys.length ? actionKeys.map((k) => `  ${gp}:${k}`).join('\n') : '  (none)');
+    if (childPaths.length) {
+      lines.push(`Sub-groups of ${gp}:`, childPaths.map((p) => `  ${p}`).join('\n'));
+    }
+    return lines.join('\n') + '\n';
+  }
+  return `${lines[0]}\n\nAvailable actions:\n${listActions(config)}\n`;
 }
 
 /**
@@ -171,7 +239,7 @@ function runCli(configPath, actionPath, actionArgs) {
 
   const r = resolveAction(config, actionPath);
   if (r.error) {
-    process.stderr.write(`tui --exec: ${r.error}\n\nAvailable actions:\n${listActions(config)}\n`);
+    process.stderr.write(_formatResolveError(config, r, actionArgs));
     return Promise.resolve(1);
   }
 
