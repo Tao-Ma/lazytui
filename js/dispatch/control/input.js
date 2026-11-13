@@ -5,7 +5,9 @@
  * tokenize — network-lag fix, 2026-08-05: over SSH one chunk can batch
  * many events, and TCP can split one sequence across chunks). Each token
  * then dispatches through one ladder:
- *   - SGR mouse: \x1b[<button;x;yM (press) / m (release), left clicks only
+ *   - SGR mouse: \x1b[<button;x;yM (press) / m (release) — left/right/middle
+ *     presses + left drag/release + wheel + button-less hover (_dispatchMouseEvent);
+ *     handleMouse asks the hit-map router first (docs/mouse-hit-map.md)
  *   - Arrow keys, PgUp/Dn, Esc, Enter, Ctrl+C — into named keys
  *   - Anything else — passed through as both `key` and `seq` to handleKey
  * A multi-token chunk paints ONCE (render-queue beginBatch/endBatch); a
@@ -255,7 +257,6 @@ function _mouseHandleFreeConfigMode(kind, mx, my, model) {
   return true;
 }
 
-
 // (menuOpen's handler retired — the menu resolves on the hit map now,
 // docs/mouse-hit-map.md Release 1; the router runs before this registry.)
 const _modeMouseHandlers = {
@@ -277,11 +278,12 @@ const _modeMouseHandlers = {
 // Mouse mode precedence — DERIVED from the keyboard chain (CHAIN_MODES,
 // the single source of mode ordering in `./modes`), filtered to the
 // modes with a mouse handler. Pre-C1 this was a hand-pinned array
-// (tabList → paneSelect → freeConfig); deriving it keeps the mouse side
-// from silently disagreeing with the keyboard side — exactly what a
-// second hardcoded list risked. The three modes are mutually exclusive
-// by invariant today (mode_set/clear flips one at a time; free-config
-// disables the [≡] trigger), so the order is observationally moot; if
+// (the since-merged tabList/paneSelect modes, then freeConfig); deriving it
+// keeps the mouse side from silently disagreeing with the keyboard side —
+// exactly what a second hardcoded list risked. The remaining modes
+// (paneMenu / freeConfig / agent) are mutually exclusive by invariant
+// (mode_set/clear flips one at a time; free-config disables the [≡]
+// trigger), so the order is observationally moot; if
 // that invariant ever relaxes, mouse now resolves the SAME winner as
 // keyboard (freeConfig first) instead of the opposite.
 const _MOUSE_MODE_PRECEDENCE = CHAIN_MODES.filter(f => f in _modeMouseHandlers);
@@ -670,8 +672,9 @@ function handleMouse(kind, x, y) {
   // active claiming handler wins. Handlers own their render() call so
   // consume-no-render paths (panel-list header click, motion without
   // drag) can skip paint as a perf optimization. Handlers that don't
-  // claim (e.g. tabList on motion/release) return false and fall
-  // through to the `isChainActive` guard below.
+  // claim (e.g. paneMenu on motion/release) return false and fall
+  // through to the `isChainActive` guard below. Popups resolve on the hit
+  // map BEFORE this point (the router call at the top of handleMouse).
   if (_dispatchActiveModeMouse(kind, mx, my, model)) return;
 
   // T13 — mirror keyboard modal gating: while any chain mode claims

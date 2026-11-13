@@ -99,7 +99,9 @@ function renderDiagLog(now, newRows, cols) {
   const lines = [];
   // Hit map (docs/mouse-hit-map.md): line i shows entry scroll+i; a click moves
   // the cursor there. count/vh ride the Msg (the same values the key handler
-  // computes) — baked at paint, re-clamped by the reducer.
+  // computes) — baked at paint; the reducer clamps against them. A list
+  // change before the click re-stamps the frame (hit-map stale-frame rule), so
+  // a stale index never lands on a shifted entry.
   const lineTargets = [];
   if (list.length === 0) {
     lines.push('[dim]  (no diagnostics)[/]');

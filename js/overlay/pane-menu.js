@@ -10,7 +10,8 @@
  * panes) so behavior is byte-identical to the two retired overlays; the
  * cross-section + half/full projection picks are Phase 2.
  *
- * The pick action is resolved by the CALLER (dispatch/input) from
+ * The pick action is resolved by the dispatch key handler (`_paneMenuPick`;
+ * a mouse click on a row reaches it by pressing Enter via the hit map) from
  * (row section, current view mode), routing to existing reducer arms:
  *   - tab row            → tab_switch on the viewer (+ focus + close)
  *   - pane row / normal   → pool_swap_by_id (edit arrange; policy guards)
@@ -243,7 +244,6 @@ function viewportRows(paneId) {
   const g = _geom(paneId);
   return g ? g.innerH : 1;
 }
-
 
 // --- Render ------------------------------------------------------------
 

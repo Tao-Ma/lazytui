@@ -39,8 +39,8 @@ function _menuLines(items, idx) {
 // Scroll offset (in lines) that keeps the selected row `idx` visible — centered
 // when possible, clamped at the ends. Pure fn of (idx, total lines, window
 // height). renderMenu passes it to renderOverlay, whose publishBox applies the
-// same window to the hit map, so a click maps to the same row the paint drew. Derived (not stored): idx is already in the model, so replay
-// reconstructs it. Without this a menu taller than the screen showed only its
+// same window to the hit map, so a click maps to the same row the paint drew.
+// Derived (not stored): idx is already in the model, so replay reconstructs it. Without this a menu taller than the screen showed only its
 // first screenful and the cursor drove off-screen with no way down.
 function menuScroll(idx, total, innerH) {
   if (total <= innerH) return 0;
@@ -82,7 +82,6 @@ function renderMenu(newRows, cols) {
                   targetRows: newRows || null, targetCols: cols || 0,
                   hit: { lineTargets, box: { 'wheel-up': { key: 'up' }, 'wheel-down': { key: 'down' } } } });
 }
-
 
 // Overlay-compositor R3 descriptor. zIndex=100 preserves menu's
 // historical position (tenth in the retired paint.js if-chain).

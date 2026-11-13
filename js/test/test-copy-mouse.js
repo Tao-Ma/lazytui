@@ -10,7 +10,7 @@
  */
 'use strict';
 
-const { describe, it, eq, assert, report } = require('./test-runner');
+const { describe, it, eq, report } = require('./test-runner');
 const sm = require('./smoke/_helpers/smoke');
 const hc = require('./_helpers/hit-click');
 const runtime = require('../app/runtime');

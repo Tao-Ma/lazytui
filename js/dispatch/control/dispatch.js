@@ -1336,8 +1336,9 @@ function _dispatchActiveMode(key, seq) {
 module.exports = {
   handleKey, handleAction, applyMsg, navSelect,
   showSelectedInfo, redraw,
-  // v0.6.4 #1 Step 2 — pane-menu pick resolution, shared with the mouse
-  // handler in input.js (single source for tab vs pane routing).
+  // v0.6.4 #1 Step 2 — pane-menu pick resolution (tab vs pane routing).
+  // Exported for tests; a mouse pick reaches it through the paneMenuMode key
+  // handler (the hit-map row target presses Enter — docs/mouse-hit-map.md).
   _paneMenuPick,
   registerKeyFilter, clearKeyFilters,
   loadKeyBindings,

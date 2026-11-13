@@ -13,7 +13,7 @@
  */
 'use strict';
 
-const { describe, it, eq, assert, report } = require('./test-runner');
+const { describe, it, eq, report } = require('./test-runner');
 const hm = require('../panel/hit-map');
 const router = require('../dispatch/control/mouse-router');
 const dispatch = require('../dispatch/control/dispatch');

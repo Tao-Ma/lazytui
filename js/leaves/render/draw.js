@@ -559,9 +559,10 @@ function _tabTriggerMarkup(state, focused, fc) {
 }
 
 /**
- * Box geometry for an overlay popup — the single source the paint path
- * (renderOverlay) and the hit-test path (overlay/menu.hitTest) BOTH read,
- * so a click never lands on a cell the box didn't paint. Returns 0-based
+ * Box geometry for an overlay popup — the single source renderOverlay paints
+ * from AND hands to publishBox for the hit map (renderMenu sizes its scroll
+ * window from it too; replay-scrubber's hitTestSeek reads it), so a click
+ * never lands on a cell the box didn't paint. Returns 0-based
  * top-left {offX, offY} + {menuW, menuH} (outer dims, borders included).
  *
  * v0.6.4 Theme F Phase 3 — anchored placement: open the box's top-left at

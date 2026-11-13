@@ -23,6 +23,8 @@
  *   - render/footer inModal      ← isModal (footer owns the row → suppress
  *                                   panel hints + footer decorators)
  *   - input.js     chrome clicks ← suppressesChromeClicks
+ *   - panel/hit-map frame stamp  ← chainStamp (the `chain` field of stampOf)
+ *   - overlay/hover-tooltip      ← isChainActive || isModal
  *
  * `chain:false` modes are real modes but not key-claiming modeChain
  * entries: terminalMode is handled before the chain (input.js routes
@@ -39,8 +41,10 @@
 // `suppressChrome` — chrome-glyph clicks ([_]/[+]/[x]) are blocked while
 // this mode is active (the mode owns input or paints a centered popup over
 // the chrome). NARROWER than overlay/chain: free-config + the in-grid modes
-// (filter / search / prefix / listSelect / tab-list / pane-select / jobs)
-// deliberately let chrome clicks through.
+// (filter / search / prefix / listSelect / pane-menu / jobs / agent)
+// deliberately let chrome clicks through. Hit-map R1 pairs it with the
+// overlay descriptors' `mouse.outside` (a backdrop iff suppressChrome) —
+// test-overlay-mouse-policy.js.
 const MODES = [
   { flag: 'confirmMode',             chain: true,  overlay: true,  modal: false, reset: true, suppressChrome: true  },
   { flag: 'freeConfigTitleEditMode', chain: true,  overlay: false, modal: true,  reset: true, suppressChrome: true  },
@@ -82,7 +86,7 @@ const MODES = [
   { flag: 'paletteMode',             chain: true,  overlay: true,  modal: true,  reset: true, suppressChrome: true  },
   { flag: 'jobsMode',                chain: true,  overlay: true,  modal: false, reset: true, suppressChrome: false },
   // diagLog is a read-only modal you Esc out of — NOT a pane selector like
-  // jobs/tabList/paneSelect — so it suppresses chrome-glyph clicks behind it
+  // jobs / pane-menu — so it suppresses chrome-glyph clicks behind it
   // (a stray click shouldn't collapse/close a pane underneath the window).
   { flag: 'diagLogMode',             chain: true,  overlay: true,  modal: false, reset: true, suppressChrome: true  },
   // Live-agent input (docs/live-agent.md A4) — the terminal-mode analog for an
@@ -120,15 +124,16 @@ function suppressesChromeClicks(md) { return MODES.some(m => m.suppressChrome &&
  *  framework default. Used by handleMouse to mirror keyboard modal
  *  gating: while a modal claims keys, mouse events should not
  *  cascade into focus changes / selection / scroll that the user
- *  can't see through the overlay. The freeConfigMode special-case in
- *  handleMouse runs BEFORE this gate (design owns the mouse pipeline);
- *  terminalMode is non-chain by design and not covered here. */
+ *  can't see through the overlay. The hit-map router and the freeConfigMode
+ *  special-case run BEFORE this gate in handleMouse (popup regions resolve
+ *  first; free-config owns the mouse pipeline); terminalMode is non-chain by
+ *  design and not covered here. */
 function isChainActive(md) { return CHAIN_MODES.some(f => md[f]); }
 
 /** A stable string naming the active chain modes (precedence order) — '' when
- *  none. The hit map (panel/hit-map) stamps each frame with it; the mouse
- *  router compares the stamp against the CURRENT modes so a click aimed at a
- *  frame that no longer matches mode state (a batched Enter+click chunk —
+ *  none. The `chain` field of the hit map's frame stamp (panel/hit-map
+ *  stampOf), which the mouse router compares against the CURRENT state so a
+ *  click aimed at a frame that no longer matches (a batched key+click chunk —
  *  docs/mouse-hit-map.md §Stale-frame rule) never resolves against the stale
  *  regions. */
 function chainStamp(md) { return CHAIN_MODES.filter(f => md && md[f]).join(','); }

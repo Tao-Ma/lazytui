@@ -139,7 +139,9 @@ function renderJobsOverlay(now, newRows, cols) {
   // Hit map (docs/mouse-hit-map.md): a click moves the cursor to that job; a
   // double-click also presses Enter (jobs_activate — jump to the job, via the
   // jobsMode key handler, which resolves the job itself). count/vh are baked at
-  // paint and re-clamped by the reducer. The header row has no target.
+  // paint (the reducer clamps against them; a list change before the click
+  // re-stamps the frame — hit-map stale-frame rule). The header row has no
+  // target.
   const lineTargets = [];
   if (list.length === 0) {
     lines.push('[dim]  (no live jobs)[/]');

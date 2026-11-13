@@ -15,7 +15,7 @@
  *     render:   (model, newRows, cols) => void,// mutates newRows
  *     modal:    bool,                          // enforces flat-modal
  *     zIndex:   int,                           // paint order (hi = on top)
- *     mouse:    { outside } | undefined,       // hit-map opt-in (below)
+ *     mouse:    { outside } | undefined,       // hit-map backdrop policy (below)
  *   }
  *
  * Hit map (docs/mouse-hit-map.md): each overlay's render is bracketed with
@@ -99,12 +99,6 @@ function activeOverlayIds(model) {
   return _active(model).map(d => d.id);
 }
 
-/**
- * Paint the active overlay set into `newRows` at `cols` width. Called
- * from paint.js's render() AFTER the main-frame compose pass and
- * BEFORE `_paintMainFrame`'s cell-diff. Mutates `newRows` in place;
- * returns nothing.
- */
 const HIT_BAND_BASE = 1000;
 let _hitMapRef; const _hitMap = () => (_hitMapRef ||= require('../panel/hit-map'));
 let _drawRef; const _screenRows = () => (_drawRef ||= require('../leaves/render/draw')).viewportDims().rows;
@@ -123,6 +117,14 @@ function _backdrop(outside, cols, rows) {
   };
 }
 
+/**
+ * Paint the active overlay set into `newRows` at `cols` width. Called
+ * from paint.js's render() AFTER the main-frame compose pass and
+ * BEFORE `_paintMainFrame`'s cell-diff. Mutates `newRows` in place;
+ * returns nothing. Each overlay's render is bracketed with the hit-map
+ * owner (docs/mouse-hit-map.md); a descriptor with `mouse.outside` gets its
+ * backdrop published first.
+ */
 function paintActive(model, newRows, cols) {
   const hm = _hitMap();
   for (const d of _active(model)) {
