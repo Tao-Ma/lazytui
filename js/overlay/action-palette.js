@@ -22,6 +22,7 @@
 
 const { getModel } = require('../model/store');
 const { renderOverlay, viewportDims } = require('../leaves/render/draw');
+const { formatHints } = require('../leaves/render/hints');
 const { esc } = require('../leaves/text/ansi');
 const { filterChoices } = require('../leaves/ports/choices-filter');
 const { windowSlice } = require('../leaves/render/window-slice');
@@ -157,6 +158,7 @@ function renderActionPalette(newRows, cols) {
   const clamped = Math.max(0, Math.min(idx | 0, Math.max(0, total - 1)));
 
   const lines = [];
+  const lineTargets = [];
   // `/<filter>` row above the list — v0.6.43 Brief 2 precedent. Shown
   // only when the filter is non-empty so an empty palette doesn't gain
   // a bare `/` line that reads as a stray stroke.
@@ -205,6 +207,11 @@ function renderActionPalette(newRows, cols) {
     const cols = PALETTE_MAX_WIDTH - 4; // minus borders (2) + indent (2)
     for (let i = win.start; i < win.end; i++) {
       const row = _formatRow(rows[i], cols);
+      // Hit map (docs/mouse-hit-map.md): the row carries its own target, so a
+      // click invokes THAT action directly — the same palette_pick Enter emits
+      // for the highlighted row (a pure picker: choosing is the whole act).
+      lineTargets[lines.length] = { press: { msg: { type: 'palette_pick',
+        groupPath: rows[i].groupPath, actionKey: rows[i].actionKey } } };
       lines.push(i === clamped ? `[reverse]> ${row}` : `  ${row}`);
     }
     if (win.overflow) {
@@ -222,7 +229,14 @@ function renderActionPalette(newRows, cols) {
   // it; otherwise Esc closes the palette.
   lines.push('');
   const escHint = filter ? 'clear filter' : 'close';
-  lines.push(`[dim]\\[↑/↓] nav   \\[enter] invoke   \\[type] filter   \\[esc] ${escHint}[/]`);
+  const hint = formatHints([
+    { cap: '↑/↓',   label: 'nav',    key: null },
+    { cap: 'enter', label: 'invoke', key: 'return' },
+    { cap: 'type',  label: 'filter', key: null },
+    { cap: 'esc',   label: escHint,  key: 'escape' },
+  ]);
+  const lineChips = { [lines.length]: hint.chips };
+  lines.push(hint.markup);
 
   renderOverlay({
     lines,
@@ -230,6 +244,7 @@ function renderActionPalette(newRows, cols) {
     maxWidth: PALETTE_MAX_WIDTH,
     count: total ? [clamped + 1, total] : undefined,
     targetRows: newRows || null, targetCols: cols || 0,
+    hit: { lineTargets, lineChips, box: { 'wheel-up': { key: 'up' }, 'wheel-down': { key: 'down' } } },
   });
 }
 
@@ -242,6 +257,9 @@ function registerSelf(compositor) {
     render: (m, newRows, cols) => renderActionPalette(newRows, cols),
     modal: true,
     zIndex: 90,
+    // Holds a typed filter → an outside click is swallowed (Esc would only
+    // clear the filter anyway; a stray click must not lose it).
+    mouse: { outside: 'swallow' },
   });
 }
 
