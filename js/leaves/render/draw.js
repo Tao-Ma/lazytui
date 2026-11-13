@@ -438,14 +438,13 @@ const HIT_Z = Object.freeze({ backdrop: 0, box: 1, row: 2, chip: 3 });
  * only if renderPanel's truncation kept it.
  *
  *   { x, y, w, h }        box rect (screen cells, incl. borders)
- *   scrollOffset           first visible line index (0 for pre-windowed callers)
- *   windowed               lines were pre-sliced by the caller → no offset applied
+ *   scrollOffset           first visible line index (0 for pre-sliced callers)
  *   lines                  the content lines handed to renderPanel (chip truncation)
  *   lineTargets            handler maps index-aligned with `lines` (null = inert)
  *   lineChips              { [lineIdx]: chips } from leaves/render/hints.formatHints
  *   box                    handler map for the box itself (e.g. wheel → up/down)
  */
-function publishBox({ x, y, w, h, scrollOffset = 0, windowed = false, lines = [],
+function publishBox({ x, y, w, h, scrollOffset = 0, lines = [],
                       lineTargets = null, lineChips = null, box = null }) {
   if (!_hitSink || !(w > 0) || !(h > 0)) return;
   const { cols: COLS, rows: ROWS } = viewportDims();
@@ -460,7 +459,7 @@ function publishBox({ x, y, w, h, scrollOffset = 0, windowed = false, lines = []
   _hitSink({ id: 'box', rect: boxRect, opaque: true, on: box || {} }, HIT_Z.box);
   const innerW = w - 2;
   const innerH = h - 2;
-  const offset = windowed ? 0 : Math.max(0, scrollOffset | 0);
+  const offset = Math.max(0, scrollOffset | 0);
   for (let i = 0; i < innerH; i++) {
     const li = offset + i;
     if (li >= lines.length) break;

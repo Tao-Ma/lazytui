@@ -42,9 +42,8 @@ const intent = require('./intent');
 const mouseBindings = require('./mouse-bindings');
 
 const { handleKey, applyMsg, showSelectedInfo, navSelect } = require('./dispatch');
-// Hit-map router (docs/mouse-hit-map.md). Lazy + memoized: it requires
-// dispatch lazily itself, but keeping input.js's load order unchanged is free.
-let _mouseRouterRef; const _mouseRouter = () => (_mouseRouterRef ||= require('./mouse-router'));
+// Hit-map router (docs/mouse-hit-map.md).
+const mouseRouter = require('./mouse-router');
 const { cleanup } = require('../runtime/cleanup');
 
 // --- Mouse handling ---
@@ -593,7 +592,7 @@ function handleMouse(kind, x, y) {
   // the chrome cluster because popups paint OVER chrome. A miss (nothing
   // published there, a stale frame, a non-discrete gesture) falls through to
   // the legacy cascade below, unchanged.
-  if (_mouseRouter().route(kind, mx, my, model)) return;
+  if (mouseRouter.route(kind, mx, my, model)) return;
 
   // Panel-chrome glyph clicks — single early hit-test site for both
   // [_]/[+] (collapse, always-on) and [X] (close, free-config-only).

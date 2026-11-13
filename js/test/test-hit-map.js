@@ -1,11 +1,10 @@
 /**
- * Hit map (panel/hit-map) + key-hint chips (leaves/render/hints) — the
- * registry and pure-geometry halves of docs/mouse-hit-map.md Release 1.
+ * Hit map (panel/hit-map) + draw.publishBox — the registry and the
+ * paint-side publisher of docs/mouse-hit-map.md Release 1.
  *
  *   [1] resolve: z order, publish-order tie-break, opaque stop, fall-through
  *   [2] lifecycle: clear + stamp, malformed regions ignored, owner bracket
- *   [3] formatHints: markup unchanged vs the hand-built hint, chip columns
- *   [4] chipSurvives: renderPanel's truncation rule (… keeps innerW-1 cells)
+ *   (formatHints / chipSurvives / seqForKey live in test-hints.js)
  *   [5] publishBox: rows follow the scroll window, chips clip, screen clip
  *
  * Run: node js/test/test-hit-map.js
@@ -14,7 +13,7 @@
 
 const { describe, it, eq, assert, report } = require('./test-runner');
 const hm = require('../panel/hit-map');
-const { formatHints, chipSurvives } = require('../leaves/render/hints');
+const { formatHints } = require('../leaves/render/hints');
 const draw = require('../leaves/render/draw');
 const { visibleLen } = require('../leaves/text/ansi');
 
@@ -119,56 +118,6 @@ describe('[2b] frame stamp + claims', () => {
   });
 });
 
-describe('[3] formatHints', () => {
-  it('reproduces the hand-built confirm hint markup byte-for-byte', () => {
-    const { markup } = formatHints([
-      { cap: 'y', label: 'confirm', key: 'y' },
-      { cap: 'n', label: 'cancel', key: 'n' },
-    ]);
-    eq(markup, '[dim]\\[y] confirm   \\[n] cancel[/]');
-  });
-  it('chip columns span the visible `[cap] label`, separated by 3 spaces', () => {
-    const { chips, markup } = formatHints([
-      { cap: 'y', label: 'confirm', key: 'y' },
-      { cap: 'n', label: 'cancel', key: 'n' },
-    ]);
-    eq(chips, [
-      { key: 'y', seq: 'y', x0: 0, x1: 10 },     // "[y] confirm" = 11 cells
-      { key: 'n', seq: 'n', x0: 14, x1: 23 },    // 3 spaces, "[n] cancel" = 10 cells
-    ]);
-    eq(visibleLen(markup), 24);
-  });
-  it('key:null hints draw but publish no chip; seq overrides', () => {
-    const { chips, markup } = formatHints([
-      { cap: '↑/↓', label: 'nav', key: null },
-      { cap: 'enter', label: 'run', key: 'return', seq: '\r' },
-    ]);
-    eq(markup, '[dim]\\[↑/↓] nav   \\[enter] run[/]');
-    eq(chips.length, 1);
-    eq(chips[0], { key: 'return', seq: '\r', x0: 12, x1: 22 });
-  });
-  it('labels are markup-escaped', () => {
-    const { markup } = formatHints([{ cap: 'x', label: '[evil]', key: 'x' }]);
-    eq(markup, '[dim]\\[x] \\[evil][/]');
-  });
-});
-
-describe('[4] chipSurvives', () => {
-  it('a line that fits keeps every chip', () => {
-    assert(chipSurvives({ x0: 14, x1: 23 }, 24, 24), 'exact fit');
-  });
-  it('a truncated line keeps innerW-1 intact cells (the last is …)', () => {
-    // 24-wide hint in a 20-wide box: cells 0..18 intact, col 19 = '…'.
-    assert(chipSurvives({ x0: 0, x1: 10 }, 24, 20), 'first chip intact');
-    assert(!chipSurvives({ x0: 14, x1: 23 }, 24, 20), 'second chip cut');
-    assert(chipSurvives({ x0: 14, x1: 18 }, 24, 20), 'ends on the last intact cell');
-    assert(!chipSurvives({ x0: 14, x1: 19 }, 24, 20), 'touches the ellipsis cell');
-  });
-  it('a non-positive inner width keeps nothing', () => {
-    assert(!chipSurvives({ x0: 0, x1: 0 }, 1, 0));
-  });
-});
-
 describe('[5] publishBox', () => {
   const captured = [];
   draw.setHitSink((r, zOff) => captured.push({ ...r, zOff }));
@@ -187,13 +136,6 @@ describe('[5] publishBox', () => {
     eq(rows.map(r => r.id), ['row:2', 'row:3']);
     eq(rows[0].rect, { x: 6, y: 3, w: 8, h: 1 }, 'inside the borders, first inner row');
     eq(rows[0].zOff, draw.HIT_Z.row);
-  });
-  it('windowed callers index lines from 0 regardless of scrollOffset', () => {
-    captured.length = 0;
-    const lines = ['x', 'y'];
-    draw.publishBox({ x: 0, y: 0, w: 6, h: 4, scrollOffset: 9, windowed: true, lines,
-                      lineTargets: [{ press: 'swallow' }, { press: 'swallow' }] });
-    eq(captured.filter(r => r.id.startsWith('row:')).map(r => r.id), ['row:0', 'row:1']);
   });
   it('a chip publishes a press→key region only when it survives truncation', () => {
     captured.length = 0;

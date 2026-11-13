@@ -12,11 +12,14 @@
  *   - `refresh` — each refreshAll tick start (no payload — just the marker)
  *   - `publish` — hub.publish(topic, rowKey, sample) (via the hub `setRecorder` seam)
  *   - `action`  — action invocation: { actionKey, args, type }
- *   - `input`   — edge-case input markers (oversize paste, unknown escape seq)
+ *   - `input`   — edge-case input markers (oversize paste, unknown escape seq,
+ *                 hit-map-routed clicks)
  *   - `warning` / `error` — diagnostics funneled here for the recorded trail
  *
  * NOT a replay source: it is input-level (not Msg-level), bounded (oldest
- * events drop), and incomplete (e.g. mouse events are not recorded). For
+ * events drop), and incomplete (raw mouse events are not recorded; only a
+ * click the hit-map router resolves is, as `input {kind:'mouse', gesture,
+ * owner, id}` — docs/mouse-hit-map.md). For
  * replay see io/session-log.js.
  *
  * What is NOT recorded — render calls, internal state mutations,

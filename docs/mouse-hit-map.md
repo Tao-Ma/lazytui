@@ -357,8 +357,10 @@ R3 (no legacy cascade) makes the second case a drop too.
   input time, exactly where `handleMouse` dispatches today.
 - The hit map is a per-frame derived side output of render — the same
   status chrome-regions has today; no new blessed exception.
-- Replay: mouse events are not recorded (`io/event-log.js:19`); the WAL
-  holds the resolved Msgs. Unchanged.
+- Replay: the WAL holds the resolved Msgs (a chip click is the same Msgs as
+  its keystroke). Raw mouse events are not in the event log; each click the
+  router resolves is recorded as `input {kind:'mouse', gesture, owner, id}` so
+  a post-mortem can tell a synthesized keystroke from a typed one.
 
 ### Performance
 

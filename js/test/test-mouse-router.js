@@ -5,6 +5,7 @@
  *   [2] route: discrete-only, stale-frame abstain, hit → consumed
  *   [3] press→double continuation guard
  *   [4] a throwing handler is consumed + logged, never escapes
+ *   [5] one paint per click; each routed click is event-logged
  *
  * The dispatch seams are spied by swapping the module exports the router
  * resolves lazily at call time (dispatch.handleKey / applyMsg, loop.dispatchMsg).
@@ -36,25 +37,25 @@ function withSpies(fn) {
   return calls;
 }
 
-describe('[1] realize', () => {
+describe('[1] realizeHandler', () => {
   it('{ key } → handleKey(key, seq) with the seq a REAL keystroke carries', () => {
     const calls = withSpies(() => {
-      router.realize({ key: 'y' });
-      router.realize({ key: '\t' });
-      router.realize({ key: 'return', seq: '\r' });
+      router.realizeHandler({ key: 'y' });
+      router.realizeHandler({ key: '\t' });
+      router.realizeHandler({ key: 'return', seq: '\r' });
     });
     eq(calls, [['key', 'y', 'y'], ['key', '\t', '\t'], ['key', 'return', '\r']]);
   });
   it('named keys carry NO seq (as input._dispatchToken sends them) — never their name as text', () => {
     const calls = withSpies(() => {
-      for (const k of ['return', 'escape', 'backtab', 'up', 'down']) router.realize({ key: k });
+      for (const k of ['return', 'escape', 'backtab', 'up', 'down']) router.realizeHandler({ key: k });
     });
     eq(calls.map(c => c[2]), [undefined, undefined, undefined, undefined, undefined]);
   });
   it('{ msg } → applyMsg; { msg, owner } → dispatchMsg(wrap(owner, msg))', () => {
     const calls = withSpies(() => {
-      router.realize({ msg: { type: 'menu_activate', idx: 2 } });
-      router.realize({ msg: { type: 'tree_toggle', id: 'n1' }, owner: 'pane-x' });
+      router.realizeHandler({ msg: { type: 'menu_activate', idx: 2 } });
+      router.realizeHandler({ msg: { type: 'tree_toggle', id: 'n1' }, owner: 'pane-x' });
     });
     eq(calls[0], ['applyMsg', { type: 'menu_activate', idx: 2 }]);
     eq(calls[1][0], 'dispatchMsg');
@@ -62,9 +63,9 @@ describe('[1] realize', () => {
   });
   it('arrays realize in order; swallow / null do nothing', () => {
     const calls = withSpies(() => {
-      router.realize([{ msg: { type: 'jobs_nav', to: 3 } }, { key: 'return' }]);
-      router.realize('swallow');
-      router.realize(null);
+      router.realizeHandler([{ msg: { type: 'jobs_nav', to: 3 } }, { key: 'return' }]);
+      router.realizeHandler('swallow');
+      router.realizeHandler(null);
     });
     eq(calls, [['applyMsg', { type: 'jobs_nav', to: 3 }], ['key', 'return', undefined]]);
   });
@@ -199,6 +200,41 @@ describe('[4] throwing handler', () => {
     }
     eq(threw, false);
     eq(r, true);
+  });
+});
+
+describe('[5] paint + event-log', () => {
+  const rq = require('../leaves/infra/render-queue');
+  const eventLog = require('../io/event-log');
+  function countPaints(fn) {
+    let n = 0;
+    rq.setRenderers({ render: () => { n++; } });
+    try { fn(); } finally { rq.setRenderers({ render: null }); }
+    return n;
+  }
+  it('a { msg } click paints once (the router paints)', () => {
+    router._reset();
+    hm.clear(STAMP(MODEL));
+    hm.publish({ id: 'row:0', rect: R(0, 0, 5, 1), z: 1, owner: 'x', on: { press: { msg: { type: 'noop_test' } } } });
+    const n = countPaints(() => withSpies(() => router.route('press', 1, 0, MODEL)));
+    eq(n, 1);
+  });
+  it('a click ending in { key } does not add a second paint (handleKey paints itself)', () => {
+    router._reset();
+    hm.clear(STAMP(MODEL));
+    hm.publish({ id: 'chip:y', rect: R(0, 0, 5, 1), z: 1, owner: 'x', on: { press: [{ msg: { type: 'noop_test' } }, { key: 'y' }] } });
+    const n = countPaints(() => withSpies(() => router.route('press', 1, 0, MODEL)));
+    eq(n, 0, 'the spied handleKey stands in for its own paint');
+  });
+  it('each routed click records { kind: mouse, gesture, owner, id }', () => {
+    router._reset();
+    eventLog.enable(true);
+    eventLog.clear();
+    hm.clear(STAMP(MODEL));
+    hm.publish({ id: 'chip:n', rect: R(0, 0, 5, 1), z: 1, owner: 'confirm', on: { press: { key: 'n' } } });
+    withSpies(() => router.route('press', 1, 0, MODEL));
+    const e = eventLog.snapshot().filter(x => x.type === 'input' && x.payload && x.payload.kind === 'mouse');
+    eq(e.map(x => x.payload), [{ kind: 'mouse', gesture: 'press', owner: 'confirm', id: 'chip:n' }]);
   });
 });
 

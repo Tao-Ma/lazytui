@@ -42,6 +42,11 @@
 
 const { chainStamp } = require('../leaves/input/modes');
 
+// The discrete pointer gestures the router resolves (R1) — the single list
+// both the router (what it routes) and the compositor's backdrop (what it must
+// own) read, so a new gesture can't be routed yet unhandled by a backdrop.
+const DISCRETE_GESTURES = Object.freeze(['press', 'double', 'right', 'middle', 'wheel-up', 'wheel-down']);
+
 const _regions = [];
 let _seq = 0;
 let _stamp = null;
@@ -142,4 +147,4 @@ function claims(mx, my) {
 function all() { return _regions.map(({ _seq, ...r }) => r); }
 
 module.exports = { clear, publish, publishOwned, enterOwner, exitOwner, resolve, claims,
-  stampOf, stampsEqual, frameStamp, all };
+  stampOf, stampsEqual, frameStamp, all, DISCRETE_GESTURES };

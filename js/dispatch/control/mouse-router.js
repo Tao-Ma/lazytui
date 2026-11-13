@@ -3,7 +3,7 @@
  * realize the winning region's DATA handler (docs/mouse-hit-map.md).
  *
  * Precedence is z-order (panel/hit-map.resolve), not source order. Handler
- * forms, realized here and only here:
+ * forms, realized here and only here (realizeHandler):
  *
  *   { key, seq? }      dispatch.handleKey(key, seq ?? seqForKey(key)) — the keyboard path
  *                      itself, so a clicked hint chip / a wheel notch over a
@@ -46,42 +46,54 @@
 const hitMap = require('../../panel/hit-map');
 const { paintNow: render } = require('../../leaves/infra/render-queue');
 const { seqForKey } = require('../../leaves/render/hints');
+// Module objects (not destructured): the dispatch seams are read at call time,
+// which is also what lets tests spy on dispatch.handleKey / applyMsg.
+const dispatch = require('./dispatch');
+const loop = require('../runtime/loop');
+const api = require('../../panel/api');
+const intent = require('./intent');
+const eventLog = require('../../io/event-log');
 
-const DISCRETE = new Set(['press', 'double', 'right', 'middle', 'wheel-up', 'wheel-down']);
-
-// Lazy, memoized: dispatch.js / loop / intent sit above this module in the
-// load graph (input.js → dispatch.js), so resolve them at gesture time.
-let _dispatchRef, _loopRef, _apiRef, _intentRef;
-const _dispatch = () => (_dispatchRef ||= require('./dispatch'));
-const _loop = () => (_loopRef ||= require('../runtime/loop'));
-const _api = () => (_apiRef ||= require('../../panel/api'));
-const _intent = () => (_intentRef ||= require('./intent'));
+const DISCRETE = new Set(hitMap.DISCRETE_GESTURES);
 
 // The last press the hit map handled: { mx, my, owner, id, repeat } | null.
 let _lastPress = null;
 
-function realize(h) {
+function realizeHandler(h) {
   if (h == null || h === 'swallow') return;
-  if (Array.isArray(h)) { for (const x of h) realize(x); return; }
+  if (Array.isArray(h)) { for (const x of h) realizeHandler(x); return; }
   if (typeof h !== 'object') return;
-  if (h.key != null) { _dispatch().handleKey(h.key, h.seq != null ? h.seq : seqForKey(h.key)); return; }
+  if (h.key != null) { dispatch.handleKey(h.key, h.seq != null ? h.seq : seqForKey(h.key)); return; }
   if (h.msg) {
-    if (h.owner) _loop().dispatchMsg(_api().wrap(h.owner, h.msg));
-    else _dispatch().applyMsg(h.msg);
+    if (h.owner) loop.dispatchMsg(api.wrap(h.owner, h.msg));
+    else dispatch.applyMsg(h.msg);
     return;
   }
-  if (h.intent) _intent().realize(h.intent);
+  if (h.intent) intent.realize(h.intent);
+}
+
+// Does realizing `h` END with a keystroke? dispatch.handleKey paints at its own
+// end, so the router's trailing paint would be a second full frame for nothing.
+function _endsWithKey(h) {
+  if (Array.isArray(h)) return h.length > 0 && _endsWithKey(h[h.length - 1]);
+  return !!(h && typeof h === 'object' && h.key != null);
 }
 
 function _realizeAndPaint(hit, kind, mx, my) {
+  // Recorded like a keystroke would be (event-log `input`), so a post-mortem
+  // shows WHICH region a click resolved to — synthesized keys alone would look
+  // like phantom keystrokes.
+  eventLog.record('input', { kind: 'mouse', gesture: kind, owner: hit.region.owner, id: hit.region.id });
   try {
-    realize(hit.handler);
+    realizeHandler(hit.handler);
+    if (!_endsWithKey(hit.handler)) render();
+    return;
   } catch (e) {
     // A throwing handler must not escape into the stdin pipeline. The event is
     // consumed (it did resolve to a region); the error is recorded.
     console.error('[mouse-router]', hit.region.owner, hit.region.id, e && e.message);
     try {
-      require('../../io/event-log').record('error', {
+      eventLog.record('error', {
         where: 'mouse_router', owner: hit.region.owner, id: hit.region.id, kind, mx, my,
         message: e && e.message, stack: e && e.stack,
       });
@@ -94,7 +106,7 @@ function _realizeAndPaint(hit, kind, mx, my) {
  *  stops), false to fall through to the legacy cascade. `mx`/`my` are 0-based. */
 function route(kind, mx, my, model) {
   if (!DISCRETE.has(kind)) return false;
-  const fresh = hitMap.stampsEqual(hitMap.frameStamp(), hitMap.stampOf(model, _api().getInstanceSlice('layout')));
+  const fresh = hitMap.stampsEqual(hitMap.frameStamp(), hitMap.stampOf(model, api.getInstanceSlice('layout')));
 
   if (kind === 'double' && _lastPress && _lastPress.mx === mx && _lastPress.my === my) {
     const last = _lastPress;
@@ -125,4 +137,4 @@ function route(kind, mx, my, model) {
 /** Test seam — forget the press→double continuation. */
 function _reset() { _lastPress = null; }
 
-module.exports = { route, realize, DISCRETE, _reset };
+module.exports = { route, realizeHandler, _reset };

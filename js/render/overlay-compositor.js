@@ -100,21 +100,21 @@ function activeOverlayIds(model) {
 }
 
 const HIT_BAND_BASE = 1000;
-let _hitMapRef; const _hitMap = () => (_hitMapRef ||= require('../panel/hit-map'));
-let _drawRef; const _screenRows = () => (_drawRef ||= require('../leaves/render/draw')).viewportDims().rows;
+const hitMap = require('../panel/hit-map');           // zero deps — no cycle
+const { viewportDims, HIT_Z } = require('../leaves/render/draw');
 
+// The backdrop owns EVERY discrete gesture (so nothing beneath the popup can be
+// hit): press / right / middle realize the outside policy; everything else —
+// wheel, and `double` — is swallowed. `double` is never a gesture of its own on
+// a backdrop: if the first click was out here it already ran `outside`;
+// otherwise the box moved/shrank between the clicks (or a popup opened in
+// between) and the second click must not cancel what the user never aimed at
+// (review C4).
+const _OUTSIDE_GESTURES = new Set(['press', 'right', 'middle']);
 function _backdrop(outside, cols, rows) {
-  return {
-    id: 'backdrop',
-    rect: { x: 0, y: 0, w: cols, h: rows },
-    opaque: true,
-    // `double` is never a gesture of its own on a backdrop: if the first click
-    // was out here it already ran `outside`; otherwise the box moved/shrank
-    // between the clicks (or a popup opened in between) and the second click
-    // must not cancel what the user never aimed at (review C4).
-    on: { press: outside, double: 'swallow', right: outside, middle: outside,
-          'wheel-up': 'swallow', 'wheel-down': 'swallow' },
-  };
+  const on = {};
+  for (const g of hitMap.DISCRETE_GESTURES) on[g] = _OUTSIDE_GESTURES.has(g) ? outside : 'swallow';
+  return { id: 'backdrop', rect: { x: 0, y: 0, w: cols, h: rows }, opaque: true, on };
 }
 
 /**
@@ -126,18 +126,19 @@ function _backdrop(outside, cols, rows) {
  * backdrop published first.
  */
 function paintActive(model, newRows, cols) {
-  const hm = _hitMap();
   for (const d of _active(model)) {
-    hm.enterOwner(d.id, HIT_BAND_BASE + 10 * (d.zIndex | 0));
+    hitMap.enterOwner(d.id, HIT_BAND_BASE + 10 * (d.zIndex | 0));
     try {
       const outside = d.mouse && d.mouse.outside;
       // FULL screen: newRows is the main frame, which stops above the footer row
       // (painted separately) — sizing by it left the footer outside every
       // backdrop, so a click there slipped past the popup's outside policy.
-      if (outside != null) hm.publishOwned(_backdrop(outside, cols, Math.max(newRows.length, _screenRows())), 0);
+      if (outside != null) {
+        hitMap.publishOwned(_backdrop(outside, cols, Math.max(newRows.length, viewportDims().rows)), HIT_Z.backdrop);
+      }
       d.render(model, newRows, cols);
     } finally {
-      hm.exitOwner();
+      hitMap.exitOwner();
     }
   }
 }
@@ -148,4 +149,8 @@ function _reset() { _descriptors.length = 0; }
 /** Count — tests only. For the "zero overlays registered" assertion. */
 function _count() { return _descriptors.length; }
 
-module.exports = { register, paintActive, activeOverlayIds, HIT_BAND_BASE, _reset, _count };
+/** The registered descriptors — tests only (test-overlay-mouse-policy pins
+ *  each descriptor's `mouse.outside` against its mode's `suppressChrome`). */
+function _all() { return _descriptors.slice(); }
+
+module.exports = { register, paintActive, activeOverlayIds, _reset, _count, _all };
