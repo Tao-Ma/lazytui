@@ -57,6 +57,7 @@ function update(model, msg) {
       else if (msg.to === 'bottom')    next = count - 1;
       else if (msg.to === 'pageup')    next = j.cursor - vh;
       else if (msg.to === 'pagedown')  next = j.cursor + vh;
+      else if (Number.isInteger(msg.to)) next = msg.to;   // absolute — a row click (docs/mouse-hit-map.md)
       else                              next = j.cursor + ((msg.dir | 0) || 0);
       next = Math.max(0, Math.min(count - 1, next));
       let scroll = j.scroll | 0;

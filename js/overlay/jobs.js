@@ -17,6 +17,7 @@
 'use strict';
 
 const { esc } = require('../leaves/text/ansi');
+const { formatHints } = require('../leaves/render/hints');
 const { renderOverlay, viewportDims, fitCell } = require('../leaves/render/draw');
 const { getModel } = require('../model/store');
 
@@ -135,6 +136,11 @@ function renderJobsOverlay(now, newRows, cols) {
   const scroll = Math.max(0, Math.min(j.scroll | 0, Math.max(0, list.length - vh)));
 
   const lines = [];
+  // Hit map (docs/mouse-hit-map.md): a click moves the cursor to that job; a
+  // double-click also presses Enter (jobs_activate — jump to the job, via the
+  // jobsMode key handler, which resolves the job itself). count/vh are baked at
+  // paint and re-clamped by the reducer. The header row has no target.
+  const lineTargets = [];
   if (list.length === 0) {
     lines.push('[dim]  (no live jobs)[/]');
   } else {
@@ -143,6 +149,8 @@ function renderJobsOverlay(now, newRows, cols) {
       const idx = scroll + i;
       const job = list[idx];
       if (!job) { lines.push(''); continue; }
+      const nav = { msg: { type: 'jobs_nav', to: idx, count: list.length, vh } };
+      lineTargets[lines.length] = { press: nav, double: [nav, { key: 'return' }] };
       const cells = _rowCells(job, labelW, now);
       lines.push(idx === cursor
         ? `[reverse]${_fmtRowPlain(cells)}[/]`
@@ -150,13 +158,20 @@ function renderJobsOverlay(now, newRows, cols) {
     }
   }
   lines.push('');
-  lines.push('[dim]\\[↑/↓] nav   \\[g/G] top/bottom   \\[Esc] close[/]');
+  const hint = formatHints([
+    { cap: '↑/↓', label: 'nav',        key: null },
+    { cap: 'g/G', label: 'top/bottom', key: null },
+    { cap: 'Esc', label: 'close',      key: 'escape' },
+  ]);
+  const lineChips = { [lines.length]: hint.chips };
+  lines.push(hint.markup);
 
   renderOverlay({
     lines, title: 'Running',
     maxWidth: wantW,
     count: list.length ? [cursor + 1, list.length] : undefined,
     targetRows: newRows || null, targetCols: cols || 0,
+    hit: { lineTargets, lineChips, box: { 'wheel-up': { key: 'up' }, 'wheel-down': { key: 'down' } } },
   });
 }
 
@@ -171,6 +186,9 @@ function registerSelf(compositor) {
     render: (m, newRows, cols) => renderJobsOverlay(m && m.now, newRows, cols),
     modal: false,
     zIndex: 40,
+    // No mouse.outside yet: jobs lets pane chrome stay clickable (suppressChrome:
+    // false), and a full-screen backdrop here would block it. Its outside-close
+    // lands in hit-map Release 2 as a backdrop BELOW the chrome band.
   });
 }
 
