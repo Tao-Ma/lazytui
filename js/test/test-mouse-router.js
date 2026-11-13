@@ -34,9 +34,19 @@ function withSpies(fn) {
 }
 
 describe('[1] realize', () => {
-  it('{ key } → handleKey(key, seq ?? key)', () => {
-    const calls = withSpies(() => { router.realize({ key: 'y' }); router.realize({ key: 'return', seq: '\r' }); });
-    eq(calls, [['key', 'y', 'y'], ['key', 'return', '\r']]);
+  it('{ key } → handleKey(key, seq) with the seq a REAL keystroke carries', () => {
+    const calls = withSpies(() => {
+      router.realize({ key: 'y' });
+      router.realize({ key: '\t' });
+      router.realize({ key: 'return', seq: '\r' });
+    });
+    eq(calls, [['key', 'y', 'y'], ['key', '\t', '\t'], ['key', 'return', '\r']]);
+  });
+  it('named keys carry NO seq (as input._dispatchToken sends them) — never their name as text', () => {
+    const calls = withSpies(() => {
+      for (const k of ['return', 'escape', 'backtab', 'up', 'down']) router.realize({ key: k });
+    });
+    eq(calls.map(c => c[2]), [undefined, undefined, undefined, undefined, undefined]);
   });
   it('{ msg } → applyMsg; { msg, owner } → dispatchMsg(wrap(owner, msg))', () => {
     const calls = withSpies(() => {
@@ -53,7 +63,7 @@ describe('[1] realize', () => {
       router.realize('swallow');
       router.realize(null);
     });
-    eq(calls, [['applyMsg', { type: 'jobs_nav', to: 3 }], ['key', 'return', 'return']]);
+    eq(calls, [['applyMsg', { type: 'jobs_nav', to: 3 }], ['key', 'return', undefined]]);
   });
 });
 
@@ -127,7 +137,7 @@ describe('[3] press→double continuation', () => {
     hm.publish({ id: 'row:1', rect: R(0, 3, 10, 1), z: 1062, owner: 'jobs', on });
     withSpies(() => router.route('press', 4, 3, MODEL));
     const calls = withSpies(() => router.route('double', 4, 3, MODEL));
-    eq(calls, [['applyMsg', { type: 'jobs_nav', to: 1 }], ['key', 'return', 'return']]);
+    eq(calls, [['applyMsg', { type: 'jobs_nav', to: 1 }], ['key', 'return', undefined]]);
   });
   it('a double with no hit-map press before it takes the normal path', () => {
     router._reset();

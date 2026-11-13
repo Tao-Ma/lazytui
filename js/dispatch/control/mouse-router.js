@@ -5,7 +5,7 @@
  * Precedence is z-order (panel/hit-map.resolve), not source order. Handler
  * forms, realized here and only here:
  *
- *   { key, seq? }      dispatch.handleKey(key, seq ?? key) — the keyboard path
+ *   { key, seq? }      dispatch.handleKey(key, seq ?? seqForKey(key)) — the keyboard path
  *                      itself, so a clicked hint chip / a wheel notch over a
  *                      list / an outside-click is exactly the key the user could
  *                      have typed (no mouse-only reducer arms, no drift).
@@ -39,6 +39,7 @@
 const hitMap = require('../../panel/hit-map');
 const { chainStamp } = require('../../leaves/input/modes');
 const { paintNow: render } = require('../../leaves/infra/render-queue');
+const { seqForKey } = require('../../leaves/render/hints');
 
 const DISCRETE = new Set(['press', 'double', 'right', 'middle', 'wheel-up', 'wheel-down']);
 
@@ -57,7 +58,7 @@ function realize(h) {
   if (h == null || h === 'swallow') return;
   if (Array.isArray(h)) { for (const x of h) realize(x); return; }
   if (typeof h !== 'object') return;
-  if (h.key != null) { _dispatch().handleKey(h.key, h.seq != null ? h.seq : h.key); return; }
+  if (h.key != null) { _dispatch().handleKey(h.key, h.seq != null ? h.seq : seqForKey(h.key)); return; }
   if (h.msg) {
     if (h.owner) _loop().dispatchMsg(_api().wrap(h.owner, h.msg));
     else _dispatch().applyMsg(h.msg);

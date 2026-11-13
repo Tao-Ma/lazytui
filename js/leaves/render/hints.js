@@ -18,7 +18,8 @@
  *
  * `cap` is the text inside the brackets; `key` is the handleKey token the chip
  * sends (`'return'`, `'escape'`, `'\t'`, `'backtab'`, `' '`, or a literal char;
- * `seq` defaults to `key`), or null for a non-key hint. Chip x0/x1 are visible
+ * `seq` defaults to what a real keystroke carries — see seqForKey), or null for
+ * a non-key hint. Chip x0/x1 are visible
  * columns relative to the line start, inclusive, spanning the whole
  * `[cap] label` (a bigger target than the bracket alone).
  *
@@ -34,6 +35,16 @@ const { visibleLen, esc } = require('../text/ansi');
 
 const SEP = '   ';
 
+/** The `seq` a real keystroke carries for `key`: input._dispatchToken calls
+ *  handleKey(tok, tok) for a single character ('y', '\t', ' ') but
+ *  handleKey('return') / ('escape') / ('backtab') / ('up') with NO seq for a
+ *  named key. A synthesized key must match exactly — handlers with a
+ *  "printable seq → typed text" fallback would otherwise type the key's NAME
+ *  (a clicked [shift-tab] appending "backtab" to a choices filter). */
+function seqForKey(key) {
+  return (typeof key === 'string' && key.length === 1) ? key : undefined;
+}
+
 /** @returns {{ markup: string, chips: Array<{key, seq, x0, x1}> }} */
 function formatHints(hints, opts) {
   const style = (opts && opts.style) || 'dim';
@@ -47,7 +58,7 @@ function formatHints(hints, opts) {
     const part = `\\[${esc(String(h.cap))}]${label}`;
     const w = visibleLen(part);
     if (h.key != null && w > 0) {
-      chips.push({ key: h.key, seq: h.seq != null ? h.seq : h.key, x0: x, x1: x + w - 1 });
+      chips.push({ key: h.key, seq: h.seq != null ? h.seq : seqForKey(h.key), x0: x, x1: x + w - 1 });
     }
     parts.push(part);
     x += w;
@@ -63,4 +74,4 @@ function chipSurvives(chip, lineW, innerW) {
   return chip.x0 >= 0 && chip.x1 <= lastIntact;
 }
 
-module.exports = { formatHints, chipSurvives, SEP };
+module.exports = { formatHints, chipSurvives, seqForKey };
