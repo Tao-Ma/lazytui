@@ -2,7 +2,7 @@
 
 > **Status**: Release 1 SHIPPED in v0.6.56 (2026-11-13; `f6d152c3..38275d37`
 > + the release commit), including the 4-track pre-release review's fixes.
-> Release 2 in progress (plan in §Release 2); Release 3 not started. Written 2026-11-13. Trigger: field
+> Release 2 code-complete on main (§Release 2 — as built; unreleased); Release 3 not started. Written 2026-11-13. Trigger: field
 > report *"when confirm popup shows, I cannot click mouse"*. Root-caused to
 > a routing gap, then widened (user call: "fix mouse from the ground up,
 > make it a first-class citizen") into this three-release plan.
@@ -647,6 +647,48 @@ confirm first; commits `dc58dffd..` on main. Deviations / notes:
   `test-hover-tooltip-chain-gate.js`, and per overlay
   `test-{confirm,fabric-field,copy,diag-log,jobs,register-popup,which-key,
   action-palette,menu,pane-menu,cmdline,fabric-form}-mouse.js`.
+
+## Release 2 — as built
+
+Steps 0–8 of §Release 2 shipped one commit each on main (`c075b2ca..`), step 6
+and adjacent finding 4 together (both touch `overlay/pane-menu.js`). Notes:
+
+- **Pane bracket.** `_safeRender` (and the collapsed-pane path in
+  `composeRects`) brackets each pane render with `hitMap.enterPane(paneId,
+  rect)`; the screen origin rides `opts.x/y`. Pane renderers and paint publish
+  pane-local rects through `publishLocal`, which translates and clips to the
+  pane. A pane whose render throws `retractOwner`s what it published.
+- **One chrome publisher.** renderPanel's drawn-chrome record (the old
+  chrome-regions payload) now also reports where each border control drew
+  (`controls`, `bottomControl` — the control objects ride through renderPanel)
+  and which title targets survived truncation (`tabs`). `render/paint
+  _publishChromeGlyphs` turns the record into regions for the pane being
+  rendered. Gates: chrome needs `!suppressesChromeClicks` (read at paint);
+  tabs need `!isChainActive` (the old tab arm sat below the T13 gate).
+- **`{ act }`** (`dispatch/control/mouse-acts.js`): `pane-menu-open`
+  (`pane-menu.openAt`, cursor seeding shared with the keyboard `T` via
+  `seedCursor`) and `border-control` (`resolveBorderControl` — re-runs
+  `borderControlsFor` with the current focus + mode, checks the action is still
+  offered, then `spec.dispatch`). Top steppers publish `repeat: true`; the item
+  legend does not.
+- **`buildTextView` passes `titleTargets` through** — the first cut published
+  no tabs for info / text-view because the builder whitelists renderPanel opts.
+- **Deleted:** `panel/chrome-regions.js`, `panel/tree-regions.js`,
+  `panel/chrome-hittest.js`, text-view `cancelHitInfo`, pane-menu
+  `hitTestTrigger`, `_mouseHandlePaneMenuMode`, the chrome cluster / tab-strip /
+  tree-marker arms of `handleMouse`, and the paint-mirroring helpers that only
+  existed for click-time re-derivation (`border-controls` fits / placeX0s /
+  reservedW / bottomX0; `refresh-control` BorderX0 / Fits / Dir).
+- **Adjacent finding 4 — reproduced and fixed.** Half view on a ~30–34-column
+  terminal: the content slot is ~17 wide, the dropdown's 20-cell floor anchored
+  at the pane's x spilled past the right edge (border, `╮`, count cut).
+  `_geom` now shifts the box left and caps it at the screen width.
+- Tests: `test-chrome-mouse.js` (glyphs, mode gating, stale geometry, double,
+  tab strip); the pinned R1 tests for jobs / pane-menu / which-key / stale-frame
+  updated for the below-chrome backdrops; every test that read the deleted
+  registries re-pointed at painted fixtures (`hit-click` helpers `screenRows`,
+  `screenText`, `chromeAt`/`triggerAt`/`collapseAt`/`closeAt`,
+  `borderControlAt`, `cancelAt`, `treeMarkerAt`).
 
 ## Rollback
 

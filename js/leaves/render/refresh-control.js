@@ -110,38 +110,6 @@ function refreshControlHits(x0, y, visibleW) {
   };
 }
 
-/** The control's leftmost cell on a pane's TOP BORDER: one gap dash to the left
- *  of the leftmost chrome glyph (`glyphX0`). renderPanel places it by the same
- *  construction — prepend `control + one dash` to the right-anchored glyph
- *  cluster — so render and hit-test agree without a shared string. */
-function refreshControlBorderX0(glyphX0, visibleW) {
-  return glyphX0 - 1 - visibleW;
-}
-
-/** Whether the control is drawn on the top border — mirrors renderPanel's fit
- *  for a lone control (tests pin the arithmetic; clicks no longer read it — the
- *  hit map publishes where renderPanel drew). TITLE-INDEPENDENT by design: renderPanel reserves the
- *  full right cluster (control + gap + glyphs + corner) and truncates the TITLE
- *  to fit it, so presence depends only on pane width + cluster width — which the
- *  hit-test also knows. `innerW` = pane width − 2; `glyphClusterW` = the chrome
- *  glyphs' visible width (a `[_]` = 3; add `[X] ` = 4 more in free-config).
- *  Renders iff there's room for `╭─` + one separator dash + the right cluster. */
-function refreshControlFits(innerW, glyphClusterW, visibleW) {
-  const rightVis = visibleW + 1 + glyphClusterW + 1;   // control + gap + glyphs + corner
-  return innerW >= rightVis + 1;                        // + one separator dash before the cluster
-}
-
-/** Pure hit predicate over a `{ minus, plus }` hit-rect pair (from
- *  refreshControlHits). Returns -1 (`-`, faster), +1 (`+`, slower), or 0 (miss).
- *  null → miss. */
-function refreshControlDir(mx, my, hits) {
-  if (!hits) return 0;
-  const on = (r) => my === r.y && mx >= r.x0 && mx <= r.x1;
-  if (on(hits.minus)) return -1;
-  if (on(hits.plus)) return 1;
-  return 0;
-}
-
 /**
  * A BORDER-CONTROL SPEC for the refresh control — the refresh KIND packaged for
  * the generic border-control strip (leaves/render/border-controls + api's
@@ -182,6 +150,6 @@ function refreshControlSpec({ owner, currentMs }) {
 module.exports = {
   REFRESH_LADDER, MIN_REFRESH_MS, MAX_REFRESH_MS, DEFAULT_REFRESH_MS,
   normalizeLadder, clampRefreshMs, stepRefreshMs, formatRefreshMs,
-  refreshControlText, refreshControlHits, refreshControlBorderX0, refreshControlFits, refreshControlDir,
+  refreshControlText, refreshControlHits,
   refreshControlSpec,
 };

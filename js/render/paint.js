@@ -34,7 +34,6 @@ const mpool = require('../leaves/wm/pool');
 const mpane = require('../leaves/wm/pane');
 const { theme, setTheme } = require('../leaves/infra/themes');
 const { truncate, setWriter: _setDrawWriter, setChromeSink: _setDrawChromeSink, setHitSink: _setDrawHitSink } = require('../leaves/render/draw');
-const chromeRegions = require('../panel/chrome-regions');
 const hoverRegion = require('../panel/hover-region');
 const hitMap = require('../panel/hit-map');
 const { detectColorDepth, downgradeAnsi } = require('../leaves/render/color-depth');
@@ -110,15 +109,11 @@ let _decorRef; const _decor = () => (_decorRef ||= require('../leaves/render/dra
 let _paneMenuRef; const _paneMenu = () => (_paneMenuRef ||= require('../overlay/pane-menu'));
 let _selViewRef; const _selView = () => (_selViewRef ||= require('../panel/select-view'));
 
-// Route renderPanel's drawn-chrome emit to the ambient pane's registry entry. The
-// ambient paneId is set by _safeRender's enterPane around each pane's render(), so
-// during the leaf's emit currentPaneId() is the pane being drawn (null for
-// overlays → dropped). Collapsed panes bypass the leaf and publish directly in
-// _renderCollapsed. See panel/chrome-regions.
-_setDrawChromeSink((region) => {
-  chromeRegions.publish(_selView().currentPaneId(), region);
-  _publishChromeGlyphs(region);
-});
+// renderPanel's drawn-chrome emit (what actually painted on the border, pane-
+// local) becomes hit-map regions for the pane being rendered (_chromeCur, set
+// around each pane's render; null for overlays → nothing published). Collapsed
+// panes bypass the leaf and publish from _renderCollapsed.
+_setDrawChromeSink((rec) => _publishChromeGlyphs(rec));
 
 // Hit map (docs/mouse-hit-map.md Release 2) — the pane whose chrome is being
 // drawn: { panel, chrome, live }. Set around each pane's render (_safeRender /
@@ -280,15 +275,13 @@ function _renderCollapsed(p, w, chrome) {
         collapse: chrome && chrome.collapse ? { x0: w - 4, x1: w - 2 } : null,
         titleClip: null,   // a collapsed pane draws no multi-tab slot strip
       };
-      chromeRegions.publish(p.paneId, rec);
       _publishChromeGlyphs(rec);
       return wrapColor(fc, `╭─${titleText}${'─'.repeat(midFill)}${rightPart}`);
     }
     // Doesn't fit — fall through to bare collapsed bar.
   }
 
-  // Bare bar — no chrome painted, so record none (a click finds nothing).
-  chromeRegions.publish(p.paneId, { trigger: null, close: null, collapse: null, titleClip: null });
+  // Bare bar — no chrome painted, so nothing publishes (a click finds nothing).
   const fill = innerW - visibleLen(titleText);
   if (fill >= 2)      return wrapColor(fc, `╭─${titleText}${'─'.repeat(fill - 1)}╮`);
   else if (fill === 1) return wrapColor(fc, `╭${titleText}─╮`);
@@ -485,7 +478,6 @@ function _safeRender(panel, w, h, opts) {
     // The error block paints NO chrome. If render() published a chrome region via
     // the sink before it threw, wipe it so a click can't land on a glyph the error
     // block overwrote (same-frame; next frame's clear() handles the steady state).
-    chromeRegions.publish(panel.paneId, { trigger: null, close: null, collapse: null, titleClip: null });
     hitMap.retractOwner(panel.paneId);
     return rows.join('\n');
   } finally {
@@ -979,15 +971,11 @@ function render(model) {
       else _frame.forceFull = true;   // no recorded bounds — reclaim conservatively
     }
   }
-  // Drop last frame's drawn-chrome map before the pane pass repopulates it, so a
-  // pane that stopped rendering (off-screen in half/full) leaves no stale hit
-  // region. Repopulated synchronously below; hit-tests only read between frames.
   // (Hover tooltip vanish/move reclaim retired — overlay-compositor
   // end-of-Release-2 cleanup; the hover box now composites into newRows
   // alongside every other overlay, so cell-diff emits per-cell writes
   // for the vacated OLD-position cells AND the new-position cells from
   // the natural row delta.)
-  chromeRegions.clear();
   // And for the graph hover-value (panel/hover-region): stats.render republishes the
   // resolved value for the hovered pane during the pane pass; footer + hover overlay
   // (painted after) read it. Empty when nothing is hovered.

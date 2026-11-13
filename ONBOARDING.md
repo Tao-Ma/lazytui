@@ -101,9 +101,11 @@ The release also ships prebuilt per-platform `lazytui` CLI binaries. Full recipe
 - **Reducer discipline** — `update` is `(msg, slice) → (next, cmds)`; thread root
   facts through the Msg payload, never read producer-local state in a reducer, and
   push cascades into the reducer (not the handler). See `docs/PRINCIPLES.md` §12.
-- **Paint↔hit-test agreement** — clickable chrome geometry must be *shared* by
-  paint and hit-test. Paint publishes drawn glyph regions to a per-frame registry
-  (`panel/chrome-regions`, `panel/tree-regions`) that the hit-tests read.
+- **Paint↔hit-test agreement** — a click resolves only on what the frame actually
+  drew. Paint publishes every clickable region (popups, pane chrome, border
+  controls, tab strip, tree markers) with a data handler to the per-frame hit map
+  (`panel/hit-map`); one z-ordered router resolves it (`docs/mouse-hit-map.md`).
+  Never re-derive a clickable's geometry at click time.
 - **Docs are prose, tests are blind to it** — after moving a symbol or changing
   layout, grep the old name and fix code comments + living docs (`docs/msg-routes.md`
   is the Msg-route map; `docs/LAYOUT.md` the panel/config reference).

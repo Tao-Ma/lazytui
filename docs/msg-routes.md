@@ -92,7 +92,7 @@ single interpreter runs. The render path is a (near-)pure projection.
   panel/      │  api (Component registry) · route (instances)    │  Components +
               │  layout · navigator/* · monitor/* · fabric/*      │  routing
               │  info · agent · terminal · text-view (content panes)
-              │  nav-state · commands · chrome-hittest · plugin-guard
+              │  nav-state · commands · plugin-guard
               │  hit-map (per-frame clickable regions; written by render)
               └───────────────────────┬────────────────────────┘
               ┌───────────────────────▼────────────────────────┐
@@ -1200,7 +1200,7 @@ Adopters: **docker** (`containers`, its 6 actions — now on right-click too) an
 
 **Tree mouse affordances** (the click twins of `t`/`z`, both paint↔hit-test-agreed):
 - **flat↔tree chip** — `_treeControl`, a top-border control (`‹ tree ›`/`‹ flat ›`, left of the sort selector) that self-suppresses on a non-tree pane + in free-config (so `borderControlsFor` drops it from paint AND hit-test together). One click region → `tree_mode_toggle`.
-- **click-to-fold marker** — `render` **publishes** each drawn `▾`/`▸` glyph's cell to `panel/tree-regions` (a per-row sibling of `panel/chrome-regions`), but ONLY for a foldable row whose marker survived **both** clips: id-column truncation (a glyph past `idW-2` is clipped) AND the pane-height floor (a data row whose inner index `1+vi ≥ innerH` isn't drawn — at `h==3` the sticky header eats the only inner row). A clipped glyph publishes nothing → no phantom hit. `chrome-hittest.hitTestTreeMarker` reads that registry (adds the pane origin) and dispatches `tree_toggle{id}`. It is resolved at **body precedence** in the input press handler (NOT the border-chrome cluster): a fold marker is a CONTENT-row affordance, so it must sit AFTER the chain-mode gates — the chrome cluster runs under the non-modal overlays (pane-menu/jobs/free-config) whose dropdowns cover the data rows, and a marker there would hijack a click meant for the overlay. Same single-source discipline as the border chrome (docs reference_paint_hittest_agreement).
+- **click-to-fold marker** — `render` **publishes** each drawn `▾`/`▸` glyph's cell on the per-frame hit map (`panel/hit-map.publishLocal`, pane-local → screen, in-pane band z 30) with the handler `{ msg: tree_toggle{id}, owner: paneId }`, but ONLY for a foldable row whose marker survived **both** clips: id-column truncation (a glyph past `idW-2` is clipped) AND the pane-height floor (a data row whose inner index `1+vi ≥ innerH` isn't drawn — at `h==3` the sticky header eats the only inner row). A clipped glyph publishes nothing → no phantom hit. Markers publish only with no chain mode active (the click was always gated like a pane-body click), and every popup / in-grid overlay backdrop sits above z 30, so a marker can't hijack a click meant for an overlay (docs/mouse-hit-map.md §Z bands).
 
 **Verdict (§7.9a): pure TEA.** The arms are pure (Cmds only, no getModel); the tree ordering is a pure re-derivation in getItems/render; the impure menu-open, the right-click re-dispatch, and the exec all live behind effects (`msg` / `pane_item_action` / `run_action`).
 
@@ -1517,10 +1517,17 @@ the only place these become dispatches:
 | `{ key, seq? }` | `dispatch.handleKey(key, seq ?? seqForKey(key))` — the keystroke itself, so every popup Msg a click produces is the one its key handler produces |
 | `{ msg, owner? }` | `applyMsg(msg)` · `dispatchMsg(wrap(owner, msg))` (row picks: `menu_activate{idx}`, `*_nav{to}`, `palette_pick`, `fabric_form_focus`, `fabric_form_choices_pick`) |
 | `{ intent }` | `intent.realize(intent)` (§10.1) |
+| `{ act, …args }` | a named input-time action in `dispatch/control/mouse-acts.js`, computed against CURRENT state: `pane-menu-open` → `focus_set` (viewer) + `pane_menu_open{paneId, cursor, scroll}` (layout); `border-control` → the spec's own `dispatch(action, pane)` → `dispatchMsg(wrap(owner, msg))` (`set_refresh_ms`, `set_sort`, `sort_reverse`, `tree_mode_toggle`, `graph_zoom`, `item_action`, the composite cycler) — after re-checking the control is still shown |
 | `'swallow'` / `[h…]` | nothing / each in order |
 
+Pane chrome (R2) publishes absolute Msgs: `[_]`/`[+]` → `panel_collapse_toggle{id}`,
+`[X]` → `pool_hide{id}`, open `[≡]` → `pane_menu_close`, a tab → `activate_tab
+{paneId, tabPoolId}` (all layout); `✗ cancel` → `applyMsg(cancel_job{jobId})`;
+a fold marker → `wrap(paneId, tree_toggle{id})`.
+
 Shell-tier like the rest of §10: it reads `getModel()` + the layout slice to
-check the frame stamp (stale frames swallow what they drew).
+check the frame stamp (stale frames swallow what they drew; the stamp includes
+the visible pane geometry).
 
 ### 10.2 `handleAction(verb, arg)` (`dispatch/control/actions.js`) — the keyboard/menu/cmdline chokepoint
 

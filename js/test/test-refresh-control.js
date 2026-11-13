@@ -1,9 +1,9 @@
 /**
  * refresh-control — the pure refresh-rate control primitive (Phase 0 of the
  * btop-style `- 2s +` control for monitor panes). Pins the ladder/clamp, the
- * label formatter, the right-aligned layout + hit rects, and the hit predicate,
- * so the Component renderer and the click geometry share one source and can't
- * drift (clicks resolve on the hit map — docs/mouse-hit-map.md Release 2).
+ * label formatter, the `-`/`+` hit rects, and that the spec's click regions sit
+ * on what renderPanel actually drew (clicks resolve on the hit map, published at
+ * the x renderPanel reports — docs/mouse-hit-map.md Release 2).
  *
  * Run: node js/test/test-refresh-control.js
  */
@@ -94,68 +94,61 @@ describe('[refresh-control] refreshControlText', () => {
   });
 });
 
-describe('[refresh-control] refreshControlHits + border x0', () => {
+describe('[refresh-control] refreshControlHits', () => {
   it('two 2-cell buttons that never overlap the label span', () => {
     const h = mc.refreshControlHits(14, 0, 6);
     eq(h.minus, { x0: 14, x1: 15, y: 0 });
     eq(h.plus,  { x0: 18, x1: 19, y: 0 });
     assert(h.minus.x1 < h.plus.x0, 'minus fully left of plus (label gap between)');
   });
-  it('the border x0 is one gap-dash left of the leftmost glyph', () => {
-    eq(mc.refreshControlBorderX0(28, 6), 21);   // 28 - 1 - 6
-  });
 });
 
-describe('[refresh-control] refreshControlDir (hit predicate)', () => {
-  const h = mc.refreshControlHits(14, 0, 6);
-  it('maps a click on each button to its direction', () => {
-    eq(mc.refreshControlDir(14, 0, h), -1);   // on `-`
-    eq(mc.refreshControlDir(15, 0, h), -1);   // the button's second cell
-    eq(mc.refreshControlDir(18, 0, h), 1);    // on `+`
-    eq(mc.refreshControlDir(19, 0, h), 1);
-  });
-  it('a click on the label / off-row / missing hits is a miss', () => {
-    eq(mc.refreshControlDir(16, 0, h), 0);    // label cell
-    eq(mc.refreshControlDir(14, 1, h), 0);    // wrong row
-    eq(mc.refreshControlDir(14, 0, null), 0); // no hits
-  });
-});
-
-// The phantom-click guard (review HIGH): renderPanel must draw the control on
-// EXACTLY the widths where refreshControlFits() says so. The hit map publishes a
-// control only where renderPanel reports drawing it, so a divergence here would
-// mean the pure predicate no longer describes the paint. Cross-check the REAL
-// renderPanel output against the predicate across every width.
-describe('[refresh-control] render ↔ refreshControlFits agreement (phantom-click guard)', () => {
+// The phantom-click guard (review HIGH), hit-map form: the click regions are the
+// spec's regions() at the x renderPanel REPORTS drawing the control (the chrome
+// sink — render/paint publishes exactly that). Cross-check the REAL renderPanel
+// output against its own report across every width: reported iff drawn, at the
+// painted cell, and the `-` / `+` regions sit on the painted `-` / `+`.
+describe('[refresh-control] render ↔ reported placement (phantom-click guard)', () => {
   const draw = require('../leaves/render/draw');
   const { stripMarkup } = require('../leaves/text/ansi');
-  const GLYPH_W = 3;   // collapse [_] only (the control shows in normal mode)
-  it('renderPanel draws the control IFF refreshControlFits predicts it, w ∈ [8,60]', () => {
-    const { text, visibleW } = mc.refreshControlText(10000);   // "10s"
+  let lastRec = null;
+  draw.setChromeSink((rec) => { lastRec = rec; });
+  const spec = mc.refreshControlSpec({ owner: 'docker', currentMs: () => 10000 });
+  const { text, visibleW } = mc.refreshControlText(10000);   // "- 10s +"
+  const control = { spec, text, visibleW, pane: { paneId: 'p', type: 'containers' } };
+  const top = (w, title) => {
+    lastRec = null;
+    const row = stripMarkup(draw.renderPanel({ width: w, height: 4, lines: [], title, hotkey: 'd',
+      chrome: { collapse: 'collapse' }, topControls: [control] }).split('\n')[0]);
+    return { row, rec: lastRec };
+  };
+  it('reported IFF drawn, at the painted cell; regions sit on - and +, w ∈ [8,60]', () => {
+    let drew = 0;
     for (let w = 8; w <= 60; w++) {
-      const top = stripMarkup(draw.renderPanel({
-        width: w, height: 4, lines: [], title: 'Containers', hotkey: 'd',
-        chrome: { collapse: 'collapse' }, topControls: [text],
-      }).split('\n')[0]);
-      const drawn = top.includes('- 10s +');
-      const predicted = mc.refreshControlFits(w - 2, GLYPH_W, visibleW);
-      eq(drawn, predicted, `w=${w}: drawn=${drawn} predicted=${predicted} top=${JSON.stringify(top)}`);
+      const { row, rec } = top(w, 'Containers');
+      const drawn = row.includes('- 10s +');
+      eq(!!(rec && rec.controls), drawn, `w=${w}: reported iff drawn — ${JSON.stringify(row)}`);
+      if (!drawn) continue;
+      drew++;
+      const x0 = rec.controls[0].x0;
+      eq(x0, row.indexOf('- 10s +'), `w=${w}: x0 is the painted cell`);
+      const rs = spec.regions(x0, 0, visibleW);
+      const dec = rs.find(r => r.action === 'dec'), inc = rs.find(r => r.action === 'inc');
+      eq(row[dec.x0], '-', `w=${w}: the dec region starts on the painted -`);
+      eq(row[inc.x1], '+', `w=${w}: the inc region ends on the painted +`);
+      assert(!row.slice(dec.x1 + 1, inc.x0).includes('-') && !row.slice(dec.x1 + 1, inc.x0).includes('+'),
+        'the label between the buttons is in neither region');
     }
+    assert(drew > 0, 'the sweep drew the control at some width');
   });
   it('a longer title does NOT change presence (title-independent) — same first-shown width', () => {
-    const { text, visibleW } = mc.refreshControlText(10000);
     const firstShown = (title) => {
-      for (let w = 8; w <= 60; w++) {
-        const top = stripMarkup(draw.renderPanel({ width: w, height: 4, lines: [], title, hotkey: 'd',
-          chrome: { collapse: 'collapse' }, topControls: [text] }).split('\n')[0]);
-        if (top.includes('- 10s +')) return w;
-      }
+      for (let w = 8; w <= 60; w++) if (top(w, title).rec && top(w, title).rec.controls) return w;
       return null;
     };
-    let predFirst = null;
-    for (let w = 8; w <= 60; w++) if (mc.refreshControlFits(w - 2, GLYPH_W, visibleW)) { predFirst = w; break; }
-    eq(firstShown('C'), predFirst);
-    eq(firstShown('a very long containers panel title'), predFirst);   // title length is irrelevant
+    const short = firstShown('C');
+    assert(short != null);
+    eq(firstShown('a very long containers panel title'), short);   // title length is irrelevant
   });
 });
 

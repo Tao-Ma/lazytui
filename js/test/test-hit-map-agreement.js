@@ -11,6 +11,15 @@
  *     clickable (the narrow-pane phantom-hit class, for popups);
  *   - rows sit strictly inside the box borders.
  *
+ * Release 2 — PANE CHROME (the `[chrome]` sweep below): for representative
+ * layouts (default boot + a long tab strip, free-config, a collapsed pane, a
+ * tree table with border controls, a running action's ✗ cancel chip), at each
+ * width every chrome-band (z 40) and in-pane (z 30) region lies inside the
+ * screen and its owner pane, and the painted text under it is what it claims:
+ * `[_]` / `[+]` / `[X]` / `[≡]`, an intact tab label, a control part with no
+ * ellipsis, the cancel block, a fold marker. Non-vacuity: every kind is seen,
+ * and some width drops a pane's chrome (so the drop path is exercised).
+ *
  * Run: node js/test/test-hit-map-agreement.js
  */
 'use strict';
@@ -130,5 +139,117 @@ for (const [name, open] of Object.entries(SCENARIOS)) {
     }
   });
 }
+
+
+// ── Release 2: pane chrome ───────────────────────────────────────────────────
+const hc = require('./_helpers/hit-click');
+const geo = require('../leaves/wm/geometry');
+const route = require('../panel/route');
+const mpool = require('../leaves/wm/pool');
+const loop = require('../dispatch/runtime/loop');
+const toLayout = (msg) => sm.capture(() => loop.dispatchMsg(api.wrap('layout', msg)));
+const contentTab = require('../panel/content-tab');
+const CH_WIDTHS = [20, 26, 32, 44, 60, 80, 120, 160];
+const G = { g: { name: 'g', label: 'G', containers: [], children: [], parent: null, depth: 0, quick: false, actions: {} } };
+
+function withLongStrip() {
+  for (const n of ['Alpha', 'Bravo', 'Charlie', 'Delta']) contentTab.addContentTab('doc-' + n, n + '-tab', [n]);
+}
+const CHROME_SCENARIOS = {
+  'default + long tab strip': { boot: () => { sm.bootFresh(); toLayout({ type: 'view_set', mode: 'normal' }); withLongStrip(); } },
+  'free-config': { boot: () => { sm.bootFresh(); toLayout({ type: 'view_set', mode: 'normal' }); sm.capture(() => sm.applyMsg({ type: 'mode_set', flag: 'freeConfigMode' })); } },
+  'collapsed pane': { boot: () => {
+    const P = { groups: { id: 'groups', type: 'groups' }, groups2: { id: 'groups2', type: 'groups' }, detail: { id: 'detail', type: 'detail' } };
+    sm.bootFresh({ layout: { pool: P, columns: [{ width: 40, panels: [P.groups, P.groups2] }, { panels: [P.detail] }] } });
+    toLayout({ type: 'view_set', mode: 'normal' });
+    toLayout({ type: 'panel_collapse_toggle', id: 'groups2' });
+  } },
+  'tree table + border controls': { boot: () => {
+    if (!api.getComponent('table')) api.registerComponent(require('../panel/monitor/table'));
+    const cfg = { id: 'procs', type: 'table', title: 'Procs', config: { topic: 'host.sweep', columns: ['cpu', 'comm'], sort: 'cpu', tree: { parent: 'ppid' } } };
+    const det = { id: 'detail', type: 'detail' };
+    sm.bootFresh({ groups: G, layout: { pool: { procs: cfg, detail: det }, columns: [{ width: 60, panels: [cfg] }, { panels: [det] }] } });
+    toLayout({ type: 'view_set', mode: 'normal' });
+    getModel().metrics = { ...(getModel().metrics || {}), 'host.sweep': {
+      schema: { columns: { cpu: { type: 'percent' }, comm: { type: 'string' }, ppid: { type: 'number' } } },
+      series: { '1': [{ cpu: 5, comm: 'init', ppid: 0 }], '100': [{ cpu: 9, comm: 'bash', ppid: 1 }], '200': [{ cpu: 1, comm: 'vim', ppid: 100 }] } } };
+    toLayout({ type: 'focus_set', focus: 'pane-procs' });
+  } },
+  'running action (cancel chip)': {
+    boot: () => {
+      if (!api.getComponent('text-view')) api.registerComponent(require('../panel/text-view/text-view'));
+      const ACT = { key: 'logs', label: 'logs', type: 'run', script: 'sleep 5', tab: true };
+      sm.bootFresh({ groups: { g1: { name: 'g1', label: 'G1', containers: [], children: [], parent: null, depth: 0, quick: false, actions: { logs: ACT } } } });
+      toLayout({ type: 'view_set', mode: 'normal' });
+      require('../dispatch/runtime/action-runner').runAction('logs', ACT);
+    },
+    done: () => require('../dispatch/runtime/action-runner').killAll(),
+  },
+};
+
+const seen = { collapse: 0, expand: 0, close: 0, trigger: 0, tab: 0, ctl: 0, cancel: 0, tree: 0 };
+let chromeDropped = 0;
+
+function checkChromeFrame(cols, label) {
+  const ROWS = 30;
+  const rows = hc.screenRows();
+  const text = (r) => { let t = ''; for (let x = r.rect.x; x < r.rect.x + r.rect.w; x++) t += ((rows[r.rect.y] || [])[x]) || ' '; return t; };
+  const layout = api.getInstanceSlice('layout');
+  const viewer = route.resolveViewerPaneId();
+  const panes = mpool.allPanesInColumns(layout.arrange);
+  const regions = hm.all().filter(r => r.z === hm.BANDS.CHROME || r.z === hm.BANDS.IN_PANE);
+  for (const r of regions) {
+    const where = `${label} cols=${cols} ${r.owner}/${r.id}`;
+    assert(r.rect.x >= 0 && r.rect.y >= 0 && r.rect.x + r.rect.w <= cols && r.rect.y + r.rect.h <= ROWS, `${where}: inside the screen`);
+    const b = geo.visibleBoundsFor(layout, r.owner, viewer);
+    assert(b, `${where}: owner pane is visible`);
+    if (b) assert(r.rect.x >= b.x && r.rect.y >= b.y && r.rect.x + r.rect.w <= b.x + b.w && r.rect.y + r.rect.h <= b.y + b.h, `${where}: inside its pane`);
+    const t = text(r);
+    const pane = panes.find(p => p.paneId === r.owner);
+    if (r.id === 'collapse') {
+      const want = pane && pane.collapsed ? '[+]' : '[_]';
+      assert(t === want, `${where}: painted ${JSON.stringify(t)}, want ${want}`);
+      seen[pane && pane.collapsed ? 'expand' : 'collapse']++;
+    } else if (r.id === 'close') { assert(t === '[X]', `${where}: painted ${JSON.stringify(t)}`); seen.close++; }
+    else if (r.id === 'trigger') { assert(t === '[≡]', `${where}: painted ${JSON.stringify(t)}`); seen.trigger++; }
+    else if (r.id.startsWith('tab:')) {
+      assert(t.trim() && !t.includes('…') && !t.includes('─'), `${where}: an intact tab label, got ${JSON.stringify(t)}`);
+      seen.tab++;
+    } else if (r.id.startsWith('ctl:')) {
+      assert(!t.includes('…') && !/[─╮╭]/.test(t), `${where}: an intact control part, got ${JSON.stringify(t)}`);
+      seen.ctl++;
+    } else if (r.id === 'cancel') { assert(t.includes('cancel') && t.includes('✗'), `${where}: the cancel block, got ${JSON.stringify(t)}`); seen.cancel++; }
+    else if (r.id.startsWith('tree:')) {
+      const g = (rows[r.rect.y] || [])[r.rect.x];
+      assert(g === '▾' || g === '▸', `${where}: a fold marker at x0, got ${JSON.stringify(g)}`);
+      seen.tree++;
+    } else assert(false, `${where}: unexpected pane-band region id`);
+  }
+  // Drop path: a visible, non-content, expanded pane that published no [_].
+  for (const p of panes) {
+    if (p.collapsed || p.role === 'content' || p.type === 'detail') continue;
+    if (!geo.visibleBoundsFor(layout, p.paneId, viewer)) continue;
+    if (!regions.some(r => r.owner === p.paneId && r.id === 'collapse')) chromeDropped++;
+  }
+}
+
+for (const [label, sc] of Object.entries(CHROME_SCENARIOS)) {
+  describe(`[chrome: ${label}] agreement across widths`, () => {
+    for (const cols of CH_WIDTHS) {
+      it(`cols=${cols}`, () => {
+        sc.boot();
+        sm.resize(cols, 30);
+        try { checkChromeFrame(cols, label); } finally { if (sc.done) sc.done(); }
+      });
+    }
+  });
+}
+
+describe('[chrome] non-vacuity', () => {
+  it('the sweep saw every region kind and at least one dropped chrome cluster', () => {
+    for (const [k, n] of Object.entries(seen)) assert(n > 0, `saw ${k} regions (${n})`);
+    assert(chromeDropped > 0, `some width dropped a pane's chrome (${chromeDropped})`);
+  });
+});
 
 report();

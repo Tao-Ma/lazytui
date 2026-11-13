@@ -451,12 +451,12 @@ let _writer = null;
 function setWriter(fn) { _writer = fn; }
 
 // Chrome-region publish seam. renderPanel emits the pane-local x-ranges of the
-// clickable border glyphs it ACTUALLY drew (or null per glyph when the narrow-pane
-// `fits` fallback dropped the whole cluster) so the hit-tests read real geometry
-// instead of a width proxy — the paint↔hit-test agreement fix for the narrow-pane
-// phantom hit. This bottom leaf can't import the panel-layer registry, so paint
-// wires this sink to panel/chrome-regions.publish(<ambient paneId>, …). Unset in
-// CLI/tests / for overlays with no ambient pane → renderPanel skips the emit.
+// clickable border chrome it ACTUALLY drew (glyphs — null per glyph when the
+// narrow-pane `fits` fallback dropped the whole cluster — plus border controls and
+// surviving title targets) so clicks resolve on real geometry, never a width proxy
+// (the paint↔hit agreement rule). This bottom leaf can't import the panel layer,
+// so render/paint wires the sink and publishes hit-map regions for the pane being
+// rendered. Unset in CLI/tests → renderPanel skips the emit.
 let _chromeSink = null;
 function setChromeSink(fn) { _chromeSink = fn; }
 

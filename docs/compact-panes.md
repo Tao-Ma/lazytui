@@ -1,8 +1,8 @@
 # Compact Panes — composite panels for btop-density layouts
 
 **Status:** design (Tier 1). Step 1 of the arc — the narrow-pane phantom-hit
-fix (paint publishes its drawn chrome regions; see `js/panel/chrome-regions.js`
-and `reference_paint_hittest_agreement`) — **shipped** (`8d6c7580`). This doc
+fix (paint publishes its drawn chrome regions — then `js/panel/chrome-regions.js`,
+now the per-frame hit map `js/panel/hit-map.js` — see `reference_paint_hittest_agreement`) — **shipped** (`8d6c7580`). This doc
 specs the **composite panel** (Tier 1); it is **not yet implemented**. The
 interactive-sub-widget / group-box tier (Tier 2) is deliberately deferred — see
 §8.

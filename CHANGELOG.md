@@ -6,6 +6,42 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+Mouse hit-map, Release 2 — pane chrome on the hit map
+([docs/mouse-hit-map.md](docs/mouse-hit-map.md) §Release 2). Every clickable
+thing on a pane border now resolves on the per-frame hit map, published where
+paint actually drew it; the click-time hit-tests that re-derived geometry are
+gone.
+
+### Changed
+- **Pane chrome clicks resolve on the hit map.** `[_]`/`[+]`, `[X]`, `[≡]`,
+  the top border-control strip (refresh `- +`, sort `‹ ›`, tree/flat, zoom
+  reset), the bottom item-action legend, the slot tab strip, the `✗ cancel`
+  chip and tree fold markers. A border control's Msg is still computed at
+  click time (current sort, current selection), after checking the control is
+  still shown for that pane.
+- **Clicking outside the jobs list, the pane menu or a pending which-key chord
+  closes it** (Esc). Their backdrop sits below the pane-chrome band, so the
+  chrome stays clickable while they are open. Previously an outside click
+  closed the pane menu only, and was dropped for jobs and which-key.
+- **A key and a click batched in one input chunk** (common over SSH) where the
+  key moved panes — collapse, hide, view mode, resize — now swallows a click on
+  pane chrome the old frame drew, instead of hitting whatever is there now.
+  Hover and focus changes do not count, so ordinary clicks are unaffected.
+- **A double-click on a chrome glyph or a fold marker toggles once.** The
+  second click no longer falls through to the pane's double-click action. The
+  refresh and sort steppers take a fast second click as a second step (it was
+  dropped before).
+
+### Fixed
+- **The pane menu could spill past the right edge** of a narrow terminal (a
+  half-view right slot at ~30 columns), cutting off its border and count. It
+  now shifts left to stay on screen.
+
+### Removed
+- `panel/chrome-regions.js`, `panel/tree-regions.js`, `panel/chrome-hittest.js`
+  and the unused paint-mirroring helpers in `border-controls` /
+  `refresh-control`.
+
 ## [0.6.56] — 2026-11-13
 
 Mouse hit-map, Release 1 — every popup is clickable

@@ -22,9 +22,9 @@
  *   - Clicking inside (x, x+w) switches the slot's active tab to it.
  *   - Clicking ONE column outside that range does NOT switch to it.
  *   - When the strip OVERFLOWS a narrow pane, renderPanel truncates its tail;
- *     renderPanel publishes on the hit map only the tabs drawn intact (left of
- *     the drawn extent, which paint also records as chrome-regions.titleClip —
- *     read here to find a clipped tab), so a cut-off tab is unclickable.
+ *     renderPanel publishes on the hit map only the tabs drawn intact (every
+ *     cell left of the drawn extent), so a cut-off tab publishes no `tab:*`
+ *     region and is unclickable.
  *   - `x` on a focused content text-view tab closes it (remove_tab); Info +
  *     Transcript are permanent (no close).
  *
@@ -262,11 +262,11 @@ describe('[4] `x` does not close the permanent Info / Transcript tabs', () => {
 //     clipped tab must NOT be reported clickable (paint↔hit-test agreement). --
 //
 // buildEntryStrip lays tabBounds at FULL width, but renderPanel truncates the
-// title's tail when it overflows the pane. renderPanel publishes a tab region on
-// the hit map only when every cell of it lies left of the drawn extent (which
-// paint also records as chrome-regions.titleClip — read below to pick a clipped
-// tab) — so a tab whose glyph was cut can't switch a sibling the user can't even
-// see. The pre-clip hit-test matched the full (undrawn) bound: the drift this pins.
+// title's tail when it overflows the pane. renderPanel publishes a `tab:<poolId>`
+// region on the hit map only when every cell of it lies left of the drawn extent
+// — so a tab whose glyph was cut publishes nothing and can't switch a sibling the
+// user can't even see. The pre-clip hit-test matched the full (undrawn) bound:
+// the drift this pins.
 
 describe('[5] a truncated slot strip does not report its clipped tail tabs clickable', () => {
   it('a click on a clipped tab\'s undrawn bound switches nothing', () => {
@@ -283,35 +283,41 @@ describe('[5] a truncated slot strip does not report its clipped tail tabs click
     const layout = api.getInstanceSlice('layout');
     const b = geo.visibleBoundsFor(layout, 'pane-detail');
     assert(b, 'content pane bounds present');
-    const reg = require('../../panel/chrome-regions').get(cp.paneId);
-    assert(reg && typeof reg.titleClip === 'number',
-      `paint published a numeric titleClip for the content pane (got ${reg && reg.titleClip})`);
+    const hm = require('../../panel/hit-map');
+    const published = new Set(hm.all()
+      .filter(r => r.owner === cp.paneId && r.id.startsWith('tab:'))
+      .map(r => r.id.slice(4)));
     const bounds = slotTabBounds();
-    const lastEnd = bounds.length ? bounds[bounds.length - 1].x + bounds[bounds.length - 1].w : 0;
-    assert(reg.titleClip < lastEnd,
-      `the strip overflowed and truncated (titleClip=${reg.titleClip} < full strip end ${lastEnd})`);
+    assert(published.size > 0 && published.size < bounds.length,
+      `the strip overflowed: some tabs published, some cut (${published.size} of ${bounds.length})`);
+    // Every published tab is drawn intact on screen (no truncation ellipsis).
+    const hc = require('../_helpers/hit-click');
+    for (const id of published) {
+      const text = hc.screenText(cp.paneId, 'tab:' + id);
+      assert(!text.includes('…'), `published tab '${id}' painted intact ("${text}")`);
+    }
 
-    // The leftmost tab whose glyph was cut AND whose bound still starts inside the
-    // pane — so the click reaches the pane row (not skipped by the outer bounds
-    // test), exercising the CLIP, not an off-pane miss.
-    const clipped = bounds.find(t => t.x + t.w > reg.titleClip && t.x < b.w);
-    assert(clipped, `a clipped tab starts inside the pane (titleClip=${reg.titleClip}, paneW=${b.w})`);
+    // The leftmost tab whose glyph was cut (published nothing) AND whose bound
+    // still starts inside the pane — so the click reaches the pane row,
+    // exercising the CLIP, not an off-pane miss.
+    const clipped = bounds.find(t => !published.has(t.poolId) && t.x < b.w);
+    assert(clipped, `a clipped tab starts inside the pane (paneW=${b.w})`);
 
     const before = cp.activeTabId;
     assert(clipped.poolId !== before, 'the clipped tab is not already active (a real switch would be visible)');
     const [sx, sy] = sgr0(b.x + clipped.x, b.y);
     sm.capture(() => sm.handleMouse('press', sx, sy));
     eq(contentPane().activeTabId, before,
-      `a click on clipped tab '${clipped.poolId}' (x+w=${clipped.x + clipped.w} > titleClip=${reg.titleClip}) MUST switch nothing`);
+      `a click on clipped tab '${clipped.poolId}' (no published region) MUST switch nothing`);
 
-    // Positive control: a tab fully WITHIN titleClip is still clickable — the clip
-    // didn't just disable the whole strip.
-    const survivor = bounds.find(t => t.x + t.w <= reg.titleClip && t.poolId !== before);
+    // Positive control: a tab that published (drawn intact) is still clickable —
+    // the clip didn't just disable the whole strip.
+    const survivor = bounds.find(t => published.has(t.poolId) && t.poolId !== before);
     assert(survivor, 'at least one surviving (fully-drawn) tab exists');
     const [ix, iy] = sgr0(b.x + survivor.x + Math.floor(survivor.w / 2), b.y);
     sm.capture(() => sm.handleMouse('press', ix, iy));
     eq(contentPane().activeTabId, survivor.poolId,
-      `a surviving tab '${survivor.poolId}' within titleClip MUST still be clickable`);
+      `a surviving (published) tab '${survivor.poolId}' MUST still be clickable`);
   });
 });
 

@@ -175,7 +175,7 @@ function _handleWheel(mx, my, delta) {
 // click, motion without an in-flight drag) and skip paint
 // deliberately as a perf optimization (P5.10).
 //
-// Handlers that DON'T consume (e.g. paneMenuMode on motion/release)
+// Handlers that DON'T consume (e.g. agentMode on a click)
 // return false; the dispatcher falls through, and the subsequent
 // `isChainActive(model.modes) return;` guard catches the event so it
 // doesn't leak into normal-mode click/wheel routing.
@@ -261,9 +261,8 @@ const _modeMouseHandlers = {
 // (the since-merged tabList/paneSelect modes, then freeConfig); deriving it
 // keeps the mouse side from silently disagreeing with the keyboard side —
 // exactly what a second hardcoded list risked. The remaining modes
-// (paneMenu / freeConfig / agent) are mutually exclusive by invariant
-// (mode_set/clear flips one at a time; free-config disables the [≡]
-// trigger), so the order is observationally moot; if
+// (freeConfig / agent) are mutually exclusive by invariant (mode_set/clear
+// flips one at a time), so the order is observationally moot; if
 // that invariant ever relaxes, mouse now resolves the SAME winner as
 // keyboard (freeConfig first) instead of the opposite.
 const _MOUSE_MODE_PRECEDENCE = CHAIN_MODES.filter(f => f in _modeMouseHandlers);
@@ -568,11 +567,12 @@ function handleMouse(kind, x, y) {
   // chrome / drag / focus machinery below.
   if (kind === 'hover') { _handleHover(mx, my, model); return; }
 
-  // Hit map (docs/mouse-hit-map.md, Release 1) — the topmost region the last
-  // frame drew under the pointer, z-ordered, with a DATA handler. Runs before
-  // the chrome cluster because popups paint OVER chrome. A miss (nothing
-  // published there, a stale frame, a non-discrete gesture) falls through to
-  // the legacy cascade below, unchanged.
+  // Hit map (docs/mouse-hit-map.md) — the topmost region the last frame drew
+  // under the pointer, z-ordered, with a DATA handler: popups (R1), pane chrome
+  // + border controls + tab strip + ✗ cancel + tree markers, in-grid overlay
+  // backdrops (R2). Precedence is z-order. A miss (nothing published there, a
+  // stale frame that drew nothing there, a non-discrete gesture) falls through
+  // to the legacy cascade below — pane bodies, drags, free-config (R3).
   if (mouseRouter.route(kind, mx, my, model)) return;
 
   // v0.6.3 Phase C1 — modal mouse routing through the
@@ -581,8 +581,8 @@ function handleMouse(kind, x, y) {
   // active claiming handler wins. Handlers own their render() call so
   // consume-no-render paths (panel-list header click, motion without
   // drag) can skip paint as a perf optimization. Handlers that don't
-  // claim (e.g. paneMenu on motion/release) return false and fall
-  // through to the `isChainActive` guard below. Popups resolve on the hit
+  // claim (e.g. agentMode on a click) return false and fall through to the
+  // `isChainActive` guard below. Popups and pane chrome resolve on the hit
   // map BEFORE this point (the router call at the top of handleMouse).
   if (_dispatchActiveModeMouse(kind, mx, my, model)) return;
 
@@ -600,8 +600,8 @@ function handleMouse(kind, x, y) {
   // / middle) resolve their intent from the YAML-overridable mouse map
   // (defaults: double→activate, right→context, middle→noop). Realization is
   // uniform (`_realizeButtonGesture`), so a config may remap any of the three
-  // onto any supported intent. Chrome (press-only) already ran above; these
-  // are gated by the same isChainActive guard, so nothing fires behind an
+  // onto any supported intent. Chrome (press-only) resolved on the hit map
+  // above; these are gated by the same isChainActive guard, so nothing fires behind an
   // overlay. For a real double, the preceding single press already focused +
   // selected the row via the click body arm below; the `activate` path
   // re-runs focus+select idempotently (and makes a remapped button work too).
