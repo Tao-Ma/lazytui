@@ -38,8 +38,11 @@ const { filterChoices } = require('../leaves/ports/choices-filter');
 const { windowSlice } = require('../leaves/render/window-slice');
 
 // Hard max for the overlay; the dims clamp (renderOverlay → overlayBox) narrows
-// to COLS-2 on tight terminals.
-const MAX_WIDTH = 72;
+// to COLS-2 on tight terminals. 78 = the widest help line (`[tab] next
+// [shift-tab] prev   [space] choices   [enter] run   [esc] cancel`, 76 cells)
+// + borders: at 72 the line truncated and its `[esc]` hint was drawn cut —
+// visible but not clickable (pre-release review C7).
+const MAX_WIDTH = 78;
 // Floor on the chip reserve — covers [modified] (10) + 1 for breathing room.
 // The actual reserve each frame is `max(MIN_CHIP_SLOT, longest chip actually
 // painted)`, so slice-2's longer labels ([fetching…]=10, [1024 choices]=15)

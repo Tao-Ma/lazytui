@@ -70,6 +70,14 @@ describe('[4] chips / wheel / outside', () => {
     hc.clickRegion(O, 'chip:escape');
     eq(getModel().modes.jobsMode, false);
   });
+  it('[Esc] chip ≡ the Esc key (same model)', () => {
+    openJobs();
+    sm.capture(() => sm.handleKey('escape', undefined));
+    const viaKey = hc.snapshot();
+    openJobs();
+    hc.clickRegion(O, 'chip:escape');
+    eq(hc.snapshot(), viaKey);
+  });
   it('wheel steps the cursor', () => {
     openJobs();
     hc.wheelRegion(O, 'box', 'down');

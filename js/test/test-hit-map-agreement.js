@@ -2,7 +2,8 @@
  * Paint ↔ hit-map agreement, swept across terminal widths
  * (docs/mouse-hit-map.md §Test strategy; reference_paint_hittest_agreement).
  *
- * For each migrated overlay, at widths 20…200, paint it and check every region
+ * For every hit-mapped overlay (all 12 of Release 1, plus fabric-form with
+ * its choices list open), at widths 20…200, paint it and check every region
  * it published against the cells the frame actually drew:
  *   - every region lies inside the screen and inside its owner's box;
  *   - every chip covers an INTACT `[cap] label` — starts with `[`, has the
@@ -14,14 +15,14 @@
  */
 'use strict';
 
-const { describe, it, eq, assert, report } = require('./test-runner');
+const { describe, it, assert, report } = require('./test-runner');
 const sm = require('./smoke/_helpers/smoke');
-const hc = require('./_helpers/hit-click');
 const hm = require('../panel/hit-map');
 const draw = require('../leaves/render/draw');
 const { compositeOverlays } = require('./_helpers/overlay-capture');
 const { stripMarkup } = require('../leaves/text/ansi');
 const { getModel } = require('../app/runtime');
+const api = sm.api;
 
 const WIDTHS = [20, 26, 32, 44, 60, 80, 120, 200];
 
@@ -44,7 +45,53 @@ const SCENARIOS = {
     sm.capture(() => sm.applyMsg({ type: 'jobs_open', now: 0 }));
     return 'jobs';
   },
+  copy: () => {
+    const opts = [{ label: 'Name' }, { label: 'A rather long path label to truncate' }, { label: '— Cancel —', cancel: true }];
+    require('../overlay/copy')._setOptions(opts.map(o => ({ ...o, content: 'x' })));
+    sm.capture(() => sm.applyMsg({ type: 'copy_enter', options: opts }));
+    return 'copy';
+  },
+  'which-key': () => {
+    const kb = require('../leaves/input/keybindings');
+    kb.clearBindings();
+    kb.registerKeyBinding('g g', { label: 'go to the top of the list', run: () => {} });
+    kb.registerKeyBinding('?', { label: 'help', run: () => {} });
+    sm.capture(() => sm.applyMsg({ type: 'enter_prefix' }));
+    return 'which-key';
+  },
+  'action-palette': () => {
+    const cli = require('../app/cli');
+    require('../overlay/action-palette').setConfigAccessors({ iterActions: cli.iterActions, resolveAction: cli.resolveAction });
+    sm.capture(() => sm.applyMsg({ type: 'palette_open' }));
+    return 'action-palette';
+  },
+  menu: () => {
+    const items = [['Copy line', 'copy_text', 'a'], null, ['A much longer menu entry label here', 'noop']];
+    sm.capture(() => sm.applyMsg({ type: 'menu_open', items, title: 'Actions', anchor: { x: 3, y: 3 } }));
+    return 'menu';
+  },
+  'pane-menu': () => {
+    sm.capture(() => api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_open', paneId: 'pane-groups', cursor: 0, scroll: 0 })));
+    return 'pane-menu';
+  },
+  cmdline: () => {
+    sm.capture(() => sm.applyMsg({ type: 'cmdline_enter' }));
+    sm.capture(() => sm.applyMsg({ type: 'cmdline_set_matches', matches: ['focus', 'filter'].map(n => ({ display: n, desc: `${n} things`, kind: 'cmd' })) }));
+    return 'cmdline';
+  },
+  'fabric-form': () => { openForm(false); return 'fabric-form'; },
+  'fabric-form (choices open)': () => { openForm(true); return 'fabric-form'; },
 };
+
+function openForm(picking) {
+  const field = (port, extra) => ({ port, text: '', required: true, default: null, desc: `${port} desc`,
+    choicesFnRef: null, choicesCmd: null, choicesLabeled: false, choicesTimeout: null, dependsOn: [], choices: null, ...extra });
+  sm.capture(() => sm.applyMsg({ type: 'fabric_form_enter',
+    pendingAction: { actionKey: 'restart', action: { label: 'Restart', type: 'run', script: 'true', ports: { in: { host: {}, svc: {} } } } },
+    fields: [field('host'), field('svc', { choices: { items: ['nginx', 'sshd'], labels: null, truncated: false } })] }));
+  sm.capture(() => sm.applyMsg({ type: 'fabric_form_focus', idx: 1 }));   // [space] choices hint shows
+  if (picking) sm.capture(() => sm.applyMsg({ type: 'fabric_form_choices_open', port: 'svc' }));
+}
 
 function paintAndRead(owner) {
   const vp = draw.viewportDims();

@@ -582,8 +582,16 @@ confirm first; commits `dc58dffd..` on main. Deviations / notes:
   lineChips, box }` input instead of separate `lineTargets` / `hints`;
   hints are `{ cap, label, key, seq? }`; truncation is decided at publish
   (`chipSurvives`). §renderOverlay contract describes the built shape.
-- Width sweep `test-hit-map-agreement.js` (widths 20…200) pins the
-  paint↔hit agreement property for every hit-mapped overlay.
+- Width sweep `test-hit-map-agreement.js` (widths 20…200, 1227 checks) pins
+  the paint↔hit agreement property for every hit-mapped overlay.
+- **Bench gate** (2026-11-13, same filesystem, 10 alternating rounds of
+  `bench-render-construction.js`, baseline `f6d152c3` vs R1 HEAD; medians):
+  realistic 1068.7 → 1071.5 µs/frame (+0.3%); active-search 1139.8 → 1142.9
+  (+0.3%); 50k stress 1101.5 → 981.6 (spread 820–1160 on both trees —
+  noise). Both trees show the same bimodal fast runs on the search row.
+  Router micro-bench: stamp check + resolve 0.34 / 0.48 / 0.82 µs per click
+  at 20 / 150 / 500 regions; publishing 3 / 6 / 18 µs per frame — against a
+  ~1070 µs frame. No regression.
 - Tests: `test-hit-map.js` / `test-hints.js` (registry, stamp, hints),
   `test-mouse-router.js` (handler forms, stale rule, double rules),
   `test-mouse-stale-frame.js` (batched chunks end to end),

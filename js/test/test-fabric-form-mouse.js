@@ -98,6 +98,14 @@ describe('[3] chips', () => {
       eq(hc.snapshot(), viaKey);
     });
   }
+  it('with [space] choices shown, the whole help line fits: [esc] cancel is clickable too', () => {
+    openForm();
+    hc.clickRegion(O, rowWith('svc').id);
+    hc.paint();
+    eq(hc.regions(O).filter(r => r.id.startsWith('chip:')).map(r => r.id).sort(),
+      ['chip:\t', 'chip: ', 'chip:backtab', 'chip:escape', 'chip:return']);
+    eq(hc.paintedText(O, 'chip:escape'), '[esc] cancel');
+  });
   it('a choices field focused → a [space] choices chip that opens the list', () => {
     openForm();
     hc.clickRegion(O, rowWith('svc').id);

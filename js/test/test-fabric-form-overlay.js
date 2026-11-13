@@ -401,7 +401,7 @@ describe('[fabric-form-overlay] paints a bordered popup with required+optional s
     const rows = decodeRows(raw);
     assert(rows.length > 0, 'something was painted');
     for (const row of rows) {
-      // overlayBox clamps menuW to min(MAX_WIDTH=72, COLS-2=38) = 38; a row's
+      // overlayBox clamps menuW to min(MAX_WIDTH=78, COLS-2=38) = 38; a row's
       // last cell lands at col (col-start) + (visLen-1), which must stay ≤ COLS.
       const endCol = row.c + row.visLen - 1;
       assert(endCol <= 40, `row ends at col ${endCol} > 40 (vis=${row.visLen}): ${JSON.stringify(row.text)}`);
