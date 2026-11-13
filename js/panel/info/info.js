@@ -121,10 +121,8 @@ function _searchDecoration(slice, lines, focused) {
 // position-tab strip (`Info ─ Transcript ─ …`) so the siblings stay VISIBLE +
 // clickable. Info is the DEFAULT active tab, so without this the strip would
 // vanish whenever the user is on Info (the common state). Single-tab → plain title.
-function _slotTitle(panel) {
-  const strip = require('../slot-strip').unifiedSlotStrip(panel);
-  return strip ? strip.title : (panel && panel.title);
-}
+// (Resolved by slot-strip.slotTitleOpts — title + its tab click targets —
+// spread into this pane's renderPanel opts.)
 
 function render(panel, w, h, slice, opts) {
   const focused = !!(opts && opts.focused);
@@ -138,7 +136,7 @@ function render(panel, w, h, slice, opts) {
     // 3b — thread the theme's selection/search tags into the pure leaf.
     selectedTag: t.selected, searchTags: { match: t.match, current: t.match_current },
     width: w, height: h,
-    title: _slotTitle(panel), hotkey: panel.hotkey,
+    ...require('../slot-strip').slotTitleOpts(panel), hotkey: panel.hotkey,
     panelType: 'info', focused,
     chrome: opts && opts.chrome,
   });

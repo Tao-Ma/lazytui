@@ -8,6 +8,8 @@
  *   [5] stale geometry: a batched key that moves panes swallows the click;
  *       a batched focus click does NOT stale the frame
  *   [6] double-click on a glyph = one toggle
+ *   [7] slot tab strip: a tab click activates it; a truncated tab and a chain
+ *       mode publish nothing
  *
  * Run: node js/test/test-chrome-mouse.js
  */
@@ -146,6 +148,39 @@ describe('[6] double-click', () => {
     const r = chrome('collapse')[0];
     hc.dblclickRegion(r.owner, 'collapse');
     eq(pane(r.owner).collapsed, true, 'one toggle, not two');
+  });
+});
+
+describe('[7] slot tab strip', () => {
+  const tabs = () => hm.all().filter(r => r.owner === 'pane-detail' && r.id.startsWith('tab:'));
+  it('each drawn tab publishes over its label; a click activates that tab', () => {
+    boot();
+    const ts = tabs();
+    assert(ts.length >= 2, `the content slot shows ≥2 tabs (got ${ts.length})`);
+    const other = ts.find(r => r.id !== `tab:${pane('pane-detail').activeTabId}`);
+    const label = hc.screenText('pane-detail', other.id);
+    assert(/^[A-Za-z]/.test(label) && !label.includes('─'), `region covers a label, got "${label}"`);
+    hc.clickRegion('pane-detail', other.id);
+    eq(pane('pane-detail').activeTabId, other.id.slice(4));
+  });
+  it('a tab cut by truncation publishes nothing; the survivors still do', () => {
+    boot();
+    const wide = tabs().length;
+    sm.resize(52, 30);                         // narrow the content slot
+    hc.paint();
+    const narrow = tabs();
+    assert(narrow.length < wide, `fewer tabs survive (${narrow.length} of ${wide})`);
+    const rows = hc.screenRows();
+    for (const r of narrow) {
+      const text = (rows[r.rect.y] || []).slice(r.rect.x, r.rect.x + r.rect.w).join('');
+      assert(!text.includes('…'), `a published tab is drawn intact ("${text}")`);
+    }
+  });
+  it('no tab regions while a chain mode is active (tab clicks were never live there)', () => {
+    boot();
+    sm.capture(() => sm.applyMsg({ type: 'mode_set', flag: 'jobsMode' }));
+    hc.paint();
+    eq(tabs().length, 0);
   });
 });
 

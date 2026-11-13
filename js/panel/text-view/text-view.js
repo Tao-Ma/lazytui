@@ -207,10 +207,8 @@ function _searchDecoration(slice, lines, focused) {
 // (the viewer's Info/Transcript, other action outputs) stay VISIBLE + clickable
 // as ONE consistent strip — running an action ADDS a tab rather than swapping the
 // strip to a different level. Single-tab slots keep the plain title.
-function _slotTitle(panel) {
-  const strip = require('../slot-strip').unifiedSlotStrip(panel);
-  return strip ? strip.title : (panel && panel.title);
-}
+// (Resolved by slot-strip.slotTitleOpts — title + its tab click targets —
+// spread into this pane's renderPanel opts.)
 
 // Flush `line` to the right edge of a `width`-wide content area (leading pad),
 // markup-aware. Too-wide lines are left untouched (the pane truncates them).
@@ -352,7 +350,7 @@ function render(panel, w, h, slice, opts) {
     // 3b — thread the theme's selection/search tags into the pure leaf.
     selectedTag: t.selected, searchTags: { match: t.match, current: t.match_current },
     width: w, height: h,
-    title: _slotTitle(panel), hotkey: panel.hotkey,
+    ...require('../slot-strip').slotTitleOpts(panel), hotkey: panel.hotkey,
     panelType: 'text-view', focused,
     chrome: opts && opts.chrome,
   });

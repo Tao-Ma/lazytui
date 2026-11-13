@@ -38,7 +38,21 @@ function unifiedSlotStrip(pane) {
   // pane-menu shows the SAME list as the visible border strip (they must not
   // disagree). `title`/`tabBounds` drive the visible strip + click hit-test;
   // `entries`/`activeIdx` drive the menu.
-  return { ...strip, entries, activeIdx };
+  // Title-RELATIVE click targets (x from the title's first cell) for renderPanel's
+  // `titleTargets`: renderPanel knows where the title actually starts and which
+  // tabs survived truncation, and reports only those (docs/mouse-hit-map.md R2).
+  const x0 = strip.tabBounds.length ? strip.tabBounds[0].x : 0;
+  const titleTargets = strip.tabBounds.map(t => ({ x: t.x - x0, w: t.w, poolId: t.poolId }));
+  return { ...strip, entries, activeIdx, titleTargets };
 }
 
-module.exports = { unifiedSlotStrip };
+/** renderPanel title opts for a slot pane: the unified strip + its click targets
+ *  for a multi-tab slot, else the pane's own title (no targets). */
+function slotTitleOpts(pane) {
+  const strip = unifiedSlotStrip(pane);
+  return strip
+    ? { title: strip.title, titleTargets: strip.titleTargets }
+    : { title: pane && pane.title, titleTargets: null };
+}
+
+module.exports = { unifiedSlotStrip, slotTitleOpts };

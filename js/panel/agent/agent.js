@@ -434,10 +434,8 @@ function _searchDecoration(slice, lines, focused) {
 
 // Multi-tab slots show the unified strip as the title (text-view's U2e
 // stopgap — same helper, same reason: siblings stay visible + clickable).
-function _slotTitle(panel) {
-  const strip = require('../slot-strip').unifiedSlotStrip(panel);
-  return strip ? strip.title : (panel && panel.title);
-}
+// (Resolved by slot-strip.slotTitleOpts — title + its tab click targets —
+// spread into this pane's renderPanel opts.)
 
 function render(panel, w, h, slice, opts) {
   const focused = !!(opts && opts.focused);
@@ -463,7 +461,7 @@ function render(panel, w, h, slice, opts) {
     // 3b — thread the theme's selection/search tags into the pure leaf.
     selectedTag: _t.selected, searchTags: { match: _t.match, current: _t.match_current },
     width: w, height: h,
-    title: _slotTitle(panel), hotkey: panel.hotkey,
+    ...require('../slot-strip').slotTitleOpts(panel), hotkey: panel.hotkey,
     panelType: 'agent', focused,
     chrome: opts && opts.chrome,
   });

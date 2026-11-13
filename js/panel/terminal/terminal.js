@@ -42,10 +42,8 @@ function update(_msg, slice) { return slice; }
 // but the terminal pane kept its plain pane title, so the moment a shell tab
 // went active the Info/Transcript tabs VANISHED from the border (no way to see
 // or click back to them while the shell ran). Single-tab → plain title.
-function _slotTitle(panel) {
-  const strip = require('../slot-strip').unifiedSlotStrip(panel);
-  return strip ? strip.title : (panel && panel.title);
-}
+// (Resolved by slot-strip.slotTitleOpts — title + its tab click targets —
+// spread into this pane's renderPanel opts.)
 
 // Paint ONLY the chrome; the overlay fills the interior with the live PTY grid
 // (empty `lines` — the interior is painted by renderTerminalOverlay). When the
@@ -62,7 +60,7 @@ function render(panel, w, h, slice, opts) {
   ];
   return renderPanel({
     width: w, height: h, lines,
-    title: _slotTitle(panel), hotkey: panel.hotkey,
+    ...require('../slot-strip').slotTitleOpts(panel), hotkey: panel.hotkey,
     panelType: 'terminal',
     focused: !!(opts && opts.focused),
     chrome: opts && opts.chrome,

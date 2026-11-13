@@ -163,6 +163,7 @@ function renderPanel({
   width, height, lines = [], title = '', hotkey = '',
   focused = false, count = null, scrollOffset = 0, color = null,
   panelType = null, chrome = null, windowed = false, topControls = [], bottomControls = [],
+  titleTargets = null,
 }) {
   const t = theme();
   const b = BORDER;
@@ -190,6 +191,7 @@ function renderPanel({
   let top = null;
   let chromeDrew = false;   // did the [≡]/[X]/[_] cluster actually paint (fits)?
   let triggerReg = null;    // the [≡] pane-local x-range IFF it survived leftPart truncation
+  let tabsDrawn = null;     // [{ x0, x1, ref }] pane-local — titleTargets that survived truncation
   let titleClip = null;     // pane-local exclusive column past which no intact title glyph drew
                             // (the tab-strip hit-test clips its tabBounds to this — a slot strip
                             // truncated on a narrow pane must not report a clipped tab as clickable)
@@ -247,6 +249,18 @@ function renderPanel({
       // tabs keep their pane-local x — only the tail is cut. A truncated leftPart
       // ends in `…` (1 cell), so intact glyphs stop one col short of leftCap.
       titleClip = (leftVisFull <= leftCap) ? leftVisFull : (leftCap - 1);
+      // Title click targets (a slot's tab strip): the title starts after the
+      // prefix, the [≡] (when drawn) and one dash; a target is reported only if
+      // every cell of it is left of titleClip (a tab cut by truncation isn't
+      // clickable — it isn't drawn).
+      if (title && Array.isArray(titleTargets) && titleTargets.length) {
+        const tx0 = visibleLen(lbp.prefix) + (wantLeftTrigger ? 3 : 0) + 1;
+        tabsDrawn = [];
+        for (const t of titleTargets) {
+          const x0 = tx0 + t.x, x1 = x0 + t.w - 1;
+          if (t.w > 0 && x1 < titleClip) tabsDrawn.push({ x0, x1, ref: t });
+        }
+      }
       // The [≡] lives INSIDE leftPart, which `truncate` cuts INDEPENDENTLY of
       // `fits` (a border-control strip or a long title shrinks leftCap and can
       // clip the glyph while the row still composites). So the trigger is painted
@@ -323,6 +337,7 @@ function renderPanel({
       collapse: chromeDrew && wantRightCollapse ? { x0: width - 4, x1: width - 2 } : null,
       titleClip,
       controls: controlsDrawn,
+      tabs: tabsDrawn,
       bottomControl: bottomDrawn,
     });
   }

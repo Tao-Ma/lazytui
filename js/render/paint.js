@@ -167,6 +167,18 @@ function _publishChromeGlyphs(rec) {
     }
   };
   for (const c of rec.controls || []) ctl(c, 0, true);
+  // Slot tab strip — each tab renderPanel drew intact. Normal mode only (the tab
+  // click was always gated like a pane-body click: no chain mode active).
+  if (cur.tabsLive) {
+    for (const t of rec.tabs || []) {
+      if (!t.ref || !t.ref.poolId) continue;
+      hitMap.publishLocal({
+        id: `tab:${t.ref.poolId}`,
+        rect: { x: t.x0, y: 0, w: t.x1 - t.x0 + 1, h: 1 },
+        on: { press: { msg: { type: 'activate_tab', paneId: panel.paneId, tabPoolId: t.ref.poolId }, owner: 'layout' } },
+      }, Z);
+    }
+  }
   if (rec.bottomControl) ctl(rec.bottomControl, rec.bottomControl.y, false);
 }
 // Hit-map seam (docs/mouse-hit-map.md): draw.publishBox emits overlay regions
@@ -205,6 +217,7 @@ function _chromeContext(model, layoutSlice) {
     // Chrome clicks allowed this frame (modes.js suppressChrome column) — the
     // chrome hit regions publish only then (_publishChromeGlyphs).
     chromeLive: !modes.suppressesChromeClicks(md),
+    tabsLive: !modes.isChainActive(md),
     freeConfigMode: !!md.freeConfigMode,
     dragging: !!(layoutSlice.freeConfig && layoutSlice.freeConfig.drag),
     paneMenuTriggerStateFor,
@@ -437,7 +450,7 @@ function _safeRender(panel, w, h, opts) {
   // Hit map (docs/mouse-hit-map.md Release 2): the pane's SCREEN rect, so its
   // chrome + in-pane affordances publish pane-local regions (publishLocal).
   hitMap.enterPane(panel.paneId, { x: (opts && opts.x) | 0, y: (opts && opts.y) | 0, w, h });
-  _chromeCur = { panel, chrome: opts && opts.chrome, live: !!(opts && opts.chromeLive) };
+  _chromeCur = { panel, chrome: opts && opts.chrome, live: !!(opts && opts.chromeLive), tabsLive: !!(opts && opts.tabsLive) };
   try {
     // v0.6.3 P4.2b — pass opts (carries chrome spec from composeRects)
     // as a 5th arg. Existing panel renderers ignore unknown args; the
@@ -512,7 +525,7 @@ function composeRects(layout, model) {
   // and threaded into the panel renderer via opts. v0.6.4 Theme B —
   // shared scalars from _chromeContext (deduped across the 3 render
   // modes).
-  const { chromeFor, chromeLive, freeConfigMode, dragging, paneMenuTriggerStateFor } = _chromeContext(model, layoutSlice);
+  const { chromeFor, chromeLive, tabsLive, freeConfigMode, dragging, paneMenuTriggerStateFor } = _chromeContext(model, layoutSlice);
 
   // Index rects for quick lookup by either key. paneId is preferred
   // (multi-instance forward-compat per v0.6.1 Phase 7); type is the
@@ -538,7 +551,7 @@ function composeRects(layout, model) {
       _chromeCur = { panel, chrome, live: chromeLive };
       try { raw = _renderCollapsed(panel, rect.w, chrome); } finally { hitMap.exitPane(); _chromeCur = null; }
     } else {
-      raw = _safeRender(panel, rect.w, rect.h, { chrome, focused, chromeLive, x: rect.x, y: rect.y });
+      raw = _safeRender(panel, rect.w, rect.h, { chrome, focused, chromeLive, tabsLive, x: rect.x, y: rect.y });
     }
     const lines = raw === '' ? [] : raw.split('\n');
     out.push({
@@ -635,7 +648,7 @@ function renderHalf(model, arrangeOverride) {
   // Half view shows one non-detail pane (left) + detail (right); only
   // the left is a pane-select candidate. Single trigger → no peer-
   // disable check (plain 'available').
-  const { chromeFor, chromeLive, freeConfigMode, dragging, paneMenuTriggerStateFor } = _chromeContext(model, layoutSlice);
+  const { chromeFor, chromeLive, tabsLive, freeConfigMode, dragging, paneMenuTriggerStateFor } = _chromeContext(model, layoutSlice);
   const leftChrome = chromeFor(leftPanel, {
     freeConfigMode, dragging,
     focused: mpane.paneMatchesFocus(leftPanel, layoutSlice.focus),
@@ -652,8 +665,8 @@ function renderHalf(model, arrangeOverride) {
   // the viewer on the right.
   const leftFocused = mpane.paneMatchesFocus(leftPanel, layoutSlice.focus);
   const detailFocused = detailPanel ? mpane.paneMatchesFocus(detailPanel, layoutSlice.focus) : false;
-  let leftContent = _safeRender(leftPanel, halfW, availH, { chrome: leftChrome, focused: leftFocused, chromeLive, x: 0, y: 0 });
-  let rightContent = detailPanel ? _safeRender(detailPanel, rightW, availH, { chrome: detailChrome, focused: detailFocused, chromeLive, x: halfW, y: 0 }) : '';
+  let leftContent = _safeRender(leftPanel, halfW, availH, { chrome: leftChrome, focused: leftFocused, chromeLive, tabsLive, x: 0, y: 0 });
+  let rightContent = detailPanel ? _safeRender(detailPanel, rightW, availH, { chrome: detailChrome, focused: detailFocused, chromeLive, tabsLive, x: halfW, y: 0 }) : '';
   const rects = [
     { x: 0, y: 0, w: halfW, h: availH,
       lines: leftContent === '' ? [] : leftContent.split('\n') },
@@ -681,7 +694,7 @@ function renderFull(model, arrangeOverride) {
   // v0.6.3 P4.2 — chrome via chromeFor. v0.6.4 Theme B — shared scalars
   // from _chromeContext. Full view paints ONE pane (the focused one):
   // single trigger, no peer-disable.
-  const { chromeFor, chromeLive, freeConfigMode, dragging, paneMenuTriggerStateFor } = _chromeContext(model, layoutSlice);
+  const { chromeFor, chromeLive, tabsLive, freeConfigMode, dragging, paneMenuTriggerStateFor } = _chromeContext(model, layoutSlice);
   const fullChrome = chromeFor(focusedPanel, {
     freeConfigMode, dragging,
     focused: true,
@@ -690,7 +703,7 @@ function renderFull(model, arrangeOverride) {
   // v0.6.4 — thread opts.focused (full view always paints the focused
   // pane). Phase-5/Arc-1 moved focus styling onto opts.focused; without it
   // the full-screen pane renders unfocused (no border highlight).
-  let content = _safeRender(focusedPanel, COLS, availH, { chrome: fullChrome, focused: true, chromeLive, x: 0, y: 0 });
+  let content = _safeRender(focusedPanel, COLS, availH, { chrome: fullChrome, focused: true, chromeLive, tabsLive, x: 0, y: 0 });
   const rects = [
     { x: 0, y: 0, w: COLS, h: availH,
       lines: content === '' ? [] : content.split('\n') },
