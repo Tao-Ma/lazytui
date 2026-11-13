@@ -362,4 +362,10 @@ overlay author: register a descriptor via `registerSelf(compositor)`
 and add one line to `overlay-compositor-boot.registerAll()`; the
 compositor handles paint ordering, flat-modal enforcement, and
 cell-diff integration automatically. For toast / ephemeral overlays
-see §Open question #3 — not planned for this arc.
+see §Open question #3 — not planned for this arc. **Mouse (since hit-map
+R1):** the compositor does NOT make a new overlay clickable by itself — pass
+`hit: { lineTargets, lineChips, box }` to `renderOverlay` (or call
+`draw.publishBox` for a self-composed box), declare hints with
+`formatHints`, and set the descriptor's `mouse.outside` policy. Without
+those the overlay is mouse-dead behind the legacy gate. See
+[mouse-hit-map.md](mouse-hit-map.md).

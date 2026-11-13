@@ -82,7 +82,7 @@ single interpreter runs. The render path is a (near-)pure projection.
                                       │ Reconciler, wirePanelHost, feature-host)
               ┌───────────────────────▼────────────────────────┐
   dispatch/   │  control/  → input · dispatch · intent · cmdline │  the IMPURE
-              │              actions · mouse-bindings             │  dispatch shell
+              │              actions · mouse-bindings · mouse-router│  dispatch shell
               │  update/   → reducer (root) · modal/* · model-ops │  ── PURE ──
               │  runtime/  → loop (2 pumps) · finalize · effects  │  pumps + interpreter
               │              stream · action-runner · cleanup     │
@@ -93,6 +93,7 @@ single interpreter runs. The render path is a (near-)pure projection.
               │  layout · navigator/* · monitor/* · fabric/*      │  routing
               │  info · agent · terminal · text-view (content panes)
               │  nav-state · commands · chrome-hittest · plugin-guard
+              │  hit-map (per-frame clickable regions; written by render)
               └───────────────────────┬────────────────────────┘
               ┌───────────────────────▼────────────────────────┐
   model/      │  store.js  — the single root-model ref           │  state root
@@ -417,7 +418,7 @@ content closures are module-held in `overlay/copy.js`, invoked by index in the
 | `register_push` | `model.register` (via `mreg.push` leaf) | `emit_osc52{text}` if a value was pushed | ✓ |
 | `register_popup_cancel` | closes (guarded) | — | ✓ |
 
-¹ `msg.vh` (viewport height) is caller-resolved (reads terminal size).
+¹ `msg.vh` (viewport height) is caller-resolved (reads terminal size). A row click's target (the hit map, §10.1b) carries the same values, baked at **paint** time from the same model + viewport.
 The register **history mutation happens in the reducer** (pure `leaves/register`
 transforms); only OSC52 (clipboard) is an effect. `register_push` folds every
 app yank into update.
@@ -451,7 +452,7 @@ closures stay module-held in `dispatch/control/cmdline.js`.
 
 ¹ `msg.now` threaded from handler (wall clock = exception C).
 ² `msg.count` (`model.jobs.length`, since FIX-1) + `msg.vh` threaded by handler
-  — the reducer never reads the jobs list inline (renderer-only-reader rule, PRINCIPLES §12).
+  — the reducer never reads the jobs list inline (renderer-only-reader rule, PRINCIPLES §12). A row click's target (the hit map, §10.1b) carries the same values, baked at **paint** time from the same model + viewport.
 ³ `msg.job` is the resolved job entry, threaded by `handleJobsKey` from
   `model.jobs` (the store-mirror'd snapshot, since FIX-1 — the same array render
   highlighted; was `feature/jobs.list()[cursor]`).
@@ -475,7 +476,7 @@ closures stay module-held in `dispatch/control/cmdline.js`.
 | `diag_log_save` | — | `diag_save` (file I/O) | ✓ |
 
 ¹² Same pattern as `jobs`: `now`/`count`/`vh` threaded; the out-of-TEA
-`io/diag-log` ring buffer is read renderer-side, never in the arm.
+`io/diag-log` ring buffer is read renderer-side, never in the arm. A row click's target (the hit map, §10.1b) carries the same values, baked at **paint** time from the same model + viewport.
 
 ### 5.8 `menu` (`modal/menu.js`) — command menu / right-click context menu
 
@@ -987,7 +988,7 @@ via a `mode_set`/`mode_clear` Cmd.
 ² `msg.viewerPaneId` threaded by the dispatch shell (for the half-view projection).
 ³ **The single writer of `dims`** (resize-as-Msg). The stdout `'resize'` listener
   + `initState` boot seed dispatch it; geometry reads `dims`, never the live terminal.
-⁴ `n`/`vh`/`sepIdx` threaded by the handler.
+⁴ `n`/`vh`/`sepIdx` threaded by the handler. A row click's target (the hit map, §10.1b) carries the same values, baked at **paint** time from the same model + viewport.
 ⁵ Reads only `slice.arrange` + `msg`; no model/topology. The compound SWAP/REPLACE
   is intricate but pure (operates on the slice's own arrange).
 ⁶ Reads `mpool.hiddenIds`/`allPanesInColumns` off its OWN slice's arrange — pure.
@@ -1503,6 +1504,23 @@ is the single intent→dispatch site.
 | `activate` | `handleAction('run_selected')` |
 | `scroll{mx,my,delta}` | `input._handleWheel` (spatial, per-pane) |
 | `context{anchor,items,title}` | `applyMsg(menu_open)` |
+
+### 10.1b The hit-map router (`dispatch/control/mouse-router.js`) — pointer → data handler
+
+Ahead of the legacy mouse cascade, `handleMouse` hands discrete gestures to the
+router (docs/mouse-hit-map.md). It resolves the topmost region the last paint
+published under the pointer (`panel/hit-map`) and realizes its DATA handler —
+the only place these become dispatches:
+
+| Handler | Realizes to |
+|---|---|
+| `{ key, seq? }` | `dispatch.handleKey(key, seq ?? seqForKey(key))` — the keystroke itself, so every popup Msg a click produces is the one its key handler produces |
+| `{ msg, owner? }` | `applyMsg(msg)` · `dispatchMsg(wrap(owner, msg))` (row picks: `menu_activate{idx}`, `*_nav{to}`, `palette_pick`, `fabric_form_focus`, `fabric_form_choices_pick`) |
+| `{ intent }` | `intent.realize(intent)` (§10.1) |
+| `'swallow'` / `[h…]` | nothing / each in order |
+
+Shell-tier like the rest of §10: it reads `getModel()` + the layout slice to
+check the frame stamp (stale frames swallow what they drew).
 
 ### 10.2 `handleAction(verb, arg)` (`dispatch/control/actions.js`) — the keyboard/menu/cmdline chokepoint
 

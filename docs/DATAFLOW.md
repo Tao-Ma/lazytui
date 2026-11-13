@@ -22,6 +22,11 @@ greppable.
         ▼
 ════════════════════════════ DISPATCH ══════════════════════════════
    handleKey / handleMouse      (js/dispatch/control/{dispatch,input}.js)
+        │   handleMouse first asks the HIT-MAP ROUTER (mouse-router.js):
+        │   the topmost region the last paint published under the pointer
+        │   (panel/hit-map; z-ordered, data handlers) — a { key } handler
+        │   re-enters handleKey, so a clicked popup hint IS that keystroke.
+        │   A miss falls through to the legacy mouse cascade below.
         │
         ├──── modeChain active? ──yes──→ mode handler ──→ applyMsg
         │     (filter, menu, cmdline,                       │
@@ -215,6 +220,18 @@ keyboard verbs with no pointer analog (`/`, `:`, `y`, `v`, `?`, `+`/`_`,
 `[`/`]`, `"`) and mouse-direct manipulations (chrome glyphs, tab-strip,
 text-select drag) sit *outside* the five-intent set and keep their own
 dispatch. See [v0.6.4-input.md](v0.6.4-input.md).
+
+**Hit map (mouse hit-map R1, [mouse-hit-map.md](mouse-hit-map.md)).**
+Ahead of that cascade, `handleMouse` routes discrete gestures (press /
+double / right / middle / wheel) through `mouse-router`: paint publishes
+every clickable region it actually drew into `panel/hit-map` (popups today;
+pane chrome and bodies in Releases 2–3), each with DATA handlers — `{ key }`
+(realized through `handleKey`, so a clicked `[y]` is the `y` keystroke),
+`{ msg }`, `{ intent }`, `'swallow'`. The topmost region wins (z-order, not
+source order); a modal popup's full-screen backdrop carries its
+outside-click policy. Frames are stamped with what they showed, so a click
+batched behind a key never resolves against regions the model no longer
+matches. A miss falls through to the legacy cascade unchanged.
 
 **Single-writer per layer is structural.** Only `runtime.update`
 writes the root model; only each Component's own `update` writes its

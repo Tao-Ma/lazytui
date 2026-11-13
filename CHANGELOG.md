@@ -8,40 +8,53 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 Mouse hit-map, Release 1 — every popup is clickable
 ([docs/mouse-hit-map.md](docs/mouse-hit-map.md)). Field report: "when
-confirm popup shows, I cannot click mouse". Clicks were dropped while any
-popup was open because only 4 of 15 overlays had a mouse handler.
+confirm popup shows, I cannot click mouse". Most popups dropped every click
+while open — only 4 of 15 overlays (menu, pane menu, free-config panel
+list, replay scrubber) had a mouse handler.
 
 ### Added
-- **Per-frame hit map.** Paint publishes every clickable region it actually
-  drew (box, visible rows, surviving hint chips) with data handlers; one
-  z-ordered router resolves discrete gestures before the legacy cascade.
-  Handlers are `{ key }` (the keystroke itself, via `handleKey`), `{ msg }`,
-  `{ intent }`, `'swallow'` or a sequence.
+- **Per-frame hit map.** Paint publishes every popup region it actually drew
+  (box, visible rows, surviving hint chips) with data handlers; one
+  z-ordered router resolves discrete gestures before the legacy cascade
+  (pane chrome and pane bodies move onto it in Releases 2–3). Handlers are
+  `{ key }` (the keystroke itself, via `handleKey`), `{ msg }`, `{ intent }`,
+  `'swallow'` or a sequence.
 - **Clickable key hints.** Hint footers are declared (`formatHints`), so each
-  single-key `[k] label` is a chip that presses that key. A chip truncation
-  cut publishes nothing.
-- **Popups on the hit map:** confirm (`[y]`/`[n]`, outside = reject),
-  fabric-field, copy (click a row to copy), diag-log, jobs (double-click
-  jumps), register-popup (double-click promotes), which-key (click a chord
-  key), action palette (click invokes that action), menu, pane-menu, `:`
-  cmdline dropdown, fabric-form (click a field to focus, a choice to pick).
-  The wheel steps list popups like ↑/↓.
-- **Outside-click policy per popup:** Esc where cancel/close is safe;
-  swallowed where the popup holds typed text (palette, cmdline, fabric-form,
-  fabric-field) so a stray click never discards input.
+  single-key `[k] label` is a chip that presses that key — two fast clicks
+  press it twice. A chip that truncation cut publishes nothing.
+- **Popups on the hit map:** confirm (`[y]`/`[n]`), fabric-field, copy (click
+  a row to copy), diag-log, jobs (double-click jumps), register-popup
+  (double-click promotes), which-key (click a chord key), action palette
+  (click invokes that action), menu, pane-menu, `:` cmdline dropdown,
+  fabric-form (click a field to focus, a choice to pick). The wheel over a
+  list popup steps it like ↑/↓.
+- **Outside-click policy per popup:** Esc where cancel/close is safe
+  (confirm = reject, copy, diag-log, register-popup, menu); swallowed where
+  the popup holds typed text (palette, cmdline, fabric-form, fabric-field) so
+  a stray click never discards input. jobs, which-key and pane-menu keep
+  their pre-R1 outside-click behaviour until Release 2.
 - Absolute-row `to: <idx>` on `copy_nav`, `diag_log_nav`, `jobs_nav`,
   `register_popup_nav`, `pane_menu_nav`, `cmdline_nav`; new
   `fabric_form_focus { idx }`.
 
 ### Fixed
-- Double-clicking a menu item also activated the pane row beneath it (the
-  second click fell through once the menu closed). A double-click now belongs
-  to the press that started it.
+- Double-clicking a menu or pane-menu row also activated the pane row
+  beneath it (the second click fell through once the menu closed). A
+  double-click now belongs to the press that started it.
+- A click batched behind a key in one input chunk (e.g. `n` then a click
+  inside confirm, common over slow links) could act on the pane the
+  just-closed popup had covered, or on the content that replaced it. A click
+  aimed at a frame that no longer matches state is now swallowed.
 - The graph hover tooltip painted over confirm, register-popup, cmdline,
   pane-menu, jobs and diag-log when they were opened by keyboard with the
   pointer parked on a graph.
 
 ### Changed
+- menu / pane-menu: the wheel steps the list only while the pointer is over
+  the popup (was: anywhere on screen); a click on the pane-menu border is
+  ignored (was: closed it).
+- Pane chrome under an open jobs / which-key / pane-menu box is no longer
+  clickable through the box.
 - register-popup's hint is now `[k] label` chips like every other popup (was
   bare words).
 - menu / pane-menu legacy `hitTest`s and the input.js menu mouse handler are

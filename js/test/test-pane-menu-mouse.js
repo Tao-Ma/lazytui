@@ -44,6 +44,29 @@ describe('[1] row ≡ keys', () => {
   });
 });
 
+describe('[1b] double-click a row', () => {
+  it('picks once; the second click does not activate the pane row beneath', () => {
+    const groups = {};
+    for (let i = 0; i < 40; i++) groups[`g${i}`] = { name: `g${i}`, label: `Group ${i}`, containers: [], children: [], parent: null, depth: 0, quick: false,
+      actions: { a: { key: 'a', label: 'A', type: 'run', script: 'true', tab: false } } };
+    sm.bootFresh({ groups });
+    sm.resize(120, 30);
+    sm.capture(() => api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_open', paneId: 'pane-groups', cursor: 0, scroll: 0 })));
+    hc.paint();
+    const r = hc.region(O, 'row:1');
+    const g = require('../leaves/wm/geometry').visibleBoundsFor(api.getInstanceSlice('layout'), 'pane-groups');
+    const { mx, my } = hc.at(r);
+    assert(mx >= g.x && mx < g.x + g.w && my > g.y && my < g.y + g.h - 1, 'precondition: row sits over a groups body row');
+    const actions = require('../dispatch/control/actions');
+    const calls = [];
+    const real = actions.handleAction;
+    actions.handleAction = (...a) => { calls.push(a[0]); return real(...a); };
+    try { hc.dblclick(mx, my); } finally { actions.handleAction = real; }
+    eq(getModel().modes.paneMenuMode, false, 'picked → closed');
+    eq(calls.filter(c => c === 'run_selected'), [], 'no pane activate leaked through');
+  });
+});
+
 describe('[2] wheel', () => {
   it('steps the cursor', () => {
     openMenu();

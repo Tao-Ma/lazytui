@@ -1,14 +1,18 @@
 # Mouse hit-map — first-class mouse input
 
-> **Status**: Release 1 code-complete on `main` (`dc58dffd..51804536`,
-> 2026-11-13), unreleased — awaiting the pre-release review and the user's
-> release call. Releases 2–3 not started. Written 2026-11-13. Trigger: field
+> **Status**: Release 1 code-complete on `main` (from `dc58dffd`,
+> 2026-11-13), 4-track pre-release review run and its findings fixed;
+> unreleased — awaiting the user's release call. Releases 2–3 not started. Written 2026-11-13. Trigger: field
 > report *"when confirm popup shows, I cannot click mouse"*. Root-caused to
 > a routing gap, then widened (user call: "fix mouse from the ground up,
 > make it a first-class citizen") into this three-release plan.
 > Shape mirrors [overlay-compositor-migration.md](overlay-compositor-migration.md).
 
 ## Motivation
+
+> Line references in §Motivation, §What is NOT being rebuilt and §Diagnosis
+> describe the code at the design baseline `f6d152c3` (before R1); the
+> forward-looking sections use symbol names.
 
 The confirm popup paints `[y] confirm   [n] cancel`. They look like buttons;
 they are text. Every click while the popup is open is dropped by the T13
@@ -63,8 +67,8 @@ dropdown; zoom arm explicitly clears the select arm).
 | tree fold markers | **published** (`panel/tree-regions.js`) |
 | text-select / row mapping | **published** (`panel/select-view.js recordContent`) |
 | graph hover value | **published** (`panel/hover-region.js`) |
-| menu rows | re-derived (`overlay/menu.js:79`, shared `overlayBox` + `menuScroll`) |
-| pane-menu rows | re-derived (`overlay/pane-menu.js:249 _geom`) |
+| menu rows | re-derived (`overlay/menu.js:79`, shared `overlayBox` + `menuScroll`) — **published on the hit map since R1** |
+| pane-menu rows | re-derived (`overlay/pane-menu.js:249 _geom`) — **published on the hit map since R1** |
 | panel-list rows | re-derived (`overlay/panel-list.js:295`) |
 | border-control strip + bottom legend | re-derived (`panel/chrome-hittest.js:108`, mirrors `bc.fits`) |
 | slot tab-strip | re-derived, then clipped by published `titleClip` (`input.js:879`) |
@@ -82,7 +86,7 @@ double-click triple (`:1182`), plus `slice.freeConfig.drag` for free-config.
 Mutual exclusion between arms is enforced by hand ("zoom wins the gesture
 PANE-WIDE … clear it").
 
-**D (latent, unreproduced) — batched chunk hit-tests a stale frame.**
+**D (latent at design time; reproduced + fixed in R1, `3ceb19e7`) — batched chunk hit-tests a stale frame.**
 `render-queue.paintNow` defers while `_batchDepth > 0`
 (`leaves/infra/render-queue.js:73`). A chunk carrying `Enter` (opens a
 confirm) then a click resolves the click against the *previous* frame's
@@ -116,14 +120,14 @@ either way (§Stale-frame rule).
 
 ```js
 {
-  id:    'confirm:hint:y',          // stable — tests + diag
+  id:    'chip:y',                  // 'backdrop' | 'box' | 'row:<lineIdx>' | 'chip:<key>'
   rect:  { x, y, w, h },            // screen cells, 0-based, inclusive-exclusive
   z:     1013,                      // see §Z bands
-  owner: 'confirm',                 // overlay id | paneId
+  owner: 'confirm',                 // overlay id (R1) | paneId (R2+)
   opaque: false,                    // stops the walk even with no handler (boxes, backdrops)
+  repeat: true,                     // chips only: a fast 2nd click re-presses (§Press→double)
   on: {                             // gesture → handler; absent gesture = not handled here
-    press:        { key: 'y' },
-    'wheel-up':   'swallow',
+    press:        { key: 'y', seq: 'y' },
   },
 }
 ```
@@ -135,7 +139,7 @@ Gestures are the existing `handleMouse` kinds: `press`, `double`, `right`,
 
 | Form | Realized as | Used by |
 |---|---|---|
-| `{ key, seq? }` | `handleKey(key, seq ?? key)` — the keyboard path itself | hint chips, wheel-on-list (`up`/`down`), outside policy (`escape`) |
+| `{ key, seq? }` | `handleKey(key, seq ?? seqForKey(key))` — the keyboard path itself. `seqForKey` (leaves/render/hints) mirrors `input._dispatchToken`: a single character carries itself as `seq`, a named key (`return`, `escape`, `backtab`, `up`, …) carries none — so a handler's "printable seq → typed text" fallback never types a key's NAME | hint chips, wheel-on-list (`up`/`down`), outside policy (`escape`) |
 | `{ msg, owner? }` | `applyMsg(msg)` or `dispatchMsg(wrap(owner, msg))` | row picks (`menu_activate {idx}`), border controls, tree toggle |
 | `{ intent }` | `intent.realize(intent)` | pane body: focus / select / activate / context / scroll |
 | `{ capture: name, ...args }` | start pointer capture with a named drag controller (§Pointer capture) | text-select, graph-zoom, free-config, pool-drag (R3) |
@@ -145,17 +149,20 @@ Gestures are the existing `handleMouse` kinds: `press`, `double`, `right`,
 `{ key }` is the load-bearing choice: a chip, a wheel notch over a list,
 and an outside-click all become *the keystroke the user could have typed*,
 so chips, wheel and outside-clicks add **zero** reducer arms and cannot
-drift from the keyboard mode handler (`dispatch.js:1055 _modeHandlers`).
+drift from the keyboard mode handler (`dispatch.js` `_modeHandlers`).
 
 **Row clicks are the one place new reducer surface is needed.** Every list
 popup's nav Msg is relative (`dir: ±1`) or symbolic (`to: 'top' | 'bottom'
 | 'pageup' | 'pagedown'`); none accepts an absolute row except
-`menu_activate { idx }` (`update/modal/menu.js:70`). R1 extends each list
+`menu_activate { idx }` (`update/modal/menu.js`). R1 extends each list
 nav reducer with a numeric `to: <idx>` (clamped like the symbolic forms) —
 copy, diag-log, jobs, pane-menu, register-popup, cmdline — and adds one
-Msg, `fabric_form_focus { idx }` (today only `focus_next` / `focus_prev`
-exist). Activation still goes through `{ key: 'return' }` after the nav, so
-the activate path stays the keyboard's.
+Msg, `fabric_form_focus { idx }` (before R1 only `focus_next` / `focus_prev`
+existed). Activation still goes through `{ key: 'return' }` after the nav, so
+the activate path stays the keyboard's. The `count` / `vh` / `n` / `sepIdx`
+a list's key handler computes are baked into the row target at paint time —
+derived from the same model + viewport; a list change between paint and
+click re-stamps the frame (§Stale-frame rule).
 
 ### Resolve
 
@@ -179,58 +186,69 @@ chip falls to its row, then to the box's wheel handler.
 | Overlay *k* | 1000 + 10·zIndex_k + {0 backdrop, 1 box, 2 rows, 3 chips} | compositor-registered overlays (R1) |
 | Replay owner | 20000 | replay scrubber full-screen capture (R3) — above every overlay band (the highest, hover-tooltip's, is 1000 + 10·999) |
 
-The tree-marker-vs-dropdown fix (`input.js:839`) becomes a z fact (30 <
+The tree-marker-vs-dropdown fix (`input.js` handleMouse, "Tree fold marker") becomes a z fact (30 <
 1000+) instead of a source-order fact. The `suppressChrome` column becomes
 "backdrop at 35 vs at 1000+".
 
 ### Publishing
 
-- **Registry**: `js/panel/hit-map.js` — `clear()`, `publish(region)`,
-  `resolve(mx, my, gesture)`, `frameStamp()`. Placed in the panel layer
-  alongside chrome-regions (dispatch→panel is a legal edge).
+- **Registry**: `js/panel/hit-map.js` — `clear(stamp)`, `publish(region)`,
+  `publishOwned(region, zOff)` + `enterOwner` / `exitOwner` (the ambient
+  bracket), `resolve(mx, my, gesture)`, `claims(mx, my)`, `stampOf(model,
+  layoutSlice)` / `stampsEqual` / `frameStamp()`, `all()` (tests / diag).
+  Placed in the panel layer alongside chrome-regions (dispatch→panel and
+  render→panel are legal edges).
 - **Cleared** at the top of every main-frame paint in `render()`
-  (`render/paint.js:904`, where chrome/tree/hover registries clear today) and
+  (`render/paint.js`, beside the chrome/tree/hover registry clears) and
   repopulated in the same synchronous pass.
 - **Leaves publish through an injected sink** (`draw.setHitSink`), the
-  `setChromeSink` precedent (`paint.js:118`) — `leaves/render/draw.js` stays
-  pure and import-free of the panel layer (leaves purity wall).
+  `setChromeSink` precedent — `leaves/render/draw.js` stays pure and
+  import-free of the panel layer (leaves purity wall).
 - **Owner + z are ambient.** `overlay-compositor.paintActive` sets the
   current overlay `{id, zIndex}` around each descriptor's render — the
   `select-view.enterPane` pattern — so `renderOverlay` stamps regions
   without every overlay threading its id.
 
-### renderOverlay contract (R1)
+### renderOverlay contract (as built, R1)
 
-`renderOverlay` (`leaves/render/draw.js:529`) gains two optional inputs:
+`renderOverlay` (`leaves/render/draw.js`) takes one optional input,
+`hit: { lineTargets, lineChips, box }`. **Absent → nothing is published**, so
+an overlay that hasn't opted in keeps its legacy mouse path (an always-
+published opaque box would swallow clicks its legacy handler owned).
 
-- `lineTargets: Array<handlerMap|null>` — index-aligned with `lines`. After
-  applying `scrollOffset` and the box clip, publish a row region for each
-  **visible** line with a non-null target. This replaces the hand-written
-  "reject border rows BEFORE applying scroll" logic in `menu.hitTest`
-  (`overlay/menu.js:91`) — agreement by construction.
-- `hints: Array<{ key: string|null, label: string, seq?: string }>` —
-  replaces hand-built `'[dim]\\[y] confirm   \\[n] cancel[/]'` markup. A
-  pure leaf `leaves/render/hints.js formatHints(hints, innerW)` returns
-  `{ markup, chips: [{ key, x0, x1 }] }`; chips that truncation cut publish
-  nothing. `key: null` draws a non-clickable hint (`[↑/↓] nav`,
-  `[type] filter`). Declared, not regex-parsed from markup.
+- `lineTargets: Array<handlerMap|null>` — index-aligned with `lines`.
+  `publishBox` applies `scrollOffset` and the box clip, then publishes a
+  `row:<i>` region for each **visible** line with a target — a border or a
+  scrolled-off line can never map to an item (agreement by construction;
+  this replaced the retired `menu.hitTest`'s hand-written border check).
+- `lineChips: { [lineIdx]: chips }` — from `leaves/render/hints.formatHints`.
+- `box: handlerMap` — the opaque box's own handlers (e.g. wheel → up/down);
+  `{}` = consume everything inside the box.
 
-Key tokens are the `handleKey` names: `'return'`, `'escape'`, `'tab'`,
+**Hints.** `formatHints(hints, opts?)` takes declared entries
+`{ cap, label, key, seq? }` — `cap` is the bracket text, `key` the handleKey
+token or `null` for a drawn-but-inert hint (`[↑/↓] nav`, `[type] filter`) —
+and returns `{ markup, chips: [{ key, seq, x0, x1 }] }` (columns relative to
+the line, spanning the whole `[cap] label`). Truncation is decided at publish
+time: `chipSurvives(chip, lineW, innerW)` mirrors renderPanel's `truncate`
+(an over-wide line keeps `innerW - 1` cells then `…`), so a cut chip publishes
+nothing. Declared, not regex-parsed from markup.
+
+Key tokens are the `handleKey` names: `'return'`, `'escape'`, `'\t'` (Tab —
+NOT `'tab'`, which no handler matches; dispatch.js notes the same trap),
 `'backtab'`, `'up'`, `'down'`, `' '`, or the literal char.
 
-Two overlays bypass `renderOverlay` — **pane-menu** (`overlay/pane-menu.js:356`)
-and **cmdline** (`overlay/cmdline.js:84`) call `renderPanel` + `compositeRow`
-directly with their own geometry. The box/row/chip publishing therefore
-lives in a shared leaf helper `publishBox({ x, y, w, h, scrollOffset,
-lineTargets, chips })` that `renderOverlay` calls and those two call
-directly. The helper **clips every region to the screen** — pane-menu's
-right edge is not clamped today (`_geom`, `pane-menu.js:223`).
+**Overlays with their own box.** pane-menu and cmdline call `renderPanel` +
+`compositeRow` with their own geometry, so they call the shared publisher
+directly: `publishBox({ x, y, w, h, scrollOffset, lines, lineTargets,
+lineChips, box })` — the same function `renderOverlay` uses. It **clips
+every region to the screen** (pane-menu's dropdown right edge is not clamped,
+§Adjacent findings 4).
 
-Pre-sliced overlays (diag-log, jobs, register-popup, action-palette slice
-their own visible window before calling `renderOverlay`) pass
-`lineTargets` sliced the same way; the targets carry absolute indices
-(`to: scroll + i`), so the slice offset is applied once, by the overlay that
-owns it.
+Pre-sliced overlays (diag-log, jobs, register-popup, action-palette, pane-
+menu, cmdline slice their own visible window) pass `lineTargets` aligned with
+the lines they pass; the targets carry absolute indices (`to: scroll + i`),
+so the slice offset is applied once, by the overlay that owns it.
 
 ### Backdrop + outside policy
 
@@ -243,11 +261,22 @@ The compositor descriptor gains `mouse: { outside }`:
 | `null` | no backdrop — misses fall through (R1: to legacy) |
 
 For each active descriptor with a non-null `outside`, `paintActive`
-publishes a full-screen opaque region at the overlay's backdrop z with
-`on.press = on.double = on.right = on.middle = outside` and wheel →
-`'swallow'`. Proposed policy per overlay in §Per-overlay mapping. Rule of
-thumb: **cancel is safe → Esc; read-only → Esc; holds typed input →
-swallow** (a stray click must not discard a half-filled form).
+publishes a full-screen opaque region (viewport-sized — including the
+footer row, which `newRows` stops above) at the overlay's backdrop z with
+`on.press = on.right = on.middle = outside`, and `double` + wheel →
+`'swallow'` (a backdrop `double` is never a gesture of its own: a first click
+out there already ran the policy; otherwise the box moved or shrank between
+the two clicks and the second must not cancel). Policy per overlay in
+§Per-overlay mapping. Rule of thumb: **cancel is safe → Esc; read-only →
+Esc; holds typed input → swallow** (a stray click must not discard a
+half-filled form).
+
+Note the name clash a maintainer will meet: the descriptor's `modal` (the
+compositor's one-modal-at-a-time invariant), modes.js `modal` (owns the
+footer row) and modes.js `suppressChrome` (blocks chrome clicks) are three
+different facts. `mouse.outside` is keyed off none of them; for R1 the rule
+"a backdrop iff the overlay's mode has `suppressChrome: true`" is pinned by a
+test (`test-overlay-mouse-policy.js`).
 
 ### Pointer capture (R3)
 
@@ -258,9 +287,9 @@ of position; `release` ends it. Controllers are code, registered by name:
 
 | Controller | Replaces | Emits |
 |---|---|---|
-| `text-select` | `_armedSelect` (`input.js:507`) | `select_begin` / `select_extend` / `register_push` / `select_cancel` |
-| `graph-zoom` | `_armedZoom` (`:514`) | `graph_drag` / `graph_zoom` |
-| `free-config` | `_mouseHandleFreeConfigMode` (`:218`) | `free_config_mouse_*` |
+| `text-select` | `_armedSelect` (input.js) | `select_begin` / `select_extend` / `register_push` / `select_cancel` |
+| `graph-zoom` | `_armedZoom` (input.js) | `graph_drag` / `graph_zoom` |
+| `free-config` | `_mouseHandleFreeConfigMode` (input.js) | `free_config_mouse_*` |
 | `pool-drag` | panel-list press → `pool_drag_*` | `pool_drag_start/motion/release` |
 
 Mutual exclusion becomes structural: one slot, the press's winning region
@@ -270,7 +299,7 @@ not model — the visible effects already ride Msgs.
 ### Hover
 
 `hover` is just another gesture: stats / composite pane bodies publish a
-`hover` handler; the router's coalescing (`_lastHover`, `input.js:566`)
+`hover` handler; the router's coalescing (`_lastHover`, input.js)
 moves into the hover resolution unchanged. The hover tooltip overlay never
 publishes regions (display-only — it must not steal clicks).
 
@@ -291,15 +320,36 @@ check — in a batched chunk the popup can close without a repaint. Rows that
 activate on press (menu, copy, palette, pane-menu) leave `double` unhandled
 so a second click can't activate what slides under the pointer either.
 
+**Chips repeat.** A hint chip publishes `repeat: true`: if the SAME chip
+(owner + id) is still under the pointer, the second click is another press
+of its key — two fast clicks on `[tab]` are two Tabs, as typed. A different
+chip that slid under the pointer (`[space] choices` → `[enter] pick`) does
+not repeat, so a double-click can't open-and-pick.
+
 ### Stale-frame rule
 
-The hit map stamps the frame with the set of active chain-mode flags at
-publish time. Before resolving, the router compares it with
-`getModel().modes`; on mismatch the event is **dropped**. The user aimed at
-a screen that no longer matches state (a batched `Enter`+click, §D), and
-dropping is what the T13 gate does today. Same-mode staleness (a list
-scrolled between frames) is safe: row handlers carry absolute targets
-(`idx`, node id), so the click hits what the user *saw*.
+A multi-token stdin chunk paints once, at the end (render-queue batch), so a
+click batched behind a key resolves while the screen still shows the
+PRE-key frame. The hit map is stamped with **what the frame showed** —
+`stampOf(model, layoutSlice)`: the active chain modes plus the identity of
+`model.modal`, `prefixSeq`, `layout.paneMenu`, and `jobs` / `diagLog` while
+their window is open. Mode flags alone are not enough: Enter on a context-
+menu row can replace the menu with a submenu in place, Space toggles
+fabric-form's choices list, typing refilters the palette — all under an
+unchanged mode. (Every popup reducer replaces `model.modal` on a change and
+keeps it otherwise; `clock_tick` / `focus_event` leave it alone.)
+
+On a mismatch (`stampsEqual` false) the user aimed at a screen that no
+longer exists:
+
+- if the stale frame drew **any region** under the pointer
+  (`hitMap.claims`), the click was meant for it → **swallowed** — resolving
+  it against changed state, or handing it to the pane the popup covered, are
+  both wrong (reproduced before the fix: `n`+click in confirm moved focus to
+  the pane beneath; Enter+click injected into a port the user never saw);
+- if it drew nothing there, the legacy cascade decides, as before.
+
+R3 (no legacy cascade) makes the second case a drop too.
 
 ### TEA, purity, replay
 
@@ -315,7 +365,7 @@ scrolled between frames) is safe: row handlers carry absolute targets
 Regions per frame: panes (~10–30) + visible overlay rows (≤ terminal
 height) + chips + chrome glyphs — O(100). Pane rows are **not** published
 per row: the pane-body region resolves its row at realize time through the
-existing select-view capture (`_rowIndexAt`, `input.js:361`). Resolve is a
+existing select-view capture (`_rowIndexAt`, input.js). Resolve is a
 linear top-down scan — microseconds, even under mode 1003 hover. Gate:
 `bench-hotpaths.js` and the Release-2 render-construction baseline
 (`reference_release_2_bench_baseline`) within noise, same-directory runs.
@@ -328,35 +378,39 @@ holds text the user typed, so an outside-click must not discard it.
 | Overlay (z) | Row click | Row double | Wheel | Chips (clickable keys) | Outside | New reducer surface |
 |---|---|---|---|---|---|---|
 | **confirm** (10) | — (no items) | — | swallow | `y`, `n` | Esc = reject (safe; fires `onReject` rollback exactly like `n`) | none |
-| **copy** (20) | `[nav to i, return]` = pick | same | `up`/`down` (`copy_nav` wraps) | none today | Esc = `copy_cancel` | `copy_nav { to }` |
+| **copy** (20) | `[nav to i, return]` = pick | — (2nd click swallowed) | `up`/`down` (`copy_nav` wraps) | none today | Esc = `copy_cancel` | `copy_nav { to }` |
 | **diag-log** (30) | nav to i | — (no Enter verb) | `up`/`down` | `y`, `c`, `s`, `escape` (`[↑/↓]`, `[g/G]` not clickable) | Esc = close | `diag_log_nav { to }` |
 | **jobs** (40) | nav to i (row 0 = header, no target) | `[nav, return]` = jump to job | `up`/`down` | `escape` | R1: none (chrome stays live) → R2: Esc at z 35 | `jobs_nav { to }` |
-| **pane-menu** (50) | `[nav to i, return]` = `_paneMenuPick` (keeps today's single-click activate) | same | `up`/`down` | none | R1: legacy outside-close arm kept → R2: Esc at z 35 | `pane_menu_nav { to }` |
-| **register-popup** (70) | nav to i | `[nav, return]` = promote | `up`/`down` | `d`, `return`, `escape` — the hint is bare words today (`j/k move · … · Esc close`); converts to declared hints (visible restyle) | Esc = cancel | `register_popup_nav { to }` |
+| **pane-menu** (50) | `[nav to i, return]` = `_paneMenuPick` (keeps the single-click activate) | — (2nd click swallowed) | `up`/`down` | none | R1: legacy outside-close arm kept → R2: Esc at z 35 | `pane_menu_nav { to }` |
+| **register-popup** (70) | nav to i | `[nav, return]` = promote | `up`/`down` | `d`, `return`, `escape` — the hint was bare words (`j/k move · … · Esc close`); now declared `[k] label` hints (visible restyle) | Esc = cancel | `register_popup_nav { to }` |
 | **which-key** (80) | `{ key: k }` per continuation row — click the next chord key | — | swallow | none | R1: none → R2: Esc (cancels the chord) at z 35 | none |
-| **action-palette** (90) | `{ msg: palette_pick { groupPath, actionKey } }` — the row carries its own target | same | `up`/`down` | `return`, `escape` (`[↑/↓]`, `[type]` not clickable) | **swallow** (typed filter; Esc only clears it) | none |
-| **menu** (100) | `{ msg: menu_activate { idx } }` — today's behavior, all four buttons | same | `up`/`down` | none | Esc = `menu_close` (today's behavior) | none |
+| **action-palette** (90) | `{ msg: palette_pick { groupPath, actionKey } }` — the row carries its own target | — (2nd click swallowed) | `up`/`down` | `return`, `escape` (`[↑/↓]`, `[type]` not clickable) | **swallow** (typed filter; Esc only clears it) | none |
+| **menu** (100) | `{ msg: menu_activate { idx } }` on press / right / middle (the pre-R1 behavior) | — (2nd click swallowed) | `up`/`down` | none | Esc = `menu_close` (today's behavior) | none |
 | **cmdline** (110) | nav to match (rows are **reversed**: row i = match `scroll+k-1-i`) | — | `up`/`down` (key parity absorbs the reversal) | none | **swallow** (typed) | `cmdline_nav { to }` |
-| **fabric-form** (120) | field row → `fabric_form_focus { idx }`; choice row → `fabric_form_choices_pick { port, value }` (existing). Rows are not field-aligned — section headers, desc, warnings, preview are null targets | — | picking: `up`/`down`; else swallow | form: `tab`, `backtab`, `' '` (if `hasChoices`), `return`, `escape`; choice list: `return`, `escape` | **swallow** (typed per field) | `fabric_form_focus { idx }` |
+| **fabric-form** (120) | a field's input AND desc rows → `fabric_form_focus { idx }` (the reducer closes an open choices list); choice row → `fabric_form_choices_pick { port, value }` (existing). Rows are not field-aligned — section headers, warnings, preview, help are null targets | — | picking: `up`/`down`; else swallow | form: `tab`, `backtab`, `' '` (if `hasChoices`), `return`, `escape`; choice list: `return`, `escape` | **swallow** (typed per field) | `fabric_form_focus { idx }` |
 | **fabric-field** (130) | — | — | swallow | `return`, `escape` | **swallow** (typed) | none |
 | panel-list (60) | R3 — rows are pool-drag sources (§Pointer capture) | | | | | |
 | replay-scrubber (140) | R3 — needs a coordinate-carrying seek handler; module state, not model | | | | | |
 | hover-tooltip (999) | never — display-only, publishes nothing | | | | | |
 
-R1 publishes a backdrop only for overlays that block chrome today
-(`suppressChrome: true`). For the three that let chrome through (jobs,
+Chips repeat on a fast second click (§Press→double continuation); every
+other "—" in the Row double column means the second click is swallowed.
+
+R1 publishes a backdrop only for overlays that block chrome
+(`suppressChrome: true`) — pinned by `test-overlay-mouse-policy.js`. For the three that let chrome through (jobs,
 pane-menu, which-key), a full-screen backdrop at the overlay band would
 newly block chrome clicks — so their outside policy waits for R2, when
 chrome is in the map and the backdrop can sit at z 35 below it.
 
-## Release 1 — popups (proposed v0.6.56)
+## Release 1 — popups (proposed v0.6.56) — the plan
 
 Fixes the field report; makes every popup mouse-capable.
 
 1. `js/panel/hit-map.js` registry + unit tests (z order, opaque stop,
-   fall-through, stale-frame drop).
+   fall-through, stale-frame rule).
 2. `leaves/render/hints.js formatHints` + `draw.setHitSink` + the shared
-   `publishBox` helper; `renderOverlay` gains `lineTargets` / `hints`;
+   `publishBox` helper; `renderOverlay` gains `hit` (see §renderOverlay
+   contract for the shape as built);
    compositor ambient owner/z + backdrop publishing; descriptor
    `mouse.outside`; router support for array (sequence) handlers.
 3. Router entry in `handleMouse`, **after** replay/hover, **before** the
@@ -368,22 +422,24 @@ Fixes the field report; makes every popup mouse-capable.
    `_modeMouseHandlers` entry and `hitTest` are deleted in the commit its
    regions land. pane-menu: the row/wheel arms and `hitTest` go; the
    outside-close arm stays until R2 moves it to a z-35 backdrop.
-5. Per-overlay commit = descriptor `mouse` + `lineTargets`/`hints` + the
+5. Per-overlay commit = descriptor `mouse` + `hit` targets/chips + the
    overlay's numeric `to:` nav extension (or `fabric_form_focus`) with its
-   reducer test + a paint-capture test + a raw-SGR test through
-   `_makeDataHandler` (`feedback_render_test_new_overlays`,
+   reducer test + a paint-capture test + a raw-SGR test (as built: through
+   `input._dispatchToken`; the batched stale-frame cases go through
+   `_makeDataHandler`) (`feedback_render_test_new_overlays`,
    `feedback_key_path_integration_tests`).
 
 Exit: every R1 overlay passes the chip≡key parity property (below); the
-T13 test (`test-mouse-wheel.js:131`) updated only where outside policy
+T13 test (`test-mouse-wheel.js` [4]) updated only where outside policy
 intentionally changes behavior; full suite + smoke green under `env -u TMUX`.
 
 ## Release 2 — pane chrome + in-pane affordances (proposed v0.6.57)
 
 1. renderPanel's chrome sink publishes hit regions for `[_]`/`[+]`, `[X]`,
-   `[≡]` (it already computes the drawn ranges, `draw.js:291`); collapsed
+   `[≡]` (it already computes the drawn ranges — renderPanel's `_chromeSink`
+   emit); collapsed
    panes publish from `_renderCollapsed`.
-2. Border-control specs' `regions()` + `dispatch` (`chrome-hittest.js:108`)
+2. Border-control specs' `regions()` + `dispatch` (`chrome-hittest.hitTestBorderControls`)
    → published at paint where `bc.fits` / `bc.bottomFits` drew them.
 3. Slot tab-strip publishes per-tab regions from the strip it drew (the
    `titleClip` clip becomes unnecessary — clipped tabs never publish).
@@ -394,8 +450,9 @@ intentionally changes behavior; full suite + smoke green under `env -u TMUX`.
    get outside = Esc here (their backdrop must sit below chrome, which only
    exists once chrome is in the map).
 6. Delete `panel/chrome-regions.js`, `panel/tree-regions.js`,
-   `panel/chrome-hittest.js`, the chrome cluster in `handleMouse`
-   (`input.js:629–691`), and the tab-strip arm (`:879–900`).
+   `panel/chrome-hittest.js`, the chrome cluster in `handleMouse` (the
+   `suppressesChromeClicks` block), and the tab-strip arm ("Top-border
+   tab-strip" in the press loop).
 
 Exit: `test-chrome-hittest-agreement.js` and `test-chrome-trigger-truncation.js`
 re-pointed at the hit map and green; narrow-terminal property sweep green.
@@ -435,50 +492,51 @@ mouse-pinning test files green (list in §Test strategy).
   inside cells the frame actually drew for its owner; swept across
   terminal widths 20…200 (truncation drops chips → no region).
 - **Raw-byte path** — every new mouse behavior tested by feeding SGR bytes
-  through `_makeDataHandler`, not by calling `handleMouse` directly.
-- **Stale-frame** — batched `Enter`+click chunk: click dropped, no
-  underlying pane mutation.
+  through the input pipeline (`input._dispatchToken`; batched chunks through
+  `_makeDataHandler`), not by calling `handleMouse` directly.
+- **Stale-frame** — batched key+click chunks (`test-mouse-stale-frame.js`):
+  a click aimed at a vanished/replaced popup is swallowed; a point the stale
+  frame drew nothing at still reaches legacy.
 - **Bench** — `bench-hotpaths.js` + render-construction before/after, same
   directory (`feedback_benchmark_same_dir`).
 
-## Open questions
+## Open questions — resolved
 
-1. **Outside policy** per overlay — the proposal is in §Per-overlay
-   mapping; needs a user yes/no.
-2. **Row click: select or activate?** Menu and pane-menu activate on a
-   single click today (shipped behavior, keep). Proposal, as in the
-   table: pure pickers whose activation only *chooses* (copy, palette,
-   fabric-form choice list) single-click = pick; lists whose activation
-   *does something else* (jobs = jump away, register-popup = promote)
-   single-click = move cursor, double-click = `return`; diag-log and
-   cmdline have no row activation — click moves the cursor.
-3. **Wheel over a list popup** — synthesize `up`/`down` (moves the cursor,
-   menu precedent) vs scroll the window without moving it. Proposal:
-   `up`/`down`, for keyboard parity.
-4. **Stale frame: drop or flush?** Proposal: drop (above). Alternative:
-   flush the pending batch paint and resolve against the fresh frame —
-   but the user aimed at the old one.
+All four were proposals at design time; the user started Release 1 on the
+proposals (2026-11-13), and R1 ships them:
 
-## Adjacent findings (from the inventory — unverified, repro before fixing)
+1. **Outside policy** — §Per-overlay mapping as built.
+2. **Row click** — pure pickers (copy, palette, fabric-form choice list)
+   single-click = pick; lists whose activation does something else (jobs =
+   jump, register-popup = promote) single-click = cursor, double-click =
+   `return`; menu / pane-menu keep the single-click activate; diag-log and
+   cmdline: click moves the cursor.
+3. **Wheel over a list popup** — synthesizes `up`/`down` (keyboard parity).
+   Over the popup only: a wheel notch outside a menu / pane-menu no longer
+   steps it (it did before R1 — CHANGELOG §Changed).
+4. **Stale frame** — swallow what the stale frame drew (§Stale-frame rule);
+   flushing was rejected because the user aimed at the old frame.
 
-Found while mapping the overlays; none is the reported bug. Each needs a
-repro before it is called a bug (`feedback_dont_speculate_commit`).
-Confirmed ones fold into the release that touches the code.
+## Adjacent findings
+
+Found while mapping the overlays and during R1; none is the reported bug.
+Each needed a repro before it was called a bug
+(`feedback_dont_speculate_commit`). Items 1 and 4 are still unverified and
+fold into the release that touches their code.
 
 1. **panel-list header/footer press starts a drag** — *likely bug.* A press
    on the header, footer or preview area leaves the cursor and, if the
    highlighted item is not essential, still dispatches `pool_drag_start`
-   for it. The comment at `input.js:252` says such clicks are swallowed;
+   for it. The comment in input.js `_mouseHandleFreeConfigMode` says such clicks are swallowed;
    that only holds when the highlighted item is essential. → R3 (panel-list
    migration).
-2. **Hover tooltip lingers under some popups** — **FIXED in R1** (`51804536`;
-   reproduced first, regression test fails without the fix). The tooltip
-   hides on `isModal` (the modes.js `modal` column), which is false for
-   confirm, register-popup, cmdline, pane-menu, jobs and diag-log. It
-   clears only on the next motion event (when `_handleHover` sees a chain
-   mode). Opening confirm by keyboard with the pointer parked over a graph
-   left the tooltip painting at z 999 OVER the popup. Fix: gate on
-   `isChainActive` (the predicate `_handleHover` already used).
+2. **Hover tooltip lingered under some popups** — **FIXED in R1** (`51804536`,
+   then `0d57572d`; reproduced first). The tooltip hid on `isModal` (the
+   modes.js `modal` column), which is false for confirm, register-popup,
+   cmdline, pane-menu, jobs and diag-log: opened by keyboard with the pointer
+   parked over a graph, the tooltip painted at z 999 OVER the popup. The
+   first fix (`isChainActive`) newly showed it in terminalMode (modal,
+   non-chain), where it froze; the gate is now `isChainActive || isModal`.
 3. **Two different "modal" flags disagree** — *smell.* The compositor's
    `modal` (one-at-a-time invariant) and modes.js `modal` (owns the footer
    row) disagree for confirm, pane-menu, register-popup and cmdline. Both
@@ -487,7 +545,7 @@ Confirmed ones fold into the release that touches the code.
    backdrop off neither — off the descriptor's explicit `mouse.outside`.
 4. **pane-menu dropdown right edge is not clamped to the screen** —
    *possible bug* on a pane near the right edge of a narrow terminal
-   (`pane-menu.js:223`, `w = min(50, max(20, paneB.w))` from `paneB.x`).
+   (pane-menu `_geom`: `w = min(50, max(20, paneB.w))` from `paneB.x`).
    `publishBox` clips regions regardless; the paint side needs a repro.
 
 5. **Double-click on a menu item also activated the pane beneath** — **FIXED
@@ -497,10 +555,19 @@ Confirmed ones fold into the release that touches the code.
    which stops above the footer; a click on the bottom line slipped past the
    popup's outside policy. The backdrop is now viewport-sized.
 
+7. **Pre-release review (4 tracks) — fixed in R1**, each reproduced by a
+   reviewer script first: stale frames fell through to the pane under a
+   vanished popup, and a content change under an unchanged mode (menu →
+   submenu in place) went undetected (`3ceb19e7`); synthesized named keys
+   carried their name as `seq` (`098e2d0e`); a backdrop `double` pressed Esc
+   when the box shrank, and a fast 2nd chip click was swallowed
+   (`aebfe03d`); fabric-form focus left the choices list open on the old
+   field (`46a8ea63`).
+
 ## Release 1 — as built
 
 All 12 overlays in §Per-overlay mapping shipped as planned, one commit each,
-confirm first. Deviations / notes:
+confirm first; commits `dc58dffd..` on main. Deviations / notes:
 
 - `renderOverlay` publishes **only when passed `hit`** — an always-published
   opaque box would have swallowed clicks that unmigrated overlays' legacy
@@ -509,11 +576,19 @@ confirm first. Deviations / notes:
   `input._dispatchToken` after a real paint; resets the double-click triple
   via `input._classifyPress` (an off-screen *press* is itself an outside
   click for a legacy outside-close overlay).
-- Width sweep `test-hit-map-agreement.js` (379 checks, widths 20…200) pins
-  the paint↔hit agreement property for five overlays.
-- Per-overlay tests: `test-{confirm,fabric-field,copy,diag-log,jobs,
-  register-popup,which-key,action-palette,menu,pane-menu,cmdline,
-  fabric-form}-mouse.js`.
+- The API differs from the plan's first draft: one `hit: { lineTargets,
+  lineChips, box }` input instead of separate `lineTargets` / `hints`;
+  hints are `{ cap, label, key, seq? }`; truncation is decided at publish
+  (`chipSurvives`). §renderOverlay contract describes the built shape.
+- Width sweep `test-hit-map-agreement.js` (widths 20…200) pins the
+  paint↔hit agreement property for every hit-mapped overlay.
+- Tests: `test-hit-map.js` / `test-hints.js` (registry, stamp, hints),
+  `test-mouse-router.js` (handler forms, stale rule, double rules),
+  `test-mouse-stale-frame.js` (batched chunks end to end),
+  `test-overlay-mouse-policy.js` (backdrop ⇔ suppressChrome),
+  `test-hover-tooltip-chain-gate.js`, and per overlay
+  `test-{confirm,fabric-field,copy,diag-log,jobs,register-popup,which-key,
+  action-palette,menu,pane-menu,cmdline,fabric-form}-mouse.js`.
 
 ## Rollback
 
@@ -531,7 +606,9 @@ alone. R3 removes the cascade; its rollback is a release revert.
 
 ## Session kickstart
 
-Read this doc, then `js/dispatch/control/input.js` (`handleMouse` at
-:595), `js/leaves/render/draw.js` (`renderOverlay` :529, chrome sink :291),
-`js/render/overlay-compositor.js`, `js/render/paint.js` `render()`
-(:779, registry clears :904). Start at Release 1 step 1.
+Release 1 is built. Read this doc, then `js/panel/hit-map.js`,
+`js/dispatch/control/mouse-router.js`, `js/dispatch/control/input.js`
+(`handleMouse` — the router call, then the legacy chrome cluster R2
+replaces), `js/leaves/render/draw.js` (`renderPanel`'s `_chromeSink` emit,
+`publishBox`), `js/panel/chrome-hittest.js`, `js/render/overlay-compositor.js`.
+Start at Release 2 step 1.
