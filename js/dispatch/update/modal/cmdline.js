@@ -55,9 +55,14 @@ function update(model, msg) {
       // up (dir>0) walks toward worse matches (higher idx); down (dir<0) walks
       // back toward the best match at idx 0 — the dropdown paints best-nearest-
       // the-prompt, so the visual "up" is a higher index.
-      const sel = msg.dir > 0
-        ? Math.min(c.sel + 1, c.matches.length - 1)
-        : Math.max(0, c.sel - 1);
+      // `to: <idx>` — absolute (a click on a dropdown row, docs/mouse-hit-map.md),
+      // clamped to the match list; otherwise relative `dir`.
+      if (Number.isInteger(msg.to) && !c.matches.length) return [model, []];
+      const sel = Number.isInteger(msg.to)
+        ? Math.max(0, Math.min(c.matches.length - 1, msg.to))
+        : msg.dir > 0
+          ? Math.min(c.sel + 1, c.matches.length - 1)
+          : Math.max(0, c.sel - 1);
       if (sel === c.sel) return [model, []];
       // Scroll the visible window so sel stays in view. When sel walks
       // OFF the top (sel exceeds the window's upper bound) advance scroll

@@ -17,7 +17,7 @@
 const { getModel } = require('../model/store');
 const { richToAnsi, RESET, visibleLen, esc } = require('../leaves/text/ansi');
 const { theme } = require('../leaves/infra/themes');
-const { renderPanel, viewportDims, writeOut } = require('../leaves/render/draw');
+const { renderPanel, viewportDims, writeOut, publishBox } = require('../leaves/render/draw');
 const { compositeRow } = require('../leaves/render/row-compositor');
 const { DROPDOWN_VIEWPORT: MAX_DROPDOWN } = require('../leaves/text/cmdline-split');
 
@@ -75,10 +75,16 @@ function renderCmdline(newRows, cols) {
   // natural row delta.
   if (k > 0) {
     const lines = [];
+    // Hit map (docs/mouse-hit-map.md): rows are REVERSED (best match nearest the
+    // prompt), so line i is match `_scroll + k - 1 - i`; a click selects THAT
+    // match (cmdline_nav's absolute `to`). Selection only — Enter still submits
+    // the typed text, as with ↑/↓.
+    const lineTargets = [];
     for (let i = 0; i < k; i++) {
       const matchIdx = _scroll + k - 1 - i;
       const m = _matches[matchIdx];
       const label = _formatMatchLine(m);
+      lineTargets[i] = { press: { msg: { type: 'cmdline_nav', to: matchIdx } } };
       lines.push(matchIdx === _sel ? `[${t.selected}]  ${label}` : `  ${label}`);
     }
     const content = renderPanel({
@@ -92,6 +98,10 @@ function renderCmdline(newRows, cols) {
     for (let i = 0; i < panelLines.length; i++) {
       compositeRow(newRows, cols || COLS, panelLines[i], offX, offY + i, panelW);
     }
+    // Own box (not renderOverlay) → publish through the shared helper. The wheel
+    // sends the ↑/↓ keys, so the reversed visual order is the key handler's job.
+    publishBox({ x: offX, y: offY, w: panelW, h: panelH, lines, lineTargets,
+                 box: { 'wheel-up': { key: 'up' }, 'wheel-down': { key: 'down' } } });
   }
 
   // Prompt row sits at row ROWS (the footer row, outside newRows which
@@ -130,6 +140,9 @@ function registerSelf(compositor) {
     render: (m, newRows, cols) => renderCmdline(newRows, cols),
     modal: true,
     zIndex: 110,
+    // Typed command text → an outside click (incl. on the prompt row) is
+    // swallowed, never discards the line (docs/mouse-hit-map.md §Backdrop).
+    mouse: { outside: 'swallow' },
   });
 }
 

@@ -62,7 +62,8 @@ function paintedText(owner, id) {
   const vp = draw.viewportDims();
   const newRows = new Array(vp.rows).fill(' '.repeat(vp.cols));
   hm.clear(chainStamp(getModel().modes));
-  compositor.paintActive(getModel(), newRows, vp.cols);
+  // Captured: cmdline writes its prompt row straight through draw's writer.
+  sm.capture(() => compositor.paintActive(getModel(), newRows, vp.cols));
   const r = _need(owner, id);
   return stripMarkup(newRows[r.rect.y]).slice(r.rect.x, r.rect.x + r.rect.w);
 }
