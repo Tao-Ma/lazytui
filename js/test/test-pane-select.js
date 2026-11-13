@@ -186,14 +186,14 @@ describe('[3] hit-test', () => {
     // Content rows: y=2,3,4. Borders at y=1 and y=5 inert.
     paintOverlays();
     eq(pressAt(-1, 2), null, 'left of dropdown → not on it');
-    eq(pressAt(40, 2), null, 'right of dropdown → not on it');
+    eq(pressAt(40, 2), { key: 'escape' }, 'right of dropdown → the outside backdrop (Esc closes)');
     eq(pressAt(5, 1),  'swallow', 'top border inert (consumed by the box)');
     eq(pressAt(5, 5),  'swallow', 'bottom border inert');
     eq(pressAt(5, 2), 0, 'row 0 → item 0');
     eq(paneSelect.items('pane-groups')[0].id, 'groups', 'item 0 = groups');
     eq(pressAt(5, 3), 1, 'row 1 hit');
     eq(pressAt(5, 4), 2, 'row 2 hit');
-    eq(pressAt(5, 6),  null, 'past last row → not on it');
+    eq(pressAt(5, 6),  { key: 'escape' }, 'past last row → the outside backdrop');
   });
 });
 

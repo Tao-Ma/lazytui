@@ -96,19 +96,38 @@ describe('[3] fabric-form: Space + click another field', () => {
 });
 
 describe('[4] stale frame drew nothing there → legacy decides', () => {
-  it('pane-menu closed by T, click on a pane outside the dropdown → focus moves (as before)', () => {
+  it('pane-menu closed by T + a click outside the dropdown → swallowed (its backdrop drew there)', () => {
+    // Release 2: pane-menu's outside-close is a below-chrome backdrop, so the
+    // stale frame DID draw a region under any outside click — the click was aimed
+    // at a screen whose menu is gone, and is swallowed.
     sm.bootFresh();
     sm.resize(120, 30);
     sm.capture(() => api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_open', paneId: 'pane-groups', cursor: 0, scroll: 0 })));
     hc.paint();
     const geo = require('../leaves/wm/geometry');
     const b = geo.visibleBoundsFor(api.getInstanceSlice('layout'), 'pane-detail');
-    assert(b, 'detail pane visible');
-    assert(!require('../panel/hit-map').claims(b.x + 3, b.y + b.h - 3), 'precondition: no region drawn there');
+    assert(require('../panel/hit-map').claims(b.x + 3, b.y + b.h - 3), 'the backdrop covers the detail body');
     // `T` closes the dropdown (a batched bare Esc + CSI is ambiguous to the tokenizer).
     chunk('T' + sgr(b.x + 3, b.y + b.h - 3));
     eq(getModel().modes.paneMenuMode, false, '`T` closed the dropdown');
-    eq(api.getInstanceSlice('layout').focus, 'pane-detail', 'the click focused the pane the user saw');
+    eq(api.getInstanceSlice('layout').focus, 'pane-groups', 'focus unchanged');
+  });
+  it('`+` (view expand) + a click on a pane body → no region there, legacy focuses what is under it now', () => {
+    sm.bootFresh();
+    sm.resize(120, 30);
+    sm.capture(() => api.dispatchMsg(api.wrap('layout', { type: 'view_set', mode: 'normal' })));
+    hc.paint();
+    const geo = require('../leaves/wm/geometry');
+    const b = geo.visibleBoundsFor(api.getInstanceSlice('layout'), 'pane-detail');
+    const mx = b.x + 3, my = b.y + b.h - 3;
+    assert(!require('../panel/hit-map').claims(mx, my), 'precondition: no region drawn there');
+    chunk('+' + sgr(mx, my));
+    eq(api.getInstanceSlice('layout').viewMode, 'half', 'the key ran (geometry changed → stale)');
+    const now = geo.visibleBoundsFor(api.getInstanceSlice('layout'), 'pane-detail');
+    if (now && mx >= now.x && mx < now.x + now.w && my >= now.y && my < now.y + now.h) {
+      eq(api.getInstanceSlice('layout').focus, 'pane-detail', 'legacy focused the pane now under the pointer');
+    }
+    sm.capture(() => api.dispatchMsg(api.wrap('layout', { type: 'view_set', mode: 'normal' })));
   });
 });
 

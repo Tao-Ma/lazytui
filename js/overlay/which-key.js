@@ -82,9 +82,10 @@ function registerSelf(compositor) {
     render: (m, newRows, cols) => renderWhichKey(newRows, cols),
     modal: false,
     zIndex: 80,
-    // No mouse.outside yet: prefixMode lets pane chrome stay clickable
-    // (suppressChrome: false); its outside-cancel lands in hit-map Release 2 as a
-    // backdrop BELOW the chrome band.
+    // Outside click = Esc (cancels the pending chord). prefixMode leaves pane
+    // chrome clickable (suppressChrome: false), so the backdrop sits BELOW the
+    // chrome band.
+    mouse: { outside: { key: 'escape' }, backdrop: 'below-chrome' },
   });
 }
 

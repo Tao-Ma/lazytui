@@ -15,7 +15,7 @@
  *     render:   (model, newRows, cols) => void,// mutates newRows
  *     modal:    bool,                          // enforces flat-modal
  *     zIndex:   int,                           // paint order (hi = on top)
- *     mouse:    { outside } | undefined,       // hit-map backdrop policy (below)
+ *     mouse:    { outside, backdrop? } | undefined,  // hit-map backdrop policy (below)
  *   }
  *
  * Hit map (docs/mouse-hit-map.md): each overlay's render is bracketed with
@@ -134,7 +134,14 @@ function paintActive(model, newRows, cols) {
       // (painted separately) — sizing by it left the footer outside every
       // backdrop, so a click there slipped past the popup's outside policy.
       if (outside != null) {
-        hitMap.publishOwned(_backdrop(outside, cols, Math.max(newRows.length, viewportDims().rows)), HIT_Z.backdrop);
+        const bd = _backdrop(outside, cols, Math.max(newRows.length, viewportDims().rows));
+        // An in-grid overlay that leaves pane chrome live (jobs / pane-menu /
+        // which-key — modes.js suppressChrome:false) puts its backdrop BELOW the
+        // chrome band (z 35 < 40), so [_]/[≡]/border controls/✗ cancel stay
+        // clickable while an outside click elsewhere runs the policy. Every other
+        // backdrop sits in the overlay's own band, above all pane chrome.
+        if (d.mouse.backdrop === 'below-chrome') hitMap.publish({ ...bd, owner: d.id, z: hitMap.BANDS.BELOW_CHROME });
+        else hitMap.publishOwned(bd, HIT_Z.backdrop);
       }
       d.render(model, newRows, cols);
     } finally {

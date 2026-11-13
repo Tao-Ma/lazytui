@@ -4,7 +4,8 @@
  *   [1] jobs_nav { to } — absolute, clamped, scroll follows
  *   [2] click a job row → cursor there; the header row is inert
  *   [3] double-click a row → cursor there + Enter (jump to job)
- *   [4] [Esc] chip closes; wheel steps; NO backdrop in R1 (chrome stays live)
+ *   [4] [Esc] chip closes; wheel steps; outside click = Esc via a backdrop
+ *       BELOW the chrome band (pane chrome stays clickable)
  *
  * Run: node js/test/test-jobs-mouse.js
  */
@@ -18,6 +19,22 @@ const dispatch = require('../dispatch/control/dispatch');
 const { getModel } = runtime;
 
 const O = 'jobs';
+// A pane-chrome [_] the popup does not cover. The popup's backdrop sits BELOW
+// the chrome band (z 35 < 40), so chrome stays clickable while it is open.
+function uncoveredCollapse() {
+  const hm = require('../panel/hit-map');
+  return hm.all().find(r => {
+    if (r.z !== hm.BANDS.CHROME || r.id !== 'collapse') return false;
+    const hit = hm.resolve(r.rect.x, r.rect.y, 'press');
+    return !!hit && hit.region.id === 'collapse' && hit.region.owner === r.owner;
+  }) || null;
+}
+const collapsedOf = (paneId) => {
+  const mpool = require('../leaves/wm/pool');
+  const p = mpool.allPanesInColumns(sm.api.getInstanceSlice('layout').arrange).find(x => x.paneId === paneId);
+  return !!(p && p.collapsed);
+};
+
 const JOBS = ['build', 'deploy', 'lint'].map((label, i) => ({ id: `j${i}`, kind: 'background', label, startedAt: 0, status: 'running' }));
 
 function openJobs() {
@@ -83,11 +100,20 @@ describe('[4] chips / wheel / outside', () => {
     hc.wheelRegion(O, 'box', 'down');
     eq(cursor(), 1);
   });
-  it('no backdrop in R1: an outside click is left to the legacy path (still open)', () => {
+  it('outside click closes (Esc); the backdrop sits below the chrome band', () => {
     openJobs();
-    eq(hc.region(O, 'backdrop'), null);
+    const bd = hc.region(O, 'backdrop');
+    eq(bd && bd.z, require('../panel/hit-map').BANDS.BELOW_CHROME);
     hc.click(0, 25);                  // outside the box, not on chrome
-    eq(getModel().modes.jobsMode, true, 'legacy T13 gate swallowed it, as before');
+    eq(getModel().modes.jobsMode, false, 'closed');
+  });
+  it('pane chrome stays clickable while jobs is open', () => {
+    openJobs();
+    const r = uncoveredCollapse();
+    assert(r, 'a [_] outside the jobs box');
+    hc.click(r.rect.x + 1, r.rect.y);
+    eq(collapsedOf(r.owner), true, 'the [_] collapsed its pane');
+    eq(getModel().modes.jobsMode, true, 'jobs stays open');
   });
 });
 

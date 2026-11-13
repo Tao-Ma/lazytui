@@ -3,7 +3,8 @@
  *
  *   [1] row ≡ keys: clicking row k == navigating to k + Enter (_paneMenuPick)
  *   [2] wheel over the dropdown steps the cursor
- *   [3] border inert; outside press still closes (legacy arm, until R2)
+ *   [3] border inert; outside press = Esc (close) via a backdrop BELOW the
+ *       chrome band; the dropdown stays on screen at a narrow right edge
  *   [4] pane_menu_nav { to } — absolute, clamped, skips nothing it shouldn't
  *
  * Run: node js/test/test-pane-menu-mouse.js
@@ -84,11 +85,25 @@ describe('[3] border / outside', () => {
     hc.click(box.rect.x + 2, box.rect.y);
     eq(getModel().modes.paneMenuMode, true);
   });
-  it('an outside press closes it (legacy arm until R2)', () => {
+  it('an outside press closes it (Esc on a below-chrome backdrop)', () => {
     openMenu();
-    eq(hc.region(O, 'backdrop'), null, 'no backdrop in R1');
+    const bd = hc.region(O, 'backdrop');
+    eq(bd && bd.z, require('../panel/hit-map').BANDS.BELOW_CHROME);
     hc.click(100, 25);
     eq(getModel().modes.paneMenuMode, false);
+  });
+  it('a narrow right-edge pane: the dropdown shifts left to stay whole (adjacent finding 4)', () => {
+    sm.bootFresh();
+    sm.capture(() => require('../dispatch/runtime/loop').dispatchMsg(api.wrap('layout', { type: 'view_set', mode: 'half' })));
+    sm.resize(34, 20);                 // half view: the content slot is 17 wide at x=17
+    sm.capture(() => require('../dispatch/runtime/loop').dispatchMsg(api.wrap('layout',
+      { type: 'pane_menu_open', paneId: 'pane-detail', cursor: 0, scroll: 0 })));
+    const rows = hc.screenRows();
+    const box = hc.region(O, 'box');
+    assert(box.rect.x + box.rect.w <= 34, 'box inside the screen');
+    eq((rows[box.rect.y] || [])[box.rect.x + box.rect.w - 1], '╮', 'top-right corner painted');
+    eq((rows[box.rect.y + box.rect.h - 1] || [])[box.rect.x + box.rect.w - 1], '╯', 'bottom-right corner painted');
+    sm.capture(() => require('../dispatch/runtime/loop').dispatchMsg(api.wrap('layout', { type: 'view_set', mode: 'normal' })));
   });
 });
 

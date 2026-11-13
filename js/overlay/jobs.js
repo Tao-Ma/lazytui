@@ -188,9 +188,9 @@ function registerSelf(compositor) {
     render: (m, newRows, cols) => renderJobsOverlay(m && m.now, newRows, cols),
     modal: false,
     zIndex: 40,
-    // No mouse.outside yet: jobs lets pane chrome stay clickable (suppressChrome:
-    // false), and a full-screen backdrop here would block it. Its outside-close
-    // lands in hit-map Release 2 as a backdrop BELOW the chrome band.
+    // Outside click = Esc (close). jobs leaves pane chrome clickable
+    // (suppressChrome: false), so the backdrop sits BELOW the chrome band.
+    mouse: { outside: { key: 'escape' }, backdrop: 'below-chrome' },
   });
 }
 

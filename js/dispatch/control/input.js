@@ -180,24 +180,6 @@ function _handleWheel(mx, my, delta) {
 // `isChainActive(model.modes) return;` guard catches the event so it
 // doesn't leak into normal-mode click/wheel routing.
 
-/** v0.6.4 #1 Step 2 — the unified `[≡]` pane-menu overlay. Its rows + wheel
- *  resolve on the hit map now (docs/mouse-hit-map.md Release 1: the box is
- *  opaque, so a press INSIDE it never reaches here). What remains is the
- *  outside-click close, kept until Release 2 moves it to a backdrop below the
- *  chrome band (the chrome cluster above still runs first, so the [≡] trigger
- *  keeps toggling). Motion/release/wheel fall through. */
-function _mouseHandlePaneMenuMode(kind, mx, my, _model) {
-  const layoutSlice = getInstanceSlice('layout');
-  const target = (layoutSlice && layoutSlice.paneMenu && layoutSlice.paneMenu.targetPaneId) || null;
-  if (!target) return false;
-  if (kind === 'press') {
-    dispatchMsg(wrap('layout', { type: 'pane_menu_close' }));
-    render();
-    return true;
-  }
-  return false;
-}
-
 /** free-config — owns the entire mouse pipeline. Routes pool-drag /
  *  tab-drag / tab-bar press / panel-list overlay / free-config drag,
  *  each via dispatchMsg into the layout slice. Always consumes (the
@@ -259,7 +241,6 @@ function _mouseHandleFreeConfigMode(kind, mx, my, model) {
 // (menuOpen's handler retired — the menu resolves on the hit map now,
 // docs/mouse-hit-map.md Release 1; the router runs before this registry.)
 const _modeMouseHandlers = {
-  paneMenuMode:    _mouseHandlePaneMenuMode,
   freeConfigMode:  _mouseHandleFreeConfigMode,
   // agentMode is an in-grid typing mode, not an overlay: the transcript stays
   // fully visible, so the WHEEL passes through to the normal per-pane scroll

@@ -226,16 +226,21 @@ function _geom(paneId) {
   if (!paneId) return null;
   const paneB = _paneBounds(paneId);
   if (!paneB) return null;
-  const ROWS = viewportDims().rows;
+  const { rows: ROWS, cols: COLS } = viewportDims();
   const all = items(paneId);
   const innerCap = Math.max(1, ROWS - paneB.y - 3);
   const lineCount = all.length === 0 ? 1 : Math.min(VIEWPORT, all.length);
   const innerH = Math.min(lineCount, innerCap);
   const h = innerH + 2;
-  const w = Math.min(MAX_W, Math.max(20, paneB.w));
+  // Anchored at the pane's left edge, but never past the screen: the 20-cell
+  // floor is wider than a narrow pane (a half-view right slot on a ~30-col
+  // terminal), so shift left to keep the right border on screen, and never wider
+  // than the screen (docs/mouse-hit-map.md §Adjacent findings 4).
+  const w = Math.max(1, Math.min(MAX_W, Math.max(20, paneB.w), COLS));
+  const x = Math.max(0, Math.min(paneB.x, COLS - w));
   const layoutSlice = getInstanceSlice('layout');
   const scroll = Math.max(0, (layoutSlice && layoutSlice.paneMenu && layoutSlice.paneMenu.scroll) || 0);
-  return { x: paneB.x, y: paneB.y + 1, w, innerH, h, items: all, scroll };
+  return { x, y: paneB.y + 1, w, innerH, h, items: all, scroll };
 }
 
 /** Effective viewport row count — used by the nav handler for clamp
@@ -360,8 +365,7 @@ function render(newRows, cols) {
   }
   // This overlay composes its own box (not renderOverlay), so it publishes
   // through the shared helper directly; lines are pre-sliced (scroll applied
-  // above), and publishBox clips to the screen (the dropdown's right edge is
-  // not clamped — docs/mouse-hit-map.md §Adjacent findings 4).
+  // above); _geom keeps the box on screen and publishBox clips regardless.
   publishBox({ x: g.x, y: g.y, w: g.w, h: g.h, lines, lineTargets,
                box: { 'wheel-up': { key: 'up' }, 'wheel-down': { key: 'down' } } });
 }
@@ -375,9 +379,9 @@ function registerSelf(compositor) {
     render: (m, newRows, cols) => render(newRows, cols),
     modal: true,
     zIndex: 50,
-    // No mouse.outside yet: pane-menu keeps pane chrome clickable (its own [≡]
-    // trigger toggles it), so the legacy input.js handler still owns the
-    // outside-click close until hit-map Release 2's below-chrome backdrop.
+    // Outside click = Esc (close). pane-menu keeps pane chrome clickable (its own
+    // [≡] toggles it), so the backdrop sits BELOW the chrome band.
+    mouse: { outside: { key: 'escape' }, backdrop: 'below-chrome' },
   });
 }
 

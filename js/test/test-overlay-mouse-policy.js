@@ -1,13 +1,14 @@
 /**
- * Overlay mouse policy (docs/mouse-hit-map.md §Backdrop) — hit-map R1 rule:
- * an overlay publishes an outside-click backdrop IFF its mode blocks chrome
- * clicks (modes.js `suppressChrome: true`). The three settings that say "this
+ * Overlay mouse policy (docs/mouse-hit-map.md §Backdrop). An overlay whose mode
+ * blocks chrome clicks (modes.js `suppressChrome: true`) publishes an outside-
+ * click backdrop in its own band (above all pane chrome); one whose mode leaves
+ * chrome live publishes either none or a `backdrop: 'below-chrome'` one (z 35,
+ * under the chrome band — Release 2: jobs, pane-menu, which-key). The three settings that say "this
  * popup owns the screen" (descriptor `modal`, modes.js `modal`, modes.js
  * `suppressChrome`) and `mouse.outside` are independent facts; nothing but this
  * test keeps the R1 pairing — a new overlay that blocks chrome without a
  * backdrop would be mouse-dead outside its box, and one with a backdrop over a
- * chrome-live mode would newly block chrome clicks. (Release 2 moves the
- * chrome-live modes' backdrops BELOW the chrome band and updates this rule.)
+ * chrome-live mode would newly block chrome clicks.
  *
  * Each descriptor's mode flag is found by PROBING its isActive against the
  * modes table, so descriptors carry no duplicated `flag` field.
@@ -28,7 +29,9 @@ function flagOf(d) {
   return hits.length === 1 ? hits[0] : null;
 }
 
-describe('[policy] backdrop iff suppressChrome', () => {
+const BELOW_CHROME = ['jobs', 'pane-menu', 'which-key'];
+
+describe('[policy] backdrop placement follows suppressChrome', () => {
   const ds = compositor._all();
   it('every mode-flag overlay is found by probing', () => {
     const flagged = ds.filter(d => flagOf(d)).map(d => d.id).sort();
@@ -40,7 +43,13 @@ describe('[policy] backdrop iff suppressChrome', () => {
     if (!m) continue;
     it(`${d.id} (${m.flag}, suppressChrome=${m.suppressChrome})`, () => {
       const hasBackdrop = !!(d.mouse && d.mouse.outside != null);
-      eq(hasBackdrop, !!m.suppressChrome, 'backdrop ⇔ suppressChrome');
+      const below = hasBackdrop && d.mouse.backdrop === 'below-chrome';
+      if (m.suppressChrome) {
+        assert(hasBackdrop && !below, 'chrome blocked → a backdrop in the overlay band');
+      } else {
+        assert(!hasBackdrop || below, 'chrome live → no backdrop, or one below the chrome band');
+        eq(below, BELOW_CHROME.includes(d.id), 'the R2 below-chrome set');
+      }
       assert(d.isActive({ modes: {} }) === false, 'inactive with no modes');
     });
   }
