@@ -53,8 +53,13 @@ function renderWhichKey(newRows, cols) {
   const seq = (getModel().prefixSeq && getModel().prefixSeq.length)
     ? 'leader ' + getModel().prefixSeq.join(' ')
     : 'leader';
+  // Hit map (docs/mouse-hit-map.md): row i is continuation i (whichKeyLines maps
+  // continuations 1:1), so clicking it presses that chord token — prefix_key via
+  // the prefixMode handler, exactly as typed (tokenForEvent reads seq first).
+  const lineTargets = kb.continuations(node).map(([tok]) => ({ press: { key: tok, seq: tok } }));
   renderOverlay({ lines: whichKeyLines(node), title: `\\[${seq}]`, count: null,
-                  targetRows: newRows || null, targetCols: cols || 0 });
+                  targetRows: newRows || null, targetCols: cols || 0,
+                  hit: { lineTargets, box: {} } });
 }
 
 /**
@@ -77,6 +82,9 @@ function registerSelf(compositor) {
     render: (m, newRows, cols) => renderWhichKey(newRows, cols),
     modal: false,
     zIndex: 80,
+    // No mouse.outside yet: prefixMode lets pane chrome stay clickable
+    // (suppressChrome: false); its outside-cancel lands in hit-map Release 2 as a
+    // backdrop BELOW the chrome band.
   });
 }
 
