@@ -594,21 +594,12 @@ function handleMouse(kind, x, y) {
   // the legacy cascade below, unchanged.
   if (mouseRouter.route(kind, mx, my, model)) return;
 
-  // Panel-chrome glyph clicks — single early hit-test site for both
-  // [_]/[+] (collapse, always-on) and [X] (close, free-config-only).
-  // The close-button paint is itself gated on free-config in render(),
-  // so its hit-test no-ops in normal mode (no glyph there to click).
-  // Suppression predicate is narrower than isChainActive: free-config
-  // and the in-grid modes (filter/search/prefix/listSelect) still let
-  // chrome clicks through; only input-owning modes block them.
+  // Remaining legacy chrome hit-tests — the `✗ cancel` chip and the border-
+  // control strip (docs/mouse-hit-map.md Release 2 moves them onto the hit
+  // map; the [_]/[+]/[X]/[≡] glyphs already resolve there). Gated like the
+  // chrome glyphs: only input-owning modes block them.
   if (kind === 'press' && !suppressesChromeClicks(model.modes)) {
-    const { hitTestCollapseButton, hitTestCloseButton, hitTestBorderControls, hitTestActionCancel } = require('../../panel/chrome-hittest');
-    const collapseId = hitTestCollapseButton(mx, my);
-    if (collapseId) {
-      dispatchMsg(wrap('layout', { type: 'panel_collapse_toggle', id: collapseId }));
-      render();
-      return;
-    }
+    const { hitTestBorderControls, hitTestActionCancel } = require('../../panel/chrome-hittest');
     // Live action-status `✗ cancel` click → cancel that running command. It's a
     // CONTENT-line affordance (the running chip), checked here alongside the border
     // chrome so a click on it cancels instead of arming a text selection.
@@ -625,41 +616,6 @@ function handleMouse(kind, x, y) {
     const bcHit = hitTestBorderControls(mx, my);
     if (bcHit) {
       dispatchMsg(wrap(bcHit.owner, bcHit.msg));
-      render();
-      return;
-    }
-    if (model.modes.freeConfigMode) {
-      const hideId = hitTestCloseButton(mx, my);
-      if (hideId) {
-        dispatchMsg(wrap('layout', { type: 'pool_hide', id: hideId }));
-        render();
-        return;
-      }
-    }
-    // v0.6.4 #1 Step 2 — the unified `[≡]` pane-menu trigger on EVERY
-    // pane's top-left. hitTestTrigger returns the SPECIFIC pane whose
-    // glyph was clicked (each paints its own); suppression (free-config +
-    // modals + nothing-to-show) lives inside it so the click silently
-    // misses there. Opening focuses that pane and, for a viewer, seeds
-    // the cursor at its active tab (navigators seed 0, and — preserving
-    // the old pane-select behavior — don't move focus on open).
-    const paneMenu = require('../../overlay/pane-menu');
-    const triggerPaneId = paneMenu.hitTestTrigger(mx, my);
-    if (triggerPaneId) {
-      if (model.modes.paneMenuMode) {
-        dispatchMsg(wrap('layout', { type: 'pane_menu_close' }));
-      } else {
-        let cursor = 0, scroll = 0;
-        if (paneMenu._isViewer(triggerPaneId)) {
-          const tabCount = paneMenu.items(triggerPaneId).length;
-          const vh = paneMenu.viewportRows(triggerPaneId);
-          const tab = (getInstanceSlice(triggerPaneId) || {}).tab | 0;
-          cursor = Math.max(0, Math.min(tab, Math.max(0, tabCount - 1)));
-          scroll = cursor >= vh ? Math.min(cursor - vh + 1, Math.max(0, tabCount - vh)) : 0;
-          dispatchMsg(wrap('layout', { type: 'focus_set', focus: triggerPaneId }));
-        }
-        dispatchMsg(wrap('layout', { type: 'pane_menu_open', paneId: triggerPaneId, cursor, scroll }));
-      }
       render();
       return;
     }

@@ -36,7 +36,6 @@ const { getModel } = require('../model/store');
 const { getInstanceSlice, theme } = require('../panel/api');
 const { renderPanel, viewportDims, publishBox } = require('../leaves/render/draw');
 const { compositeRow } = require('../leaves/render/row-compositor');
-const chromeRegions = require('../panel/chrome-regions');
 const { esc, visibleLen } = require('../leaves/text/ansi');
 const { isChainActive } = require('../leaves/input/modes');
 const mpool = require('../leaves/wm/pool');
@@ -46,9 +45,10 @@ const route = require('../panel/route');
 const MAX_W = 50;
 const VIEWPORT = 12;
 
-// `[≡]` presence + column both come from chrome-regions now (the range paint drew
-// it at — hotkey-dependent via draw.leftBorderPrefix). The local `_triggerX` width
-// proxy retired with the phantom-hit fix; hitTestTrigger reads the published range.
+// `[≡]` clicks resolve on the hit map (docs/mouse-hit-map.md Release 2): paint
+// publishes the glyph where renderPanel drew it (render/paint
+// _publishChromeGlyphs); a click on an available trigger realizes the
+// `pane-menu-open` act (dispatch/control/mouse-acts → openAt).
 
 // (Residue tracking retired — overlay-compositor end-of-Release-2
 // cleanup; the overlay composites into newRows and cell-diff handles
@@ -190,34 +190,34 @@ function triggerVisible(paneId) {
   return _paneRows(paneId, _viewMode()).length >= 2;
 }
 
-/** Mouse hit-test for any pane's `[≡]` trigger. Returns the paneId under
- *  (mx,my) or null. Suppression: drag in flight or a non-paneMenu chain
- *  mode disables every trigger; while paneMenuMode is open only the open
- *  target's own glyph is live (toggles close); panes with nothing to
- *  show (triggerVisible=false) are skipped. */
-function hitTestTrigger(mx, my) {
-  if (!_triggerClickable()) return null;
-  const layoutSlice = getInstanceSlice('layout');
-  if (!layoutSlice || !layoutSlice.arrange) return null;
-  const drag = layoutSlice.freeConfig && layoutSlice.freeConfig.drag;
-  if (drag) return null;
-  const modes = getModel().modes;
-  const openTargetId = _targetPaneId();
-  for (const p of mpool.allPanesInColumns(layoutSlice.arrange)) {
-    if (modes.paneMenuMode && p.paneId !== openTargetId) continue;
-    if (!triggerVisible(p.paneId)) continue;
-    const b = _paneBounds(p.paneId);
-    if (!b) continue;
-    // Presence + column from chrome-regions — the range paint ACTUALLY drew the
-    // `[≡]` at (hotkey-dependent, via leftBorderPrefix). renderPanel drops the
-    // whole chrome cluster when the top row can't fit title + the right
-    // [X]/[_]/controls (its `fits`), and this reads that decision directly — so a
-    // very narrow pane can no longer report a hit where nothing painted. (The old
-    // left-only width proxy couldn't see the right-cluster drop — the KNOWN GAP.)
-    const g = (chromeRegions.get(p.paneId) || {}).trigger;
-    if (g && my === b.y && mx >= b.x + g.x0 && mx <= b.x + g.x1) return p.paneId;
+/** Where the menu's cursor starts when it opens on `paneId`: a viewer seeds at
+ *  its active tab (scrolled into view), anything else at row 0. Shared by the
+ *  keyboard `T` opener (dispatch.js) and the `[≡]` click (openAt). */
+function seedCursor(paneId) {
+  const tabCount = items(paneId).length;
+  const vh = viewportRows(paneId);
+  const tab = (getInstanceSlice(paneId) || {}).tab | 0;
+  const cursor = Math.max(0, Math.min(tab, Math.max(0, tabCount - 1)));
+  const scroll = cursor >= vh ? Math.min(cursor - vh + 1, Math.max(0, tabCount - vh)) : 0;
+  return { cursor, scroll };
+}
+
+/** The Msgs a `[≡]` click on `paneId` opens the menu with, or null when the
+ *  trigger is no longer clickable (re-checked at click time: the pane lost its
+ *  menu, another mode took over). A viewer is focused and seeded at its active
+ *  tab; a navigator opens at row 0 without moving focus (the old pane-select
+ *  behavior). Layout-wrapped Msgs. */
+function openAt(paneId) {
+  if (!paneId || !_triggerClickable() || getModel().modes.paneMenuMode) return null;
+  if (!_paneById(paneId) || !triggerVisible(paneId)) return null;
+  const msgs = [];
+  let seed = { cursor: 0, scroll: 0 };
+  if (_isViewer(paneId)) {
+    seed = seedCursor(paneId);
+    msgs.push({ type: 'focus_set', focus: paneId });
   }
-  return null;
+  msgs.push({ type: 'pane_menu_open', paneId, ...seed });
+  return msgs;
 }
 
 /** Compute the dropdown geometry from the target pane's bounds. */
@@ -382,7 +382,7 @@ function registerSelf(compositor) {
 }
 
 module.exports = {
-  hitTestTrigger, render, items, viewportRows,
+  seedCursor, openAt, render, items, viewportRows,
   triggerVisible, _triggerState, _isViewer,
   _formatPaneRow,
   registerSelf,

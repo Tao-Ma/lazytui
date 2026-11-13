@@ -200,130 +200,86 @@ describe('[visibleBoundsFor] half-mode click can\'t hit off-screen pane phantom'
   });
 });
 
+// Painted fixtures for the chrome hit-tests below: chrome clicks resolve on the
+// hit map (docs/mouse-hit-map.md Release 2), which only a REAL paint populates —
+// paint publishes a glyph region exactly where renderPanel drew it, for the panes
+// the frame actually showed. bootFresh takes the RESOLVED layout shape; the
+// test-runner registers `groups` + the content slot, so both render for real.
+const _paintedBoot = (() => {
+  let sm, hc, loop;
+  return (layoutCfg, viewMode) => {
+    sm = sm || require('./smoke/_helpers/smoke');
+    hc = hc || require('./_helpers/hit-click');
+    loop = loop || require('../dispatch/runtime/loop');
+    const toLayout = (m) => sm.capture(() => loop.dispatchMsg(sm.api.wrap('layout', m)));
+    sm.bootFresh({ layout: layoutCfg });
+    toLayout({ type: 'view_set', mode: viewMode || 'normal' });
+    sm.resize(120, 24);
+    toLayout({ type: 'focus_set', focus: 'pane-groups' });
+    hc.paint();
+    return { sm, hc, layout: sm.api.getInstanceSlice('layout') };
+  };
+})();
+const _POOL3 = {
+  groups:  { id: 'groups',  type: 'groups' },
+  groups2: { id: 'groups2', type: 'groups' },
+  detail:  { id: 'detail',  type: 'detail' },
+};
+const _COLS3 = [
+  { width: 32, panels: [{ id: 'groups', type: 'groups' }, { id: 'groups2', type: 'groups' }] },
+  { panels: [{ id: 'detail', type: 'detail' }] },
+];
+
 describe('[chrome glyphs] half-mode collapse-button click can\'t hit off-screen pane', () => {
   // T1.1 regression: render/decor.js#_placedWidgetTargets used boundsFor,
   // letting [_] clicks in half view fire panel_collapse_toggle on a
   // pane whose normal-view rect overlapped the click. Same bug class
-  // as the focus revert fixed by visibleBoundsFor.
-  const { getInstanceSlice } = require('../panel/api');
-  const decor = require('../panel/chrome-hittest');
-
-  it('hitTestCollapseButton ignores off-screen panes in half view', () => {
-    const slice = getInstanceSlice('layout');
-    slice.arrange = {
-      columns: [
-        { width: 32, panels: [
-          { type: 'groups',  id: 'groups',  paneId: 'pane-groups',  hotkey: 'g', tabs: [{ id: 'groups',  poolId: 'groups'  }] },
-          { type: 'actions', id: 'actions', paneId: 'pane-actions', hotkey: 'a', tabs: [{ id: 'actions', poolId: 'actions' }] },
-        ] },
-        { panels: [
-          { type: 'detail', id: 'detail', paneId: 'pane-detail', tabs: [{ id: 'detail', poolId: 'detail' }] },
-        ] },
-      ],
-      pool: {
-        'groups': { id: 'groups', type: 'groups' },
-        'actions': { id: 'actions', type: 'actions' },
-        'detail': { id: 'detail', type: 'detail' },
-      },
-    };
-    slice.freeConfig = { drag: null, undo: [], redo: [], titleEdit: { text: '' }, notice: null, noticeKind: null };
-    // Half view: only `groups` + detail visible.
-    slice.paneBounds = {
-      'groups': { x: 0, y: 0, w: 60, h: 24 },
-      'detail': { x: 60, y: 0, w: 60, h: 24 },
-    };
-    // `actions` is off-screen — its NORMAL-view rect (would be y=12,
-    // x=0, w=32, h=12) is in _currentLayout but NOT in paneBounds.
-    // The collapse-glyph hit-test must NOT fire on actions.
-    // [_] sits at the right end of the pane: x = b.x + b.w - 3 to b.x + b.w - 1.
-    // For an off-screen `actions` (normal-view bounds x=0..31, y=12),
-    // its [_] would be at (29..31, 12). A click there in half view
-    // would be inside the visible `groups` pane (which is x=0..59, y=0..23).
-    // Test that the click doesn't toggle actions.
-    eq(decor.hitTestCollapseButton(29, 12), null, 'off-screen actions [_] inert');
-    // Sanity: the visible groups [_] DOES fire. Presence now comes from
-    // chrome-regions (what paint drew), so seed the range paint publishes for a
-    // w=60 pane: right-anchored [_] at pane-local [w-4 .. w-2] = [56..58] (screen
-    // [56..58] at b.x=0). A click at 57 lands on it. (off-screen `actions` above
-    // is filtered by visibleBoundsFor before the registry is even consulted.)
-    const chromeRegions = require('../panel/chrome-regions');
-    chromeRegions.publish('pane-groups', { trigger: null, close: null, collapse: { x0: 56, x1: 58 } });
-    eq(decor.hitTestCollapseButton(57, 0), 'groups', 'visible groups [_] fires on the drawn glyph');
+  // as the focus revert fixed by visibleBoundsFor. On the hit map an off-screen
+  // pane publishes nothing (paint never drew it), so the phantom can't exist —
+  // this pins that.
+  it('the [_] of a pane off-screen in half view is inert; the visible one fires', () => {
+    const geo = require('../leaves/wm/geometry');
+    // Normal view first: where groups2's [_] sits (right-anchored, top row).
+    let { hc, layout } = _paintedBoot({ pool: _POOL3, columns: _COLS3 }, 'normal');
+    const nb = geo.visibleBoundsFor(layout, 'pane-groups2');
+    const offX = nb.x + nb.w - 3, offY = nb.y;          // the `_` of groups2's [_]
+    eq(hc.collapseAt(offX, offY), 'groups2', 'sanity: in normal view it fires on groups2');
+    // Half view: only groups (left) + detail visible; groups2 is off-screen.
+    ({ hc, layout } = _paintedBoot({ pool: _POOL3, columns: _COLS3 }, 'half'));
+    eq(layout.viewMode, 'half');
+    eq(geo.visibleBoundsFor(layout, 'pane-groups2'), null, 'groups2 is off-screen');
+    eq(hc.collapseAt(offX, offY), null, 'off-screen groups2 [_] inert');
+    const gb = geo.visibleBoundsFor(layout, 'pane-groups');
+    eq(hc.collapseAt(gb.x + gb.w - 3, gb.y), 'groups', 'visible groups [_] fires on the drawn glyph');
   });
 });
 
 describe('[pane-menu trigger] hit-test honors hidden (nothing-to-swap) state', () => {
   // v0.6.4 #1 Step 2 — the unified [≡] trigger hides when a navigator
-  // pane has < 2 pane rows (no useful swap target); hitTestTrigger's
-  // triggerVisible guard must agree with the painted state. (Viewers
-  // show via tab count, exercised elsewhere.)
-  const { getInstanceSlice } = require('../panel/api');
-  const paneMenu = require('../overlay/pane-menu');
-  const { getModel } = require('../app/runtime');
+  // pane has < 2 pane rows (no useful swap target); the trigger region
+  // publishes only where the glyph painted, so a hidden trigger is dead.
+  // (Viewers show via tab count, exercised elsewhere.)
+  const { leftBorderPrefix } = require('../leaves/render/draw');
+  const trigX = (b) => b.x + leftBorderPrefix('1').triggerCol + 1;   // the `≡` cell for hotkey 1
 
-  it('hitTestTrigger returns null when nothing to swap (length === 1)', () => {
-    const slice = getInstanceSlice('layout');
-    slice.arrange = {
-      columns: [
-        { width: 32, panels: [
-          { type: 'groups', id: 'groups', paneId: 'pane-groups', hotkey: 'g', tabs: [{ id: 'groups', poolId: 'groups' }] },
-        ] },
-        { panels: [
-          { type: 'detail', id: 'detail', paneId: 'pane-detail', tabs: [{ id: 'detail', poolId: 'detail' }] },
-        ] },
-      ],
-      pool: {
-        // Only groups + detail — no other non-detail panes, no hidden.
-        'groups': { id: 'groups', type: 'groups' },
-        'detail': { id: 'detail', type: 'detail' },
-      },
-    };
-    slice.freeConfig = { drag: null, undo: [], redo: [], titleEdit: { text: '' }, notice: null, noticeKind: null };
-    slice.paneMenu = { targetPaneId: null, cursor: 0, scroll: 0 };
-    slice.paneBounds = {
-      'pane-groups': { x: 0, y: 0, w: 32, h: 24 },
-      'pane-detail': { x: 32, y: 0, w: 48, h: 24 },
-    };
-    getModel().modes.paneMenuMode = false;
-    // Click at the trigger's normal position (x=6, y=0 — middle of [≡]).
-    eq(paneMenu.hitTestTrigger(6, 0), null, 'click ignored when nothing to swap');
+  it('no trigger region when nothing to swap (length === 1)', () => {
+    // Only groups + detail — no other non-detail panes, no hidden.
+    const { hc, layout } = _paintedBoot({
+      pool: { groups: _POOL3.groups, detail: _POOL3.detail },
+      columns: [{ width: 32, panels: [{ id: 'groups', type: 'groups' }] }, { panels: [{ id: 'detail', type: 'detail' }] }],
+    }, 'normal');
+    const b = require('../leaves/wm/geometry').visibleBoundsFor(layout, 'pane-groups');
+    eq(hc.region('pane-groups', 'trigger'), null, 'no [≡] region on pane-groups');
+    eq(hc.triggerAt(trigX(b), b.y), null, 'click ignored when nothing to swap');
   });
 
-  it('hitTestTrigger still resolves when at least one swap target exists', () => {
-    const slice = getInstanceSlice('layout');
-    slice.arrange = {
-      columns: [
-        { width: 32, panels: [
-          { type: 'groups',  id: 'groups',  paneId: 'pane-groups',  hotkey: 'g', tabs: [{ id: 'groups',  poolId: 'groups'  }] },
-          { type: 'actions', id: 'actions', paneId: 'pane-actions', hotkey: 'a', tabs: [{ id: 'actions', poolId: 'actions' }] },
-        ] },
-        { panels: [
-          { type: 'detail', id: 'detail', paneId: 'pane-detail', tabs: [{ id: 'detail', poolId: 'detail' }] },
-        ] },
-      ],
-      pool: {
-        'groups':  { id: 'groups',  type: 'groups'  },
-        'actions': { id: 'actions', type: 'actions' },
-        'detail':  { id: 'detail',  type: 'detail'  },
-      },
-    };
-    slice.freeConfig = { drag: null, undo: [], redo: [], titleEdit: { text: '' }, notice: null, noticeKind: null };
-    slice.paneMenu = { targetPaneId: null, cursor: 0, scroll: 0 };
-    slice.paneBounds = {
-      'pane-groups':  { x: 0, y: 0, w: 32, h: 12 },
-      'pane-actions': { x: 0, y: 12, w: 32, h: 12 },
-      'pane-detail':  { x: 32, y: 0, w: 48, h: 24 },
-    };
-    getModel().modes.paneMenuMode = false;
-    // Presence + column now come from chrome-regions (what paint drew), not a
-    // width proxy — so seed the range paint would publish for pane-groups' `[≡]`
-    // (hotkey 'g' → triggerCol 5), mirroring a real frame. Two non-detail panes →
-    // swap target exists → trigger live.
-    const chromeRegions = require('../panel/chrome-regions');
-    const { leftBorderPrefix } = require('../leaves/render/draw');
-    const tc = leftBorderPrefix('g').triggerCol;
-    chromeRegions.publish('pane-groups', { trigger: { x0: tc, x1: tc + 2 }, close: null, collapse: null });
-    eq(paneMenu.hitTestTrigger(6, 0), 'pane-groups', 'returns paneId when swap available');
+  it('the trigger resolves when at least one swap target exists', () => {
+    const { hc, layout } = _paintedBoot({ pool: _POOL3, columns: _COLS3 }, 'normal');
+    const b = require('../leaves/wm/geometry').visibleBoundsFor(layout, 'pane-groups');
+    const r = hc.region('pane-groups', 'trigger');
+    assert(r, 'pane-groups publishes its [≡]');
+    eq(hc.triggerAt(r.rect.x + 1, r.rect.y), 'pane-groups', 'returns paneId when swap available');
+    eq(r.rect.y, b.y, 'on the pane\'s top row');
   });
 });
 

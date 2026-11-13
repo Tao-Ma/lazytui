@@ -23,7 +23,6 @@ const mpool = require('../leaves/wm/pool');
 const mpane = require('../leaves/wm/pane');
 const { visibleBoundsFor } = require('../leaves/wm/geometry');
 const bc = require('../leaves/render/border-controls');
-const chromeRegions = require('./chrome-regions');
 const treeRegions = require('./tree-regions');
 
 // Which top-border controls a pane type carries is a Component-declared
@@ -62,32 +61,6 @@ function _placedWidgetTargets() {
     // share a type key, so a type lookup would collide.
     .map(p => ({ p, b: visibleBoundsFor(slice, p.paneId) }))
     .filter(({ b }) => b && b.h >= 1);
-}
-
-/** Hit-test the `[_]`/`[+]` glyphs. Returns the panel id under (mx, my)
- *  or null. Presence + geometry come from chrome-regions — the range paint
- *  ACTUALLY drew this frame — so a narrow pane whose chrome was dropped reports
- *  no hit (the old `b.w < COLLAPSE_MIN_W` proxy couldn't see that drop). */
-function hitTestCollapseButton(mx, my) {
-  const targets = _placedWidgetTargets();
-  if (!targets) return null;
-  for (const { p, b } of targets) {
-    const g = (chromeRegions.get(p.paneId) || {}).collapse;
-    if (g && my === b.y && mx >= b.x + g.x0 && mx <= b.x + g.x1) return p.id;
-  }
-  return null;
-}
-
-/** Hit-test the `[X]` glyphs. Returns the panel id under (mx, my) or null.
- *  Presence + geometry from chrome-regions (see hitTestCollapseButton). */
-function hitTestCloseButton(mx, my) {
-  const targets = _placedWidgetTargets();
-  if (!targets) return null;
-  for (const { p, b } of targets) {
-    const g = (chromeRegions.get(p.paneId) || {}).close;
-    if (g && my === b.y && mx >= b.x + g.x0 && mx <= b.x + g.x1) return p.id;
-  }
-  return null;
 }
 
 /** Hit-test the top-border control strip (refresh `- Ns +`, sort `‹ col ›`, …)
@@ -197,4 +170,4 @@ function hitTestTreeMarker(mx, my) {
   return null;
 }
 
-module.exports = { hitTestCollapseButton, hitTestCloseButton, hitTestBorderControls, hitTestActionCancel, hitTestTreeMarker };
+module.exports = { hitTestBorderControls, hitTestActionCancel, hitTestTreeMarker };

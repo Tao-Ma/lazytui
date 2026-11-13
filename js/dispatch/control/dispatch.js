@@ -646,12 +646,7 @@ function handleNormalKey(key, seq) {
       // generalizing the keyboard opener to any focused pane is Phase 2.)
       const target = route.resolveTarget('viewer');
       if (!target) break;
-      const overlay = require('../../overlay/pane-menu');
-      const tabCount = overlay.items(target).length;
-      const vh = overlay.viewportRows(target);
-      const tab = (getInstanceSlice(target) || {}).tab | 0;
-      const cursor = Math.max(0, Math.min(tab, Math.max(0, tabCount - 1)));
-      const scroll = cursor >= vh ? Math.min(cursor - vh + 1, Math.max(0, tabCount - vh)) : 0;
+      const { cursor, scroll } = require('../../overlay/pane-menu').seedCursor(target);
       dispatchMsg(wrap('layout', { type: 'pane_menu_open', paneId: target, cursor, scroll }));
       break;
     }

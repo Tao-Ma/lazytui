@@ -86,6 +86,13 @@ function publish(region) {
   _sorted = null;
 }
 
+/** Drop every region `owner` published this frame — a pane whose render threw
+ *  after its chrome published paints an error block with no chrome. */
+function retractOwner(owner) {
+  for (let i = _regions.length - 1; i >= 0; i--) if (_regions[i].owner === owner) _regions.splice(i, 1);
+  _sorted = null;
+}
+
 /** Publish a region relative to the ambient owner: `zOff` is added to the
  *  owner's zBase and `owner` is stamped. No ambient owner → dropped. */
 function publishOwned(region, zOff) {
@@ -201,5 +208,5 @@ function claims(mx, my) {
 function all() { return _regions.map(({ _seq, ...r }) => r); }
 
 module.exports = { clear, publish, publishOwned, enterOwner, exitOwner,
-  enterPane, exitPane, currentPane, publishLocal, resolve, claims,
+  enterPane, exitPane, currentPane, publishLocal, retractOwner, resolve, claims,
   stampOf, stampsEqual, frameStamp, all, DISCRETE_GESTURES, BANDS };

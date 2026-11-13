@@ -12,8 +12,9 @@
  *           pane_menu_nav math).
  *   items → a viewer pane yields tab rows (section:'tab'); a navigator
  *           yields pane rows (section:'pane').
- *   trigger → every visible pane paints its own [≡]; hitTestTrigger
- *           returns the specific pane whose glyph was clicked.
+ *   trigger → every visible pane paints its own [≡]; the hit map's trigger
+ *           region (published where the glyph painted — docs/mouse-hit-map.md
+ *           Release 2) resolves to the specific pane whose glyph was clicked.
  *
  *   node js/test/test-tab-list.js
  */
@@ -21,16 +22,38 @@
 
 const { describe, it, eq, assert, report } = require('./test-runner');
 const layout = require('../panel/layout');
-const chromeRegions = require('../panel/chrome-regions');
 const { leftBorderPrefix } = require('../leaves/render/draw');
 
-// hitTestTrigger now reads chrome-regions — the `[≡]` range paint ACTUALLY drew —
-// instead of a width proxy. These slice-level tests don't paint, so seed the range
-// paint would publish for a pane (hotkey-dependent column via leftBorderPrefix,
-// pane-local; the reader adds the pane's screen x). Mirrors a real frame.
-function seedTrigger(paneId, hotkey) {
-  const tc = leftBorderPrefix(hotkey || '').triggerCol;
-  chromeRegions.publish(paneId, { trigger: { x0: tc, x1: tc + 2 }, close: null, collapse: null });
+// `[≡]` clicks resolve on the hit map, which only a REAL paint populates. The
+// trigger sections below paint a two-viewer fixture: three columns — groups,
+// then a content slot in the MIDDLE column (middle columns get no hotkey, so its
+// `[≡]` sits flush at local col 2: `╭─[≡]`), then a content slot in the last
+// column (hotkey 7 → `╭─(7)[≡]`, local col 5). Each content slot is a multi-tab
+// (Info + Transcript) slot, so both show a trigger.
+function paintTwoViewers(modeFlags) {
+  const sm = require('./smoke/_helpers/smoke');
+  const hc = require('./_helpers/hit-click');
+  const loop = require('../dispatch/runtime/loop');
+  const toLayout = (m) => sm.capture(() => loop.dispatchMsg(sm.api.wrap('layout', m)));
+  sm.bootFresh({ layout: {
+    pool: { groups: { id: 'groups', type: 'groups' }, d1: { id: 'd1', type: 'detail' }, d2: { id: 'd2', type: 'detail' } },
+    columns: [
+      { width: 30, panels: [{ id: 'groups', type: 'groups' }] },
+      { width: 45, panels: [{ id: 'd1', type: 'detail' }] },
+      { panels: [{ id: 'd2', type: 'detail' }] },
+    ],
+  } });
+  toLayout({ type: 'view_set', mode: 'normal' });
+  sm.resize(120, 24);
+  for (const flag of (modeFlags || [])) sm.capture(() => sm.applyMsg({ type: 'mode_set', flag }));
+  hc.paint();
+  const ls = sm.api.getInstanceSlice('layout');
+  const b = (paneId) => require('../leaves/wm/geometry').visibleBoundsFor(ls, paneId);
+  const glyph = (paneId) => {   // the [≡]'s `[` screen column, from the pane's hotkey
+    const p = require('../leaves/wm/pool').allPanesInColumns(ls.arrange).find(x => x.paneId === paneId);
+    return b(paneId).x + leftBorderPrefix(p.hotkey || '').triggerCol;
+  };
+  return { hc, b, glyph };
 }
 
 function applyUpdate(slice, msg) {
@@ -228,74 +251,26 @@ describe('[trigger state machine] open / disabled / normal', () => {
 });
 
 // v0.6.4 — multi-viewer trigger routing. Each placed viewer paints its
-// own `[≡]` glyph; hitTestTrigger must return the SPECIFIC viewer whose
-// glyph was clicked (not the focused-or-first singleton).
-describe('[hitTestTrigger] multi-viewer — each glyph opens its own pane', () => {
-  const overlay = require('../overlay/pane-menu');
-  const api = require('../panel/api');
-  const { getModel } = require('../app/runtime');
-  try { api.registerComponent(layout); } catch (e) { /* already registered */ }
-  const layoutSlice = api.getInstanceSlice('layout');
-
-  // Glyph band is [x+5, x+8) on row y → left at mx 6, right at mx 56.
-  function withTwoViewers(fn) {
-    const saved = { bounds: layoutSlice.paneBounds, arrange: layoutSlice.arrange, pm: layoutSlice.paneMenu };
-    const md = getModel().modes;
-    const savedModes = { paneMenuMode: md.paneMenuMode, freeConfigMode: md.freeConfigMode, cmdMode: md.cmdMode };
-    layoutSlice.paneBounds = {
-      'pane-left':  { x: 0,  y: 0, w: 40, h: 20 },
-      'pane-right': { x: 50, y: 0, w: 40, h: 20 },
-    };
-    // U2f — a viewer's `[≡]` shows when it's a multi-tab CONTENT slot; build each
-    // as a role:'content' position container with its seeded Info + Transcript
-    // position-tabs, so triggerVisible is true (a >1-tab slot always shows).
-    // A real placed viewer pane carries a hotkey, so `[≡]` sits after `╭─(k)` at
-    // local col 5 — matching the `mx 6 / 56` glyph band the assertions use.
-    const contentSlot = (paneId, id, hotkey) => ({
-      paneId, type: 'info', id, role: 'content', hotkey, activeTabId: `info-${paneId}`,
-      tabs: [{ id: `info-${paneId}`, poolId: `info-${paneId}` }, { id: `transcript-${paneId}`, poolId: `transcript-${paneId}` }],
-    });
-    layoutSlice.arrange = { columns: [
-      { panels: [contentSlot('pane-left', 'l', '1')] },
-      { panels: [contentSlot('pane-right', 'r', '2')] },
-    ], pool: {
-      'info-pane-left':  { id: 'info-pane-left',  type: 'info', title: 'Info' },
-      'transcript-pane-left':  { id: 'transcript-pane-left',  type: 'text-view', title: 'Transcript', hint: 'transcript' },
-      'info-pane-right': { id: 'info-pane-right', type: 'info', title: 'Info' },
-      'transcript-pane-right': { id: 'transcript-pane-right', type: 'text-view', title: 'Transcript', hint: 'transcript' },
-    } };
-    layoutSlice.paneMenu = { targetPaneId: null, cursor: 0, scroll: 0 };
-    layoutSlice.freeConfig = { drag: null };
-    md.paneMenuMode = false; md.freeConfigMode = false; md.cmdMode = false;
-    seedTrigger('pane-left', '1');
-    seedTrigger('pane-right', '2');
-    try { return fn(); } finally {
-      chromeRegions.clear();
-      layoutSlice.paneBounds = saved.bounds;
-      layoutSlice.arrange = saved.arrange;
-      layoutSlice.paneMenu = saved.pm;
-      Object.assign(md, savedModes);
-    }
-  }
-
-  it('clicking the first viewer glyph returns pane-left', () => {
-    withTwoViewers(() => eq(overlay.hitTestTrigger(6, 0), 'pane-left'));
+// own `[≡]` glyph; a click must resolve to the SPECIFIC viewer whose glyph was
+// clicked (not the focused-or-first singleton).
+describe('[trigger] multi-viewer — each glyph opens its own pane', () => {
+  it('clicking the first viewer glyph returns pane-d1', () => {
+    const { hc, glyph } = paintTwoViewers();
+    eq(hc.triggerAt(glyph('pane-d1') + 1, 0), 'pane-d1');
   });
-  it('clicking the non-first viewer glyph returns pane-right', () => {
-    withTwoViewers(() => eq(overlay.hitTestTrigger(56, 0), 'pane-right'));
+  it('clicking the non-first viewer glyph returns pane-d2', () => {
+    const { hc, glyph } = paintTwoViewers();
+    eq(hc.triggerAt(glyph('pane-d2') + 1, 0), 'pane-d2');
   });
   it('clicking the gap / wrong row returns null', () => {
-    withTwoViewers(() => {
-      eq(overlay.hitTestTrigger(20, 0), null, 'gap between panes misses');
-      eq(overlay.hitTestTrigger(6, 5), null, 'wrong row misses');
-    });
+    const { hc, glyph } = paintTwoViewers();
+    eq(hc.triggerAt(glyph('pane-d1') + 20, 0), null, 'top border between the glyphs misses');
+    eq(hc.triggerAt(glyph('pane-d1') + 1, 5), null, 'wrong row misses');
   });
   it('not clickable while another chain mode owns input', () => {
-    withTwoViewers(() => {
-      getModel().modes.freeConfigMode = true;
-      eq(overlay.hitTestTrigger(6, 0), null, 'left glyph dead under chain mode');
-      eq(overlay.hitTestTrigger(56, 0), null, 'right glyph dead under chain mode');
-    });
+    const { hc, glyph } = paintTwoViewers(['freeConfigMode']);
+    eq(hc.triggerAt(glyph('pane-d1') + 1, 0), null, 'first glyph dead under chain mode');
+    eq(hc.triggerAt(glyph('pane-d2') + 1, 0), null, 'second glyph dead under chain mode');
   });
 });
 
@@ -303,42 +278,19 @@ describe('[hitTestTrigger] multi-viewer — each glyph opens its own pane', () =
 // not col 5. The trigger hit-zone must follow the glyph (derive from the hotkey
 // width), else clicking the visible `[≡]` misses by 3 cells and the user has to
 // aim right of it. Reproduced on the host-monitor demo's hotkey-less middle
-// column; the fix reads the offset from `pane.hotkey`.
-describe('[hitTestTrigger] hotkey-less pane — [≡] hit-zone follows the glyph (col 2)', () => {
-  const overlay = require('../overlay/pane-menu');
-  const api = require('../panel/api');
-  const { getModel } = require('../app/runtime');
-  try { api.registerComponent(layout); } catch (e) { /* already registered */ }
-  const layoutSlice = api.getInstanceSlice('layout');
-
-  function withHotkeylessSlot(fn) {
-    const saved = { bounds: layoutSlice.paneBounds, arrange: layoutSlice.arrange, pm: layoutSlice.paneMenu, fc: layoutSlice.freeConfig };
-    const md = getModel().modes;
-    const savedModes = { paneMenuMode: md.paneMenuMode, freeConfigMode: md.freeConfigMode, cmdMode: md.cmdMode };
-    layoutSlice.paneBounds = { 'pane-x': { x: 0, y: 0, w: 40, h: 20 } };
-    layoutSlice.arrange = { columns: [{ panels: [{
-      paneId: 'pane-x', type: 'info', id: 'x', role: 'content', /* no hotkey */ activeTabId: 'info-pane-x',
-      tabs: [{ id: 'info-pane-x', poolId: 'info-pane-x' }, { id: 'transcript-pane-x', poolId: 'transcript-pane-x' }],
-    }] }], pool: {
-      'info-pane-x': { id: 'info-pane-x', type: 'info', title: 'Info' },
-      'transcript-pane-x': { id: 'transcript-pane-x', type: 'text-view', title: 'Transcript', hint: 'transcript' },
-    } };
-    layoutSlice.paneMenu = { targetPaneId: null, cursor: 0, scroll: 0 };
-    layoutSlice.freeConfig = { drag: null };
-    md.paneMenuMode = false; md.freeConfigMode = false; md.cmdMode = false;
-    seedTrigger('pane-x', '');   // hotkey-less → `[≡]` flush at local col 2
-    try { return fn(); } finally { chromeRegions.clear(); Object.assign(layoutSlice, saved); Object.assign(md, savedModes); }
-  }
-
-  it('clicking the glyph at col 2/3/4 opens the menu', () => {
-    withHotkeylessSlot(() => {
-      eq(overlay.hitTestTrigger(2, 0), 'pane-x', 'the `[` at col 2');
-      eq(overlay.hitTestTrigger(3, 0), 'pane-x', 'the `≡` at col 3');
-      eq(overlay.hitTestTrigger(4, 0), 'pane-x', 'the `]` at col 4');
-    });
+// column; the region is published where the glyph painted.
+describe('[trigger] hotkey-less pane — [≡] hit-zone follows the glyph (col 2)', () => {
+  it('clicking the glyph at local col 2/3/4 opens the menu', () => {
+    const { hc, b } = paintTwoViewers();
+    const x = b('pane-d1').x;
+    eq(hc.triggerAt(x + 2, 0), 'pane-d1', 'the `[` at col 2');
+    eq(hc.triggerAt(x + 3, 0), 'pane-d1', 'the `≡` at col 3');
+    eq(hc.triggerAt(x + 4, 0), 'pane-d1', 'the `]` at col 4');
+    eq(hc.screenText('pane-d1', 'trigger'), '[≡]', 'the region covers the painted glyph');
   });
   it('clicking the OLD fixed offset (col 5) — 3 cells right of the glyph — misses', () => {
-    withHotkeylessSlot(() => eq(overlay.hitTestTrigger(5, 0), null, 'no phantom hit-zone right of the glyph'));
+    const { hc, b } = paintTwoViewers();
+    eq(hc.triggerAt(b('pane-d1').x + 5, 0), null, 'no phantom hit-zone right of the glyph');
   });
 });
 

@@ -62,6 +62,58 @@ function paintedText(owner, id) {
   return stripMarkup(newRows[r.rect.y]).slice(r.rect.x, r.rect.x + r.rect.w);
 }
 
+/** Paint a FULL frame (forceFullRepaint — production paint, so the hit map is
+ *  repopulated too) and decode the emitted bytes into 0-based screen rows of
+ *  single chars (paint positions with cursor moves, not '\n'). */
+function screenRows() {
+  const paintMod = require('../../render/paint');
+  let raw = '';
+  const orig = process.stdout.write.bind(process.stdout);
+  process.stdout.write = (s) => { raw += s; return true; };
+  try { paintMod.forceFullRepaint(); sm.render(); } finally { process.stdout.write = orig; }
+  const rows = []; let cy = 0, cx = 0, i = 0;
+  while (i < raw.length) {
+    if (raw[i] === '\x1b') {
+      const m = /^\x1b\[([0-9;?]*)([A-Za-z])/.exec(raw.slice(i));
+      if (m) {
+        if (m[2] === 'H') { const p = m[1].split(';').map(Number); cy = (p[0] || 1) - 1; cx = (p[1] || 1) - 1; }
+        i += m[0].length; continue;
+      }
+      i++; continue;
+    }
+    if (raw[i] === '\n') { cy++; cx = 0; i++; continue; }
+    if (raw[i] === '\r') { cx = 0; i++; continue; }
+    (rows[cy] = rows[cy] || [])[cx] = raw[i]; cx++; i++;
+  }
+  return rows;
+}
+
+/** Full-frame paint, then the screen text under `owner/id`'s rect (single row) —
+ *  the paint↔hit agreement check for pane chrome (paintedText only composites
+ *  overlays). */
+function screenText(owner, id) {
+  const rows = screenRows();
+  const r = _need(owner, id);
+  const line = rows[r.rect.y] || [];
+  let out = '';
+  for (let x = r.rect.x; x < r.rect.x + r.rect.w; x++) out += line[x] || ' ';
+  return out;
+}
+
+/** The pane-chrome glyph a press at (mx, my) resolves to on the CURRENT hit map
+ *  (no repaint — paint first): `id` ∈ collapse | close | trigger, chrome band
+ *  only. The resolve result `{ region, handler }` or null. */
+function chromeAt(id, mx, my) {
+  const h = hm.resolve(mx, my, 'press');
+  return h && h.region.id === id && h.region.z === hm.BANDS.CHROME ? h : null;
+}
+/** paneId whose `[≡]` a press at (mx, my) hits, or null. */
+function triggerAt(mx, my) { const h = chromeAt('trigger', mx, my); return h ? h.region.owner : null; }
+/** Pool id a press on a `[_]`/`[+]` at (mx, my) toggles, or null. */
+function collapseAt(mx, my) { const h = chromeAt('collapse', mx, my); return h ? h.handler.msg.id : null; }
+/** Pool id a press on an `[X]` at (mx, my) hides, or null. */
+function closeAt(mx, my) { const h = chromeAt('close', mx, my); return h ? h.handler.msg.id : null; }
+
 /** The slices of the model a popup interaction can change — for chip ≡ key
  *  parity comparisons (JSON round-trip drops functions / undefined). */
 function snapshot(m) {
@@ -70,6 +122,7 @@ function snapshot(m) {
 }
 
 module.exports = {
+  screenRows, screenText, chromeAt, triggerAt, collapseAt, closeAt,
   paint, click, dblclick, wheel, regions, region, at,
   clickRegion, dblclickRegion, wheelRegion, paintedText, snapshot,
 };

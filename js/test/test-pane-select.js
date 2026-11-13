@@ -118,10 +118,13 @@ describe('[2] chromeFor — [≡] surfaces the unified pane-menu trigger state',
 
 describe('[3] hit-test', () => {
   const paneSelect = require('../overlay/pane-menu');
-  it('returns null when no layout/bounds yet', () => {
+  it('no [≡] resolves before a frame has painted', () => {
     setup();
-    // No render has run, so boundsFor returns null. Hit-test bails.
-    eq(paneSelect.hitTestTrigger(5, 0), null);
+    // `[≡]` clicks resolve on the hit map (docs/mouse-hit-map.md Release 2),
+    // which only a paint populates. No main frame has painted here (an empty map
+    // is what the router sees before the first paint), so nothing fires.
+    require('../panel/hit-map').clear(null);
+    eq(require('./_helpers/hit-click').triggerAt(5, 0), null);
   });
 
   // Dropdown rows resolve on the hit map the overlay's paint publishes

@@ -10,8 +10,9 @@
  * This test doesn't re-derive geometry (that's what drifted). It RENDERS the real
  * host-monitor demo — which has BOTH hotkeyed panes (columns 1/3) and hotkey-less
  * ones (the middle column) — scans the painted frame for each pane's `[≡]` glyph,
- * and asserts `hitTestTrigger` fires exactly under the painted glyph and nowhere
- * else on that row. Any future divergence (paint moves the glyph, or a hit-test
+ * and asserts the hit map's `[≡]` region (docs/mouse-hit-map.md Release 2 — paint
+ * publishes it where renderPanel drew it) fires exactly under the painted glyph
+ * and nowhere else on that row. Any future divergence (paint moves the glyph, or a hit-test
  * bakes a new assumption) fails here regardless of how the offset is computed.
  *
  * SCOPE: covers BOTH axes.
@@ -19,9 +20,9 @@
  *     the click lands exactly on the painted glyph and nowhere else on the row.
  *   - PRESENCE — squeezing the terminal drops a pane's whole `[≡]`/`[X]`/`[_]`
  *     cluster (renderPanel's all-or-nothing `fits`); the hit-tests must then report
- *     NOTHING at the would-be glyph columns. This is the former KNOWN GAP: the fix
- *     has paint publish each drawn glyph range to panel/chrome-regions and the
- *     hit-tests read it, so a dropped glyph is unclickable.
+ *     NOTHING at the would-be glyph columns. This is the former KNOWN GAP: paint
+ *     publishes each drawn glyph as a hit-map region (and nothing for a dropped
+ *     one), so a dropped glyph is unclickable.
  *
  * Run: node js/test/test-chrome-hittest-agreement.js
  */
@@ -32,6 +33,7 @@ const { describe, it, eq, assert, report } = require('./test-runner');
 const api = require('./smoke/_helpers/smoke').api;
 const route = require('./smoke/_helpers/smoke').route;
 const sm = require('./smoke/_helpers/smoke');
+const hc = require('./_helpers/hit-click');   // triggerAt / collapseAt — resolve on the hit map
 const paint = require('../render/paint');
 const paneMenu = require('../overlay/pane-menu');
 const { visibleBoundsFor } = require('../leaves/wm/geometry');
@@ -81,7 +83,7 @@ function paintedRows() {
   return rows;   // 1-based [cy][cx] → char
 }
 
-describe('[chrome agreement] the painted [≡] glyph is exactly what hitTestTrigger fires on', () => {
+describe('[chrome agreement] the painted [≡] glyph is exactly where the hit map\'s trigger region fires', () => {
   const rows = paintedRows();
   const layout = api.getInstanceSlice('layout');
   const panes = [];
@@ -105,14 +107,14 @@ describe('[chrome agreement] the painted [≡] glyph is exactly what hitTestTrig
       let eqX = -1;
       for (let x = b.x + 1; x <= b.x + b.w; x++) { if (line[x] === '≡') { eqX = x - 1; break; } }   // 0-based screen x
       assert(eqX >= 0, 'the [≡] glyph is painted on this pane');
-      // hitTestTrigger uses the same 0-based screen-x space as bounds. The glyph
+      // The hit map uses the same 0-based screen-x space as bounds. The glyph
       // is `[≡]`, so `[` is at eqX-1 and the 3-cell zone is [eqX-1 .. eqX+1].
-      eq(paneMenu.hitTestTrigger(eqX, b.y), pn.paneId, 'clicking the ≡ opens THIS pane');
-      eq(paneMenu.hitTestTrigger(eqX - 1, b.y), pn.paneId, 'clicking the [ opens it');
-      eq(paneMenu.hitTestTrigger(eqX + 1, b.y), pn.paneId, 'clicking the ] opens it');
+      eq(hc.triggerAt(eqX, b.y), pn.paneId, 'clicking the ≡ opens THIS pane');
+      eq(hc.triggerAt(eqX - 1, b.y), pn.paneId, 'clicking the [ opens it');
+      eq(hc.triggerAt(eqX + 1, b.y), pn.paneId, 'clicking the ] opens it');
       // Just outside the painted glyph must NOT fire (no phantom zone — the bug).
-      eq(paneMenu.hitTestTrigger(eqX + 2, b.y), null, 'one cell right of ] is dead');
-      eq(paneMenu.hitTestTrigger(eqX - 2, b.y), null, 'one cell left of [ is dead');
+      eq(hc.triggerAt(eqX + 2, b.y), null, 'one cell right of ] is dead');
+      eq(hc.triggerAt(eqX - 2, b.y), null, 'one cell left of [ is dead');
     });
   }
 });
@@ -124,8 +126,7 @@ describe('[chrome agreement] the painted [≡] glyph is exactly what hitTestTrig
 // DROPPED, the would-be `[≡]` and `[_]` columns are DEAD — the bug was a phantom hit
 // there. A non-vacuity check proves the sweep exercised both a paint and a drop.
 const { leftBorderPrefix } = require('../leaves/render/draw');
-const chromeHit = require('../panel/chrome-hittest');
-const { poolIdOf } = require('../leaves/wm/pane');   // hitTestCollapseButton returns the pool-id (p.id)
+const { poolIdOf } = require('../leaves/wm/pane');   // the collapse Msg names the pool-id (p.id)
 
 describe('[chrome agreement] PRESENCE — hit-test fires on each glyph IFF it was painted', () => {
   // The `[≡]` trigger is left-anchored and truncates INDEPENDENTLY of the right
@@ -155,12 +156,12 @@ describe('[chrome agreement] PRESENCE — hit-test fires on each glyph IFF it wa
       if (collPainted) collDrew++; else collDropped++;
       it(`W=${W} ${pn.paneId} (w=${b.w}, [≡]${eqX >= 0 ? '✓' : '·'} [_]${collPainted ? '✓' : '·'}): paint↔hit-test agree`, () => {
         // Trigger: fires IFF painted; the would-be column is dead when dropped.
-        if (eqX >= 0) eq(paneMenu.hitTestTrigger(eqX, b.y), pn.paneId, 'painted [≡] opens it');
-        else eq(paneMenu.hitTestTrigger(trigX, b.y), null, 'dropped [≡] column is dead (no phantom)');
+        if (eqX >= 0) eq(hc.triggerAt(eqX, b.y), pn.paneId, 'painted [≡] opens it');
+        else eq(hc.triggerAt(trigX, b.y), null, 'dropped [≡] column is dead (no phantom)');
         // Collapse: fires IFF painted — INDEPENDENT of the trigger's fate.
-        // (hitTestCollapseButton returns the pool-id, not the paneId.)
-        if (collPainted) eq(chromeHit.hitTestCollapseButton(collX, b.y), poolIdOf(pn.paneId), 'painted [_] collapses it');
-        else eq(chromeHit.hitTestCollapseButton(collX, b.y), null, 'dropped [_] column is dead (no phantom)');
+        // (the collapse handler's Msg names the pool-id, not the paneId.)
+        if (collPainted) eq(hc.collapseAt(collX, b.y), poolIdOf(pn.paneId), 'painted [_] collapses it');
+        else eq(hc.collapseAt(collX, b.y), null, 'dropped [_] column is dead (no phantom)');
       });
     }
   }

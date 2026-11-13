@@ -11,10 +11,13 @@
  *                      have typed (no mouse-only reducer arms, no drift).
  *   { msg, owner? }    applyMsg(msg), or dispatchMsg(wrap(owner, msg)).
  *   { intent }         intent.realize(intent) — the v0.6.4 shared vocabulary.
+ *   { act, ...args }   a named input-time action (./mouse-acts) — the Msg is
+ *                      computed at click time against current state (border
+ *                      controls, the `[≡]` open), after re-checking the target.
  *   'swallow'          consume, no-op.
  *   [h1, h2, …]        realize each in order (row double-click = nav + return).
  *
- * Release 1 scope: DISCRETE gestures only (press / double / right / middle /
+ * Scope: DISCRETE gestures only (press / double / right / middle /
  * wheel). motion / release keep the legacy path until pointer capture lands
  * (Release 3) — a drag that crosses a popup box must not be swallowed by it.
  * A miss (no region, or a stale frame) returns false and handleMouse falls
@@ -52,6 +55,7 @@ const dispatch = require('./dispatch');
 const loop = require('../runtime/loop');
 const api = require('../../panel/api');
 const intent = require('./intent');
+const acts = require('./mouse-acts');
 const eventLog = require('../../io/event-log');
 
 const DISCRETE = new Set(hitMap.DISCRETE_GESTURES);
@@ -69,7 +73,8 @@ function realizeHandler(h) {
     else dispatch.applyMsg(h.msg);
     return;
   }
-  if (h.intent) intent.realize(h.intent);
+  if (h.intent) { intent.realize(h.intent); return; }
+  if (h.act) acts.realize(h);
 }
 
 // Does realizing `h` END with a keystroke? dispatch.handleKey paints at its own
