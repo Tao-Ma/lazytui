@@ -2,7 +2,7 @@
 
 > **Status**: Release 1 SHIPPED in v0.6.56 (2026-11-13; `f6d152c3..38275d37`
 > + the release commit), including the 4-track pre-release review's fixes.
-> Releases 2–3 not started. Written 2026-11-13. Trigger: field
+> Release 2 in progress (plan in §Release 2); Release 3 not started. Written 2026-11-13. Trigger: field
 > report *"when confirm popup shows, I cannot click mouse"*. Root-caused to
 > a routing gap, then widened (user call: "fix mouse from the ground up,
 > make it a first-class citizen") into this three-release plan.
@@ -143,6 +143,7 @@ Gestures are the existing `handleMouse` kinds: `press`, `double`, `right`,
 | `{ msg, owner? }` | `applyMsg(msg)` or `dispatchMsg(wrap(owner, msg))` | row picks (`menu_activate {idx}`), border controls, tree toggle |
 | `{ intent }` | `intent.realize(intent)` | pane body: focus / select / activate / context / scroll |
 | `{ capture: name, ...args }` | start pointer capture with a named drag controller (§Pointer capture) | text-select, graph-zoom, free-config, pool-drag (R3) |
+| `{ act: name, ...args }` | a named input-time action (`dispatch/control/mouse-acts.js`) — the Msg is computed at click time against current state, after re-checking the target is still shown | border controls, `[≡]` open (R2) |
 | `'swallow'` | consume, no-op | backdrops, box borders |
 | `[h1, h2, …]` | realize each in order | row double-click = `[{ msg: nav to i }, { key: 'return' }]` |
 
@@ -180,9 +181,9 @@ chip falls to its row, then to the box's wheel handler.
 | Band | z | Publishers |
 |---|---|---|
 | Pane body | 10 | one region per visible pane (R3) |
-| In-pane affordances | 30 | tree markers, `✗ cancel` chip (R2) |
-| Mode backdrop, below chrome | 35 | chain modes that let chrome through today (`suppressChrome: false`): filter, search, prefix/which-key, jobs, pane-menu, agent (R2) |
-| Pane chrome | 40 | `[_]`/`[+]`/`[X]`/`[≡]`, border controls, bottom legend, tab strip (R2) |
+| In-pane affordances | 30 | tree fold markers (R2) |
+| Mode backdrop, below chrome | 35 | in-grid overlays that let chrome through (`suppressChrome: false`): jobs, pane-menu, which-key (R2); filter / search / agent backdrops wait for R3 (the T13 gate covers them until then) |
+| Pane chrome | 40 | `[_]`/`[+]`/`[X]`/`[≡]`, border controls, bottom legend, tab strip, `✗ cancel` chip (R2 — the chip sits with chrome because it is live under in-grid modes today, like the chrome cluster it was hit-tested in) |
 | Overlay *k* | 1000 + 10·zIndex_k + {0 backdrop, 1 box, 2 rows, 3 chips} | compositor-registered overlays (R1) |
 | Replay owner | 20000 | replay scrubber full-screen capture (R3) — above every overlay band (the highest, hover-tooltip's, is 1000 + 10·999) |
 
@@ -351,6 +352,25 @@ longer exists:
 
 R3 (no legacy cascade) makes the second case a drop too.
 
+**Geometry (R2).** Once pane chrome is on the map, a batched key that moves
+panes (collapse, hide, view mode, half-view swap, resize) must stale the frame
+too. Stamping the `layout` slice's identity would over-stale: `graph_hover`
+writes it on every cell change over a graph, and motion + press routinely share
+one stdin chunk over SSH — every such click would be swallowed. So the stamp
+carries `geom`: a string of the VISIBLE pane rects (`paneId:x,y,w,h;…`, the
+same view-mode-aware derivation as `visibleBoundsFor`). It changes exactly when
+a visible pane moves, resizes, collapses, appears or disappears — not on hover,
+normal-view focus, selection or data refresh.
+
+Content drift inside an unmoved pane is handled by the handler form, not the
+stamp: chrome handlers are either **absolute** (`panel_collapse_toggle {id}`,
+`pool_hide {id}`, `activate_tab {tabPoolId}`, `tree_toggle {id}`,
+`cancel_job {jobId}` — act on what the user saw; a vanished target is a no-op)
+or **resolved at click time** through `{ act }` (border controls, `[≡]` open —
+the Msg is computed against current state exactly as the keyboard would, and
+the act re-checks the control is still shown, so a stale legend click on a pane
+that lost focus does nothing).
+
 ### TEA, purity, replay
 
 - Handlers are data, so the frame stays `f(model)`; realization happens at
@@ -437,27 +457,55 @@ intentionally changes behavior; full suite + smoke green under `env -u TMUX`.
 
 ## Release 2 — pane chrome + in-pane affordances (proposed v0.6.57)
 
-1. renderPanel's chrome sink publishes hit regions for `[_]`/`[+]`, `[X]`,
-   `[≡]` (it already computes the drawn ranges — renderPanel's `_chromeSink`
-   emit); collapsed
-   panes publish from `_renderCollapsed`.
-2. Border-control specs' `regions()` + `dispatch` (`chrome-hittest.hitTestBorderControls`)
-   → published at paint where `bc.fits` / `bc.bottomFits` drew them.
-3. Slot tab-strip publishes per-tab regions from the strip it drew (the
-   `titleClip` clip becomes unnecessary — clipped tabs never publish).
-4. `✗ cancel` chip and tree markers publish from their renders.
-5. Mode table: `suppressChrome` column → `mouse: { backdrop: 'above' |
-   'below-chrome' | null, outside }`. In-grid chain modes publish their
-   backdrop at z 35 — the T13 gate's semantics as data. jobs / pane-menu
-   get outside = Esc here (their backdrop must sit below chrome, which only
-   exists once chrome is in the map).
-6. Delete `panel/chrome-regions.js`, `panel/tree-regions.js`,
-   `panel/chrome-hittest.js`, the chrome cluster in `handleMouse` (the
-   `suppressesChromeClicks` block), and the tab-strip arm ("Top-border
-   tab-strip" in the press loop).
+Plan agreed 2026-11-13 (refines the design-time draft). One commit per step.
 
-Exit: `test-chrome-hittest-agreement.js` and `test-chrome-trigger-truncation.js`
-re-pointed at the hit map and green; narrow-terminal property sweep green.
+0. This section + §Stale-frame rule (Geometry) + the z-band table.
+1. **Pane bracket + geometry stamp.** `hitMap.enterPane(paneId, rect)` /
+   `exitPane()` around every pane render (composeRects, renderHalf, renderFull —
+   the select-view `enterPane` precedent) and `publishLocal(region, z)`, which
+   translates a pane-local rect to the screen, clips it to the pane and stamps
+   `owner = paneId`. `stampOf` gains `geom` (§Stale-frame rule). Tests: batched
+   collapse-key + click on a moved glyph is swallowed; batched hover + click and
+   focus-click + chrome click still resolve.
+2. **Glyph chrome.** `[_]`/`[+]`/`[X]`/`[≡]` publish from the drawn-chrome
+   record renderPanel (and `_renderCollapsed`) already emits — the paint layer
+   turns it into regions with handlers. `[≡]`: open → `pane_menu_close`;
+   available → `{ act: 'pane-menu-open', paneId }` (shares the cursor seeding
+   with the keyboard `T` path). Published only when the mode allows chrome
+   clicks (`suppressesChromeClicks` read at paint instead of at click — exact
+   parity; the free-config title-edit press keeps reaching the free-config
+   handler; the column retires in R3 with free-config capture).
+3. **Border controls.** Pane renderers pass the control objects (spec +
+   text) to renderPanel, which reports where each drew; the paint layer calls
+   `spec.regions` there and publishes `{ act: 'border-control', paneId, type,
+   specId, action }`. Repeat chips (`- +`, `‹ ›`) take a fast 2nd click.
+4. **Tab strip.** Renderers pass `titleTargets` (from `tabBounds`);
+   renderPanel publishes only the tabs that survived truncation (`titleClip`
+   retires).
+5. **`✗ cancel` + tree markers** publish from text-view's and table's own
+   renders (pane-local). Markers only when no chain mode is active (the T13
+   parity). `cancelHitInfo` and `tree-regions` go.
+6. **Below-chrome backdrops.** Descriptor `mouse.backdrop: 'below-chrome'`
+   → the compositor publishes the backdrop at z 35 instead of the overlay band:
+   jobs, pane-menu, which-key, each outside = Esc. `_mouseHandlePaneMenuMode`
+   goes; the policy test pins "suppressChrome ⇒ band backdrop, else below-chrome
+   or none".
+7. **Delete** `panel/chrome-regions.js`, `panel/chrome-hittest.js`, the chrome
+   cluster and tab-strip arm in `handleMouse`; re-point
+   `test-chrome-hittest-agreement` / `test-chrome-trigger-truncation` and every
+   test reading the deleted registries; extend the width sweep to chrome.
+8. **Adjacent finding 4** (pane-menu right edge) — repro, then fix.
+9. Bench vs v0.6.56 (same dir), docs / CHANGELOG / memory, then the 4-track
+   pre-release review.
+
+Intentional behavior changes: a key + click in one chunk where the key moved
+panes or changed mode swallows a click on chrome (it used to hit whatever is
+there now); outside-click closes jobs and which-key (it was dropped); a
+double-click on a chrome glyph or fold marker is one toggle (the second click
+used to fall through to the pane's double-click intent).
+
+Exit: the re-pointed agreement + truncation tests and the width sweep green;
+full suite + smoke green under `env -u TMUX`.
 
 ## Release 3 — pane bodies, drags, cascade deleted (proposed v0.6.58)
 
@@ -616,9 +664,9 @@ alone. R3 removes the cascade; its rollback is a release revert.
 
 ## Session kickstart
 
-Release 1 is built. Read this doc, then `js/panel/hit-map.js`,
+Release 1 shipped; Release 2 in progress (§Release 2 lists the steps). Read this doc, then `js/panel/hit-map.js`,
 `js/dispatch/control/mouse-router.js`, `js/dispatch/control/input.js`
 (`handleMouse` — the router call, then the legacy chrome cluster R2
 replaces), `js/leaves/render/draw.js` (`renderPanel`'s `_chromeSink` emit,
 `publishBox`), `js/panel/chrome-hittest.js`, `js/render/overlay-compositor.js`.
-Start at Release 2 step 1.
+Continue at the first unfinished §Release 2 step (`git log` shows which).
