@@ -22,6 +22,7 @@
 const { getModel } = require('../model/store');
 const { esc } = require('../leaves/text/ansi');
 const { renderOverlay } = require('../leaves/render/draw');
+const { formatHints } = require('../leaves/render/hints');
 const { formatPreview } = require('../leaves/ports/submit-preview');
 const { resolveForRender } = require('../leaves/ports/resolve-for-render');
 
@@ -112,10 +113,21 @@ function renderConfirmOverlay(newRows, cols) {
     }
   }
 
+  // Hit map (docs/mouse-hit-map.md) — the hint is DECLARED, so each `[k] label`
+  // publishes a chip whose click is that keystroke (the confirmMode key handler,
+  // dispatch.js _modeHandlers: y → accept, n → reject). Same markup as before.
+  const hint = formatHints([
+    { cap: 'y', label: 'confirm', key: 'y' },
+    { cap: 'n', label: 'cancel',  key: 'n' },
+  ]);
   lines.push('');
-  lines.push('[dim]\\[y] confirm   \\[n] cancel[/]');
+  const lineChips = { [lines.length]: hint.chips };
+  lines.push(hint.markup);
   renderOverlay({ lines, title: 'Confirm', maxWidth: 72,
-                  targetRows: newRows || null, targetCols: cols || 0 });
+                  targetRows: newRows || null, targetCols: cols || 0,
+                  // box: {} — opaque, no handlers: clicks/wheel on the message or
+                  // preview are consumed, never reach the panes beneath.
+                  hit: { lineChips, box: {} } });
 }
 
 /**
@@ -134,6 +146,9 @@ function renderConfirmOverlay(newRows, cols) {
  *   historical position (first in paint.js's old if-chain). Other
  *   overlays migrate in ascending z-order to keep paint order stable
  *   as the chain drains.
+ * - `mouse.outside` — hit-map backdrop policy (docs/mouse-hit-map.md): an
+ *   outside click is Esc (reject). The first overlay migrated to the hit map
+ *   (Release 1) — the field report was "can't click while confirm is up".
  */
 function registerSelf(compositor) {
   compositor.register({
@@ -142,6 +157,9 @@ function registerSelf(compositor) {
     render: (m, newRows, cols) => renderConfirmOverlay(newRows, cols),
     modal: true,
     zIndex: 10,
+    // Outside-click = Esc = reject. Safe: reject never runs the staged Cmd, and
+    // it fires the same onReject rollback as `n` (v0.6.45 confirm-gate fix).
+    mouse: { outside: { key: 'escape' } },
   });
 }
 
