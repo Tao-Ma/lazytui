@@ -72,20 +72,27 @@ function publishChrome(rec) {
   // refresh `-`/`+`, sort `‹`/`›` — two clicks = two steps); toggles (sort
   // label, ‹ tree ›, zoom reset) and item actions don't — a double-click must not
   // undo itself or run an action twice.
-  const ctl = (c, y) => {
+  // The handler names the spec OBJECT (static Component config), not just its
+  // `id`: the spec contract never required an id, nor a unique one, so the act
+  // finds the control by identity. A spec whose regions() throws loses only its
+  // own clicks — a paint-side bug must not turn the pane into an error block.
+  const ctl = (c, y, idx) => {
     const ref = c && c.ref;
     if (!ref || !ref.spec || typeof ref.spec.regions !== 'function') return;
     const pane = ref.pane || { paneId: panel.paneId, type: panel.type };
-    for (const r of ref.spec.regions(c.x0, y, c.visibleW, pane) || []) {
+    const tag = ref.spec.id != null ? ref.spec.id : `#${idx}`;
+    let parts;
+    try { parts = ref.spec.regions(c.x0, y, c.visibleW, pane) || []; } catch (e) { _recordError('border_control_regions', panel, tag, e); return; }
+    for (const r of parts) {
       hitMap.publishLocal({
-        id: `ctl:${ref.spec.id}:${r.action}`,
+        id: `ctl:${tag}:${r.action}`,
         rect: { x: r.x0, y: r.y, w: r.x1 - r.x0 + 1, h: 1 },
         repeat: r.repeat === true,
-        on: { press: { act: 'border-control', paneId: pane.paneId, type: pane.type, specId: ref.spec.id, action: r.action } },
+        on: { press: { act: 'border-control', paneId: pane.paneId, type: pane.type, spec: ref.spec, specId: ref.spec.id, action: r.action } },
       }, Z);
     }
   };
-  for (const c of rec.controls || []) ctl(c, 0);
+  (rec.controls || []).forEach((c, i) => ctl(c, 0, i));
   // Slot tab strip — each tab renderPanel drew intact. Normal mode only (the tab
   // click was always gated like a pane-body click: no chain mode active).
   if (cur.bodyLive) {
@@ -98,7 +105,16 @@ function publishChrome(rec) {
       }, Z);
     }
   }
-  if (rec.bottomControl) ctl(rec.bottomControl, rec.bottomControl.y);
+  if (rec.bottomControl) ctl(rec.bottomControl, rec.bottomControl.y, 'bottom');
+}
+
+// A publish-side failure is recorded, never thrown into the pane's render.
+function _recordError(where, panel, tag, e) {
+  try {
+    require('../io/event-log').record('error', {
+      where, paneId: panel && panel.paneId, control: tag, message: e && e.message, stack: e && e.stack,
+    });
+  } catch (_) { /* event-log unavailable */ }
 }
 
 module.exports = { begin, end, publishChrome };

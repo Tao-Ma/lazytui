@@ -126,6 +126,11 @@ describe('[2b] frame stamp + claims', () => {
     const swapped = { 'pane-a': pb['pane-b'], 'pane-b': pb['pane-a'] };
     assert(!hm.stampsEqual(a, hm.stampOf(m, L({ paneBounds: swapped }))), 'same rects, panes swapped → stale');
     assert(!hm.stampsEqual(a, hm.stampOf(m, L({ dims: { cols: 81, rows: 24 } }))), 'resize → stale');
+    // A slot that switched tabs shows another renderer's chrome at the same rect.
+    const arr = (t) => ({ columns: [{ panels: [{ paneId: 'pane-a', activeTabId: t }, { paneId: 'pane-b' }] }] });
+    const t1 = hm.stampOf(m, L({ arrange: arr('t1') }));
+    assert(hm.stampsEqual(t1, hm.stampOf(m, L({ arrange: arr('t1') }))), 'same active tab → same frame');
+    assert(!hm.stampsEqual(t1, hm.stampOf(m, L({ arrange: arr('t2') }))), 'active tab switched → stale');
   });
   it('claims: any published region containing the point', () => {
     hm.clear('');

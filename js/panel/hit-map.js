@@ -52,6 +52,7 @@
 
 const { chainStamp } = require('../leaves/input/modes');
 const geometry = require('../leaves/wm/geometry');
+const mpool = require('../leaves/wm/pool');
 
 // Absolute z bands (docs/mouse-hit-map.md §Z bands) — the one table. Overlay
 // k sits at OVERLAY_BASE + 10·zIndex_k + draw.HIT_Z offsets (the compositor),
@@ -169,7 +170,13 @@ function _geomKey(layoutSlice) {
   const m = geometry.visibleBoundsMap(layoutSlice, viewer);
   const d = layoutSlice.dims;
   let s = d ? `${d.cols}x${d.rows}|` : '|';
-  if (m) for (const k of Object.keys(m)) { const r = m[k]; if (r) s += `${k}:${r.x},${r.y},${r.w},${r.h};`; }
+  if (!m) return s;
+  // Each visible pane's ACTIVE TAB too: a slot that switched tabs shows another
+  // renderer's chrome (border controls, fold markers) at the same rect, so a
+  // click aimed at the old tab's control must not reach the new tab's instance.
+  const tab = {};
+  for (const p of mpool.allPanesInColumns(layoutSlice.arrange)) if (p && p.paneId) tab[p.paneId] = p.activeTabId || '';
+  for (const k of Object.keys(m)) { const r = m[k]; if (r) s += `${k}:${r.x},${r.y},${r.w},${r.h}@${tab[k] || ''};`; }
   return s;
 }
 

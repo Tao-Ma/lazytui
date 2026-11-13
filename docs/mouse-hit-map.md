@@ -147,6 +147,7 @@ Gestures are the existing `handleMouse` kinds: `press`, `double`, `right`,
 | `{ capture: name, ...args }` | start pointer capture with a named drag controller (§Pointer capture) | text-select, graph-zoom, free-config, pool-drag (R3) |
 | `{ act: name, ...args }` | a named input-time action (`dispatch/control/mouse-acts.js`) — the Msg is computed at click time against current state, after re-checking the target is still shown | border controls, `[≡]` open (R2) |
 | `'swallow'` | consume, no-op | backdrops, box borders |
+| `'legacy'` | the region owns its cells, but the legacy cascade realizes the gesture (the router returns false) — a migration shim, retired in R3 | the free-config panel list's box (R2) |
 | `[h1, h2, …]` | realize each in order | row double-click = `[{ msg: nav to i }, { key: 'return' }]` |
 
 `{ key }` is the load-bearing choice: a chip, a wheel notch over a list,
@@ -729,6 +730,26 @@ Each reproduced by a reviewer script first:
   the visible bounds instead.
 - **A router-consumed press left a pending text-selection arm** (inherited
   since R1 for chips): presses now disarm before the router.
+- **Bench gate caught a regression** (10 alternating rounds of
+  `bench-render-construction.js`, v0.6.56 `9eb8e2a5` vs R2, same filesystem,
+  quiet machine; medians): realistic 1044.8 → 1132.4 µs/frame (+8.4%, ranges
+  barely overlapping). Root cause: `hit-map.stampOf` called
+  `require('./route')` inside the function — ~65 µs per call, per frame AND per
+  click. Cached (paint.js documents the same trap); the four slot renderers'
+  and slot-strip's per-render requires (pre-existing, on lines R2 rewrote)
+  likewise. Re-gated on `8a3b34b2`: realistic 991.2 → 901.7 (−9.0%), 50k
+  stress 986.5 → 908.5 (−7.9%), active search 1122.6 → 1001.5 (−10.8%).
+- **Round 2** (two fresh reviewers on the fix commit + angles round 1 missed;
+  replay, hover, right / middle / wheel found clean): the composite cycler's
+  label is a stepper and repeats; the stamp's `geom` also records each visible
+  pane's active tab (a batched tab switch + a click on the old tab's control
+  reached the new tab's instance); the `border-control` act finds its spec by
+  identity (plugin specs need no / no unique `id`); a spec whose `regions()`
+  throws loses only its own clicks instead of turning the pane into an error
+  block; and the free-config panel list owns its box (`'legacy'` handler — the
+  legacy handler still realizes its clicks until R3), so chrome under it is no
+  longer clickable through it (inherited). Kept: a click during the resize
+  debounce is dropped (the stamp includes dims — the safe side).
 - Plus doc / comment parity, `titleClip` and three dead exports removed, the z
   bands in one table (`BANDS.OVERLAY_BASE`), and the chrome publisher moved to
   `render/pane-hits.js`. `buildEntryStrip` keeps its pane-local `tabBounds`: the

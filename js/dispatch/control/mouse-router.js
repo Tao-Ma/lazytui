@@ -15,6 +15,10 @@
  *                      computed at click time against current state (border
  *                      controls, the `[≡]` open), after re-checking the target.
  *   'swallow'          consume, no-op.
+ *   'legacy'           the region owns these cells, but the legacy cascade
+ *                      realizes the gesture (route returns false) — an overlay
+ *                      whose clicks have not moved onto the hit map yet
+ *                      (panel-list, until Release 3's pointer capture).
  *   [h1, h2, …]        realize each in order (row double-click = nav + return).
  *
  * Scope: DISCRETE gestures only (press / double / right / middle /
@@ -134,6 +138,7 @@ function route(kind, mx, my, model) {
   if (!fresh) return hitMap.claims(mx, my);   // stale: swallow what the old frame drew; else legacy
   const hit = hitMap.resolve(mx, my, kind);
   if (!hit) return false;
+  if (hit.handler === 'legacy') return false;   // owned here, realized by the legacy cascade
   if (kind === 'press') _lastPress = { mx, my, owner: hit.region.owner, id: hit.region.id, repeat: !!hit.region.repeat };
   _realizeAndPaint(hit, kind, mx, my);
   return true;

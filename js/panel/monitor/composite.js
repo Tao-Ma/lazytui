@@ -130,7 +130,9 @@ const _cycleControl = {
     const sel = Math.max(0, Math.min(getSel(pane.paneId), items.length - 1));
     return sortControlText(String(items[sel]));
   },
-  regions(x0, y, visibleW) { return sortControlHits(x0, y, visibleW); },
+  // The sort geometry, but every part is a stepper here (‹ = prev; › and the
+  // label = next — no toggle), so every part repeats on a fast 2nd click.
+  regions(x0, y, visibleW) { return sortControlHits(x0, y, visibleW).map((r) => ({ ...r, repeat: true })); },
   dispatch(action, pane) {
     const items = apiGetItems(pane.paneId);
     if (!items.length) return null;

@@ -29,7 +29,7 @@ const { getModel } = require('../../model/store');
  *  focus + mode: a legend click on a pane that lost focus resolves to nothing)
  *  and still offer `action`; then the spec's own `dispatch(action, pane)`
  *  computes the Msg against current state (sort cycle, selected item). */
-function resolveBorderControl({ paneId, type, specId, action }) {
+function resolveBorderControl({ paneId, type, spec, specId, action }) {
   const layout = api.getInstanceSlice('layout');
   const p = layout && layout.arrange && mpool.allPanesInColumns(layout.arrange).find(x => x.paneId === paneId);
   if (!p) return null;
@@ -39,7 +39,10 @@ function resolveBorderControl({ paneId, type, specId, action }) {
   const b = visibleBoundsFor(layout, paneId, route.resolveViewerPaneId());
   if (!b || b.h < 2) return null;
   const pane = { paneId, type, focused: mpane.paneMatchesFocus(p, layout.focus), innerW: b.w - 2 };
-  const c = api.borderControlsFor(pane, getModel()).find(x => x.spec.id === specId);
+  // By spec identity (the region carries the spec object — ids are optional and
+  // not unique across a plugin's specs); `specId` only for a handler built
+  // without one.
+  const c = api.borderControlsFor(pane, getModel()).find(x => (spec ? x.spec === spec : x.spec.id === specId));
   if (!c) return null;
   if (!(c.spec.regions(0, 0, c.visibleW, pane) || []).some(r => r.action === action)) return null;
   return c.spec.dispatch(action, pane) || null;

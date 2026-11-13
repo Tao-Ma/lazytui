@@ -48,8 +48,8 @@ const MAX_W = 50;
 const VIEWPORT = 12;
 
 // `[≡]` clicks resolve on the hit map (docs/mouse-hit-map.md Release 2): paint
-// publishes the glyph where renderPanel drew it (render/paint
-// _publishChromeGlyphs); a click on an available trigger realizes the
+// publishes the glyph where renderPanel drew it (render/pane-hits
+// publishChrome); a click on an available trigger realizes the
 // `pane-menu-open` act (dispatch/control/mouse-acts → openAt).
 
 // (Residue tracking retired — overlay-compositor end-of-Release-2

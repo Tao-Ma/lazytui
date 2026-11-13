@@ -19,7 +19,11 @@ re-derived geometry are gone.
   widget cycler, tree/flat, zoom reset), the bottom item-action legend, the slot tab strip, the `✗ cancel`
   chip and tree fold markers. A border control's Msg is still computed at
   click time (current sort, current selection), after checking the control is
-  still shown for that pane.
+  still shown for that pane. **For pane authors:** pass the
+  `api.borderControlsFor` entries themselves to `renderPanel`'s `topControls` /
+  `bottomControls` (not their `.text`); a bare markup string still draws but is
+  not clickable. Specs need no `id` (nor a unique one), and a spec whose
+  `regions()` throws loses only its own clicks.
 - **Clicking (left, right or middle) outside the jobs list, the pane menu or
   a pending which-key chord closes it** (Esc). Their backdrop sits below the
   pane-chrome band, so the chrome stays clickable while they are open.
@@ -45,6 +49,9 @@ re-derived geometry are gone.
   could not see. Clicks now resolve only inside the composed frame.
 - **A press on a chip, a tab or a fold marker** no longer leaves a pending
   text-selection arm behind (a later drag could start a stray selection).
+- **In free-config, a click inside the Panels list could hit a pane's `[X]` or
+  `[_]` drawn under it**, hiding or collapsing a pane the user could not see.
+  The list now owns its box.
 
 ### Removed
 - `panel/chrome-regions.js`, `panel/tree-regions.js`, `panel/chrome-hittest.js`

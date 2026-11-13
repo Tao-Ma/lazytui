@@ -226,6 +226,11 @@ describe('[composite] interactive widget — cursor inside the box', () => {
     eq(ctl.dispatch('next', pane).msg.type, 'set_cursor', 'dispatches a set_cursor nav Msg');
     eq(ctl.dispatch('next', pane).msg.index, 1, 'next → cursor 1');
     eq(ctl.dispatch('prev', pane).msg.index, 2, 'prev from 0 wraps to the last (2 of c1,c2,c0)');
+    // Every part is a stepper (the label steps like ›), so every part repeats on
+    // a fast 2nd click — the spec decides, not the shared sort geometry (whose
+    // label part is a toggle and does not).
+    const parts = ctl.regions(0, 0, 5);
+    eq(parts.map((r) => `${r.action}:${!!r.repeat}`), ['prev:true', 'reverse:true', 'next:true']);
   });
 
   it('clicking a GRAPH widget does NOT switch the cursor; clicking the interactive bars does', () => {

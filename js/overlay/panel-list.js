@@ -220,6 +220,14 @@ function _padRight(row, w) {
 // `force_full_repaint` Cmds from `panel_list_open`, `panel_list_close`,
 // and `free_config_enter`'s auto-open conditional in `js/panel/layout.js`
 // (those were Class A workarounds for the overlay bypassing newRows).
+// Hit map (docs/mouse-hit-map.md): the box OWNS its cells — without it, pane
+// chrome drawn under the box ([X] / [_] in free-config) took clicks aimed at the
+// list or the preview (hiding / collapsing a pane the user could not see). Its
+// rows are pool-drag sources the legacy free-config handler still runs (they
+// move onto pointer capture in Release 3), so every gesture is handed to the
+// legacy cascade ('legacy') instead of being realized here.
+const LEGACY_BOX = { box: { press: 'legacy', double: 'legacy', right: 'legacy', middle: 'legacy', 'wheel-up': 'legacy', 'wheel-down': 'legacy' } };
+
 function renderPanelListOverlay(newRows, cols) {
   const slice = _slice();
   if (!slice || !slice.panelList || !slice.panelList.open) return;
@@ -243,6 +251,7 @@ function renderPanelListOverlay(newRows, cols) {
       maxWidth: wantW,
       count: items.length ? [cursor + 1, items.length] : undefined,
       targetRows: newRows || null, targetCols: cols || 0,
+      hit: LEGACY_BOX,
     });
     return;
   }
@@ -282,6 +291,7 @@ function renderPanelListOverlay(newRows, cols) {
     maxWidth: wantW,
     count: items.length ? [cursor + 1, items.length] : undefined,
     targetRows: newRows || null, targetCols: cols || 0,
+    hit: LEGACY_BOX,
   });
 }
 

@@ -14,6 +14,9 @@
  *       click in one chunk; a body click batched behind the key that closed an
  *       in-grid popup; chrome pushed onto the footer row; a router-consumed press
  *       disarms a pending text selection
+ *   [9] round-2 review: border-control specs without / with duplicate ids and a
+ *       spec whose regions() throws (plugin contract); the free-config panel
+ *       list owns its box (chrome under it is not clickable through it)
  *
  * Run: node js/test/test-chrome-mouse.js
  */
@@ -239,6 +242,97 @@ describe('[8] pre-release review regressions', () => {
     // groups body.
     chunk(`\x1b[<0;${b.x + 3};${b.y + 2}M` + sgr(r.rect.x + 1, r.rect.y) + `\x1b[<32;${b.x + 6};${b.y + 2}M`);
     eq(psel.selectionFor('pane-groups'), null, 'no selection began from the stale arm');
+  });
+});
+
+describe('[9] round-2 review regressions', () => {
+  // Plugin-style border controls: the spec contract is { render, regions,
+  // dispatch } — `id` was never required (nor unique).
+  const LOG = [];
+  const spec = (label, id, opts = {}) => {
+    const sp = {
+      render: () => ({ text: label, visibleW: label.length }),
+      regions: opts.throws ? () => { throw new Error('regions boom'); } : (x0, y, w) => [{ x0, x1: x0 + w - 1, y, action: 'go' }],
+      dispatch: (action) => { LOG.push(`${label}:${action}`); return null; },
+    };
+    if (id !== undefined) sp.id = id;
+    return sp;
+  };
+  const mkType = (specs) => ({
+    borderControls: specs,
+    render(panel, w, h, slice, opts) {
+      const ctl = api.borderControlsFor({ paneId: panel.paneId, type: panel.type, focused: !!(opts && opts.focused), innerW: w - 2 }, getModel());
+      return api.renderPanel({ width: w, height: h, lines: ['body'], title: 'RV', focused: !!(opts && opts.focused),
+        chrome: opts && opts.chrome, topControls: ctl });
+    },
+  });
+  api.registerComponent({
+    name: 'r2plug', init: () => ({}), update: (m, sl) => sl,
+    panelTypes: {
+      rvnone: mkType([spec('AAA'), spec('BBB')]),
+      rvdup: mkType([spec('CCC', 'x'), spec('DDD', 'x')]),
+      rvthrow: mkType([spec('EEE', 'e', { throws: true }), spec('FFF', 'f')]),
+    },
+  });
+  const bootType = (type) => {
+    const P2 = { rv: { id: 'rv', type }, detail: { id: 'detail', type: 'detail' } };
+    sm.bootFresh({ layout: { pool: P2, columns: [{ width: 50, panels: [P2.rv] }, { panels: [P2.detail] }] } });
+    toLayout({ type: 'view_set', mode: 'normal' });
+    sm.resize(120, 30);
+    return hc.screenRows();
+  };
+  const cellOf = (rows, text) => {
+    for (let y = 0; y < rows.length; y++) {
+      const line = (rows[y] || []).join('');
+      const x = line.indexOf(text);
+      if (x >= 0) return { x: x + 1, y };
+    }
+    return null;
+  };
+  for (const [type, a, b] of [['rvnone', 'AAA', 'BBB'], ['rvdup', 'CCC', 'DDD']]) {
+    it(`${type}: a click on each control dispatches THAT control (specs found by identity, not id)`, () => {
+      const rows = bootType(type);
+      for (const label of [a, b]) {
+        const c = cellOf(rows, label);
+        assert(c, `${label} painted`);
+        LOG.length = 0;
+        hc.click(c.x, c.y);
+        eq(LOG, [`${label}:go`]);
+      }
+    });
+  }
+  it('a spec whose regions() throws loses only its own clicks — the pane still paints', () => {
+    const rows = bootType('rvthrow');
+    const screen = rows.map(r => (r || []).join('')).join('\n');
+    assert(!screen.includes('render error'), 'no error block');
+    assert(cellOf(rows, 'EEE') && cellOf(rows, 'FFF'), 'both controls painted');
+    LOG.length = 0;
+    const f = cellOf(rows, 'FFF');
+    hc.click(f.x, f.y);
+    eq(LOG, ['FFF:go'], 'the healthy control still works');
+  });
+
+  it('free-config: a click inside the panel list over a pane\'s [X] does not hide that pane', () => {
+    // (titles: the panel list prints each pool entry's title — the parser always sets one)
+    const P3 = { g1: { id: 'g1', type: 'groups', title: 'G1' }, g2: { id: 'g2', type: 'groups', title: 'G2' },
+                 g3: { id: 'g3', type: 'groups', title: 'G3' }, detail: { id: 'detail', type: 'detail', title: 'Detail' } };
+    sm.bootFresh({ layout: { pool: P3, columns: [{ width: 70, panels: [P3.g1, P3.g2, P3.g3] }, { panels: [P3.detail] }] } });
+    toLayout({ type: 'view_set', mode: 'normal' });
+    sm.resize(120, 30);
+    toLayout({ type: 'free_config_enter' });
+    if (!layout().panelList || !layout().panelList.open) toLayout({ type: 'panel_list_open', cursor: 0 });
+    hc.paint();
+    const box = hm.all().find(r => r.owner === 'panel-list' && r.id === 'box');
+    assert(box, 'the panel list publishes its box');
+    const covered = hm.all().find(r => r.id === 'close' && r.z === hm.BANDS.CHROME
+      && r.rect.x >= box.rect.x && r.rect.x + r.rect.w <= box.rect.x + box.rect.w
+      && r.rect.y >= box.rect.y && r.rect.y < box.rect.y + box.rect.h);
+    assert(covered, 'some pane\'s [X] lies under the box');
+    const before = panes().map(p => p.id).join();
+    hc.click(covered.rect.x + 1, covered.rect.y);
+    eq(panes().map(p => p.id).join(), before, 'no pane hidden');
+    eq(getModel().modes.freeConfigMode, true, 'still in free-config (the legacy handler took the click)');
+    toLayout({ type: 'free_config_exit' });
   });
 });
 
