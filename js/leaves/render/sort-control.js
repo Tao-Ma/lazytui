@@ -7,8 +7,8 @@
  * Like refresh-control this leaf owns the control's DATA + GEOMETRY (no state,
  * no I/O): the label composition, the markup + visible width, and the three
  * click regions — `‹` (prev column), the label (reverse direction), `›` (next
- * column). Both the painter (draw.js via renderPanel's `topControls`) and the
- * hit-test (panel/chrome-hittest) derive positions from HERE so they can't drift.
+ * column). The spec's regions() split the control at the x renderPanel drew it
+ * (`topControls`), and paint publishes them on the hit map — one geometry source.
  *
  * The per-pane sort STATE lives in the nav leaf (`nav.sort {key,dir}`, the twin
  * of `nav.filter`) and is applied centrally in api.getItems — so render, the

@@ -70,7 +70,8 @@ const { sortControlText, sortControlHits, NONE_LABEL, ASC, DESC } = require('../
 const { itemOpsBarSpec } = require('../../leaves/render/action-legend');   // surface-aware bottom item-op bar
 const { buildKillMenu } = require('../../leaves/proc/kill-signals');
 const tree = require('../../leaves/tree/tree');   // generic tree model (process-tree mode)
-const treeRegions = require('../tree-regions');   // per-frame drawn fold-marker regions (click-to-fold)
+const hitMap = require('../hit-map');             // per-frame hit map — drawn fold markers are clickable
+const { isChainActive } = require('../../leaves/input/modes');
 
 function _metric(topic) {
   const all = getModel().metrics;
@@ -434,9 +435,10 @@ function render(panel, w, h, slice, opts) {
   // the header at line 0, so renderPanel must NOT re-slice.
   const lines = [header];
   // Tree mode: collect the DRAWN fold-marker (`▾`/`▸`) cells so a click can toggle
-  // the node under it (panel/tree-regions, read by chrome-hittest.hitTestTreeMarker).
-  // Pane-local cells (reader adds the pane origin): y = 2 + vi (0 border, 1 sticky
-  // header, 2+ data); x = 1 (left border) + the marker's offset within the id cell.
+  // the node under it (published on the hit map below — docs/mouse-hit-map.md R2).
+  // Pane-local cells (hit-map.publishLocal adds the pane origin): y = 2 + vi (0
+  // border, 1 sticky header, 2+ data); x = 1 (left border) + the marker's offset
+  // within the id cell.
   // Two clip guards keep the region to a cell that ACTUALLY painted:
   //   · horizontal — publish only a marker that survived id-column truncation. The
   //     ellipsis can only land on the last retained cell (idW-1, see draw.truncate),
@@ -467,7 +469,19 @@ function render(panel, w, h, slice, opts) {
       }
     }
   });
-  treeRegions.publish(panel.paneId, markers);
+  // In-pane band, and only with no chain mode active — a marker click was always
+  // gated like a pane-body click (the T13 chain gate), and in-grid overlays'
+  // below-chrome backdrops sit above this band anyway. The node id is absolute:
+  // a click on a stale frame folds the node the user saw.
+  if (!isChainActive(getModel().modes)) {
+    for (const mk of markers) {
+      hitMap.publishLocal({
+        id: `tree:${mk.id}`,
+        rect: { x: mk.x0, y: mk.y, w: mk.x1 - mk.x0 + 1, h: 1 },
+        on: { press: { msg: { type: 'tree_toggle', id: mk.id }, owner: panel.paneId } },
+      }, hitMap.BANDS.IN_PANE);
+    }
+  }
 
   const m = getModel();
   const ctl = borderControlsFor({ paneId: panel.paneId, type: 'table', focused, innerW }, m);

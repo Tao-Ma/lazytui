@@ -9,11 +9,10 @@
  *     to draw and the absolute cell rects of the `-` / `+` click targets.
  *
  * WHY a shared leaf, not a base class: lazytui is TEA — Components compose pure
- * leaves, they don't inherit. Both the renderer (a monitor Component's render())
- * AND the hit-test (panel/chrome-hittest) derive the control's cell positions
- * from THIS one function, so they can't drift (the same DRY discipline the
- * chrome glyphs use — draw.js renders, chrome-hittest hit-tests, both off one
- * geometry source).
+ * leaves, they don't inherit. The click parts (`-` / `+`) come from THIS one
+ * function (refreshControlHits, via the spec's regions()), placed at the x
+ * renderPanel actually drew the control — paint publishes them on the hit map
+ * (docs/mouse-hit-map.md Release 2), so paint and click can't drift.
  *
  * The interval lives in the model and feeds the Component's `subscriptions()`
  * (an `interval` Sub keyed on `${id}:${ms}`), so changing it re-arms the poll via
@@ -119,9 +118,9 @@ function refreshControlBorderX0(glyphX0, visibleW) {
   return glyphX0 - 1 - visibleW;
 }
 
-/** Whether the control is drawn on the top border — the SINGLE source both
- *  renderPanel and panel/chrome-hittest gate on, so a click can never land where
- *  no control was drawn. TITLE-INDEPENDENT by design: renderPanel reserves the
+/** Whether the control is drawn on the top border — mirrors renderPanel's fit
+ *  for a lone control (tests pin the arithmetic; clicks no longer read it — the
+ *  hit map publishes where renderPanel drew). TITLE-INDEPENDENT by design: renderPanel reserves the
  *  full right cluster (control + gap + glyphs + corner) and truncates the TITLE
  *  to fit it, so presence depends only on pane width + cluster width — which the
  *  hit-test also knows. `innerW` = pane width − 2; `glyphClusterW` = the chrome
@@ -146,7 +145,7 @@ function refreshControlDir(mx, my, hits) {
 /**
  * A BORDER-CONTROL SPEC for the refresh control — the refresh KIND packaged for
  * the generic border-control strip (leaves/render/border-controls + api's
- * borderControlsFor + panel/chrome-hittest). A pane registers this in its
+ * borderControlsFor + the hit map). A pane registers this in its
  * `panelTypes[type].borderControls` array; the framework renders + hit-tests it
  * without knowing it's "the refresh control". This is the reuse seam: any
  * monitor pane (stats-graph next) parameterizes it with its own owner + a reader

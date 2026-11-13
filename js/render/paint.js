@@ -35,7 +35,6 @@ const mpane = require('../leaves/wm/pane');
 const { theme, setTheme } = require('../leaves/infra/themes');
 const { truncate, setWriter: _setDrawWriter, setChromeSink: _setDrawChromeSink, setHitSink: _setDrawHitSink } = require('../leaves/render/draw');
 const chromeRegions = require('../panel/chrome-regions');
-const treeRegions = require('../panel/tree-regions');
 const hoverRegion = require('../panel/hover-region');
 const hitMap = require('../panel/hit-map');
 const { detectColorDepth, downgradeAnsi } = require('../leaves/render/color-depth');
@@ -97,7 +96,7 @@ function setReplaySource(fn) { _replaySource = fn; }
 // at 6+4 calls/frame that was ~0.7ms/frame on require alone. Resolve
 // once at runtime. `||=` caches the ref. (chromeFor + the glyph-markup
 // builders are pure chrome derivation, now in leaves/render/draw — render→leaf,
-// no cycle; the slice-reading hit-tests went to panel/chrome-hittest.)
+// no cycle; clicks resolve on the per-frame hit map, panel/hit-map.)
 let _routeRef; const _route = () => (_routeRef ||= require('../panel/route'));
 let _decorRef; const _decor = () => (_decorRef ||= require('../leaves/render/draw'));
 // Graph hover tooltip (Phase 2) — the rows the hover box last painted, for the
@@ -989,9 +988,6 @@ function render(model) {
   // for the vacated OLD-position cells AND the new-position cells from
   // the natural row delta.)
   chromeRegions.clear();
-  // Same discipline for the per-row tree fold markers (panel/tree-regions): a
-  // table in tree mode republishes its `▾`/`▸` glyph ranges each paint.
-  treeRegions.clear();
   // And for the graph hover-value (panel/hover-region): stats.render republishes the
   // resolved value for the hovered pane during the pane pass; footer + hover overlay
   // (painted after) read it. Empty when nothing is hovered.

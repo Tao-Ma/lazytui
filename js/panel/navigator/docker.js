@@ -276,8 +276,9 @@ function update(msg, slice) {
   if (mnav.isNavMsg(msg)) return mnav.apply(slice, msg);
   if (msg.type === 'key') return _handleKey(msg, slice);
   // Item-action bar click (per-pane, so it's handled ABOVE the content gate on
-  // this pane's own instance). The clicked item was resolved at dispatch time
-  // (chrome-hittest), so the reducer stays pure of getModel().
+  // this pane's own instance). The clicked item was resolved at click time
+  // (mouse-acts 'border-control' → the spec's dispatch), so the reducer stays
+  // pure of getModel().
   if (msg.type === 'item_action') return [slice, _itemActionCmds(msg.action, msg.item)];
   // v0.6.4 Theme A Phase 5 Arc 3 — content gate. The status/stats fetch
   // loop + the `docker events` stream are HOST-GLOBAL (the same daemon,
@@ -841,9 +842,9 @@ module.exports = {
       sortKeys: _sortKeys,
       // Component-declared top-border control strip. Each entry is a
       // border-control SPEC (render/regions/dispatch); the framework
-      // (api.borderControlsFor + panel/chrome-hittest) renders + hit-tests them
+      // (api.borderControlsFor + the hit map) renders + routes clicks to them
       // generically. The ONE source both the render slot (see render() above)
-      // and the click hit-test read, so paint + click can't drift. Painted
+      // and the click read, so paint + click can't drift. Painted
       // right-to-left: refresh (host-global) leftmost, the sort selector
       // (per-pane) nearest the glyphs.
       // Per-row operations (leaves/render/item-ops): _itemActions carry no

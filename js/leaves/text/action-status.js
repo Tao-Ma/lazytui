@@ -149,8 +149,9 @@ function statusLine(outcome, now, cfg) {
 
 // The clickable cancel affordance on the LIVE running chip: a filled ` ✗ cancel `
 // block (dark ink on the error color — matching the destructive fill). Its visible
-// width; the hit-test (chrome-hittest.js) maps a click on the rightmost CANCEL_W
-// content cols of the chip's row to killJob — the WHOLE filled block is the button.
+// width; text-view's render publishes the rightmost CANCEL_W content cols of the
+// chip's row on the hit map as a cancel_job region — the WHOLE filled block is
+// the button.
 const CANCEL_W = 10;   // visibleLen(' ✗ cancel ') = pad(1) + ✗(1) + ' '(1) + cancel(6) + pad(1)
 
 /**

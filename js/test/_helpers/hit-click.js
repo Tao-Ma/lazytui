@@ -113,6 +113,15 @@ function triggerAt(mx, my) { const h = chromeAt('trigger', mx, my); return h ? h
 function collapseAt(mx, my) { const h = chromeAt('collapse', mx, my); return h ? h.handler.msg.id : null; }
 /** Pool id a press on an `[X]` at (mx, my) hides, or null. */
 function closeAt(mx, my) { const h = chromeAt('close', mx, my); return h ? h.handler.msg.id : null; }
+/** jobId a press on a live `✗ cancel` chip at (mx, my) cancels, or null. */
+function cancelAt(mx, my) { const h = chromeAt('cancel', mx, my); return h ? h.handler.msg.jobId : null; }
+/** `{ owner, id }` — the pane + tree node whose fold marker a press at (mx, my)
+ *  toggles (in-pane band), or null. */
+function treeMarkerAt(mx, my) {
+  const h = hm.resolve(mx, my, 'press');
+  if (!h || h.region.z !== hm.BANDS.IN_PANE || !h.region.id.startsWith('tree:')) return null;
+  return { owner: h.handler.owner, id: h.handler.msg.id };
+}
 
 /** What a press at (mx, my) on a border control would dispatch now — the
  *  spec's `{ owner, msg }` — or null when no border-control region is there
@@ -131,7 +140,7 @@ function snapshot(m) {
 }
 
 module.exports = {
-  screenRows, screenText, borderControlAt, chromeAt, triggerAt, collapseAt, closeAt,
+  screenRows, screenText, borderControlAt, chromeAt, triggerAt, collapseAt, closeAt, cancelAt, treeMarkerAt,
   paint, click, dblclick, wheel, regions, region, at,
   clickRegion, dblclickRegion, wheelRegion, paintedText, snapshot,
 };

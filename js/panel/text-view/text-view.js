@@ -23,6 +23,8 @@ const astatus = require('../../leaves/text/action-status');
 const { visibleLen } = require('../../leaves/text/ansi');
 const { paneInnerH, paneInnerW } = require('../pane-viewport');
 const { getModel } = require('../../model/store');
+const { suppressesChromeClicks } = require('../../leaves/input/modes');
+const hitMap = require('../hit-map');
 
 // Ring cap for the retained line buffer. text-view backs BOTH routed action tabs
 // AND the Transcript; both are retained by ref in the slice and CLONED WHOLESALE
@@ -267,32 +269,23 @@ function _chipFor(paneId, innerW) {
   return chip ? { job, instId, line: chip.line, cancelX0: chip.cancelX0, cancelX1: chip.cancelX1 } : null;
 }
 
-// The LIVE action-status line string for render (floated at the tail). '' when
-// this pane holds no running action. Thin wrapper over the shared _chipFor.
-function _runningLine(panel, innerW) {
-  const info = _chipFor(panel && panel.paneId, innerW);
-  return info ? info.line : '';
-}
-
-// Shell hook for the click hit-test (chrome-hittest.hitTestActionCancel): the
-// pane-local `✗ cancel` span + owning jobId for a pane's live chip, or null.
-// Non-null ONLY when the affordance actually drew (cancelX0 >= 0) AND the chip is
-// on-screen — the tail line renders only while bottom-stuck (render's `wasBottom`
-// below); scrolled up it's off-screen and not clickable, by design. `innerW`/
-// `innerH` are the pane's content dims (b.w-2 / b.h-2).
-function cancelHitInfo(paneId, innerW, innerH) {
-  const info = _chipFor(paneId, innerW);
-  if (!info || info.cancelX0 < 0) return null;
-  const slice = require('../route').getInstanceSlice(info.instId);
-  if (!slice) return null;
-  const linesLen = (slice.lines || []).length;
-  const atBottom = (slice.scroll || 0) >= Math.max(0, linesLen - innerH);
-  if (!atBottom) return null;
-  // The chip is the tail of (contentLines + chip). With bottom-stick (render's
-  // `wasBottom` branch), its row within the inner window is min(linesLen, innerH-1)
-  // — right after short output, or the last inner row once output fills the pane.
-  const row = Math.min(linesLen, Math.max(0, innerH - 1));
-  return { jobId: info.job.id, cancelX0: info.cancelX0, cancelX1: info.cancelX1, row };
+// The `✗ cancel` span of a live chip → a chrome-band hit region where it drew
+// (docs/mouse-hit-map.md Release 2): only when the affordance drew
+// (cancelX0 >= 0) on an on-screen inner row — the chip floats at the tail only
+// while bottom-stuck, so scrolled up it publishes nothing. Gated like the border
+// chrome it used to be hit-tested with: input-owning modes and a free-config
+// drag block it. Pane-local: +1 for the left border / top border.
+function _publishCancel(chip, row, innerH) {
+  if (chip.cancelX0 < 0 || row < 0 || row >= innerH) return;
+  const md = getModel().modes || {};
+  if (suppressesChromeClicks(md)) return;
+  const ls = require('../route').getInstanceSlice('layout');
+  if (ls && ls.freeConfig && ls.freeConfig.drag) return;
+  hitMap.publishLocal({
+    id: 'cancel',
+    rect: { x: 1 + chip.cancelX0, y: 1 + row, w: chip.cancelX1 - chip.cancelX0 + 1, h: 1 },
+    on: { press: { msg: { type: 'cancel_job', jobId: chip.job.id } } },
+  }, hitMap.BANDS.CHROME);
 }
 
 function render(panel, w, h, slice, opts) {
@@ -332,12 +325,15 @@ function render(panel, w, h, slice, opts) {
   // up into history.
   let displayLines = contentLines;
   let scroll = slice.scroll;
-  const running = _runningLine(panel, innerW);
-  if (running) {
+  const chip = _chipFor(panel && panel.paneId, innerW);
+  if (chip) {
     displayLines = contentLines.slice();
     const wasBottom = (slice.scroll || 0) >= Math.max(0, (slice.lines || []).length - innerH);
-    displayLines.push(running);
-    if (wasBottom) scroll = Math.max(0, displayLines.length - innerH);
+    displayLines.push(chip.line);
+    if (wasBottom) {
+      scroll = Math.max(0, displayLines.length - innerH);
+      _publishCancel(chip, displayLines.length - 1 - scroll, innerH);
+    }
   }
 
   const args = buildTextView({
@@ -362,6 +358,5 @@ module.exports = {
   init,
   update,
   augmentMsg,
-  cancelHitInfo,
   panelTypes: { 'text-view': { render } },
 };

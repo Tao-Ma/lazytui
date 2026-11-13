@@ -155,8 +155,8 @@ function fitCell(s, width) {
  *   glyphs. An ordered STRIP: the first entry paints leftmost, the last nearest
  *   the glyphs (the monitor refresh control `- Ns +` was the first consumer).
  *   Presence is title-INDEPENDENT (the title truncates to reserve the whole
- *   strip); leaves/render/border-controls + panel/chrome-hittest mirror the same
- *   fit predicate so a click can't land where no control drew.
+ *   strip). Where each control drew is reported through the chrome sink, so
+ *   its hit regions sit exactly on it.
  * @returns {string} Rich markup string
  */
 function renderPanel({
@@ -205,8 +205,7 @@ function renderPanel({
     // Right cluster first. The opt-in border-control strip (e.g. the monitor
     // refresh control `- Ns +`) sits one gap-dash LEFT of the glyphs (right-
     // anchored). Prepend controls right-to-left so the FIRST registered paints
-    // leftmost and the LAST nearest the glyphs — matching border-controls.placeX0s
-    // that panel/chrome-hittest hit-tests.
+    // leftmost and the LAST nearest the glyphs (controlsDrawn records each x).
     let rightPart = '';
     if (wantRightClose) rightPart += _closeGlyphMarkup(focused, fc);
     if (wantRightClose && wantRightCollapse) rightPart += b.h;
@@ -314,16 +313,16 @@ function renderPanel({
   // Bottom legend placement (drawn below iff bctl.bottomFits — count-independent),
   // decided here so the chrome emit can report it: pane-local x0 = 2 (corner +
   // lead dash), row = the pane's last.
-  const _legRef0 = (Array.isArray(bottomControls) && bottomControls[0]) || null;
-  const _legText0 = (_legRef0 && typeof _legRef0 === 'object' ? _legRef0.text : _legRef0) || '';
-  const _legVis0 = _legText0 ? visibleLen(_legText0) : 0;
-  const bottomDrawn = (_legVis0 && bctl.bottomFits(innerW, _legVis0) && height >= 2)
-    ? { x0: 2, y: height - 1, visibleW: _legVis0, ref: (_legRef0 && typeof _legRef0 === 'object') ? _legRef0 : null }
+  const legendRef = (Array.isArray(bottomControls) && bottomControls[0]) || null;
+  const legendText = (legendRef && typeof legendRef === 'object' ? legendRef.text : legendRef) || '';
+  const legendW = legendText ? visibleLen(legendText) : 0;
+  const bottomDrawn = (legendW && bctl.bottomFits(innerW, legendW) && height >= 2)
+    ? { x0: 2, y: height - 1, visibleW: legendW, ref: (legendRef && typeof legendRef === 'object') ? legendRef : null }
     : null;
 
-  // Publish the ACTUALLY-DRAWN clickable chrome for the hit-tests (pane-local
-  // x-ranges; a null glyph = not painted). close/collapse are right-anchored
-  // (`─[X] [_]╮`, the same constants chrome-hittest read) and never truncated, so
+  // Publish the ACTUALLY-DRAWN clickable chrome (pane-local x-ranges; a null
+  // glyph = not painted) — render/paint turns it into hit-map regions.
+  // close/collapse are right-anchored (`─[X] [_]╮`) and never truncated, so
   // they follow `chromeDrew` (the whole-cluster `fits`). The `[≡]` trigger is
   // left-anchored INSIDE the independently-truncated leftPart, so it carries its
   // own survival check (`triggerReg`, set above) — `fits` alone would over-report
@@ -346,12 +345,11 @@ function renderPanel({
   // Left-anchored item-action legend (the `bottomControls` strip — one control
   // today) + the right-anchored `N of M` count. The legend is COUNT-INDEPENDENT
   // (shown iff the pane is wide enough for it alone — border-controls.bottomFits,
-  // the same gate chrome-hittest reads); the count drops when it can't share the
-  // row. Placement mirrors border-controls.bottomX0 so a click can't miss.
+  // decided above as `bottomDrawn` and reported through the chrome sink); the
+  // count drops when it can't share the row.
   const countText = count ? `${count[0]} of ${count[1]}` : '';
-  const legendRef = (Array.isArray(bottomControls) && bottomControls[0]) || null;
-  const legend = (legendRef && typeof legendRef === 'object' ? legendRef.text : legendRef) || '';
-  const legendVis = legend ? visibleLen(legend) : 0;
+  const legend = legendText;
+  const legendVis = legendW;
   let bottom;
   if (legendVis && bctl.bottomFits(innerW, legendVis)) {
     // ╰─{legend}{mid dashes}[{count}─]╯ — inner cells = 1 lead + legend + mid + right
@@ -537,14 +535,14 @@ function publishBox({ x, y, w, h, scrollOffset = 0, lines = [],
 function writeOut(buf) { if (_writer) _writer(buf); }
 
 // --- Pure chrome-glyph derivation (moved from render/decor.js in the
-// render-exit arc; the slice-reading hit-tests went to panel/chrome-hittest).
+// render-exit arc; clicks resolve on the per-frame hit map, panel/hit-map).
 // chromeFor decides which glyphs a pane carries; the *Markup builders emit
 // the Rich markup renderPanel composes into the top border. All pure. ---
 
 /**
  * Pure derivation of which chrome glyphs a pane should carry. Returns a
- * structured spec the renderer consumes. See panel/chrome-hittest.js for
- * the geometry/hit-test half.
+ * structured spec the renderer consumes. renderPanel reports what actually drew
+ * through the chrome sink; render/paint publishes the hit regions.
  *
  *   pane: arrange-entry — .type, .collapsed, .tabs.
  *   ctx:  { freeConfigMode, dragging, focused, paneMenuTriggerState }.

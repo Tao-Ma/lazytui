@@ -2,8 +2,8 @@
  * refresh-control — the pure refresh-rate control primitive (Phase 0 of the
  * btop-style `- 2s +` control for monitor panes). Pins the ladder/clamp, the
  * label formatter, the right-aligned layout + hit rects, and the hit predicate,
- * so the Component renderer + panel/chrome-hittest (Phase 3) share one geometry
- * source and can't drift.
+ * so the Component renderer and the click geometry share one source and can't
+ * drift (clicks resolve on the hit map — docs/mouse-hit-map.md Release 2).
  *
  * Run: node js/test/test-refresh-control.js
  */
@@ -122,9 +122,9 @@ describe('[refresh-control] refreshControlDir (hit predicate)', () => {
 });
 
 // The phantom-click guard (review HIGH): renderPanel must draw the control on
-// EXACTLY the widths where refreshControlFits() says so — the predicate
-// chrome-hittest gates on. If they ever diverge, a click lands on the title/border
-// where no control drew (or a real control is un-clickable). Cross-check the REAL
+// EXACTLY the widths where refreshControlFits() says so. The hit map publishes a
+// control only where renderPanel reports drawing it, so a divergence here would
+// mean the pure predicate no longer describes the paint. Cross-check the REAL
 // renderPanel output against the predicate across every width.
 describe('[refresh-control] render ↔ refreshControlFits agreement (phantom-click guard)', () => {
   const draw = require('../leaves/render/draw');

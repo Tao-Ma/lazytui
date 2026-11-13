@@ -13,8 +13,8 @@ const table = require('../panel/monitor/table');
 const api = require('../panel/api');
 const route = require('../panel/route');
 const sm = require('./smoke/_helpers/smoke');
-const treeRegions = require('../panel/tree-regions');
-const { hitTestTreeMarker } = require('../panel/chrome-hittest');
+const hitMap = require('../panel/hit-map');
+const hc = require('./_helpers/hit-click');
 const { visibleBoundsFor } = require('../leaves/wm/geometry');
 const { dispatchMsg } = require('../dispatch/runtime/loop');
 const mpool = require('../leaves/wm/pool');
@@ -34,6 +34,15 @@ const SERIES = {
 function treeSlice(over) {
   const s = table.init('procs', { paneDef: { topic: 'host.proc', columns: ['cpu', 'comm'], sort: 'cpu', tree: { parent: 'ppid' }, ...over } });
   return s;
+}
+
+// The fold markers the last paint published for `paneId` on the hit map,
+// PANE-LOCAL (pane origin subtracted) as `{ y, x0, x1, id }`, or null when none.
+function markersOf(paneId) {
+  const b = visibleBoundsFor(route.getInstanceSlice('layout'), paneId);
+  const rs = hitMap.all().filter(r => r.owner === paneId && r.id.startsWith('tree:'));
+  if (!b || !rs.length) return null;
+  return rs.map(r => ({ y: r.rect.y - b.y, x0: r.rect.x - b.x, x1: r.rect.x - b.x + r.rect.w - 1, id: r.id.slice(5) }));
 }
 
 describe('[table-tree] init — tree config', () => {
@@ -206,7 +215,7 @@ describe('[table-tree] click a ▾/▸ marker folds that node (paint↔hit-test)
 
   it('render publishes a fold marker for every PARENT row (leaves get none)', () => {
     boot();
-    const markers = treeRegions.get(paneId()) || [];
+    const markers = markersOf(paneId()) || [];
     eq(markers.map(m => m.id).sort(), ['1', '100'], 'parents 1 + 100; leaves 200/300 have no marker');
   });
 
@@ -214,12 +223,12 @@ describe('[table-tree] click a ▾/▸ marker folds that node (paint↔hit-test)
     boot();
     const id = paneId();
     const b = boundsOf(id);
-    for (const m of treeRegions.get(id)) {
-      eq(hitTestTreeMarker(b.x + m.x0, b.y + m.y), { owner: id, id: m.id }, `marker ${m.id}`);
+    for (const m of markersOf(id)) {
+      eq(hc.treeMarkerAt(b.x + m.x0, b.y + m.y), { owner: id, id: m.id }, `marker ${m.id}`);
     }
     // The left border column on a marker row is NOT a marker → no phantom hit.
-    const m0 = treeRegions.get(id)[0];
-    eq(hitTestTreeMarker(b.x, b.y + m0.y), null, 'border cell is inert');
+    const m0 = markersOf(id)[0];
+    eq(hc.treeMarkerAt(b.x, b.y + m0.y), null, 'border cell is inert');
   });
 
   it('end-to-end: a real press on 100’s marker folds it, a second press unfolds', () => {
@@ -232,12 +241,13 @@ describe('[table-tree] click a ▾/▸ marker folds that node (paint↔hit-test)
     const sliceNow = () => route.getInstanceSlice(id);
     assert(table.getItems(sliceNow()).includes('300'), '300 (psql) visible before the fold');
 
-    press(treeRegions.get(id).find(m => m.id === '100'));   // real input path → hitTestTreeMarker → tree_toggle
+    press(markersOf(id).find(m => m.id === '100'));   // real input path → hit map → tree_toggle
     assert(sliceNow().collapsed.has('100'), '100 folded by the marker click');
     assert(!table.getItems(sliceNow()).includes('300'), '300 (child of 100) now hidden');
     assert(sliceNow().treeMode === true, 'still in tree mode — the marker click didn’t disturb flat/tree');
 
-    press(treeRegions.get(id).find(m => m.id === '100'));   // marker republished (collapsed ▸) → toggles back
+    sm.capture(() => sm.render());                        // the click's own repaint republished the ▸
+    press(markersOf(id).find(m => m.id === '100'));   // marker republished (collapsed ▸) → toggles back
     assert(!sliceNow().collapsed.has('100'), '100 unfolded by the second click');
     assert(table.getItems(sliceNow()).includes('300'), '300 restored');
   });
@@ -264,17 +274,19 @@ describe('[table-tree] click a ▾/▸ marker folds that node (paint↔hit-test)
   });
 
   it('a marker click is inert while a non-modal overlay owns the mouse (pane menu open)', () => {
-    // Regression: the marker is a BODY-row affordance, resolved at body precedence
-    // (after the chain-mode gates) — NOT in the border-chrome cluster. A pane-menu
-    // dropdown anchors at b.y+1, so its row 0 sits at b.y+2 == the first data row's
-    // marker; if the marker fired there it would fold a hidden node + eat the menu pick.
+    // Regression: the marker is a BODY-row affordance (in-pane band, published only
+    // with no chain mode active) — NOT chrome. A pane-menu dropdown anchors at
+    // b.y+1, so its row 0 sits at b.y+2 == the first data row's marker; if the
+    // marker fired there it would fold a hidden node + eat the menu pick.
     boot();
     const id = paneId();
     const b = boundsOf(id);
-    const m1 = treeRegions.get(id).find(x => x.id === '1');   // root, on the first data row
+    const m1 = markersOf(id).find(x => x.id === '1');   // root, on the first data row
     eq(m1.y, 2, 'root marker is on the first data row (where a dropdown row 0 lands)');
     dispatchMsg(route.wrap('layout', { type: 'pane_menu_open', paneId: id, cursor: 0, scroll: 0 }));
     assert(getModel().modes.paneMenuMode === true, 'pane menu is open');
+    sm.capture(() => sm.render());
+    eq(markersOf(id), null, 'no marker regions publish while the menu (a chain mode) is open');
     sm.capture(() => sm.handleMouse('press', b.x + m1.x0 + 1, b.y + m1.y + 1));
     assert(!route.getInstanceSlice(id).collapsed.has('1'), 'the overlay wins — the marker did NOT fold');
     dispatchMsg(route.wrap('layout', { type: 'pane_menu_close' }));
@@ -285,7 +297,7 @@ describe('[table-tree] click a ▾/▸ marker folds that node (paint↔hit-test)
     const id = paneId();
     sm.resize(24, 20);            // idW collapses to its floor → deep (indented) markers clip
     sm.capture(() => sm.render());
-    const ids = (treeRegions.get(id) || []).map(m => m.id);
+    const ids = (markersOf(id) || []).map(m => m.id);
     assert(ids.length && !ids.includes('100'), 'root marker survives; the depth-1 marker (100) is clipped → no phantom');
     sm.resize(120, 40);          // restore for any later scenario
   });
@@ -307,7 +319,7 @@ describe('[table-tree] folding an ancestor below the cursor does not strand the 
     sm.capture(() => sm.handleMouse('press', b.x + b.w - 3, b.y + 2 + last + 1));
     eq(nav.getSel(id), last, 'cursor on the last (deep) row');
     // fold root '1' via its marker → hides its subtree → list shrinks to [1, 2]
-    const m1 = treeRegions.get(id).find(m => m.id === '1');
+    const m1 = markersOf(id).find(m => m.id === '1');
     sm.capture(() => sm.handleMouse('press', b.x + m1.x0 + 1, b.y + m1.y + 1));
     const shrunk = table.getItems(route.getInstanceSlice(id));
     eq(shrunk.length, 2, 'list shrank below the stored cursor');
@@ -357,7 +369,7 @@ describe('[table-tree] no bottom-border phantom marker at the pane-height floor 
     let checked = 0, bad = 0;
     for (const p of panes) {
       const b = visibleBoundsFor(route.getInstanceSlice('layout'), p.paneId);
-      for (const m of (treeRegions.get(p.paneId) || [])) { checked++; if (m.y < 1 || m.y > b.h - 2) bad++; }
+      for (const m of (markersOf(p.paneId) || [])) { checked++; if (m.y < 1 || m.y > b.h - 2) bad++; }
     }
     assert(checked > 0, 'markers were published across the stack');
     eq(bad, 0, 'no marker lands on a border / off-pane row (paint↔hit-test vertical agreement)');

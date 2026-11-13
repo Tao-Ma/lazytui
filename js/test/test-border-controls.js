@@ -2,8 +2,9 @@
  * border-controls — the pure geometry for the top-border control STRIP (the
  * generalization of the lone refresh-control slot). Pins reservedW / fits /
  * placeX0s, and — critically — cross-checks the REAL renderPanel output against
- * `fits` for a MULTI-control strip, so the paint ↔ hit-test agreement that
- * chrome-hittest relies on holds before any second control (sort, Phase 2) ships.
+ * `fits` for a MULTI-control strip, so the paint ↔ hit-test agreement holds for
+ * multi-control strips. (Clicks resolve on the hit map since Release 2:
+ * renderPanel reports where each control drew and paint publishes it there.)
  *
  * Run: node js/test/test-border-controls.js
  */
@@ -53,8 +54,8 @@ describe('[border-controls] placeX0s (last control nearest the glyphs)', () => {
 
 // The phantom-click guard, generalized to a MULTI-control strip: renderPanel
 // must draw BOTH synthetic controls on EXACTLY the widths where `fits` predicts,
-// and at the x0s `placeX0s` computes — the same predicate + positions
-// chrome-hittest gates on. If they diverge, a click lands where no control drew.
+// and at the x0s `placeX0s` computes. (The hit map publishes controls where
+// renderPanel reports drawing them; this pins the pure geometry against that paint.)
 describe('[border-controls] render ↔ fits/placeX0s agreement (multi-control phantom guard)', () => {
   const draw = require('../leaves/render/draw');
   const { stripMarkup } = require('../leaves/text/ansi');
@@ -86,7 +87,7 @@ describe('[border-controls] render ↔ fits/placeX0s agreement (multi-control ph
 
 // The bottom-legend paint ↔ geometry guard: renderPanel must draw the left-
 // anchored bottom control on EXACTLY the widths bottomFits predicts, at the cell
-// bottomX0 gives — the same predicate + position chrome-hittest gates on.
+// bottomX0 gives — the geometry the paint the hit map publishes from must match.
 describe('[border-controls] bottom legend render ↔ bottomFits/bottomX0 agreement', () => {
   const draw = require('../leaves/render/draw');
   const { stripMarkup } = require('../leaves/text/ansi');

@@ -435,9 +435,11 @@ function paneBorderControlSpecs(type) {
 // `{ paneId, type }` — host-global controls (refresh) ignore it; per-pane
 // controls (sort) key off `pane.paneId`. Returns the VISIBLE controls in
 // registration order, each carrying its spec (for `regions`/`dispatch` in the
-// hit-test). The SINGLE source both the render decision (navigator render →
-// renderPanel `borderControls`) and the click routing (panel/chrome-hittest)
-// read, so paint and hit-test can't drift.
+// click). The SINGLE source both the render decision (pane render →
+// renderPanel `topControls`/`bottomControls`) and the click (mouse-acts
+// 'border-control', re-checked at click time) read, so paint and click can't
+// drift. Each entry also carries the `pane` it was resolved for, so paint can
+// publish its regions (docs/mouse-hit-map.md Release 2).
 // Whether a panel type carries a BOTTOM-slot border control (the item-action
 // bar). Used by the footer to drop that pane's `keyHints` when `quick_keys` puts
 // the hints on the border instead — so the keys aren't shown twice.

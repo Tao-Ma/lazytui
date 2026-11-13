@@ -496,20 +496,20 @@ describe('[action-status] cancel_job reducer arm → kill_job Cmd', () => {
   });
 });
 
-// End-to-end: the pane render DRAWS `✗ cancel`, and chrome-hittest fires EXACTLY
-// on the drawn cell — both derive from runningChip, so this pins render↔hit-test
-// agreement at the real rendered position (via the component render, which returns
-// the full pane, not a cell-diff), plus the scrolled-up gate + the click → kill.
-describe('[action-status] ✗ cancel — render draws it where the hit-test fires', () => {
+// End-to-end: a REAL paint draws `✗ cancel` and publishes its hit-map region
+// (text-view's render, docs/mouse-hit-map.md Release 2) — both from the same
+// runningChip, so this pins paint↔hit agreement at the real on-screen position,
+// plus the scrolled-up gate + the click → kill.
+describe('[action-status] ✗ cancel — the painted chip is exactly where the hit map fires', () => {
   const sm = require('./smoke/_helpers/smoke');
+  const hc = require('./_helpers/hit-click');
+  const hitMap = require('../panel/hit-map');
   const route = require('../panel/route');
   const geo = require('../leaves/wm/geometry');
   const { getModel } = require('../app/runtime');
   const { runAction, killAll } = require('../dispatch/runtime/action-runner');
-  const { hitTestActionCancel } = require('../panel/chrome-hittest');
   const { applyMsg } = require('../dispatch/control/dispatch');
   if (!sm.api.getComponent('text-view')) sm.api.registerComponent(require('../panel/text-view/text-view'));
-  const renderTV = tv.panelTypes['text-view'].render;
   const ACT = { key: 'logs', label: 'logs', type: 'run', script: 'sleep 5', tab: true };
 
   // Boot a running routed action + resolve the content slot's bounds + slice.
@@ -523,39 +523,62 @@ describe('[action-status] ✗ cancel — render draws it where the hit-test fire
     const instId = route.activeInstanceOf(slot);
     return { job, slot, b, instId };
   }
+  // Full-frame paint → the screen (x, y) of `✗` inside the slot, or null.
+  function findChip(b) {
+    const rows = hc.screenRows();
+    for (let y = b.y; y < b.y + b.h; y++) {
+      const line = (rows[y] || []).slice(b.x, b.x + b.w).map((c) => c || ' ').join('');
+      const j = line.indexOf('✗ cancel');
+      if (j >= 0) return { x: b.x + j, y };
+    }
+    return null;
+  }
 
-  it('the hit-test fires on the drawn `✗ cancel` cell, and NOT one col left / one row up', () => {
-    const { job, slot, b, instId } = bootRun();
+  it('the hit map fires on the painted `✗ cancel` block, and NOT one col left / one row up', () => {
+    const { job, slot, b } = bootRun();
     assert(job && b && b.w > 12, 'a running job + a real content slot');
-
-    // Full component render (not a diff) → find `✗ cancel`'s pane-local (line,col).
-    // ci is the ✗ glyph; the filled block extends one pad-space to its left
-    // (ci-1) and one to its right, and the WHOLE block is the clickable button.
-    const lines = renderTV({ paneId: slot, hotkey: null }, b.w, b.h, route.getInstanceSlice(instId), {}).split('\n').map(stripMarkup);
-    let li = -1, ci = -1;
-    for (let i = 0; i < lines.length; i++) { const j = lines[i].indexOf('✗ cancel'); if (j >= 0) { li = i; ci = j; break; } }
-    assert(li >= 0, `render drew '✗ cancel' in the pane: ${JSON.stringify(lines.filter((l) => /cancel|[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/.test(l)))}`);
-
-    // Pane-local (li,ci) → screen (b.x+ci, b.y+li). The hit-test must fire across
-    // the whole filled block and NOT just left of it / one row up.
-    eq(hitTestActionCancel(b.x + ci - 1, b.y + li), job.id);             // the block's left pad-space (still the button)
-    eq(hitTestActionCancel(b.x + ci, b.y + li), job.id);                 // the ✗
-    eq(hitTestActionCancel(b.x + ci + 7, b.y + li), job.id);             // the last 'l' of "cancel"
-    eq(hitTestActionCancel(b.x + ci - 2, b.y + li), null);               // left of the filled block (neutral fill) — not clickable
-    eq(hitTestActionCancel(b.x + ci, b.y + li - 1), null);               // one row up (log output) — no hit
+    const at = findChip(b);
+    assert(at, 'the paint drew `✗ cancel` in the content slot');
+    // The filled block extends one pad-space left of the ✗ (and one right); the
+    // WHOLE block is the clickable button.
+    eq(hc.cancelAt(at.x - 1, at.y), job.id);             // the block's left pad-space (still the button)
+    eq(hc.cancelAt(at.x, at.y), job.id);                 // the ✗
+    eq(hc.cancelAt(at.x + 7, at.y), job.id);             // the last 'l' of "cancel"
+    eq(hc.cancelAt(at.x - 2, at.y), null);               // left of the filled block (neutral fill) — not clickable
+    eq(hc.cancelAt(at.x, at.y - 1), null);               // one row up (log output) — no hit
+    eq(hitMap.all().filter((r) => r.id === 'cancel').map((r) => r.owner), [slot], 'one cancel region, owned by the slot');
     killAll();
   });
 
-  it('scrolled up (chip off-screen) → no hit', () => {
-    const { job, slot, b, instId } = bootRun();
+  it('a raw-SGR click on the chip cancels that job', () => {
+    const { job, b } = bootRun();
+    const at = findChip(b);
+    assert(at, 'chip painted');
+    hc.click(at.x + 2, at.y);
+    assert(!require('../feature/jobs').snapshot().some((j) => j.id === job.id && j.status === 'running'),
+      'the job is no longer running after the click');
+    killAll();
+  });
+
+  it('scrolled up (chip off-screen) → no region', () => {
+    const { b, instId } = bootRun();
     // Precondition: bottom-stuck → the chip is live + clickable.
-    assert(tv.cancelHitInfo(slot, b.w - 2, b.h - 2), 'chip is hittable while bottom-stuck');
+    assert(findChip(b) && hitMap.all().some((r) => r.id === 'cancel'), 'chip is hittable while bottom-stuck');
     // Fill the tab past its viewport + scroll to the top → not bottom-stuck, so
-    // render doesn't float the chip onto the window and the hit-test finds nothing.
+    // render doesn't float the chip onto the window and publishes nothing.
     const s = route.getInstanceSlice(instId);
     route.setInstanceSlice(instId, { ...s, lines: Array.from({ length: 200 }, (_, i) => `line ${i}`), scroll: 0 });
-    eq(tv.cancelHitInfo(slot, b.w - 2, b.h - 2), null);   // scrolled up → nothing to click
-    void job;
+    eq(findChip(b), null, 'not painted');
+    eq(hitMap.all().filter((r) => r.id === 'cancel').length, 0, 'scrolled up → nothing to click');
+    killAll();
+  });
+
+  it('a chrome-suppressing mode publishes no cancel region (the chip still paints)', () => {
+    const { b } = bootRun();
+    sm.capture(() => sm.applyMsg({ type: 'mode_set', flag: 'freeConfigMode' }));
+    sm.capture(() => sm.applyMsg({ type: 'mode_set', flag: 'freeConfigTitleEditMode' }));
+    assert(findChip(b), 'the chip still paints');
+    eq(hitMap.all().filter((r) => r.id === 'cancel').length, 0, 'but publishes no region');
     killAll();
   });
 

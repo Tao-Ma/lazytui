@@ -29,7 +29,7 @@ const {getPanelDef, getItems, getInstanceSlice, wrap, getFocus, instanceKind } =
 const { dispatchMsg } = require('../runtime/loop');
 const route = require('../../panel/route');
 const mpane = require('../../leaves/wm/pane');
-const { isChainActive, CHAIN_MODES, suppressesChromeClicks } = require('../../leaves/input/modes');
+const { isChainActive, CHAIN_MODES } = require('../../leaves/input/modes');
 const { tokenizeInput } = require('../../leaves/input/tokenize');
 const { kkpToLegacy } = require('../../leaves/input/kkp-decode');
 // v0.6.4 Theme F Phase 2 — mouse gestures route through the shared intent
@@ -594,22 +594,6 @@ function handleMouse(kind, x, y) {
   // the legacy cascade below, unchanged.
   if (mouseRouter.route(kind, mx, my, model)) return;
 
-  // Remaining legacy chrome hit-test — the `✗ cancel` chip (docs/mouse-hit-map.md
-  // Release 2 moves it onto the hit map; glyphs + border controls already
-  // resolve there). Gated like the chrome: only input-owning modes block it.
-  if (kind === 'press' && !suppressesChromeClicks(model.modes)) {
-    const { hitTestActionCancel } = require('../../panel/chrome-hittest');
-    // Live action-status `✗ cancel` click → cancel that running command. It's a
-    // CONTENT-line affordance (the running chip), checked here alongside the border
-    // chrome so a click on it cancels instead of arming a text selection.
-    const cancelJobId = hitTestActionCancel(mx, my);
-    if (cancelJobId) {
-      applyMsg({ type: 'cancel_job', jobId: cancelJobId });
-      render();
-      return;
-    }
-  }
-
   // v0.6.3 Phase C1 — modal mouse routing through the
   // `_modeMouseHandlers` registry (mirrors keyboard's `_modeHandlers`
   // in dispatch.js). Walks CHAIN_MODES in precedence order; the first
@@ -756,24 +740,6 @@ function handleMouse(kind, x, y) {
   // "Other panels" arm re-sets it when the press lands on a selectable pane.
   _armedSelect = null;
   _armedZoom = null;
-
-  // Tree fold marker (`▾`/`▸`) — a CONTENT-ROW affordance, so it resolves HERE at
-  // body precedence, NOT in the border-chrome cluster above: that cluster runs
-  // under the non-modal chain overlays (pane-menu / jobs / free-config, all
-  // suppressChrome:false) whose dropdowns sit OVER the data rows, and it runs
-  // BEFORE the mode-mouse handlers — so a marker there would hijack a click meant
-  // for an open dropdown (folding a hidden node + eating the selection). By this
-  // point every chain mode has already returned (the mode handlers + the
-  // isChainActive guard above), so only a plain normal-mode press reaches here. A
-  // hit folds THAT node by id (independent of the cursor); the focus+select loop
-  // below still selects on a row-body click.
-  const { hitTestTreeMarker } = require('../../panel/chrome-hittest');
-  const treeHit = hitTestTreeMarker(mx, my);
-  if (treeHit) {
-    dispatchMsg(wrap(treeHit.owner, { type: 'tree_toggle', id: treeHit.id }));
-    render();
-    return;
-  }
 
   let mutated = false;
 

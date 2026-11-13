@@ -18,12 +18,13 @@
  * off-by-one — clicking a tab would switch the wrong sibling. So this smoke
  * pins, from both directions:
  *   - For every position-tab, the column where its label is painted on screen
- *     matches the `x`/`w` bounds input.js hit-tests (paint-vs-hittest).
+ *     matches the `x`/`w` bounds the click resolves on (paint-vs-hittest).
  *   - Clicking inside (x, x+w) switches the slot's active tab to it.
  *   - Clicking ONE column outside that range does NOT switch to it.
  *   - When the strip OVERFLOWS a narrow pane, renderPanel truncates its tail;
- *     paint publishes the drawn extent (chrome-regions.titleClip) and the
- *     hit-test clips its bounds to it, so a cut-off tab is unclickable.
+ *     renderPanel publishes on the hit map only the tabs drawn intact (left of
+ *     the drawn extent, which paint also records as chrome-regions.titleClip —
+ *     read here to find a clipped tab), so a cut-off tab is unclickable.
  *   - `x` on a focused content text-view tab closes it (remove_tab); Info +
  *     Transcript are permanent (no close).
  *
@@ -261,10 +262,11 @@ describe('[4] `x` does not close the permanent Info / Transcript tabs', () => {
 //     clipped tab must NOT be reported clickable (paint↔hit-test agreement). --
 //
 // buildEntryStrip lays tabBounds at FULL width, but renderPanel truncates the
-// title's tail when it overflows the pane. paint publishes the drawn extent
-// (chrome-regions.titleClip) and input.js clips tabBounds to it — so a tab whose
-// glyph was cut can't switch a sibling the user can't even see. Without the clip
-// the old hit-test matched the full (undrawn) bound: the residual drift this pins.
+// title's tail when it overflows the pane. renderPanel publishes a tab region on
+// the hit map only when every cell of it lies left of the drawn extent (which
+// paint also records as chrome-regions.titleClip — read below to pick a clipped
+// tab) — so a tab whose glyph was cut can't switch a sibling the user can't even
+// see. The pre-clip hit-test matched the full (undrawn) bound: the drift this pins.
 
 describe('[5] a truncated slot strip does not report its clipped tail tabs clickable', () => {
   it('a click on a clipped tab\'s undrawn bound switches nothing', () => {
