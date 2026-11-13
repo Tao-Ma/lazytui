@@ -27,6 +27,7 @@
 'use strict';
 
 const { esc } = require('../leaves/text/ansi');
+const { formatHints } = require('../leaves/render/hints');
 const { renderOverlay, viewportDims, truncate, fitCell } = require('../leaves/render/draw');
 const { getModel } = require('../model/store');
 
@@ -96,6 +97,10 @@ function renderDiagLog(now, newRows, cols) {
   const scroll = Math.max(0, Math.min(d.scroll | 0, Math.max(0, list.length - vh)));
 
   const lines = [];
+  // Hit map (docs/mouse-hit-map.md): line i shows entry scroll+i; a click moves
+  // the cursor there. count/vh ride the Msg (the same values the key handler
+  // computes) — baked at paint, re-clamped by the reducer.
+  const lineTargets = [];
   if (list.length === 0) {
     lines.push('[dim]  (no diagnostics)[/]');
   } else {
@@ -103,6 +108,7 @@ function renderDiagLog(now, newRows, cols) {
       const idx = scroll + i;
       const ev = list[idx];
       if (!ev) { lines.push(''); continue; }
+      lineTargets[i] = { press: { msg: { type: 'diag_log_nav', to: idx, count: list.length, vh } } };
       const glyph = LEVEL_GLYPH[ev.level] || '!';
       const t = require('../leaves/infra/themes').theme();
       const color = t[LEVEL_SLOT[ev.level] || 'warning'];
@@ -115,13 +121,23 @@ function renderDiagLog(now, newRows, cols) {
     }
   }
   lines.push('');
-  lines.push('[dim]\\[↑/↓] nav   \\[g/G] top/bottom   \\[y] copy   \\[c] clear   \\[s] save   \\[Esc] close[/]');
+  const hint = formatHints([
+    { cap: '↑/↓', label: 'nav',        key: null },
+    { cap: 'g/G', label: 'top/bottom', key: null },
+    { cap: 'y',   label: 'copy',       key: 'y' },
+    { cap: 'c',   label: 'clear',      key: 'c' },
+    { cap: 's',   label: 'save',       key: 's' },
+    { cap: 'Esc', label: 'close',      key: 'escape' },
+  ]);
+  const lineChips = { [lines.length]: hint.chips };
+  lines.push(hint.markup);
 
   renderOverlay({
     lines, title: 'Diagnostics',
     maxWidth: wantW,
     count: list.length ? [cursor + 1, list.length] : undefined,
     targetRows: newRows || null, targetCols: cols || 0,
+    hit: { lineTargets, lineChips, box: { 'wheel-up': { key: 'up' }, 'wheel-down': { key: 'down' } } },
   });
 }
 
@@ -137,6 +153,8 @@ function registerSelf(compositor) {
     render: (m, newRows, cols) => renderDiagLog(m && m.now, newRows, cols),
     modal: false,
     zIndex: 30,
+    // Read-only window → an outside click closes it (Esc).
+    mouse: { outside: { key: 'escape' } },
   });
 }
 
