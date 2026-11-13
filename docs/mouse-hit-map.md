@@ -1,6 +1,8 @@
 # Mouse hit-map — first-class mouse input
 
-> **Status**: DESIGN — written 2026-11-13, not started. Trigger: field
+> **Status**: Release 1 code-complete on `main` (`dc58dffd..51804536`,
+> 2026-11-13), unreleased — awaiting the pre-release review and the user's
+> release call. Releases 2–3 not started. Written 2026-11-13. Trigger: field
 > report *"when confirm popup shows, I cannot click mouse"*. Root-caused to
 > a routing gap, then widened (user call: "fix mouse from the ground up,
 > make it a first-class citizen") into this three-release plan.
@@ -175,7 +177,7 @@ chip falls to its row, then to the box's wheel handler.
 | Mode backdrop, below chrome | 35 | chain modes that let chrome through today (`suppressChrome: false`): filter, search, prefix/which-key, jobs, pane-menu, agent (R2) |
 | Pane chrome | 40 | `[_]`/`[+]`/`[X]`/`[≡]`, border controls, bottom legend, tab strip (R2) |
 | Overlay *k* | 1000 + 10·zIndex_k + {0 backdrop, 1 box, 2 rows, 3 chips} | compositor-registered overlays (R1) |
-| Replay owner | 9000 | replay scrubber full-screen capture (R3) |
+| Replay owner | 20000 | replay scrubber full-screen capture (R3) — above every overlay band (the highest, hover-tooltip's, is 1000 + 10·999) |
 
 The tree-marker-vs-dropdown fix (`input.js:839`) becomes a z fact (30 <
 1000+) instead of a source-order fact. The `suppressChrome` column becomes
@@ -271,6 +273,23 @@ not model — the visible effects already ride Msgs.
 `hover` handler; the router's coalescing (`_lastHover`, `input.js:566`)
 moves into the hover resolution unchanged. The hover tooltip overlay never
 publishes regions (display-only — it must not steal clicks).
+
+### Press→double continuation (R1, found during implementation)
+
+The parser emits a same-cell second click as `double`. When the first click
+was a hit-map press that picked a popup item, the popup has usually closed
+(or been replaced by a submenu) before the `double` arrives — and the
+`double` then fell through to whatever is now under the pointer: the
+pane's double-click intent, `activate` → `run_selected`. **This was a live
+bug for the menu before R1** (reproduced: double-clicking a menu item ran
+the item AND the groups row beneath it).
+
+Rule, in the router: a `double` at the same cell as the last hit-map press
+belongs to that press's owner. If the owner no longer holds the cell (or
+the frame is stale), the `double` is swallowed. Runs before the stale-frame
+check — in a batched chunk the popup can close without a repaint. Rows that
+activate on press (menu, copy, palette, pane-menu) leave `double` unhandled
+so a second click can't activate what slides under the pointer either.
 
 ### Stale-frame rule
 
@@ -388,7 +407,7 @@ re-pointed at the hit map and green; narrow-terminal property sweep green.
    intent, `hover` on stats/composite.
 2. Pointer capture + the four controllers (§Pointer capture); panel-list
    rows become `pool-drag` capture sources.
-3. Replay scrubber → z 9000 full-screen region with seek-strip handler.
+3. Replay scrubber → z 20000 full-screen region with seek-strip handler.
 4. Delete: the remaining cascade, `_modeMouseHandlers`,
    `_dispatchActiveModeMouse`, `_MOUSE_MODE_PRECEDENCE`, the
    `isChainActive` mouse gate, `_armedSelect`, `_armedZoom`, every overlay
@@ -452,13 +471,14 @@ Confirmed ones fold into the release that touches the code.
    for it. The comment at `input.js:252` says such clicks are swallowed;
    that only holds when the highlighted item is essential. → R3 (panel-list
    migration).
-2. **Hover tooltip lingers under some popups** — *likely bug.* The tooltip
+2. **Hover tooltip lingers under some popups** — **FIXED in R1** (`51804536`;
+   reproduced first, regression test fails without the fix). The tooltip
    hides on `isModal` (the modes.js `modal` column), which is false for
    confirm, register-popup, cmdline, pane-menu, jobs and diag-log. It
    clears only on the next motion event (when `_handleHover` sees a chain
    mode). Opening confirm by keyboard with the pointer parked over a graph
-   would leave the tooltip painted over or beside the popup. → R1 if
-   reproduced (the backdrop is the natural place to clear hover).
+   left the tooltip painting at z 999 OVER the popup. Fix: gate on
+   `isChainActive` (the predicate `_handleHover` already used).
 3. **Two different "modal" flags disagree** — *smell.* The compositor's
    `modal` (one-at-a-time invariant) and modes.js `modal` (owns the footer
    row) disagree for confirm, pane-menu, register-popup and cmdline. Both
@@ -469,6 +489,31 @@ Confirmed ones fold into the release that touches the code.
    *possible bug* on a pane near the right edge of a narrow terminal
    (`pane-menu.js:223`, `w = min(50, max(20, paneB.w))` from `paneB.x`).
    `publishBox` clips regions regardless; the paint side needs a repro.
+
+5. **Double-click on a menu item also activated the pane beneath** — **FIXED
+   in R1** (`e0241991`; reproduced first). See §Press→double continuation.
+6. **Popup backdrop missed the footer row** — *R1-internal bug, caught by the
+   suite, fixed* (`716a11f7`). The first cut sized the backdrop by `newRows`,
+   which stops above the footer; a click on the bottom line slipped past the
+   popup's outside policy. The backdrop is now viewport-sized.
+
+## Release 1 — as built
+
+All 12 overlays in §Per-overlay mapping shipped as planned, one commit each,
+confirm first. Deviations / notes:
+
+- `renderOverlay` publishes **only when passed `hit`** — an always-published
+  opaque box would have swallowed clicks that unmigrated overlays' legacy
+  handlers owned during the migration.
+- Test harness `js/test/_helpers/hit-click.js`: raw SGR through
+  `input._dispatchToken` after a real paint; resets the double-click triple
+  via `input._classifyPress` (an off-screen *press* is itself an outside
+  click for a legacy outside-close overlay).
+- Width sweep `test-hit-map-agreement.js` (379 checks, widths 20…200) pins
+  the paint↔hit agreement property for five overlays.
+- Per-overlay tests: `test-{confirm,fabric-field,copy,diag-log,jobs,
+  register-popup,which-key,action-palette,menu,pane-menu,cmdline,
+  fabric-form}-mouse.js`.
 
 ## Rollback
 

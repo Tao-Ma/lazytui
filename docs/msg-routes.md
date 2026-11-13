@@ -398,7 +398,7 @@ is pinned by `test-shell-action-prompt.js` (1-port) and `test-fabric-form.js`
 | Msg | Writes | Emits | Purity |
 |---|---|---|---|
 | `copy_enter` | `modes.copyMode→true`, `modal.copy={options,idx:0}` | — | ✓ |
-| `copy_nav` | `modal.copy.idx` (wrap) | — | ✓ |
+| `copy_nav` | `modal.copy.idx` (wrap on `dir`; clamp on numeric `to` — a row click, hit map) | — | ✓ |
 | `copy_select` | clears copy + flag (guarded) | `copy_commit{idx, label}` (label captured at reduce time — `next` clears options) | ✓ |
 | `copy_cancel` | clears copy + flag (guarded) | `copy_commit{idx:-1}` (clear, no copy) | ✓ |
 
@@ -411,7 +411,7 @@ content closures are module-held in `overlay/copy.js`, invoked by index in the
 | Msg | Writes | Emits | Purity |
 |---|---|---|---|
 | `register_popup_enter` | `modes.registerPopupMode→true`, `modal.registerPopup={idx:0,scroll:0}` | — | ✓ |
-| `register_popup_nav` | `modal.registerPopup` (clamp vs `msg.vh`) | — | shell¹ |
+| `register_popup_nav` | `modal.registerPopup` (clamp vs `msg.vh`; `to` = `'top'`/`'bottom'`/numeric row) | — | shell¹ |
 | `register_popup_drop` | `model.register` (via `mreg.drop` leaf) + clamp; closes if emptied | `force_full_repaint` | ✓ |
 | `register_popup_commit` | `model.register` (promote via `mreg.promote`), closes | `emit_osc52{text}` if non-empty | ✓ |
 | `register_push` | `model.register` (via `mreg.push` leaf) | `emit_osc52{text}` if a value was pushed | ✓ |
@@ -428,7 +428,7 @@ app yank into update.
 |---|---|---|---|
 | `cmdline_enter` | `modes.cmdMode→true`, reset `modal.cmdline` | `cmdline_rebuild` | ✓ |
 | `cmdline_set_matches` | `modal.cmdline.{matches,sel,scroll}` (skip hint rows; clamp) | `cmdline_preview{sel}` | ✓ |
-| `cmdline_nav` | `modal.cmdline.{sel,scroll}` | `cmdline_preview{sel}` | ✓ |
+| `cmdline_nav` | `modal.cmdline.{sel,scroll}` (relative `dir`, or numeric `to` — a dropdown click) | `cmdline_preview{sel}` | ✓ |
 | `cmdline_key` | `modal.cmdline.text` (type/backspace/Tab-accept/paste) | `cmdline_rebuild` | ✓ |
 | `cmdline_submit` | refine-in-place OR closes (guarded) | refine→`cmdline_rebuild`; else `cmdline_run{sel,args,display}` + `cmdline_clear` | ✓ |
 | `cmdline_cancel` | closes (guarded) | `cmdline_revert_preview` + `cmdline_clear` | ✓ |
@@ -445,7 +445,7 @@ closures stay module-held in `dispatch/control/cmdline.js`.
 |---|---|---|---|
 | `jobs_open` | `modes.jobsMode→true`, reset cursor, `now=msg.now` | — (the `clock` interval Sub self-declares while `jobsMode`) | shell¹ |
 | `jobs_close` | `modes.jobsMode→false` (guarded) | — | ✓ |
-| `jobs_nav` | `modal.jobs.{cursor,scroll}` (clamp vs `msg.count`/`msg.vh`) | — | shell² |
+| `jobs_nav` | `modal.jobs.{cursor,scroll}` (clamp vs `msg.count`/`msg.vh`; `to` symbolic or numeric row) | — | shell² |
 | `jobs_activate` | closes overlay (guarded); resolves target group from `msg.job` (model-only) | `set_current_group` (if cross-group) + `jobs_route{job,now}` | shell³ |
 | `jobs_routed` | — | per job kind: routed/pty/agent → `set_active_tab`+`focus_set` (jump to the owning position-tab) or `focus_set` (content-slot fallback) · background/tmux → `open_doc_tab{job-info}` + `focus_set` | shell⁴ |
 
@@ -470,7 +470,7 @@ closures stay module-held in `dispatch/control/cmdline.js`.
 |---|---|---|---|
 | `diag_log_open` | `modes.diagLogMode→true`, reset cursor, `now=msg.now` | — (the `clock` interval Sub self-declares while `diagLogMode`) | shell¹ |
 | `diag_log_close` | `modes.diagLogMode→false` (guarded) | — | ✓ |
-| `diag_log_nav` | `modal.diagLog.{cursor,scroll}` (clamp vs `msg.count`/`msg.vh`) | — | shell² |
+| `diag_log_nav` | `modal.diagLog.{cursor,scroll}` (clamp vs `msg.count`/`msg.vh`; `to` symbolic or numeric row) | — | shell² |
 | `diag_log_clear` | resets cursor | `diag_clear` (buffer mutation is a side effect) | ✓ |
 | `diag_log_save` | — | `diag_save` (file I/O) | ✓ |
 
@@ -560,7 +560,7 @@ dataflow mechanics.
 |---|---|---|---|
 | `fabric_form_enter{fields,pendingAction?}` | `modes.fabricFormMode→true`, `modal.fabricForm={fields,focusIdx:0,pendingAction,picking:null,requestSeq:0}`; sorts fields required-first and recomputes `isDefault`/`isModified` per row from `(text, default)`. Each normalized row also carries `isLast`+`remember` (Brief 3 of v0.6.43) and `hasChoices` (Brief 1 of v0.6.43 — single-source three-channel predicate via `js/leaves/ports/has-choices.js`). `pendingAction` carries `{actionKey, action, group}` (group stamped by `openPortsForm` so the submit arm writes formHistory under the same key the open side read). | one `{type:'msg', msg:{type:'fabric_form_choices_request', port}}` per computed field whose depended-on ports all carry non-empty text at open (slice 2) | shell¹ |
 | `fabric_form_key{seq,key}` | `modal.fabricForm.fields[focusIdx].text` (type/backspace/Ctrl+U/paste) + the row's chip flags; also clears `isLast` on any text change (Brief 3 of v0.6.43 — `[last]` chip flips to `[modified]` on first edit); sibling fields unchanged (guarded) | — | ✓ |
-| `fabric_form_focus_next` / `fabric_form_focus_prev` | `modal.fabricForm.focusIdx` wraps modulo `fields.length` (guarded; identity on single-field edge). Also resets any pending computed field whose deps got emptied → `state:'idle'`, requestId:0 | per computed field: `{type:'cancel_effect',key}` for every pending fetch whose deps got emptied + `{type:'msg', msg:{type:'fabric_form_choices_request', port}}` for every dependent whose deps-hash changed since its last fetch | ✓ |
+| `fabric_form_focus_next` / `fabric_form_focus_prev` / `fabric_form_focus{idx}` | `modal.fabricForm.focusIdx` wraps modulo `fields.length` (`fabric_form_focus` sets an absolute idx — a row click on the hit map; out-of-range = no-op) (guarded; identity on single-field edge). Also resets any pending computed field whose deps got emptied → `state:'idle'`, requestId:0 | per computed field: `{type:'cancel_effect',key}` for every pending fetch whose deps got emptied + `{type:'msg', msg:{type:'fabric_form_choices_request', port}}` for every dependent whose deps-hash changed since its last fetch | ✓ |
 | `fabric_form_reset_default` | focused field: `text←default` (or `''` if no default); chips re-derived (guarded) | — | ✓ |
 | `fabric_form_clear` | focused field: `text←''`; chips re-derived (guarded) | — | ✓ |
 | `fabric_form_submit` | writes a ONE-SHOT inject per MODIFIED field via chained `applyInject(…, {oneShot:true})` + closes (guarded). Also writes `model.formHistory.entries[${pending.group}.${actionKey}]` with each remember-eligible field's text (skip `remember:false`, skip empty-no-default), LRU-promoted + capped at 64 entries (Brief 3 of v0.6.43). Also emits `cancel_effect` per in-flight choices fetch so a slow fn can't repopulate a reopened form. | `pendingAction` set → `[...cancelCmds, {type:'do_run', actionKey, action}]`; else `[]` | ✓² |
@@ -943,7 +943,7 @@ via a `mode_set`/`mode_clear` Cmd.
 |---|---|---|---|
 | `pane_menu_open{paneId,cursor,scroll}` | `paneMenu` (target+cursor) | `mode_set{paneMenuMode}` ★m | ✓ |
 | `pane_menu_close` | clears `paneMenu` | `mode_clear{paneMenuMode}` ★m + `force_full_repaint` ★f | ✓ |
-| `pane_menu_nav{dir|to,n,vh,sepIdx}` | `paneMenu.{cursor,scroll}` (skips separator) | — | shell⁴ |
+| `pane_menu_nav{dir|to,n,vh,sepIdx}` | `paneMenu.{cursor,scroll}` (skips separator; `to` symbolic or numeric row) | — | shell⁴ |
 | `pool_swap_by_id{targetPaneId,pickedId}` | `arrange` (SWAP/REPLACE, hotkey-reassign) + focus ★w | `pane_menu_close` + `show_selected_info` (on focus move) | ✓⁵ |
 
 **(c) Arrange + pool + columns**
