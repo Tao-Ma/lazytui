@@ -41,12 +41,15 @@ function hoverGraph() {
 
 const OPENERS = {
   confirm:          () => sm.applyMsg({ type: 'confirm_enter', message: 'Really?', cmd: null }),
+  // terminalMode is modal but NOT a chain mode: every mouse byte goes to the
+  // PTY there, so graph_hover can never clear — the tooltip must not freeze.
+  terminal:         () => { getModel().modes.terminalMode = true; },
   'register-popup': () => { getModel().register = { history: ['x'], cap: 10 }; sm.applyMsg({ type: 'register_popup_enter' }); },
   'diag-log':       () => sm.applyMsg({ type: 'diag_log_open', now: 0 }),
   jobs:             () => sm.applyMsg({ type: 'jobs_open', now: 0 }),
 };
 
-describe('[hover-tooltip] hidden under every popup opened by keyboard', () => {
+describe('[hover-tooltip] hidden under every popup opened by keyboard, and in terminal mode', () => {
   it('precondition: the parked hover shows the tooltip', () => {
     hoverGraph();
     eq(compositor.activeOverlayIds(getModel()), ['hover-tooltip']);
@@ -57,8 +60,9 @@ describe('[hover-tooltip] hidden under every popup opened by keyboard', () => {
       sm.capture(open);
       sm.capture(sm.render);
       const ids = compositor.activeOverlayIds(getModel());
-      assert(ids.includes(name), `${name} active`);
+      if (name !== 'terminal') assert(ids.includes(name), `${name} active`);
       assert(!ids.includes('hover-tooltip'), `tooltip hidden (got ${JSON.stringify(ids)})`);
+      getModel().modes.terminalMode = false;
     });
   }
 });

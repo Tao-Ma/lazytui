@@ -53,7 +53,7 @@ function registerAll() {
   // instead of a model.modes flag. Each wire-up lives next to the
   // descriptor registration site that depends on it.
   require('../overlay/replay-scrubber').registerSelf(compositor);  // 140 — isActive gates on injected replay data (setDataSource at tui.js boot)
-  require('../overlay/hover-tooltip').registerSelf(compositor);    // 999 — isActive gates on hoverRegion.get() + chain-mode suppression
+  require('../overlay/hover-tooltip').registerSelf(compositor);    // 999 — isActive gates on hoverRegion.get() + chain/modal-mode suppression
 }
 
 module.exports = { registerAll };

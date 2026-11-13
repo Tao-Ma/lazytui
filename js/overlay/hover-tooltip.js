@@ -17,8 +17,8 @@
  * the graph drew, what the footer labels, and what this tooltip
  * shows all agree. See `js/panel/hover-region.js`.
  *
- * zIndex=999 — floats over EVERY other overlay. The chain-mode gate keeps
- * it from drawing while any popup / input mode is up (otherwise it would
+ * zIndex=999 — floats over EVERY other overlay. The mode gate keeps it from
+ * drawing while any popup / input / terminal mode is up (otherwise it would
  * paint over confirm/menu/etc. — the pre-migration invariant was the same).
  */
 'use strict';
@@ -30,13 +30,15 @@ const { esc } = require('../leaves/text/ansi');
 
 function _hv(model) {
   const md = (model && model.modes) || {};
-  // ANY chain mode hides it — the same predicate input._handleHover gates new
-  // hovers on. This used `isModal` (the modes.js footer-row column), which is
-  // false for confirm / register-popup / cmdline / pane-menu / jobs / diag-log:
-  // with the pointer parked over a graph, opening one of those by keyboard left
-  // the tooltip painting at z 999 OVER the popup until the mouse next moved
-  // (docs/mouse-hit-map.md §Adjacent findings 2 — reproduced, fixed here).
-  if (modes.isChainActive(md)) return null;
+  // Hidden under ANY chain mode (the predicate input._handleHover gates new
+  // hovers on) OR any footer-modal mode. Chain alone missed terminalMode
+  // (modal, non-chain): every mouse byte goes to the PTY there, so graph_hover
+  // can never clear and the tooltip froze over the pane (review C6). Modal
+  // alone missed confirm / register-popup / cmdline / pane-menu / jobs /
+  // diag-log: opened by keyboard with the pointer parked on a graph, the
+  // tooltip painted at z 999 OVER the popup (docs/mouse-hit-map.md
+  // §Adjacent findings 2). Both reproduced; both pinned.
+  if (modes.isChainActive(md) || modes.isModal(md)) return null;
   const hv = hoverRegion.get();
   if (!hv || !hv.text) return null;
   return hv;
@@ -44,8 +46,8 @@ function _hv(model) {
 
 /**
  * Composite the hover tooltip into `newRows` at `cols` width. Called
- * by the compositor's descriptor render fn. No-op while any chain mode
- * is active or when no hover is published.
+ * by the compositor's descriptor render fn. No-op while any chain or
+ * modal mode is active, or when no hover is published.
  */
 function render(model, newRows, cols) {
   const hv = _hv(model);
