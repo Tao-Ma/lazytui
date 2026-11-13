@@ -75,6 +75,14 @@ describe('[3] chips', () => {
   }
 });
 
+describe('[3b] double-click [c]', () => {
+  it('clears once and the window STAYS open (the shrunk box must not turn the 2nd click into Esc)', () => {
+    openDiag();
+    hc.dblclickRegion(O, 'chip:c');
+    eq(getModel().modes.diagLogMode, true, 'still open — like `c c` on the keyboard');
+  });
+});
+
 describe('[4] wheel / outside', () => {
   it('wheel steps the cursor', () => {
     openDiag();

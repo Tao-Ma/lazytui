@@ -114,7 +114,11 @@ function _backdrop(outside, cols, rows) {
     id: 'backdrop',
     rect: { x: 0, y: 0, w: cols, h: rows },
     opaque: true,
-    on: { press: outside, double: outside, right: outside, middle: outside,
+    // `double` is never a gesture of its own on a backdrop: if the first click
+    // was out here it already ran `outside`; otherwise the box moved/shrank
+    // between the clicks (or a popup opened in between) and the second click
+    // must not cancel what the user never aimed at (review C4).
+    on: { press: outside, double: 'swallow', right: outside, middle: outside,
           'wheel-up': 'swallow', 'wheel-down': 'swallow' },
   };
 }

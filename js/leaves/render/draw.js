@@ -476,7 +476,9 @@ function publishBox({ x, y, w, h, scrollOffset = 0, windowed = false, lines = []
       for (const c of chips) {
         if (!chipSurvives(c, lineW, innerW)) continue;
         const r = clip(x + 1 + c.x0, sy, c.x1 - c.x0 + 1, 1);
-        if (r) _hitSink({ id: `chip:${c.key}`, rect: r, on: { press: { key: c.key, seq: c.seq } } }, HIT_Z.chip);
+        // repeat: a fast second click on the same chip is another press of
+        // its key (typing it twice) — see mouse-router's continuation rule.
+        if (r) _hitSink({ id: `chip:${c.key}`, rect: r, repeat: true, on: { press: { key: c.key, seq: c.seq } } }, HIT_Z.chip);
       }
     }
   }

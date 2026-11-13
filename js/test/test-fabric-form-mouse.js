@@ -95,6 +95,26 @@ describe('[3] chips', () => {
   });
 });
 
+describe('[3b] double-clicks on chips', () => {
+  it('two fast clicks on [tab] = two Tabs (the second click is not swallowed)', () => {
+    const three = () => [field('a'), field('b'), field('c')];
+    sm.bootFresh();
+    sm.resize(120, 30);
+    sm.capture(() => sm.applyMsg({ type: 'fabric_form_enter', fields: three(), pendingAction: PENDING }));
+    hc.paint();
+    hc.dblclickRegion(O, 'chip:\t');
+    eq(ff().focusIdx, 2);
+  });
+  it('double-click [space] choices opens the list but does NOT pick ([enter] pick slid under)', () => {
+    openForm();
+    hc.clickRegion(O, rowWith('svc').id);
+    hc.paint();
+    hc.dblclickRegion(O, 'chip: ');
+    assert(ff().picking && ff().picking.port === 'svc', 'list open');
+    eq(ff().fields.find(x => x.port === 'svc').text, '', 'nothing picked');
+  });
+});
+
 describe('[4] choices list', () => {
   function openPicking() {
     openForm();

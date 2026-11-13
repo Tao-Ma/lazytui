@@ -158,6 +158,25 @@ describe('[3] press→double continuation', () => {
     const calls = withSpies(() => router.route('double', 4, 3, MODEL));
     eq(calls, [['applyMsg', { type: 'jobs_nav', to: 1 }], ['key', 'return', undefined]]);
   });
+  it('a REPEAT chip still under the pointer: the second click presses its key again', () => {
+    router._reset();
+    hm.clear(STAMP(MODEL));
+    const chip = { id: 'chip:\t', rect: R(0, 9, 5, 1), z: 1213, owner: 'fabric-form', repeat: true, on: { press: { key: '\t' } } };
+    hm.publish(chip);
+    withSpies(() => router.route('press', 1, 9, MODEL));
+    const calls = withSpies(() => router.route('double', 1, 9, MODEL));
+    eq(calls, [['key', '\t', '\t']], 'Tab again — two fast clicks = two Tabs');
+  });
+  it('a DIFFERENT chip slid under the pointer: the second click is swallowed', () => {
+    router._reset();
+    hm.clear(STAMP(MODEL));
+    hm.publish({ id: 'chip: ', rect: R(0, 9, 5, 1), z: 1213, owner: 'fabric-form', repeat: true, on: { press: { key: ' ' } } });
+    withSpies(() => router.route('press', 1, 9, MODEL));
+    hm.clear(STAMP(MODEL));   // the hint changed: [enter] pick now sits there
+    hm.publish({ id: 'chip:return', rect: R(0, 9, 5, 1), z: 1213, owner: 'fabric-form', repeat: true, on: { press: { key: 'return' } } });
+    const calls = withSpies(() => router.route('double', 1, 9, MODEL));
+    eq(calls, [], 'no accidental pick');
+  });
   it('a double with no hit-map press before it takes the normal path', () => {
     router._reset();
     hm.clear(STAMP(MODEL));

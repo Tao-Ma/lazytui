@@ -109,6 +109,34 @@ describe('[2] rows', () => {
   });
 });
 
+describe('[2b] double-click a row that opens a submenu in place', () => {
+  it('the submenu stays open (the 2nd click is swallowed, not turned into Esc)', () => {
+    sm.bootFresh();
+    sm.resize(120, 30);
+    require('../dispatch/runtime/host-wiring').wireFabricHost();
+    const ports = require('../fabric/ports');
+    const realList = ports.listPorts;
+    ports.listPorts = () => [{ dir: 'in', component: 'svc', port: 'note', type: 'text' }];
+    try {
+      // The submenu row sits LOW (row 5) so the shorter port picker that replaces
+      // the menu no longer covers that cell — the second click lands on the
+      // backdrop, which must swallow it rather than press Esc.
+      const items = [['Copy line', 'copy_text', 'a'], ['Copy word', 'copy_text', 'b'], ['Copy path', 'copy_text', 'c'],
+                     ['Down', 'nav_down'], ['Up', 'nav_up'], ['Send selection to port…', 'send_to_port', 'hello']];
+      sm.capture(() => sm.applyMsg({ type: 'menu_open', items, title: 'Actions', anchor: { x: 20, y: 5 } }));
+      hc.paint();
+      const cell = hc.at(hc.region(O, 'row:5'));
+      hc.dblclickRegion(O, 'row:5');
+      eq(getModel().modes.menuOpen, true, 'the port picker is still open');
+      hc.paint();
+      const at = require('../panel/hit-map').resolve(cell.mx, cell.my, 'press');
+      eq(at && at.region.id, 'backdrop', 'precondition: after the swap the cell is on the backdrop');
+      const labels = getModel().modal.menu.items.map(r => r && r[0]);
+      assert(labels.some(l => l && l.includes('svc.note')), `picker shown: ${JSON.stringify(labels)}`);
+    } finally { ports.listPorts = realList; }
+  });
+});
+
 describe('[3] wheel / outside', () => {
   it('wheel moves the highlight (skipping the separator)', () => {
     openMenu();

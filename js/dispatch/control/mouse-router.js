@@ -34,7 +34,10 @@
  *     which usually closes the popup), the double belongs to that press's owner:
  *     if the owner no longer holds the cell, the double is swallowed — without
  *     this it falls through to the pane beneath and fires the pane's
- *     double-click intent (`activate` → run the selected item). This guard runs
+ *     double-click intent (`activate` → run the selected item). A REPEAT region
+ *     (a hint chip) still under the pointer takes the second click as another
+ *     press — the key twice, as typed; a different chip that slid under the
+ *     pointer does not (e.g. [space] choices → [enter] pick). This guard runs
  *     BEFORE the stale check: in a batched chunk the popup may have closed
  *     without a repaint, and the double must still not leak.
  */
@@ -54,7 +57,7 @@ const _loop = () => (_loopRef ||= require('../runtime/loop'));
 const _api = () => (_apiRef ||= require('../../panel/api'));
 const _intent = () => (_intentRef ||= require('./intent'));
 
-// The last press the hit map handled: { mx, my, owner } | null.
+// The last press the hit map handled: { mx, my, owner, id, repeat } | null.
 let _lastPress = null;
 
 function realize(h) {
@@ -94,10 +97,18 @@ function route(kind, mx, my, model) {
   const fresh = hitMap.stampsEqual(hitMap.frameStamp(), hitMap.stampOf(model, _api().getInstanceSlice('layout')));
 
   if (kind === 'double' && _lastPress && _lastPress.mx === mx && _lastPress.my === my) {
-    const owner = _lastPress.owner;
+    const last = _lastPress;
     _lastPress = null;
-    const hit = fresh ? hitMap.resolve(mx, my, kind) : null;
-    if (!hit || hit.region.owner !== owner) return true;   // owner gone → swallow
+    if (!fresh) return true;                                // stale → swallow
+    if (last.repeat) {
+      const again = hitMap.resolve(mx, my, 'press');
+      if (again && again.region.repeat && again.region.owner === last.owner && again.region.id === last.id) {
+        _realizeAndPaint(again, 'press', mx, my);           // same chip → the key again
+        return true;
+      }
+    }
+    const hit = hitMap.resolve(mx, my, kind);
+    if (!hit || hit.region.owner !== last.owner) return true;   // owner gone → swallow
     _realizeAndPaint(hit, kind, mx, my);
     return true;
   }
@@ -106,7 +117,7 @@ function route(kind, mx, my, model) {
   if (!fresh) return hitMap.claims(mx, my);   // stale: swallow what the old frame drew; else legacy
   const hit = hitMap.resolve(mx, my, kind);
   if (!hit) return false;
-  if (kind === 'press') _lastPress = { mx, my, owner: hit.region.owner };
+  if (kind === 'press') _lastPress = { mx, my, owner: hit.region.owner, id: hit.region.id, repeat: !!hit.region.repeat };
   _realizeAndPaint(hit, kind, mx, my);
   return true;
 }
