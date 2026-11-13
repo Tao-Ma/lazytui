@@ -246,12 +246,13 @@ describe('[table-tree] click a ▾/▸ marker folds that node (paint↔hit-test)
     boot();
     const id = paneId();
     const b = boundsOf(id);
-    const { hitTestBorderControls } = require('../panel/chrome-hittest');
-    // Presence mirrors paint (borderControlsFor + bc.fits gate both): scan the top
-    // border row for the cell whose control Msg is our tree toggle.
+    const hc = require('./_helpers/hit-click');
+    // Presence = what paint published on the hit map (renderPanel reports where
+    // the strip drew; paint publishes each spec region): scan the top border row
+    // for the cell whose control Msg is our tree toggle.
     let hitX = -1;
     for (let x = b.x; x < b.x + b.w; x++) {
-      const h = hitTestBorderControls(x, b.y);
+      const h = hc.borderControlAt(x, b.y);
       if (h && h.owner === id && h.msg.type === 'tree_mode_toggle') { hitX = x; break; }
     }
     assert(hitX >= 0, 'the ‹ tree › chip is hit-testable on the top border');

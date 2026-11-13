@@ -594,28 +594,17 @@ function handleMouse(kind, x, y) {
   // the legacy cascade below, unchanged.
   if (mouseRouter.route(kind, mx, my, model)) return;
 
-  // Remaining legacy chrome hit-tests — the `✗ cancel` chip and the border-
-  // control strip (docs/mouse-hit-map.md Release 2 moves them onto the hit
-  // map; the [_]/[+]/[X]/[≡] glyphs already resolve there). Gated like the
-  // chrome glyphs: only input-owning modes block them.
+  // Remaining legacy chrome hit-test — the `✗ cancel` chip (docs/mouse-hit-map.md
+  // Release 2 moves it onto the hit map; glyphs + border controls already
+  // resolve there). Gated like the chrome: only input-owning modes block it.
   if (kind === 'press' && !suppressesChromeClicks(model.modes)) {
-    const { hitTestBorderControls, hitTestActionCancel } = require('../../panel/chrome-hittest');
+    const { hitTestActionCancel } = require('../../panel/chrome-hittest');
     // Live action-status `✗ cancel` click → cancel that running command. It's a
     // CONTENT-line affordance (the running chip), checked here alongside the border
     // chrome so a click on it cancels instead of arming a text selection.
     const cancelJobId = hitTestActionCancel(mx, my);
     if (cancelJobId) {
       applyMsg({ type: 'cancel_job', jobId: cancelJobId });
-      render();
-      return;
-    }
-    // Top-border control strip (refresh `- Ns +`, sort `‹ col ›`, …). The hit
-    // returns the control spec's OWN `{ owner, msg }`, so routing is generic —
-    // the refresh control's cadence is host-global, so its Msg targets the docker
-    // owner (wrap → primary; the owner-only arm handles it).
-    const bcHit = hitTestBorderControls(mx, my);
-    if (bcHit) {
-      dispatchMsg(wrap(bcHit.owner, bcHit.msg));
       render();
       return;
     }

@@ -480,42 +480,57 @@ describe('[12] render draws the refresh control on the top border', () => {
   });
 });
 
-describe('[13] hitTestBorderControls resolves refresh + sort clicks on a placed containers pane', () => {
-  const { hitTestBorderControls } = require('../panel/chrome-hittest');
-  // Two controls share the strip now — refresh (host-global, leftmost) then the
-  // sort selector (per-pane, nearest the glyphs). For a w=40 pane at "2s",
-  // unsorted (sort label `·`): collapse [_] x0 = 36;
+// Hit map (docs/mouse-hit-map.md Release 2): border-control clicks resolve on the
+// regions a REAL paint published (renderPanel reports where each control drew;
+// paint publishes the spec's regions there). Paint geometry comes from arrange +
+// dims (calcLayout), so these fixtures size the terminal instead of hand-setting
+// paneBounds. `hc.borderControlAt` = what a press there would dispatch NOW.
+const hc = require('./_helpers/hit-click');
+const hm = require('../panel/hit-map');
+function paintPanes(columns, dims, modes = {}) {
+  const ls = getInstanceSlice('layout');
+  ls.arrange = { columns, detailHeightPct: 60 };
+  delete ls.paneBounds;
+  ls.freeConfig = null;
+  ls.dims = dims;
+  getModel().modes = modes;
+  api.dispatchMsg(api.wrap('docker', { type: 'set_refresh_ms', ms: 2000 }));
+  hc.screenRows();   // full production paint → repopulates the hit map
+}
+const ctlRegions = (owner) => hm.all().filter(r => r.owner === owner && r.id.startsWith('ctl:'));
+
+describe('[13] border-control clicks resolve refresh + sort on a placed containers pane (hit map)', () => {
+  // Two controls share the strip — refresh (host-global, leftmost) then the sort
+  // selector (per-pane, nearest the glyphs). A lone pane on a 40-col terminal is
+  // w=40; at "2s", unsorted (sort label `·`): collapse [_] x0 = 36;
   //   sort  vw=5 → x0 = 36-1-5 = 30  (‹ 30-31, · 32, › 33-34)
   //   refresh vw=6 → x0 = 30-1-6 = 23 (- 23-24, label 25-26, + 27-28)
-  const setupPane = (modes) => {
-    const ls = getInstanceSlice('layout');
-    ls.arrange = { columns: [{ panels: [{ type: 'containers', paneId: 'c-hit', title: 'C', columnIndex: 0 }] }], detailHeightPct: 60 };
-    ls.paneBounds = { 'c-hit': { x: 0, y: 0, w: 40, h: 8 } };
-    ls.freeConfig = null;
-    getModel().modes = modes;
-    api.dispatchMsg(api.wrap('docker', { type: 'set_refresh_ms', ms: 2000 }));
-  };
+  const C_HIT = [{ panels: [{ type: 'containers', paneId: 'c-hit', title: 'C', columnIndex: 0 }] }];
+  const setupPane = (modes, cols = 40) => paintPanes(C_HIT, { cols, rows: 9 }, modes);
   it('refresh -/+ route to the docker owner (host-global cadence)', () => {
     setupPane({});
-    eq(hitTestBorderControls(23, 0), { owner: 'docker', msg: { type: 'set_refresh_ms', dir: -1 } });   // on `-`
-    eq(hitTestBorderControls(28, 0), { owner: 'docker', msg: { type: 'set_refresh_ms', dir: 1 } });    // on `+`
-    eq(hitTestBorderControls(25, 0), null);   // refresh label — no region
+    eq(hc.borderControlAt(23, 0), { owner: 'docker', msg: { type: 'set_refresh_ms', dir: -1 } });   // on `-`
+    eq(hc.borderControlAt(28, 0), { owner: 'docker', msg: { type: 'set_refresh_ms', dir: 1 } });    // on `+`
+    eq(hc.borderControlAt(25, 0), null);   // refresh label — no region
+    eq(hc.borderControlAt(22, 0), null);   // the dash just left of `-`
   });
   it('sort ‹ / › cycle the column, label reverses — routed to the CLICKED pane', () => {
     setupPane({});
-    eq(hitTestBorderControls(34, 0), { owner: 'c-hit', msg: { type: 'set_sort', panel: 'containers', key: 'name' } });  // `›` next: null→name
-    eq(hitTestBorderControls(30, 0), { owner: 'c-hit', msg: { type: 'set_sort', panel: 'containers', key: 'mem'  } });  // `‹` prev: null→mem (wrap)
-    eq(hitTestBorderControls(32, 0), { owner: 'c-hit', msg: { type: 'sort_reverse', panel: 'containers' } });           // label → reverse
+    eq(hc.borderControlAt(34, 0), { owner: 'c-hit', msg: { type: 'set_sort', panel: 'containers', key: 'name' } });  // `›` next: null→name
+    eq(hc.borderControlAt(30, 0), { owner: 'c-hit', msg: { type: 'set_sort', panel: 'containers', key: 'mem'  } });  // `‹` prev: null→mem (wrap)
+    eq(hc.borderControlAt(32, 0), { owner: 'c-hit', msg: { type: 'sort_reverse', panel: 'containers' } });           // label → reverse
+    eq(hc.borderControlAt(35, 0), null);   // the dash between `›` and `[_]`
   });
   it('off-row / too-narrow / free-config miss (no phantom click)', () => {
     setupPane({});
-    eq(hitTestBorderControls(23, 1), null);   // wrong row
-    const ls = getInstanceSlice('layout');
-    ls.paneBounds = { 'c-hit': { x: 0, y: 0, w: 12, h: 8 } };   // too narrow → strip not shown
-    eq(hitTestBorderControls(5, 0), null);
-    setupPane({ freeConfigMode: true });       // both controls suppressed
-    eq(hitTestBorderControls(23, 0), null);
-    eq(hitTestBorderControls(34, 0), null);
+    eq(hc.borderControlAt(23, 1), null);   // wrong row
+    setupPane({}, 12);                      // 12-col pane → strip not shown
+    eq(ctlRegions('c-hit').length, 0, 'too narrow: no control regions published');
+    eq(hc.borderControlAt(5, 0), null);
+    setupPane({ freeConfigMode: true });    // both controls suppressed
+    eq(ctlRegions('c-hit').length, 0, 'free-config: no control regions published');
+    eq(hc.borderControlAt(23, 0), null);
+    eq(hc.borderControlAt(34, 0), null);
     getModel().modes = {};
   });
 });
@@ -570,46 +585,59 @@ describe('[15] item-action bar: reducer Cmds, confirm on destructive, focused bo
   it('no selected item → no Cmd', () => {
     eq(step({ type: 'item_action', action: 'kill', item: undefined }, slice0()).effects, []);
   });
+  // containers (w=60, focused) beside a second pane on a 100×9 terminal: the
+  // legend sits on containers' last row (y = 7), from x0 = 2.
+  const TWO = [
+    { width: 60, panels: [{ type: 'containers', paneId: 'containers', title: 'C', columnIndex: 0 }] },
+    { panels: [{ type: 'containers', paneId: 'c-other', title: 'O', columnIndex: 1 }] },
+  ];
   it('a click on a bottom-legend label dispatches item_action for the focused pane', () => {
-    const { hitTestBorderControls } = require('../panel/chrome-hittest');
     setup(['c1', 'c2']);                 // setup() focuses the 'containers' pane
-    const ls = getInstanceSlice('layout');
-    ls.arrange = { columns: [{ panels: [{ type: 'containers', paneId: 'containers', title: 'C', columnIndex: 0 }] }], detailHeightPct: 60 };
-    ls.paneBounds = { containers: { x: 0, y: 0, w: 60, h: 8 } };   // legend row = y+h-1 = 7; bottomX0 = 2
-    ls.freeConfig = null;
-    getModel().modes = {};
+    paintPanes(TWO, { cols: 100, rows: 9 });
     // 'inspect logs shell stop restart kill' from x0=2 → inspect 2..8, kill 34..37
-    eq(hitTestBorderControls(2, 7),  { owner: 'containers', msg: { type: 'item_action', action: 'inspect', item: 'c1' } });
-    eq(hitTestBorderControls(34, 7), { owner: 'containers', msg: { type: 'item_action', action: 'kill', item: 'c1' } });
-    eq(hitTestBorderControls(9, 7), null);   // the separator gap between inspect and logs
+    eq(hc.borderControlAt(2, 7),  { owner: 'containers', msg: { type: 'item_action', action: 'inspect', item: 'c1' } });
+    eq(hc.borderControlAt(34, 7), { owner: 'containers', msg: { type: 'item_action', action: 'kill', item: 'c1' } });
+    eq(hc.borderControlAt(9, 7), null);   // the separator gap between inspect and logs
   });
   it('the bar is suppressed on an UNfocused pane (no phantom bottom hit)', () => {
-    const ls = getInstanceSlice('layout');
-    ls.focus = 'elsewhere';
-    eq(require('../panel/chrome-hittest').hitTestBorderControls(34, 7), null);
-    ls.focus = 'containers';
+    setup(['c1', 'c2']);
+    getInstanceSlice('layout').focus = 'c-other';
+    paintPanes(TWO, { cols: 100, rows: 9 });
+    eq(ctlRegions('containers').filter(r => r.id.startsWith('ctl:actions:')).length, 0, 'no legend regions on the unfocused pane');
+    eq(hc.borderControlAt(34, 7), null);
+    getInstanceSlice('layout').focus = 'containers';
+  });
+  it('the legend act re-checks focus at CLICK time (focus moved after the paint → no-op)', () => {
+    setup(['c1', 'c2']);
+    paintPanes(TWO, { cols: 100, rows: 9 });
+    assert(hm.all().some(r => r.owner === 'containers' && r.id === 'ctl:actions:kill'), 'painted with the kill region');
+    getInstanceSlice('layout').focus = 'c-other';   // no repaint: the frame still shows the legend
+    eq(hc.borderControlAt(34, 7), null, 'the act resolves to nothing for an unfocused pane');
+    const loop = require('../dispatch/runtime/loop');
+    const seen = [];
+    const real = loop.dispatchMsg;
+    loop.dispatchMsg = (m) => { seen.push(m); return real(m); };
+    try { hc.click(34, 7); } finally { loop.dispatchMsg = real; }
+    assert(!seen.some(m => m && m.msg && m.msg.type === 'item_action'), `no item_action dispatched: ${JSON.stringify(seen)}`);
+    assert(!getModel().modes.confirmMode, 'no kill confirm opened');
+    getInstanceSlice('layout').focus = 'containers';
   });
 });
 
 describe('[16] a collapsed docker pane paints NO border controls → clicks miss (no phantom kill)', () => {
-  const { hitTestBorderControls } = require('../panel/chrome-hittest');
-  const arrange = (collapsed, h) => {
-    const ls = getInstanceSlice('layout');
-    ls.arrange = { columns: [{ panels: [{ type: 'containers', paneId: 'containers', title: 'C', columnIndex: 0, collapsed }] }], detailHeightPct: 60 };
-    ls.paneBounds = { containers: { x: 0, y: 0, w: 60, h } };   // w=60: refresh `-` at x=43 when expanded
-    ls.freeConfig = null;
-    getModel().modes = {};
-    api.dispatchMsg(api.wrap('docker', { type: 'set_refresh_ms', ms: 2000 }));
-  };
+  const arrange = (collapsed) => paintPanes(
+    [{ panels: [{ type: 'containers', paneId: 'containers', title: 'C', columnIndex: 0, collapsed }] }],
+    { cols: 60, rows: 9 });   // w=60: refresh `-` at x=43 when expanded
   it('EXPANDED at w=60: the refresh `-` at (43,0) hits — the control IS present', () => {
-    setup(['c1', 'c2']); arrange(false, 8);
-    eq(hitTestBorderControls(43, 0), { owner: 'docker', msg: { type: 'set_refresh_ms', dir: -1 } });
+    setup(['c1', 'c2']); arrange(false);
+    eq(hc.borderControlAt(43, 0), { owner: 'docker', msg: { type: 'set_refresh_ms', dir: -1 } });
   });
   it('COLLAPSED (1-row bar): the SAME cell + the sort/legend cells all miss', () => {
-    setup(['c1', 'c2']); arrange(true, 1);
-    eq(hitTestBorderControls(43, 0), null);   // refresh — suppressed
-    eq(hitTestBorderControls(50, 0), null);   // sort selector — suppressed
-    eq(hitTestBorderControls(2, 0), null);    // bottom legend (row 0 when h=1) — suppressed
+    setup(['c1', 'c2']); arrange(true);
+    eq(ctlRegions('containers').length, 0, 'a collapsed bar publishes no control regions');
+    eq(hc.borderControlAt(43, 0), null);   // refresh — suppressed
+    eq(hc.borderControlAt(50, 0), null);   // sort selector — suppressed
+    eq(hc.borderControlAt(2, 0), null);    // bottom legend (the bar is the only row) — suppressed
   });
 });
 

@@ -114,6 +114,15 @@ function collapseAt(mx, my) { const h = chromeAt('collapse', mx, my); return h ?
 /** Pool id a press on an `[X]` at (mx, my) hides, or null. */
 function closeAt(mx, my) { const h = chromeAt('close', mx, my); return h ? h.handler.msg.id : null; }
 
+/** What a press at (mx, my) on a border control would dispatch now — the
+ *  spec's `{ owner, msg }` — or null when no border-control region is there
+ *  (or the act would no-op). Resolves on the CURRENT hit map (paint first). */
+function borderControlAt(mx, my) {
+  const h = hm.resolve(mx, my, 'press');
+  if (!h || !h.handler || h.handler.act !== 'border-control') return null;
+  return require('../../dispatch/control/mouse-acts').resolveBorderControl(h.handler);
+}
+
 /** The slices of the model a popup interaction can change — for chip ≡ key
  *  parity comparisons (JSON round-trip drops functions / undefined). */
 function snapshot(m) {
@@ -122,7 +131,7 @@ function snapshot(m) {
 }
 
 module.exports = {
-  screenRows, screenText, chromeAt, triggerAt, collapseAt, closeAt,
+  screenRows, screenText, borderControlAt, chromeAt, triggerAt, collapseAt, closeAt,
   paint, click, dblclick, wheel, regions, region, at,
   clickRegion, dblclickRegion, wheelRegion, paintedText, snapshot,
 };

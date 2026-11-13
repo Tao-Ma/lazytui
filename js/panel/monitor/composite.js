@@ -250,8 +250,8 @@ function render(panel, w, h, _slice, opts) {
   return renderPanel({
     width: w, height: h, lines,
     title: panel.title, hotkey: panel.hotkey, panelType: 'composite', focused, chrome,
-    topControls: ctl.filter((c) => (c.spec.slot || 'top') !== 'bottom').map((c) => c.text),
-    bottomControls: ctl.filter((c) => (c.spec.slot || 'top') === 'bottom').map((c) => c.text),
+    topControls: ctl.filter((c) => (c.spec.slot || 'top') !== 'bottom'),
+    bottomControls: ctl.filter((c) => (c.spec.slot || 'top') === 'bottom'),
     // Click hit-test: the interactive widget's rows start here, so a click above them
     // (a graph widget) resolves to no row (see interactiveStart above).
     headerRows: interactiveStart,

@@ -146,6 +146,28 @@ function _publishChromeGlyphs(rec) {
   const ts = chrome && chrome.tabTrigger;
   if (ts === 'open') glyph('trigger', rec.trigger, { msg: { type: 'pane_menu_close' }, owner: 'layout' });
   else if (ts === 'available') glyph('trigger', rec.trigger, { act: 'pane-menu-open', paneId: panel.paneId });
+  // Border controls — the top strip (refresh `- Ns +`, sort `‹ col ›`, …) and the
+  // bottom item-action legend, published from the x renderPanel drew each at.
+  // The spec's own regions() splits a control into its clickable parts; the Msg
+  // is computed at CLICK time by the spec (mouse-acts 'border-control'), against
+  // the then-current sort / selection, after re-checking the control is shown.
+  // Top steppers repeat on a fast 2nd click (two `+` = two steps); item actions
+  // don't (a double-click must not run an action twice).
+  const ctl = (c, y, repeat) => {
+    const ref = c && c.ref;
+    if (!ref || !ref.spec || typeof ref.spec.regions !== 'function') return;
+    const pane = ref.pane || { paneId: panel.paneId, type: panel.type };
+    for (const r of ref.spec.regions(c.x0, y, c.visibleW, pane) || []) {
+      hitMap.publishLocal({
+        id: `ctl:${ref.spec.id}:${r.action}`,
+        rect: { x: r.x0, y: r.y, w: r.x1 - r.x0 + 1, h: 1 },
+        repeat,
+        on: { press: { act: 'border-control', paneId: pane.paneId, type: pane.type, specId: ref.spec.id, action: r.action } },
+      }, Z);
+    }
+  };
+  for (const c of rec.controls || []) ctl(c, 0, true);
+  if (rec.bottomControl) ctl(rec.bottomControl, rec.bottomControl.y, false);
 }
 // Hit-map seam (docs/mouse-hit-map.md): draw.publishBox emits overlay regions
 // with a z offset; the hit map stamps the ambient overlay owner + band base the

@@ -18,12 +18,42 @@
 
 const api = require('../../panel/api');
 const loop = require('../runtime/loop');
+const route = require('../../panel/route');
+const mpool = require('../../leaves/wm/pool');
+const mpane = require('../../leaves/wm/pane');
+const { visibleBoundsFor } = require('../../leaves/wm/geometry');
+const { getModel } = require('../../model/store');
+
+/** What a border-control click dispatches NOW — `{ owner, msg }` or null. The
+ *  control must still be shown for this pane (borderControlsFor with the current
+ *  focus + mode: a legend click on a pane that lost focus resolves to nothing)
+ *  and still offer `action`; then the spec's own `dispatch(action, pane)`
+ *  computes the Msg against current state (sort cycle, selected item). */
+function resolveBorderControl({ paneId, type, specId, action }) {
+  const layout = api.getInstanceSlice('layout');
+  const p = layout && layout.arrange && mpool.allPanesInColumns(layout.arrange).find(x => x.paneId === paneId);
+  if (!p || p.collapsed) return null;
+  const b = visibleBoundsFor(layout, paneId, route.resolveViewerPaneId());
+  if (!b) return null;
+  const pane = { paneId, type, focused: mpane.paneMatchesFocus(p, layout.focus), innerW: b.w - 2 };
+  const c = api.borderControlsFor(pane, getModel()).find(x => x.spec.id === specId);
+  if (!c) return null;
+  if (!(c.spec.regions(0, 0, c.visibleW, pane) || []).some(r => r.action === action)) return null;
+  return c.spec.dispatch(action, pane) || null;
+}
 
 const ACTS = {
   /** `[≡]` click on an available trigger → open that pane's menu. */
   'pane-menu-open'({ paneId }) {
     const msgs = require('../../overlay/pane-menu').openAt(paneId);
     if (msgs) for (const m of msgs) loop.dispatchMsg(api.wrap('layout', m));
+  },
+
+  /** A border-control part (refresh `-`/`+`, sort `‹`/`›`, an item action …)
+   *  → the spec's own Msg, resolved now (resolveBorderControl). */
+  'border-control'(h) {
+    const hit = resolveBorderControl(h);
+    if (hit) loop.dispatchMsg(api.wrap(hit.owner, hit.msg));
   },
 };
 
@@ -33,4 +63,4 @@ function realize(h) {
   if (fn) fn(h);
 }
 
-module.exports = { realize, ACTS };
+module.exports = { realize, resolveBorderControl, ACTS };

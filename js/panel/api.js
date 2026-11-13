@@ -449,7 +449,7 @@ function borderControlsFor(pane, model) {
   const out = [];
   for (const spec of paneBorderControlSpecs(pane && pane.type)) {
     const r = spec.render(model, pane);
-    if (r) out.push({ spec, text: r.text, visibleW: r.visibleW });
+    if (r) out.push({ spec, text: r.text, visibleW: r.visibleW, pane });
   }
   return out;
 }

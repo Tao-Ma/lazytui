@@ -1164,7 +1164,7 @@ function render(panel, w, h, _slice, opts) {
     panelType: 'stats',
     focused,
     chrome,
-    topControls: ctl.map((c) => c.text),
+    topControls: ctl,
     windowed: windowed || undefined,
     count: windowed ? [body.sel + 1, body.rowCount] : undefined,
     scrollOffset: windowed ? body.scroll : undefined,

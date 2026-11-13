@@ -627,8 +627,8 @@ function render(panel, width, height, _slice, opts) {
       // legend (item-action bar, left-anchored).
       const ctl = borderControlsFor({ paneId: panel.paneId, type: 'containers', focused: isFocused, innerW: width - 2 }, m);
       return {
-        topControls: ctl.filter(c => (c.spec.slot || 'top') !== 'bottom').map(c => c.text),
-        bottomControls: ctl.filter(c => (c.spec.slot || 'top') === 'bottom').map(c => c.text),
+        topControls: ctl.filter(c => (c.spec.slot || 'top') !== 'bottom'),
+        bottomControls: ctl.filter(c => (c.spec.slot || 'top') === 'bottom'),
       };
     })(),
   });

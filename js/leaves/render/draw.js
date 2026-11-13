@@ -146,7 +146,11 @@ function fitCell(s, width) {
  *   `count[1]` carries the true total. Default false (navigators pass the full
  *   list + scrollOffset and let renderPanel slice).
  * @param {string} [opts.color] - focused border color
- * @param {string[]} [opts.topControls] - opt-in interactive control markup (top border)
+ * @param {Array<string|{text}>} [opts.topControls] - opt-in interactive controls (top border):
+ *   markup strings, or api.borderControlsFor entries `{ text, visibleW, spec, pane }` —
+ *   an entry object is echoed back through the chrome sink with the pane-local x
+ *   where it drew (`controls` / `bottomControl`), so the paint layer publishes its
+ *   hit regions exactly there (docs/mouse-hit-map.md Release 2).
  *   embedded in the top border, right-anchored one gap-dash left of the chrome
  *   glyphs. An ordered STRIP: the first entry paints leftmost, the last nearest
  *   the glyphs (the monitor refresh control `- Ns +` was the first consumer).
@@ -193,6 +197,8 @@ function renderPanel({
   const wantRightCollapse = chrome && chrome.collapse;
   const wantRightClose    = chrome && chrome.close;
   const hasControls = Array.isArray(topControls) && topControls.length > 0;
+  const _ctlText = (c) => (c && typeof c === 'object') ? c.text : c;
+  let controlsDrawn = null;   // [{ x0, visibleW, ref }] pane-local, iff the strip drew
   if (chrome && (wantLeftTrigger || wantRightCollapse || wantRightClose)) {
     // Right cluster first. The opt-in border-control strip (e.g. the monitor
     // refresh control `- Ns +`) sits one gap-dash LEFT of the glyphs (right-
@@ -204,7 +210,7 @@ function renderPanel({
     if (wantRightClose && wantRightCollapse) rightPart += b.h;
     if (wantRightCollapse) rightPart += _collapseGlyphMarkup(chrome.collapse, focused, fc);
     if (hasControls) {
-      for (let i = topControls.length - 1; i >= 0; i--) rightPart = `${topControls[i]}${b.h}${rightPart}`;
+      for (let i = topControls.length - 1; i >= 0; i--) rightPart = `${_ctlText(topControls[i])}${b.h}${rightPart}`;
     }
     rightPart += b.tr;
     const rightVis = visibleLen(rightPart);
@@ -252,6 +258,17 @@ function renderPanel({
           (leftVisFull <= leftCap || (leftCap - 1) >= lbp.triggerCol + 3)) {
         triggerReg = { x0: lbp.triggerCol, x1: lbp.triggerCol + 2 };
       }
+      if (hasControls) {
+        // The strip opens rightPart, which ends at the corner: its first cell is
+        // pane-local `width - rightVis`; each control is followed by one dash.
+        controlsDrawn = [];
+        let cx = width - rightVis;
+        for (const c of topControls) {
+          const vw = visibleLen(_ctlText(c));
+          controlsDrawn.push({ x0: cx, visibleW: vw, ref: (c && typeof c === 'object') ? c : null });
+          cx += vw + 1;
+        }
+      }
       top = wrapColor(fc, leftPart + b.h.repeat(Math.max(1, midFill)) + rightPart);
     } else {
       // Chrome + title doesn't fit. Drop chrome; fall back to plain
@@ -280,6 +297,16 @@ function renderPanel({
     }
   }
 
+  // Bottom legend placement (drawn below iff bctl.bottomFits — count-independent),
+  // decided here so the chrome emit can report it: pane-local x0 = 2 (corner +
+  // lead dash), row = the pane's last.
+  const _legRef0 = (Array.isArray(bottomControls) && bottomControls[0]) || null;
+  const _legText0 = (_legRef0 && typeof _legRef0 === 'object' ? _legRef0.text : _legRef0) || '';
+  const _legVis0 = _legText0 ? visibleLen(_legText0) : 0;
+  const bottomDrawn = (_legVis0 && bctl.bottomFits(innerW, _legVis0) && height >= 2)
+    ? { x0: 2, y: height - 1, visibleW: _legVis0, ref: (_legRef0 && typeof _legRef0 === 'object') ? _legRef0 : null }
+    : null;
+
   // Publish the ACTUALLY-DRAWN clickable chrome for the hit-tests (pane-local
   // x-ranges; a null glyph = not painted). close/collapse are right-anchored
   // (`─[X] [_]╮`, the same constants chrome-hittest read) and never truncated, so
@@ -295,6 +322,8 @@ function renderPanel({
       close:    chromeDrew && wantRightClose    ? { x0: width - 8, x1: width - 6 } : null,
       collapse: chromeDrew && wantRightCollapse ? { x0: width - 4, x1: width - 2 } : null,
       titleClip,
+      controls: controlsDrawn,
+      bottomControl: bottomDrawn,
     });
   }
 
@@ -305,7 +334,8 @@ function renderPanel({
   // the same gate chrome-hittest reads); the count drops when it can't share the
   // row. Placement mirrors border-controls.bottomX0 so a click can't miss.
   const countText = count ? `${count[0]} of ${count[1]}` : '';
-  const legend = (Array.isArray(bottomControls) && bottomControls[0]) || '';
+  const legendRef = (Array.isArray(bottomControls) && bottomControls[0]) || null;
+  const legend = (legendRef && typeof legendRef === 'object' ? legendRef.text : legendRef) || '';
   const legendVis = legend ? visibleLen(legend) : 0;
   let bottom;
   if (legendVis && bctl.bottomFits(innerW, legendVis)) {

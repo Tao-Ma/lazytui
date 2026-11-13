@@ -485,8 +485,8 @@ function render(panel, w, h, slice, opts) {
     headerRows: 1,
     count: [sel + 1, rows.length],
     scrollOffset: scroll,
-    topControls: ctl.filter(c => (c.spec.slot || 'top') !== 'bottom').map(c => c.text),
-    bottomControls: ctl.filter(c => (c.spec.slot || 'top') === 'bottom').map(c => c.text),
+    topControls: ctl.filter(c => (c.spec.slot || 'top') !== 'bottom'),
+    bottomControls: ctl.filter(c => (c.spec.slot || 'top') === 'bottom'),
   });
 }
 
