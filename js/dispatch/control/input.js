@@ -271,30 +271,10 @@ function _mouseHandleFreeConfigMode(kind, mx, my, model) {
   return true;
 }
 
-/** menu overlay (command list `x` OR right-click context menu) — a click on
- *  a row activates it; a click OUTSIDE the box closes the menu (the missing
- *  dismiss); the wheel moves the highlight. Any button kind counts as a
- *  click (a second right-click while open also dismisses/activates). Motion/
- *  release fall through (caught by the isChainActive guard). */
-function _mouseHandleMenuMode(kind, mx, my, _model) {
-  if (kind === 'wheel-up' || kind === 'wheel-down') {
-    applyMsg({ type: 'menu_nav', dir: kind === 'wheel-up' ? -1 : +1 });
-    render();
-    return true;
-  }
-  if (kind === 'press' || kind === 'double' || kind === 'right' || kind === 'middle') {
-    const hit = require('../../overlay/menu').hitTest(mx, my);
-    if (hit == null) applyMsg({ type: 'menu_close' });          // outside → dismiss
-    else if (hit.itemIdx != null) applyMsg({ type: 'menu_activate', idx: hit.itemIdx });
-    // else: inside the box on a border / separator — consume, no-op.
-    render();
-    return true;
-  }
-  return false;
-}
 
+// (menuOpen's handler retired — the menu resolves on the hit map now,
+// docs/mouse-hit-map.md Release 1; the router runs before this registry.)
 const _modeMouseHandlers = {
-  menuOpen:        _mouseHandleMenuMode,
   paneMenuMode:    _mouseHandlePaneMenuMode,
   freeConfigMode:  _mouseHandleFreeConfigMode,
   // agentMode is an in-grid typing mode, not an overlay: the transcript stays

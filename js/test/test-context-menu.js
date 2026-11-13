@@ -7,8 +7,9 @@
  *   2. runtime menu_activate honoring an absolute msg.idx + threading the
  *      row's arg (item[2]) into the menu_action Cmd.
  *   3. actions.handleAction('copy_text', text) → register_push (clipboard).
- *   4. overlay/menu.hitTest mapping a cursor cell back to a row, sharing the
- *      paint-side overlayBox geometry so a click can't miss a painted row.
+ *   4. the menu's hit-map rows mapping a cursor cell back to an item — published
+ *      by the paint itself (docs/mouse-hit-map.md), so a click can't miss a
+ *      painted row (this pinned the retired overlay/menu.hitTest before).
  *
  * End-to-end (raw gesture → menu → copy → dismiss) is covered by the smoke.
  *
@@ -233,23 +234,42 @@ describe('[ctx-menu] ctx_run_action / ctx_run_command verbs', () => {
   });
 });
 
-describe('[ctx-menu] overlay menu.hitTest — cell → row, shared geometry', () => {
-  const menu = require('../overlay/menu');
+describe('[ctx-menu] menu rows on the hit map — cell → item, published by the paint', () => {
   const { getModel } = require('../app/runtime');
+  const hm = require('../panel/hit-map');
+  const compositor = require('../render/overlay-compositor');
+  const { viewportDims } = require('../leaves/render/draw');
+  const { chainStamp } = require('../leaves/input/modes');
+  require('../render/paint');   // wires the draw → hit-map sink (as at boot)
 
-  function seedMenu(items, anchor) {
-    getModel().modal.menu = { items, idx: 0, anchor, title: 'Actions' };
+  function seedAndPaint(items, anchor) {
+    const m = getModel();
+    m.modal.menu = { items, idx: 0, anchor, title: 'Actions' };
+    m.modes.menuOpen = true;
+    const { cols, rows } = viewportDims();
+    hm.clear(chainStamp(m.modes));
+    compositor.paintActive(m, new Array(rows).fill(' '.repeat(cols)), cols);
+    m.modes.menuOpen = false;
+  }
+  // What a press at (mx,my) would do: an item idx, 'swallow', a key, or null.
+  function pressAt(mx, my) {
+    const r = hm.resolve(mx, my, 'press');
+    if (!r) return null;
+    const h = r.handler;
+    if (h && h.msg && h.msg.type === 'menu_activate') return h.msg.idx;
+    if (h && h.key) return `key:${h.key}`;
+    return h;
   }
 
-  it('maps interior rows to item indices; borders/separators → no item; outside → null', () => {
+  it('maps interior rows to item indices; borders/separators → inert; outside → Esc', () => {
     // Anchor at (1,1) → box top-left at 0,0 (assuming COLS≥44). Content rows
     // start one below the top border (row 0), so item j sits at screen row 1+j.
-    seedMenu([['Copy line', 'copy_text', 'L'], null, ['Copy item', 'copy_text', 'I']], { x: 1, y: 1 });
-    eq(menu.hitTest(2, 1).itemIdx, 0, 'first content row → item 0');
-    eq(menu.hitTest(2, 2).itemIdx, null, 'separator row → no item');
-    eq(menu.hitTest(2, 3).itemIdx, 2, 'third content row → item 2');
-    eq(menu.hitTest(2, 0).itemIdx, null, 'top border row → no item');
-    eq(menu.hitTest(999, 1), null, 'far outside the box → null (caller closes)');
+    seedAndPaint([['Copy line', 'copy_text', 'L'], null, ['Copy item', 'copy_text', 'I']], { x: 1, y: 1 });
+    eq(pressAt(2, 1), 0, 'first content row → item 0');
+    eq(pressAt(2, 2), 'swallow', 'separator row → no item (consumed by the box)');
+    eq(pressAt(2, 3), 2, 'third content row → item 2');
+    eq(pressAt(2, 0), 'swallow', 'top border row → no item');
+    eq(pressAt(60, 10), 'key:escape', 'outside the box → the backdrop dismisses (Esc)');
   });
 });
 

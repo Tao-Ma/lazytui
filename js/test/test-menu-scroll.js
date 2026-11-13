@@ -17,7 +17,13 @@ const { getModel } = require('../app/runtime');
 const { initState } = require('../app/state');
 const { applyMsg } = require('../dispatch/control/dispatch');
 const { render } = require('../render/paint');
-const { hitTest } = require('../overlay/menu');
+// Clicks resolve on the hit map the real paint() publishes (docs/mouse-hit-map.md);
+// this pinned the retired overlay/menu.hitTest before.
+const hm = require('../panel/hit-map');
+const pressIdx = (mx, my) => {
+  const r = hm.resolve(mx, my, 'press');
+  return (r && r.handler && r.handler.msg && r.handler.msg.type === 'menu_activate') ? r.handler.msg.idx : null;
+};
 const { overlayBox } = require('../leaves/render/draw');
 
 const _grp = (name, label) => ({
@@ -71,17 +77,18 @@ const countVisible = (s) => items.filter((it) => s.includes(it[0])).length;
       assert(!atEnd.includes('ITEM_00'), 'the top item scrolled out of view');
     });
     it('a click on a scrolled menu maps to the visible row, not an off-screen item', () => {
-      // Still scrolled to the end (window shows the last screenful). hitTest must
-      // reject border clicks BEFORE applying scroll, else the top border activates
-      // an off-screen item (silent wrong-port inject in the picker).
+      // Still scrolled to the end (window shows the last screenful). A border click
+      // must not map to an item — under the old hitTest a scrolled top border
+      // activated an off-screen item (silent wrong-port inject in the picker);
+      // publishBox only publishes rows inside the visible window.
       const { offX, offY, menuH } = overlayBox({ linesLen: N, anchor: null, maxWidth: 44 });
       const mx = offX + 2;
       const innerH = menuH - 2;
       // mirror menuScroll (centered, clamped) for idx = last item
       const scroll = Math.max(0, Math.min((N - 1) - Math.floor(innerH / 2), N - innerH));
-      eq(hitTest(mx, offY).itemIdx, null, 'top border click is a no-op (not an off-screen item)');
-      eq(hitTest(mx, offY + menuH - 1).itemIdx, null, 'bottom border click is a no-op');
-      eq(hitTest(mx, offY + 1).itemIdx, scroll, 'first visible content row maps to the scrolled item');
+      eq(pressIdx(mx, offY), null, 'top border click is a no-op (not an off-screen item)');
+      eq(pressIdx(mx, offY + menuH - 1), null, 'bottom border click is a no-op');
+      eq(pressIdx(mx, offY + 1), scroll, 'first visible content row maps to the scrolled item');
     });
   });
   report();

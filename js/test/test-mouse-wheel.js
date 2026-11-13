@@ -142,6 +142,15 @@ const { handleMouse } = require('../dispatch/control/input');
 const { getModel } = require('../app/runtime');
 const modes = require('../leaves/input/modes');
 
+function _paintOverlays() {
+  require('../render/paint');   // wires the draw → hit-map sink (as at boot)
+  const hm = require('../panel/hit-map');
+  const { viewportDims } = require('../leaves/render/draw');
+  const { cols, rows } = viewportDims();
+  hm.clear(modes.chainStamp(getModel().modes));
+  require('../render/overlay-compositor').paintActive(getModel(), new Array(rows).fill(' '.repeat(cols)), cols);
+}
+
 describe('[4] T13 regression: handleMouse modal gating', () => {
   it('wheel over a panel during filterMode does NOT change focus or scroll', () => {
     setupContentSlot();
@@ -162,6 +171,10 @@ describe('[4] T13 regression: handleMouse modal gating', () => {
     getInstanceSlice('layout').focus = 'pane-groups';
     modes.resetModes(getModel().modes);
     getModel().modes.menuOpen = true;
+    // The outside-click dismiss is the menu's hit-map backdrop
+    // (docs/mouse-hit-map.md), published when the overlay PAINTS — so composite
+    // the overlays once (the bare harness can't run the full render()).
+    _paintOverlays();
     // Empty menu (no items/anchor) → a small centered box; a press at (40,5)
     // lands outside it. v0.6.4 context-menu feature: an outside-click now
     // DISMISSES the menu (pre-feature it was swallowed and stayed open). The

@@ -4,9 +4,11 @@
  *
  * Menu state + behavior live in the reducer (runtime.update: menu_open/nav/
  * activate/close; items built by leaves/menu (command list) or leaves/
- * context-menu (right-click)). This module is the render + hit-test side:
- * renderMenu paints model.modal.menu.{items,idx,title,anchor}; hitTest maps
- * a cursor cell back to a row (for click-to-activate / click-outside-close).
+ * context-menu (right-click)). This module is the render side: renderMenu
+ * paints model.modal.menu.{items,idx,title,anchor} and publishes its rows to
+ * the hit map (docs/mouse-hit-map.md) — click-to-activate, wheel-to-move, and
+ * the outside-click dismiss (the descriptor's backdrop) all resolve there; the
+ * former hitTest + input.js menu mouse handler are gone.
  */
 'use strict';
 
@@ -14,7 +16,7 @@ const { esc } = require('../leaves/text/ansi');
 const { renderOverlay, overlayBox } = require('../leaves/render/draw');
 const { getModel } = require('../model/store');
 
-const MENU_MAX_WIDTH = 44;  // shared by renderMenu + hitTest (must match)
+const MENU_MAX_WIDTH = 44;
 
 // One screen line per menu item (separators → blank), index-aligned with
 // `items` — so a content-row index maps straight back to an item index.
@@ -36,8 +38,8 @@ function _menuLines(items, idx) {
 
 // Scroll offset (in lines) that keeps the selected row `idx` visible — centered
 // when possible, clamped at the ends. Pure fn of (idx, total lines, window
-// height). Shared by renderMenu + hitTest so a click maps to the same row the
-// paint drew. Derived (not stored): idx is already in the model, so replay
+// height). renderMenu passes it to renderOverlay, whose publishBox applies the
+// same window to the hit map, so a click maps to the same row the paint drew. Derived (not stored): idx is already in the model, so replay
 // reconstructs it. Without this a menu taller than the screen showed only its
 // first screenful and the cursor drove off-screen with no way down.
 function menuScroll(idx, total, innerH) {
@@ -63,37 +65,24 @@ function renderMenu(newRows, cols) {
   // 'Menu' (command list); the right-click context menu passes 'Actions'.
   const { menuH } = overlayBox({ linesLen: lines.length, anchor, maxWidth: MENU_MAX_WIDTH });
   const scrollOffset = menuScroll(idx, lines.length, Math.max(1, menuH - 2));
+  // Hit map (docs/mouse-hit-map.md): lines are index-aligned with items, so
+  // item i's row activates i (menu_activate's absolute idx). press / right /
+  // middle all activate (the pre-hit-map behavior); `double` is deliberately
+  // unhandled — the press already activated (and usually closed or replaced the
+  // menu), so the second click is swallowed instead of activating whatever row
+  // now sits under the pointer. Separators get no target; publishBox applies the
+  // scroll window, so a border or off-screen row can never map to an item.
+  const lineTargets = items.map((it, i) => {
+    if (it === null) return null;
+    const act = { msg: { type: 'menu_activate', idx: i } };
+    return { press: act, right: act, middle: act };
+  });
   renderOverlay({ lines, title: title || 'Menu', count: [selPos, selCount], anchor,
                   maxWidth: MENU_MAX_WIDTH, scrollOffset,
-                  targetRows: newRows || null, targetCols: cols || 0 });
+                  targetRows: newRows || null, targetCols: cols || 0,
+                  hit: { lineTargets, box: { 'wheel-up': { key: 'up' }, 'wheel-down': { key: 'down' } } } });
 }
 
-/**
- * Map a 0-based cursor cell to a menu row. Recomputes the SAME box geometry
- * renderMenu paints (shared `overlayBox`), so a click can't land on a cell
- * the box didn't draw. Returns:
- *   - null            → the cell is OUTSIDE the box (caller closes the menu)
- *   - { itemIdx: n }  → on selectable item n (caller activates it)
- *   - { itemIdx: null}→ inside the box but on a border / separator (no-op)
- */
-function hitTest(mx, my) {
-  const { items, idx, anchor } = getModel().modal.menu;
-  const { offX, offY, menuW, menuH } = overlayBox({ linesLen: items.length, anchor, maxWidth: MENU_MAX_WIDTH });
-  if (mx < offX || mx >= offX + menuW || my < offY || my >= offY + menuH) return null;
-  // Content rows sit one row below the top border (offY), for `menuH - 2` rows.
-  // Reject border / outside-content clicks BEFORE applying scroll — otherwise a
-  // scrolled menu's top/bottom border maps to a valid-but-OFF-SCREEN item index
-  // (a silent wrong-item activation). Then add the SAME scroll offset renderMenu
-  // used, so a click on a visible row maps to the right item (lines are
-  // index-aligned with items).
-  const contentH = menuH - 2;
-  const row = my - (offY + 1);
-  if (row < 0 || row >= contentH) return { itemIdx: null };              // border row
-  const lineIdx = menuScroll(idx, items.length, Math.max(1, contentH)) + row;
-  if (lineIdx < 0 || lineIdx >= items.length) return { itemIdx: null };
-  if (items[lineIdx] === null) return { itemIdx: null };                 // separator
-  return { itemIdx: lineIdx };
-}
 
 // Overlay-compositor R3 descriptor. zIndex=100 preserves menu's
 // historical position (tenth in the retired paint.js if-chain).
@@ -104,7 +93,10 @@ function registerSelf(compositor) {
     render: (m, newRows, cols) => renderMenu(newRows, cols),
     modal: true,
     zIndex: 100,
+    // Outside click (any button) = Esc = menu_close — the dismiss the legacy
+    // handler implemented, now the hit-map backdrop.
+    mouse: { outside: { key: 'escape' } },
   });
 }
 
-module.exports = { renderMenu, hitTest, registerSelf };
+module.exports = { renderMenu, registerSelf };
