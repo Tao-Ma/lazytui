@@ -15,7 +15,17 @@
  *     render:   (model, newRows, cols) => void,// mutates newRows
  *     modal:    bool,                          // enforces flat-modal
  *     zIndex:   int,                           // paint order (hi = on top)
+ *     mouse:    { outside } | undefined,       // hit-map opt-in (below)
  *   }
+ *
+ * Hit map (docs/mouse-hit-map.md): each overlay's render is bracketed with
+ * `hitMap.enterOwner(id, zBase)` so the regions its renderOverlay/publishBox
+ * publishes carry the overlay id and an absolute z in the overlay's band
+ * (`HIT_BAND_BASE + 10·zIndex + {0 backdrop, 1 box, 2 rows, 3 chips}`). A
+ * descriptor with `mouse.outside` (a handler — `{ key: 'escape' }` or
+ * `'swallow'`) also gets a full-screen OPAQUE backdrop under its box: an
+ * outside click realizes that handler, and nothing beneath the popup can be
+ * hit. No `mouse` → no backdrop (misses fall through to the legacy cascade).
  *
  * Pure for tests: `activeOverlayIds(model)` reports the ordered id
  * list this frame would paint, without doing any rendering. `_reset()`
@@ -95,9 +105,30 @@ function activeOverlayIds(model) {
  * BEFORE `_paintMainFrame`'s cell-diff. Mutates `newRows` in place;
  * returns nothing.
  */
+const HIT_BAND_BASE = 1000;
+let _hitMapRef; const _hitMap = () => (_hitMapRef ||= require('../panel/hit-map'));
+
+function _backdrop(outside, cols, rows) {
+  return {
+    id: 'backdrop',
+    rect: { x: 0, y: 0, w: cols, h: rows },
+    opaque: true,
+    on: { press: outside, double: outside, right: outside, middle: outside,
+          'wheel-up': 'swallow', 'wheel-down': 'swallow' },
+  };
+}
+
 function paintActive(model, newRows, cols) {
+  const hm = _hitMap();
   for (const d of _active(model)) {
-    d.render(model, newRows, cols);
+    hm.enterOwner(d.id, HIT_BAND_BASE + 10 * (d.zIndex | 0));
+    try {
+      const outside = d.mouse && d.mouse.outside;
+      if (outside != null) hm.publishOwned(_backdrop(outside, cols, newRows.length), 0);
+      d.render(model, newRows, cols);
+    } finally {
+      hm.exitOwner();
+    }
   }
 }
 
@@ -107,4 +138,4 @@ function _reset() { _descriptors.length = 0; }
 /** Count — tests only. For the "zero overlays registered" assertion. */
 function _count() { return _descriptors.length; }
 
-module.exports = { register, paintActive, activeOverlayIds, _reset, _count };
+module.exports = { register, paintActive, activeOverlayIds, HIT_BAND_BASE, _reset, _count };

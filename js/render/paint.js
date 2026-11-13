@@ -33,10 +33,11 @@ const geo = require('../leaves/wm/geometry');
 const mpool = require('../leaves/wm/pool');
 const mpane = require('../leaves/wm/pane');
 const { theme, setTheme } = require('../leaves/infra/themes');
-const { truncate, setWriter: _setDrawWriter, setChromeSink: _setDrawChromeSink } = require('../leaves/render/draw');
+const { truncate, setWriter: _setDrawWriter, setChromeSink: _setDrawChromeSink, setHitSink: _setDrawHitSink } = require('../leaves/render/draw');
 const chromeRegions = require('../panel/chrome-regions');
 const treeRegions = require('../panel/tree-regions');
 const hoverRegion = require('../panel/hover-region');
+const hitMap = require('../panel/hit-map');
 const { detectColorDepth, downgradeAnsi } = require('../leaves/render/color-depth');
 
 // Truecolor arc 1b (docs/truecolor.md P3) — color depth is a DEVICE property,
@@ -116,6 +117,10 @@ let _selViewRef; const _selView = () => (_selViewRef ||= require('../panel/selec
 // overlays → dropped). Collapsed panes bypass the leaf and publish directly in
 // _renderCollapsed. See panel/chrome-regions.
 _setDrawChromeSink((region) => chromeRegions.publish(_selView().currentPaneId(), region));
+// Hit-map seam (docs/mouse-hit-map.md): draw.publishBox emits overlay regions
+// with a z offset; the hit map stamps the ambient overlay owner + band base the
+// compositor set around that overlay's render (dropped outside a bracket).
+_setDrawHitSink((region, zOff) => hitMap.publishOwned(region, zOff));
 
 // Shared chrome-glyph inputs for composeRects / renderHalf / renderFull.
 // v0.6.4 Theme B — the scalar setup (chromeFor, viewer tab count, tab-
@@ -909,6 +914,11 @@ function render(model) {
   // resolved value for the hovered pane during the pane pass; footer + hover overlay
   // (painted after) read it. Empty when nothing is hovered.
   hoverRegion.clear();
+  // And the hit map (docs/mouse-hit-map.md): every clickable region this frame
+  // draws is republished below (overlays via the compositor). The stamp names the
+  // active chain modes, so the router abstains on a click aimed at a frame whose
+  // mode state has since changed (§Stale-frame rule).
+  hitMap.clear(modes.chainStamp(model.modes));
   const viewMode = layoutSlice.viewMode;
   // Overlay-compositor migration Release 2 (docs/overlay-compositor-migration.md):
   // the view-mode dispatchers RETURN `{ newRows, COLS }` instead of running

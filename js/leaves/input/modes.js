@@ -125,9 +125,17 @@ function suppressesChromeClicks(md) { return MODES.some(m => m.suppressChrome &&
  *  terminalMode is non-chain by design and not covered here. */
 function isChainActive(md) { return CHAIN_MODES.some(f => md[f]); }
 
+/** A stable string naming the active chain modes (precedence order) — '' when
+ *  none. The hit map (panel/hit-map) stamps each frame with it; the mouse
+ *  router compares the stamp against the CURRENT modes so a click aimed at a
+ *  frame that no longer matches mode state (a batched Enter+click chunk —
+ *  docs/mouse-hit-map.md §Stale-frame rule) never resolves against the stale
+ *  regions. */
+function chainStamp(md) { return CHAIN_MODES.filter(f => md && md[f]).join(','); }
+
 /** Clear every resettable mode flag on the given modes bag (mutates it
  *  in place). Non-flag buffers (prefixSeq, detail-slice search state,
  *  etc.) are reset by their owners; this only flips the booleans. */
 function resetModes(md) { for (const m of MODES) if (m.reset) md[m.flag] = false; }
 
-module.exports = { MODES, CHAIN_MODES, isOverlayActive, isModal, isChainActive, suppressesChromeClicks, resetModes };
+module.exports = { MODES, CHAIN_MODES, isOverlayActive, isModal, isChainActive, chainStamp, suppressesChromeClicks, resetModes };

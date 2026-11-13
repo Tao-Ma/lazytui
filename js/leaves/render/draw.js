@@ -18,6 +18,7 @@ const bctl = require('./border-controls');
 // on the pure leaves/ansi without forming an io↔leaves cycle.
 
 const { compositeRow } = require('./row-compositor');
+const { chipSurvives } = require('./hints');
 
 const BORDER = { tl: '╭', tr: '╮', bl: '╰', br: '╯', h: '─', v: '│' };
 const THUMB = '▐';
@@ -415,6 +416,71 @@ function setWriter(fn) { _writer = fn; }
 // CLI/tests / for overlays with no ambient pane → renderPanel skips the emit.
 let _chromeSink = null;
 function setChromeSink(fn) { _chromeSink = fn; }
+
+// Hit-map publish seam (docs/mouse-hit-map.md). publishBox emits each clickable
+// region an overlay ACTUALLY drew — its box, visible rows, surviving hint chips —
+// as `(region, zOff)`. This leaf can't import the panel-layer hit map, so paint
+// wires the sink to panel/hit-map.publishOwned, which stamps the ambient overlay
+// owner + absolute z (the compositor brackets each overlay's render). Unset in
+// CLI/tests that never load paint → publishBox no-ops.
+let _hitSink = null;
+function setHitSink(fn) { _hitSink = fn; }
+
+// z offsets within one overlay's band (the compositor adds the band base).
+// 0 is the backdrop, published by the compositor itself.
+const HIT_Z = Object.freeze({ backdrop: 0, box: 1, row: 2, chip: 3 });
+
+/**
+ * Publish an overlay box's clickable regions, clipped to the viewport — the ONE
+ * place popup geometry turns into hit regions, shared by renderOverlay and the
+ * overlays that compose their own box (pane-menu, cmdline). Agreement by
+ * construction: a row publishes only if it is inside the visible window, a chip
+ * only if renderPanel's truncation kept it.
+ *
+ *   { x, y, w, h }        box rect (screen cells, incl. borders)
+ *   scrollOffset           first visible line index (0 for pre-windowed callers)
+ *   windowed               lines were pre-sliced by the caller → no offset applied
+ *   lines                  the content lines handed to renderPanel (chip truncation)
+ *   lineTargets            handler maps index-aligned with `lines` (null = inert)
+ *   lineChips              { [lineIdx]: chips } from leaves/render/hints.formatHints
+ *   box                    handler map for the box itself (e.g. wheel → up/down)
+ */
+function publishBox({ x, y, w, h, scrollOffset = 0, windowed = false, lines = [],
+                      lineTargets = null, lineChips = null, box = null }) {
+  if (!_hitSink || !(w > 0) || !(h > 0)) return;
+  const { cols: COLS, rows: ROWS } = viewportDims();
+  // Clip a rect to the screen; null when nothing is left on-screen.
+  const clip = (rx, ry, rw, rh) => {
+    const x0 = Math.max(0, rx), y0 = Math.max(0, ry);
+    const x1 = Math.min(COLS, rx + rw), y1 = Math.min(ROWS, ry + rh);
+    return (x1 > x0 && y1 > y0) ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : null;
+  };
+  const boxRect = clip(x, y, w, h);
+  if (!boxRect) return;
+  _hitSink({ id: 'box', rect: boxRect, opaque: true, on: box || {} }, HIT_Z.box);
+  const innerW = w - 2;
+  const innerH = h - 2;
+  const offset = windowed ? 0 : Math.max(0, scrollOffset | 0);
+  for (let i = 0; i < innerH; i++) {
+    const li = offset + i;
+    if (li >= lines.length) break;
+    const sy = y + 1 + i;
+    const target = lineTargets && lineTargets[li];
+    if (target) {
+      const r = clip(x + 1, sy, innerW, 1);
+      if (r) _hitSink({ id: `row:${li}`, rect: r, on: target }, HIT_Z.row);
+    }
+    const chips = lineChips && lineChips[li];
+    if (chips && chips.length) {
+      const lineW = visibleLen(lines[li]);
+      for (const c of chips) {
+        if (!chipSurvives(c, lineW, innerW)) continue;
+        const r = clip(x + 1 + c.x0, sy, c.x1 - c.x0 + 1, 1);
+        if (r) _hitSink({ id: `chip:${c.key}`, rect: r, on: { press: { key: c.key, seq: c.seq } } }, HIT_Z.chip);
+      }
+    }
+  }
+}
 // Direct write-through for overlays that compose their OWN screen bytes
 // (cmdline, pane-menu) instead of going through renderOverlay. Review Track
 // 1/2 HIGH (truecolor arc): those overlays wrote io/term stdout directly,
@@ -526,8 +592,12 @@ function overlayBox({ linesLen, anchor = null, maxWidth = 44 }) {
 // without them (future bugs) crash loudly on the compositeRow call rather
 // than silently painting nothing — the right failure mode for a
 // production code path.
+// `hit` (optional, docs/mouse-hit-map.md) opts the overlay into the hit map:
+// `{ lineTargets, lineChips, box }` as publishBox takes them. ABSENT → nothing
+// is published, so an overlay that hasn't migrated keeps its legacy mouse path
+// (an always-published opaque box would swallow clicks its legacy handler owns).
 function renderOverlay({ lines, title, count = null, maxWidth = 44, anchor = null, scrollOffset = 0,
-                         targetRows, targetCols }) {
+                         targetRows, targetCols, hit = null }) {
   const { offX, offY, menuW, menuH } = overlayBox({ linesLen: lines.length, anchor, maxWidth });
   const content = renderPanel({
     width: menuW, height: menuH, lines, title, focused: true, count, scrollOffset,
@@ -536,10 +606,14 @@ function renderOverlay({ lines, title, count = null, maxWidth = 44, anchor = nul
   for (let i = 0; i < out.length; i++) {
     compositeRow(targetRows, targetCols, out[i], offX, offY + i, menuW);
   }
+  if (hit) {
+    publishBox({ x: offX, y: offY, w: menuW, h: menuH, scrollOffset, lines,
+                 lineTargets: hit.lineTargets, lineChips: hit.lineChips, box: hit.box });
+  }
 }
 
 module.exports = {
   renderPanel, renderOverlay, overlayBox, truncate, fitCell, viewportDims, setDimsProvider,
-  setWriter, setChromeSink, writeOut,
+  setWriter, setChromeSink, setHitSink, publishBox, HIT_Z, writeOut,
   chromeFor, leftBorderPrefix, _collapseGlyphMarkup, _closeGlyphMarkup,
 };
