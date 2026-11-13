@@ -179,34 +179,18 @@ function _handleWheel(mx, my, delta) {
 // `isChainActive(model.modes) return;` guard catches the event so it
 // doesn't leak into normal-mode click/wheel routing.
 
-/** v0.6.4 #1 Step 2 — the unified `[≡]` pane-menu overlay. Wheel scrolls
- *  the cursor; press picks a row (tab or pane, resolved by
- *  dispatch._paneMenuPick) or closes when clicked outside. Motion/release
- *  fall through. */
+/** v0.6.4 #1 Step 2 — the unified `[≡]` pane-menu overlay. Its rows + wheel
+ *  resolve on the hit map now (docs/mouse-hit-map.md Release 1: the box is
+ *  opaque, so a press INSIDE it never reaches here). What remains is the
+ *  outside-click close, kept until Release 2 moves it to a backdrop below the
+ *  chrome band (the chrome cluster above still runs first, so the [≡] trigger
+ *  keeps toggling). Motion/release/wheel fall through. */
 function _mouseHandlePaneMenuMode(kind, mx, my, _model) {
-  const overlay = require('../../overlay/pane-menu');
   const layoutSlice = getInstanceSlice('layout');
   const target = (layoutSlice && layoutSlice.paneMenu && layoutSlice.paneMenu.targetPaneId) || null;
   if (!target) return false;
-  if (kind === 'wheel-up' || kind === 'wheel-down') {
-    const all = overlay.items(target);
-    dispatchMsg(wrap('layout', {
-      type: 'pane_menu_nav',
-      dir: kind === 'wheel-up' ? -1 : +1,
-      n: all.length,
-      vh: overlay.viewportRows(target),
-      sepIdx: all.indexOf(null),
-    }));
-    render();
-    return true;
-  }
   if (kind === 'press') {
-    const hit = overlay.hitTest(mx, my);
-    if (hit) {
-      require('./dispatch')._paneMenuPick(target, hit.item);
-    } else {
-      dispatchMsg(wrap('layout', { type: 'pane_menu_close' }));
-    }
+    dispatchMsg(wrap('layout', { type: 'pane_menu_close' }));
     render();
     return true;
   }

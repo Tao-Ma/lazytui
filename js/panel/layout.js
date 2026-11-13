@@ -533,6 +533,7 @@ function update(msg, slice) {
       else if (msg.to === 'bottom')   cursor = n - 1;
       else if (msg.to === 'pageup')   cursor = Math.max(0, cursor - vh);
       else if (msg.to === 'pagedown') cursor = Math.min(n - 1, cursor + vh);
+      else if (Number.isInteger(msg.to)) cursor = Math.max(0, Math.min(n - 1, msg.to));   // absolute — a row click (docs/mouse-hit-map.md)
       else                            cursor = Math.max(0, Math.min(n - 1, cursor + (msg.dir || 0)));
       // Skip the section separator (a non-selectable divider row) — step
       // off it in the direction of travel so the cursor never rests there.

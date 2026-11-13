@@ -22,19 +22,23 @@ const { chainStamp } = require('../../leaves/input/modes');
 const { stripMarkup } = require('../../leaves/text/ansi');
 const { getModel } = require('../../app/runtime');
 
-// A press far off-screen: advances the parser's double-click triple without
-// hitting anything, so the next press can't pair with an earlier same-cell one.
-const OFF = '\x1b[<0;250;90M';
+// Reset the parser's double-click triple to a far-off cell WITHOUT dispatching
+// a press (input._classifyPress only records it), so the next press can't pair
+// with an earlier same-cell one. A real off-screen press would itself be an
+// "outside click" for overlays with a legacy outside-close (pane-menu).
 const sgr = (btn, mx, my) => `\x1b[<${btn};${mx + 1};${my + 1}M`;
+function _resetDouble() { input._classifyPress(0, 250, 90, Date.now()); }
 
 /** Full paint (stdout captured) — publishes the hit map for the current model. */
 function paint() { sm.capture(sm.render); }
 
 function click(mx, my, button = 0) {
-  sm.capture(() => { input._dispatchToken(OFF); input._dispatchToken(sgr(button, mx, my)); });
+  _resetDouble();
+  sm.capture(() => input._dispatchToken(sgr(button, mx, my)));
 }
 function dblclick(mx, my) {
-  sm.capture(() => { input._dispatchToken(OFF); input._dispatchToken(sgr(0, mx, my)); input._dispatchToken(sgr(0, mx, my)); });
+  _resetDouble();
+  sm.capture(() => { input._dispatchToken(sgr(0, mx, my)); input._dispatchToken(sgr(0, mx, my)); });
 }
 function wheel(mx, my, dir) { sm.capture(() => input._dispatchToken(sgr(dir === 'up' ? 64 : 65, mx, my))); }
 

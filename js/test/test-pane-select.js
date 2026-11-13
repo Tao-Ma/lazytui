@@ -124,12 +124,33 @@ describe('[3] hit-test', () => {
     eq(paneSelect.hitTestTrigger(5, 0), null);
   });
 
-  it('hitTest returns null when overlay closed', () => {
+  // Dropdown rows resolve on the hit map the overlay's paint publishes
+  // (docs/mouse-hit-map.md); these pinned the retired pane-menu hitTest.
+  const hm = require('../panel/hit-map');
+  function paintOverlays() {
+    require('../render/paint');   // wires the draw → hit-map sink (as at boot)
+    const { cols, rows } = require('../leaves/render/draw').viewportDims();
+    hm.clear(require('../leaves/input/modes').chainStamp(require('../app/runtime').getModel().modes));
+    require('../render/overlay-compositor').paintActive(require('../app/runtime').getModel(),
+      new Array(rows).fill(' '.repeat(cols)), cols);
+  }
+  // A press at (mx,my) on the pane-menu: the row index it navigates to,
+  // 'swallow' (box border), or null (not on the dropdown).
+  function pressAt(mx, my) {
+    const r = hm.resolve(mx, my, 'press');
+    if (!r || r.region.owner !== 'pane-menu') return null;
+    const h = r.handler;
+    if (Array.isArray(h) && h[0].msg && h[0].msg.type === 'pane_menu_nav') return h[0].msg.to;
+    return h;
+  }
+
+  it('publishes nothing when the overlay is closed', () => {
     setup();
-    eq(paneSelect.hitTest(20, 10), null);
+    paintOverlays();
+    eq(hm.all().filter(r => r.owner === 'pane-menu').length, 0);
   });
 
-  it('hitTest resolves row idx for anchored dropdown', () => {
+  it('dropdown rows resolve to their item idx (anchored geometry)', () => {
     // Anchored dropdown drops down from the target pane's top row
     // (paneB.y + 1). Width clamps to pane.w (or MAX_W=50). Borders
     // at y=top and y=top+h-1 are inert; content rows at y=top+1..top+h-2.
@@ -164,17 +185,16 @@ describe('[3] hit-test', () => {
     // 3 items (groups[here] + actions[placed] + stats[hidden]),
     // viewport caps innerH=3. Geometry: x=0, y=1, w=32, innerH=3, h=5.
     // Content rows: y=2,3,4. Borders at y=1 and y=5 inert.
-    eq(paneSelect.hitTest(-1, 2), null, 'left of dropdown returns null');
-    eq(paneSelect.hitTest(40, 2), null, 'right of dropdown returns null');
-    eq(paneSelect.hitTest(5, 1),  null, 'top border inert');
-    eq(paneSelect.hitTest(5, 5),  null, 'bottom border inert');
-    const row0 = paneSelect.hitTest(5, 2);
-    assert(row0 && row0.idx === 0 && row0.item.id === 'groups', 'row 0 = groups');
-    const row1 = paneSelect.hitTest(5, 3);
-    assert(row1 && row1.idx === 1, 'row 1 hit');
-    const row2 = paneSelect.hitTest(5, 4);
-    assert(row2 && row2.idx === 2, 'row 2 hit');
-    eq(paneSelect.hitTest(5, 6),  null, 'past last row returns null');
+    paintOverlays();
+    eq(pressAt(-1, 2), null, 'left of dropdown → not on it');
+    eq(pressAt(40, 2), null, 'right of dropdown → not on it');
+    eq(pressAt(5, 1),  'swallow', 'top border inert (consumed by the box)');
+    eq(pressAt(5, 5),  'swallow', 'bottom border inert');
+    eq(pressAt(5, 2), 0, 'row 0 → item 0');
+    eq(paneSelect.items('pane-groups')[0].id, 'groups', 'item 0 = groups');
+    eq(pressAt(5, 3), 1, 'row 1 hit');
+    eq(pressAt(5, 4), 2, 'row 2 hit');
+    eq(pressAt(5, 6),  null, 'past last row → not on it');
   });
 });
 

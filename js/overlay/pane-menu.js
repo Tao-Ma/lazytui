@@ -33,7 +33,7 @@
 
 const { getModel } = require('../model/store');
 const { getInstanceSlice, theme } = require('../panel/api');
-const { renderPanel, viewportDims } = require('../leaves/render/draw');
+const { renderPanel, viewportDims, publishBox } = require('../leaves/render/draw');
 const { compositeRow } = require('../leaves/render/row-compositor');
 const chromeRegions = require('../panel/chrome-regions');
 const { esc, visibleLen } = require('../leaves/text/ansi');
@@ -244,20 +244,6 @@ function viewportRows(paneId) {
   return g ? g.innerH : 1;
 }
 
-/** Row hit-test for the open overlay. Returns { idx, item } on a list
- *  row, null for borders / outside / empty. */
-function hitTest(mx, my) {
-  if (!getModel().modes.paneMenuMode) return null;
-  const g = _geom();
-  if (!g) return null;
-  if (mx < g.x || mx >= g.x + g.w) return null;
-  if (my < g.y || my >= g.y + g.h) return null;
-  if (my === g.y || my === g.y + g.h - 1) return null;
-  if (g.items.length === 0) return null;
-  const rowIdx = (my - g.y - 1) + g.scroll;
-  if (rowIdx < 0 || rowIdx >= g.items.length) return null;
-  return { idx: rowIdx, item: g.items[rowIdx] };
-}
 
 // --- Render ------------------------------------------------------------
 
@@ -335,6 +321,12 @@ function render(newRows, cols) {
   const _multiTab = !!(_pane && Array.isArray(_pane.tabs) && _pane.tabs.length > 1);
   const title = (_multiTab || _isViewer(paneId)) ? 'Tabs' : 'Pane select';
   const lines = [];
+  // Hit map (docs/mouse-hit-map.md): line k shows item scroll+k. A click moves
+  // the cursor there and presses Enter — _paneMenuPick via the paneMenuMode key
+  // handler, exactly as typed (the single-click pick the legacy hitTest did).
+  // n / vh / sepIdx ride the Msg like the key handler's; the divider is inert.
+  const lineTargets = [];
+  const sepIdx = g.items.indexOf(null);
   if (g.items.length === 0) {
     lines.push('[dim](no panes — pool is empty)[/]');
   } else {
@@ -349,6 +341,10 @@ function render(newRows, cols) {
         continue;
       }
       const text = _formatRow(g.items[i], paneId, g.w);
+      lineTargets[lines.length] = { press: [
+        { msg: { type: 'pane_menu_nav', to: i, n: g.items.length, vh: g.innerH, sepIdx }, owner: 'layout' },
+        { key: 'return' },
+      ] };
       lines.push((i === cursor) ? `[reverse]${text}[/]` : text);
     }
   }
@@ -362,6 +358,12 @@ function render(newRows, cols) {
   for (let i = 0; i < panelLines.length; i++) {
     compositeRow(newRows, cols, panelLines[i], g.x, g.y + i, g.w);
   }
+  // This overlay composes its own box (not renderOverlay), so it publishes
+  // through the shared helper directly; lines are pre-sliced (scroll applied
+  // above), and publishBox clips to the screen (the dropdown's right edge is
+  // not clamped — docs/mouse-hit-map.md §Adjacent findings 4).
+  publishBox({ x: g.x, y: g.y, w: g.w, h: g.h, lines, lineTargets,
+               box: { 'wheel-up': { key: 'up' }, 'wheel-down': { key: 'down' } } });
 }
 
 // Overlay-compositor R3 descriptor. zIndex=50 preserves pane-menu's
@@ -373,11 +375,14 @@ function registerSelf(compositor) {
     render: (m, newRows, cols) => render(newRows, cols),
     modal: true,
     zIndex: 50,
+    // No mouse.outside yet: pane-menu keeps pane chrome clickable (its own [≡]
+    // trigger toggles it), so the legacy input.js handler still owns the
+    // outside-click close until hit-map Release 2's below-chrome backdrop.
   });
 }
 
 module.exports = {
-  hitTestTrigger, hitTest, render, items, viewportRows,
+  hitTestTrigger, render, items, viewportRows,
   triggerVisible, _triggerState, _isViewer,
   _formatPaneRow,
   registerSelf,
