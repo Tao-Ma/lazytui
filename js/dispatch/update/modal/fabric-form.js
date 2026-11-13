@@ -501,8 +501,13 @@ function update(model, msg) {
           });
         }
       }
+      // Moving focus closes any open choices list — "the list belongs to the
+      // focused field" is an invariant the reducer owns, not each caller (the
+      // Tab key handler closes first; a click carries no such step). Without it
+      // a batched Space+click reached list-open-on-svc / focus-on-host, which
+      // the keyboard cannot (pre-release review F2).
       return [withModal(model, { fabricForm: {
-        ...f, focusIdx: nextIdx, fields: nextFields,
+        ...f, focusIdx: nextIdx, fields: nextFields, picking: null,
       } }), [...cancelCmds, ...refetchCmds]];
     }
     case 'fabric_form_reset_default': {

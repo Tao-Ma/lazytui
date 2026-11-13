@@ -244,14 +244,11 @@ function renderFabricFormOverlay(newRows, cols) {
   const picking = f.picking;
   // Hit map (docs/mouse-hit-map.md). Rows are NOT field-aligned (headers, desc,
   // inlined choices, warning, preview, help interleave), so targets are stamped
-  // as each row is pushed. A field's input + desc rows focus that field; with
-  // the choices list open, the click first closes it — the same close-then-act
-  // the keyboard does for Tab / Shift-Tab. A choice row picks its value.
+  // as each row is pushed. A field's input + desc rows focus that field (the
+  // focus reducer closes an open choices list itself); a choice row picks its
+  // value.
   const lineTargets = [];
-  const focusTarget = (field) => {
-    const focus = { msg: { type: 'fabric_form_focus', idx: f.fields.indexOf(field) } };
-    return { press: picking ? [{ msg: { type: 'fabric_form_choices_close' } }, focus] : focus };
-  };
+  const focusTarget = (field) => ({ press: { msg: { type: 'fabric_form_focus', idx: f.fields.indexOf(field) } } });
 
   // Pre-compute stillMissing + chrome row count so the popover's item slice
   // can size itself to the ACTUAL chrome, not a constant guess. R-II-3-BUG1:

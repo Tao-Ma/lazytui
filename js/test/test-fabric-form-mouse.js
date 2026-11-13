@@ -48,6 +48,19 @@ describe('[1] fabric_form_focus { idx }', () => {
     [m] = runtime.update(m, { type: 'fabric_form_focus', idx: '0' });
     assert(m === before, 'non-integer → unchanged');
   });
+  it('moving focus closes an open choices list (the reducer owns the invariant)', () => {
+    let m = runtime.init();
+    [m] = runtime.update(m, { type: 'fabric_form_enter', fields: FIELDS(), pendingAction: PENDING });
+    [m] = runtime.update(m, { type: 'fabric_form_focus', idx: 1 });
+    [m] = runtime.update(m, { type: 'fabric_form_choices_open', port: 'svc' });
+    assert(m.modal.fabricForm.picking, 'list open');
+    [m] = runtime.update(m, { type: 'fabric_form_focus', idx: 0 });
+    eq(m.modal.fabricForm.picking, null, 'absolute focus closed it');
+    [m] = runtime.update(m, { type: 'fabric_form_focus', idx: 1 });
+    [m] = runtime.update(m, { type: 'fabric_form_choices_open', port: 'svc' });
+    [m] = runtime.update(m, { type: 'fabric_form_focus_prev' });
+    eq(m.modal.fabricForm.picking, null, 'Shift-Tab path closes it too');
+  });
 });
 
 describe('[2] field rows', () => {
