@@ -63,22 +63,23 @@ dropdown; zoom arm explicitly clears the select arm).
 
 | Hit-test | Strategy |
 |---|---|
-| `[_]`/`[+]`, `[X]`, `[≡]` trigger | **published** at paint (`panel/chrome-regions.js`) |
-| tree fold markers | **published** (`panel/tree-regions.js`) |
+| `[_]`/`[+]`, `[X]`, `[≡]` trigger | **published** at paint (`panel/chrome-regions.js`) — **on the hit map since R2** |
+| tree fold markers | **published** (`panel/tree-regions.js`) — **on the hit map since R2** |
 | text-select / row mapping | **published** (`panel/select-view.js recordContent`) |
 | graph hover value | **published** (`panel/hover-region.js`) |
 | menu rows | re-derived (`overlay/menu.js:79`, shared `overlayBox` + `menuScroll`) — **published on the hit map since R1** |
 | pane-menu rows | re-derived (`overlay/pane-menu.js:249 _geom`) — **published on the hit map since R1** |
 | panel-list rows | re-derived (`overlay/panel-list.js:295`) |
-| border-control strip + bottom legend | re-derived (`panel/chrome-hittest.js:108`, mirrors `bc.fits`) |
-| slot tab-strip | re-derived, then clipped by published `titleClip` (`input.js:879`) |
-| action-status `✗ cancel` | re-derived (`chrome-hittest.js:160` via `cancelHitInfo`) |
+| border-control strip + bottom legend | re-derived (`panel/chrome-hittest.js:108`, mirrors `bc.fits`) — **published on the hit map since R2** |
+| slot tab-strip | re-derived, then clipped by published `titleClip` (`input.js:879`) — **published on the hit map since R2** |
+| action-status `✗ cancel` | re-derived (`chrome-hittest.js:160` via `cancelHitInfo`) — **published on the hit map since R2** |
 | replay seek strip | re-derived (`overlay/replay-scrubber.js:82`) |
 
 Every re-derived site carries a comment explaining how it mirrors the
 paint; the phantom-hit arc was the cost of one that didn't. Four
-published registries exist, each with its own clear/publish/get and its
-own reader.
+published registries existed, each with its own clear/publish/get and its
+own reader (since R2, two remain: select-view's content capture and
+hover-region — both feed pane-body behavior that moves in R3).
 
 **C — Gesture state is ad-hoc module locals.** `_armedSelect`
 (`input.js:507`), `_armedZoom` (`:514`), `_lastHover` (`:566`), the
@@ -112,7 +113,8 @@ either way (§Stale-frame rule).
 - **One pointer-capture slot** replaces `_armedSelect` / `_armedZoom` /
   the free-config drag routing.
 - chrome-regions, tree-regions, chrome-hittest.js and every re-derived
-  overlay `hitTest` are deleted.
+  overlay `hitTest` are deleted (R2 deleted the first three; panel-list's and
+  the replay scrubber's `hitTest` go in R3).
 
 ## Mechanism
 
@@ -125,7 +127,7 @@ either way (§Stale-frame rule).
   z:     1013,                      // see §Z bands
   owner: 'confirm',                 // overlay id (R1) | paneId (R2+)
   opaque: false,                    // stops the walk even with no handler (boxes, backdrops)
-  repeat: true,                     // chips only: a fast 2nd click re-presses (§Press→double)
+  repeat: true,                     // hint chips + top-strip steppers: a fast 2nd click re-presses (§Press→double)
   on: {                             // gesture → handler; absent gesture = not handled here
     press:        { key: 'y', seq: 'y' },
   },
@@ -140,7 +142,7 @@ Gestures are the existing `handleMouse` kinds: `press`, `double`, `right`,
 | Form | Realized as | Used by |
 |---|---|---|
 | `{ key, seq? }` | `handleKey(key, seq ?? seqForKey(key))` — the keyboard path itself. `seqForKey` (leaves/render/hints) mirrors `input._dispatchToken`: a single character carries itself as `seq`, a named key (`return`, `escape`, `backtab`, `up`, …) carries none — so a handler's "printable seq → typed text" fallback never types a key's NAME | hint chips, wheel-on-list (`up`/`down`), outside policy (`escape`) |
-| `{ msg, owner? }` | `applyMsg(msg)` or `dispatchMsg(wrap(owner, msg))` | row picks (`menu_activate {idx}`), border controls, tree toggle |
+| `{ msg, owner? }` | `applyMsg(msg)` or `dispatchMsg(wrap(owner, msg))` | row picks (`menu_activate {idx}`), pane chrome (`panel_collapse_toggle`, `pool_hide`, `activate_tab`), tree toggle, `cancel_job` |
 | `{ intent }` | `intent.realize(intent)` | pane body: focus / select / activate / context / scroll |
 | `{ capture: name, ...args }` | start pointer capture with a named drag controller (§Pointer capture) | text-select, graph-zoom, free-config, pool-drag (R3) |
 | `{ act: name, ...args }` | a named input-time action (`dispatch/control/mouse-acts.js`) — the Msg is computed at click time against current state, after re-checking the target is still shown | border controls, `[≡]` open (R2) |
@@ -187,21 +189,24 @@ chip falls to its row, then to the box's wheel handler.
 | Overlay *k* | 1000 + 10·zIndex_k + {0 backdrop, 1 box, 2 rows, 3 chips} | compositor-registered overlays (R1) |
 | Replay owner | 20000 | replay scrubber full-screen capture (R3) — above every overlay band (the highest, hover-tooltip's, is 1000 + 10·999) |
 
-The tree-marker-vs-dropdown fix (`input.js` handleMouse, "Tree fold marker") becomes a z fact (30 <
-1000+) instead of a source-order fact. The `suppressChrome` column becomes
-"backdrop at 35 vs at 1000+".
+The pre-R2 tree-marker-vs-dropdown fix (a source-order move in `handleMouse`)
+became a z fact (30 < 35 / 1000+). The `suppressChrome` column decides where an
+overlay's backdrop sits ("at 1000+, above chrome" vs "at 35, below it") and,
+read at paint, whether chrome publishes at all.
 
 ### Publishing
 
 - **Registry**: `js/panel/hit-map.js` — `clear(stamp)`, `publish(region)`,
-  `publishOwned(region, zOff)` + `enterOwner` / `exitOwner` (the ambient
-  bracket), `resolve(mx, my, gesture)`, `claims(mx, my)`, `stampOf(model,
-  layoutSlice)` / `stampsEqual` / `frameStamp()`, `all()` (tests / diag).
-  Placed in the panel layer alongside chrome-regions (dispatch→panel and
-  render→panel are legal edges).
+  `publishOwned(region, zOff)` + `enterOwner` / `exitOwner` (the overlay
+  bracket), `enterPane(paneId, rect)` / `exitPane` + `publishLocal(region, z)`
+  (the pane bracket, R2 — pane-local rects translated + clipped to the pane),
+  `retractOwner(owner)`, `resolve(mx, my, gesture)`, `claims(mx, my)`,
+  `stampOf(model, layoutSlice)` / `stampsEqual` / `frameStamp()`, `all()`
+  (tests / diag), `BANDS` (the pane-anchored z bands). Panel layer
+  (dispatch→panel and render→panel are legal edges).
 - **Cleared** at the top of every main-frame paint in `render()`
-  (`render/paint.js`, beside the chrome/tree/hover registry clears) and
-  repopulated in the same synchronous pass.
+  (`render/paint.js`, beside the hover-region clear) and repopulated in the
+  same synchronous pass.
 - **Leaves publish through an injected sink** (`draw.setHitSink`), the
   `setChromeSink` precedent — `leaves/render/draw.js` stays pure and
   import-free of the panel layer (leaves purity wall).
@@ -243,8 +248,8 @@ NOT `'tab'`, which no handler matches; dispatch.js notes the same trap),
 `compositeRow` with their own geometry, so they call the shared publisher
 directly: `publishBox({ x, y, w, h, scrollOffset, lines, lineTargets,
 lineChips, box })` — the same function `renderOverlay` uses. It **clips
-every region to the screen** (pane-menu's dropdown right edge is not clamped,
-§Adjacent findings 4).
+every region to the screen** (pane-menu's `_geom` also keeps its dropdown on
+screen since R2 — §Adjacent findings 4).
 
 Pre-sliced overlays (diag-log, jobs, register-popup, action-palette, pane-
 menu, cmdline slice their own visible window) pass `lineTargets` aligned with
@@ -275,9 +280,12 @@ half-filled form).
 Note the name clash a maintainer will meet: the descriptor's `modal` (the
 compositor's one-modal-at-a-time invariant), modes.js `modal` (owns the
 footer row) and modes.js `suppressChrome` (blocks chrome clicks) are three
-different facts. `mouse.outside` is keyed off none of them; for R1 the rule
-"a backdrop iff the overlay's mode has `suppressChrome: true`" is pinned by a
-test (`test-overlay-mouse-policy.js`).
+different facts. `mouse.outside` is keyed off none of them. The rule is pinned
+by `test-overlay-mouse-policy.js`: an overlay whose mode has `suppressChrome:
+true` publishes its backdrop in its own band (above all pane chrome); one whose
+mode leaves chrome live publishes none, or — `mouse.backdrop: 'below-chrome'`,
+R2: jobs, pane-menu, which-key — publishes it at z 35, under the chrome band,
+so chrome stays clickable while an outside click elsewhere runs the policy.
 
 ### Pointer capture (R3)
 
@@ -375,8 +383,9 @@ that lost focus does nothing).
 
 - Handlers are data, so the frame stays `f(model)`; realization happens at
   input time, exactly where `handleMouse` dispatches today.
-- The hit map is a per-frame derived side output of render — the same
-  status chrome-regions has today; no new blessed exception.
+- The hit map is a per-frame derived side output of render — the status
+  chrome-regions had before it (and select-view / hover-region still have); no
+  new blessed exception.
 - Replay: the WAL holds the resolved Msgs (a chip click is the same Msgs as
   its keystroke). Raw mouse events are not in the event log; each click the
   router resolves is recorded as `input {kind:'mouse', gesture, owner, id}` so
@@ -571,8 +580,8 @@ proposals (2026-11-13), and R1 ships them:
 
 Found while mapping the overlays and during R1; none is the reported bug.
 Each needed a repro before it was called a bug
-(`feedback_dont_speculate_commit`). Items 1 and 4 are still unverified and
-fold into the release that touches their code.
+(`feedback_dont_speculate_commit`). Item 1 is still unverified and folds into
+R3 (the panel-list migration); item 4 was reproduced and fixed in R2.
 
 1. **panel-list header/footer press starts a drag** — *likely bug.* A press
    on the header, footer or preview area leaves the cursor and, if the
@@ -593,10 +602,12 @@ fold into the release that touches their code.
    are internally consistent with their own meaning; the shared name
    invites exactly the hover-tooltip mistake in (2). The hit map keys its
    backdrop off neither — off the descriptor's explicit `mouse.outside`.
-4. **pane-menu dropdown right edge is not clamped to the screen** —
-   *possible bug* on a pane near the right edge of a narrow terminal
-   (pane-menu `_geom`: `w = min(50, max(20, paneB.w))` from `paneB.x`).
-   `publishBox` clips regions regardless; the paint side needs a repro.
+4. **pane-menu dropdown right edge was not clamped to the screen** — **FIXED
+   in R2** (`620ddc84`; reproduced first). Half view on a ~30–34-column
+   terminal: the content slot is ~17 wide, and `_geom`'s `w = min(50, max(20,
+   paneB.w))` anchored at `paneB.x` spilled past the right edge, cutting the
+   border, `╮` and the count. `_geom` now shifts the box left and caps it at
+   the screen width (publishBox already clipped the regions).
 
 5. **Double-click on a menu item also activated the pane beneath** — **FIXED
    in R1** (`e0241991`; reproduced first). See §Press→double continuation.
@@ -661,16 +672,20 @@ and adjacent finding 4 together (both touch `overlay/pane-menu.js`). Notes:
 - **One chrome publisher.** renderPanel's drawn-chrome record (the old
   chrome-regions payload) now also reports where each border control drew
   (`controls`, `bottomControl` — the control objects ride through renderPanel)
-  and which title targets survived truncation (`tabs`). `render/paint
-  _publishChromeGlyphs` turns the record into regions for the pane being
-  rendered. Gates: chrome needs `!suppressesChromeClicks` (read at paint);
-  tabs need `!isChainActive` (the old tab arm sat below the T13 gate).
+  and which title targets survived truncation (`tabs`). `render/pane-hits`
+  (`begin` / `end` bracket + `publishChrome`) turns the record into regions
+  for the pane being rendered. Gates, decided once per frame in paint's
+  `_chromeContext` and passed to every pane render: `chromeLive` (chrome band —
+  `!suppressesChromeClicks`, terminalMode excepted, no free-config drag) and
+  `bodyLive` (`!isChainActive` — tabs and fold markers, which sat below the T13
+  gate).
 - **`{ act }`** (`dispatch/control/mouse-acts.js`): `pane-menu-open`
   (`pane-menu.openAt`, cursor seeding shared with the keyboard `T` via
   `seedCursor`) and `border-control` (`resolveBorderControl` — re-runs
   `borderControlsFor` with the current focus + mode, checks the action is still
-  offered, then `spec.dispatch`). Top steppers publish `repeat: true`; the item
-  legend does not.
+  offered, then `spec.dispatch`). A spec's `regions()` declares which parts
+  repeat on a fast 2nd click (steppers: refresh `-`/`+`, sort `‹`/`›`);
+  toggles and item actions don't.
 - **`buildTextView` passes `titleTargets` through** — the first cut published
   no tabs for info / text-view because the builder whitelists renderPanel opts.
 - **Deleted:** `panel/chrome-regions.js`, `panel/tree-regions.js`,
@@ -690,11 +705,42 @@ and adjacent finding 4 together (both touch `overlay/pane-menu.js`). Notes:
   `screenText`, `chromeAt`/`triggerAt`/`collapseAt`/`closeAt`,
   `borderControlAt`, `cancelAt`, `treeMarkerAt`).
 
+### Pre-release review (4 tracks) — fixed before release
+
+Each reproduced by a reviewer script first:
+
+- **Leaving terminal mode and clicking in one chunk** turned a `[_]` click into
+  a body click: paint gated chrome on `terminalMode` (suppressChrome, but
+  non-chain — not in the stamp). `chromeLive` now ignores terminalMode (its
+  mouse goes to the PTY anyway), and the gates live in one place.
+- **Every top-strip control repeated** on a fast 2nd click — a double-click on
+  `‹ tree ›` or the sort label toggled twice (a no-op). Specs now declare
+  `repeat` per part.
+- **A body click batched behind the key that closed jobs / pane-menu /
+  which-key was swallowed** anywhere on screen: the below-chrome backdrop
+  claimed every cell of the stale frame. Those backdrops are `invisible` to
+  `claims` (the panes under them look live); the click reaches legacy, as in
+  v0.6.56.
+- **Chrome pushed onto the footer row** (min-height floors on a short terminal)
+  was clickable there — inherited from v0.6.56's registries. The pane bracket
+  clips to the composed frame.
+- **Border controls of a collapsed pane shown in half / full view** were dead
+  (the act rejected `collapsed`; half / full render it expanded). The act checks
+  the visible bounds instead.
+- **A router-consumed press left a pending text-selection arm** (inherited
+  since R1 for chips): presses now disarm before the router.
+- Plus doc / comment parity, `titleClip` and three dead exports removed, the z
+  bands in one table (`BANDS.OVERLAY_BASE`), and the chrome publisher moved to
+  `render/pane-hits.js`. `buildEntryStrip` keeps its pane-local `tabBounds`: the
+  tab-click smoke test checks the published regions against them.
+
 ## Rollback
 
-R1 and R2 keep the legacy cascade as the miss path, so reverting a single
-overlay's (or chrome element's) commit restores the old behavior for it
-alone. R3 removes the cascade; its rollback is a release revert.
+R1 keeps the legacy cascade as the miss path, so reverting a single
+overlay's commit restores the old behavior for it alone. R2 does not: each
+step deleted its own legacy `handleMouse` arm, and step 7 deleted the
+registries those arms read — revert R2 as a whole (`c075b2ca..` on main), not
+per element. R3 removes the cascade; its rollback is a release revert.
 
 ## Non-goals
 
@@ -706,9 +752,13 @@ alone. R3 removes the cascade; its rollback is a release revert.
 
 ## Session kickstart
 
-Release 1 shipped; Release 2 in progress (§Release 2 lists the steps). Read this doc, then `js/panel/hit-map.js`,
-`js/dispatch/control/mouse-router.js`, `js/dispatch/control/input.js`
-(`handleMouse` — the router call, then the legacy chrome cluster R2
-replaces), `js/leaves/render/draw.js` (`renderPanel`'s `_chromeSink` emit,
-`publishBox`), `js/panel/chrome-hittest.js`, `js/render/overlay-compositor.js`.
-Continue at the first unfinished §Release 2 step (`git log` shows which).
+Releases 1 and 2 are built (popups; pane chrome). Next is Release 3 (pane
+bodies, pointer capture, replay scrubber, the legacy cascade deleted). Read
+this doc, then `js/panel/hit-map.js`, `js/dispatch/control/mouse-router.js`,
+`js/dispatch/control/mouse-acts.js`, `js/render/paint.js`
+(`_safeRender`'s pane bracket), `js/render/pane-hits.js` (pane-body regions
+publish there too), `js/dispatch/control/input.js` (`handleMouse` — the
+router call, then the legacy cascade R3 replaces: `_modeMouseHandlers`, the
+T13 gate, `_armedSelect` / `_armedZoom`, the body press loop),
+`js/overlay/panel-list.js` and `js/overlay/replay-scrubber.js` (the last
+re-derived `hitTest`s). Start at §Release 3 step 1.

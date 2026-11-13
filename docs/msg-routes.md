@@ -83,6 +83,7 @@ single interpreter runs. The render path is a (near-)pure projection.
               ┌───────────────────────▼────────────────────────┐
   dispatch/   │  control/  → input · dispatch · intent · cmdline │  the IMPURE
               │              actions · mouse-bindings · mouse-router│  dispatch shell
+              │              · mouse-acts                        │
               │  update/   → reducer (root) · modal/* · model-ops │  ── PURE ──
               │  runtime/  → loop (2 pumps) · finalize · effects  │  pumps + interpreter
               │              stream · action-runner · cleanup     │

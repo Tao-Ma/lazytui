@@ -405,9 +405,9 @@ on cleanup.
 On a process tree, clicking a `▾`/`▸` fold marker folds/unfolds that node
 directly (no need to move the selection first — the rest of the row still
 selects), and the `‹ tree ›`/`‹ flat ›` border chip toggles the layout. Each
-drawn marker publishes its cell to a per-frame registry that the hit-test
-reads, so a marker clipped by a narrow column is never clickable where nothing
-drew (the paint↔hit-test agreement discipline).
+drawn marker publishes its cell to the per-frame hit map, so a marker clipped
+by a narrow column is never clickable where nothing drew (the paint↔hit-test
+agreement discipline).
 
 Note: enabling mouse reporting takes over the mouse from the
 terminal — native text selection may not work while the TUI runs.

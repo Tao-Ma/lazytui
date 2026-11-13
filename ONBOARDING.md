@@ -105,7 +105,8 @@ The release also ships prebuilt per-platform `lazytui` CLI binaries. Full recipe
   drew. Paint publishes every clickable region (popups, pane chrome, border
   controls, tab strip, tree markers) with a data handler to the per-frame hit map
   (`panel/hit-map`); one z-ordered router resolves it (`docs/mouse-hit-map.md`).
-  Never re-derive a clickable's geometry at click time.
+  Never add a click-time re-derivation of a clickable's geometry (pane bodies
+  and drags still use the legacy cascade until hit-map Release 3).
 - **Docs are prose, tests are blind to it** — after moving a symbol or changing
   layout, grep the old name and fix code comments + living docs (`docs/msg-routes.md`
   is the Msg-route map; `docs/LAYOUT.md` the panel/config reference).
