@@ -49,6 +49,9 @@ const { filterChoices } = require('../../../leaves/ports/choices-filter');
 const TYPES = [
   'fabric_form_enter', 'fabric_form_key',
   'fabric_form_focus_next', 'fabric_form_focus_prev',
+  // Hit map (docs/mouse-hit-map.md) — focus a field by index (a click on its
+  // row). Same blur → reactive-refetch semantics as Tab / Shift-Tab.
+  'fabric_form_focus',
   'fabric_form_reset_default', 'fabric_form_clear',
   'fabric_form_submit', 'fabric_form_cancel',
   // Args→ports slice 2 (`choices_fn:`): computed-choices lifecycle. The
@@ -436,10 +439,19 @@ function update(model, msg) {
       return [withModal(model, { fabricForm: { ...f, fields: nextFields } }), []];
     }
     case 'fabric_form_focus_next':
-    case 'fabric_form_focus_prev': {
+    case 'fabric_form_focus_prev':
+    case 'fabric_form_focus': {
       if (!model.modes.fabricFormMode) return [model, []];
       const f = model.modal.fabricForm;
-      const nextIdx = _advance(f.fields, f.focusIdx, msg.type === 'fabric_form_focus_next' ? 1 : -1);
+      let nextIdx;
+      if (msg.type === 'fabric_form_focus') {
+        // Absolute (a row click). An out-of-range / non-integer idx is a no-op
+        // rather than a clamp: the click names a specific field or nothing.
+        if (!Number.isInteger(msg.idx) || msg.idx < 0 || msg.idx >= f.fields.length) return [model, []];
+        nextIdx = msg.idx;
+      } else {
+        nextIdx = _advance(f.fields, f.focusIdx, msg.type === 'fabric_form_focus_next' ? 1 : -1);
+      }
       if (nextIdx === f.focusIdx) return [model, []];
       // Reactive refetch: the just-blurred field may be a dependency of one or
       // more computed fields. For each dependent whose current depsHash differs

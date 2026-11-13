@@ -33,6 +33,7 @@
 const { getModel } = require('../model/store');
 const { esc, visibleLen } = require('../leaves/text/ansi');
 const { renderOverlay, truncate, viewportDims } = require('../leaves/render/draw');
+const { formatHints } = require('../leaves/render/hints');
 const { filterChoices } = require('../leaves/ports/choices-filter');
 const { windowSlice } = require('../leaves/render/window-slice');
 
@@ -241,6 +242,16 @@ function renderFabricFormOverlay(newRows, cols) {
   let pickingLineIdx = -1;
   const rows = [];
   const picking = f.picking;
+  // Hit map (docs/mouse-hit-map.md). Rows are NOT field-aligned (headers, desc,
+  // inlined choices, warning, preview, help interleave), so targets are stamped
+  // as each row is pushed. A field's input + desc rows focus that field; with
+  // the choices list open, the click first closes it — the same close-then-act
+  // the keyboard does for Tab / Shift-Tab. A choice row picks its value.
+  const lineTargets = [];
+  const focusTarget = (field) => {
+    const focus = { msg: { type: 'fabric_form_focus', idx: f.fields.indexOf(field) } };
+    return { press: picking ? [{ msg: { type: 'fabric_form_choices_close' } }, focus] : focus };
+  };
 
   // Pre-compute stillMissing + chrome row count so the popover's item slice
   // can size itself to the ACTUAL chrome, not a constant guess. R-II-3-BUG1:
@@ -266,8 +277,9 @@ function renderFabricFormOverlay(newRows, cols) {
     const pad = ' '.repeat(Math.max(0, maxNameVis - visibleLen(name)));
     const chip = _chipMarkup(field);
     if (findFocus(field)) focusLineIdx = rows.length;
+    lineTargets[rows.length] = focusTarget(field);
     rows.push(_inputRow(field, findFocus(field), name, pad, leftW, midW, chip, chipSlot));
-    if (field.desc) rows.push(_descRow(field.desc, leftW));
+    if (field.desc) { lineTargets[rows.length] = focusTarget(field); rows.push(_descRow(field.desc, leftW)); }
     // Choices popover: when this field is the picked port, render the choices
     // list indented to the input column. Highlighted entry inverse-painted
     // (matches the caret / field-focus style). The error path shows the error
@@ -349,6 +361,11 @@ function renderFabricFormOverlay(newRows, cols) {
               // instead so the empty string survives.
               const label = (view.labels && view.labels[i] != null) ? view.labels[i] : view.items[i];
               if (i === picking.idx) pickingLineIdx = rows.length;
+              // The FILTERED value at i — exactly what Enter commits for idx i.
+              if (typeof view.items[i] === 'string') {
+                lineTargets[rows.length] = { press: { msg: { type: 'fabric_form_choices_pick',
+                  port: picking.port, value: view.items[i] } } };
+              }
               const painted = i === picking.idx
                 ? `[reverse]${esc(label)}[/]`
                 : esc(label);
@@ -442,6 +459,7 @@ function renderFabricFormOverlay(newRows, cols) {
   // Help line adapts to the mode: the picker gets its own keys; a focused
   // computed-choices field advertises `[space] choices` so the affordance is
   // discoverable without reading docs.
+  let hint;
   if (picking) {
     // R2B-SMELL8 — "close popover" disambiguates against the next-up Esc,
     // which closes the form. Brief 2 — show the filter affordance so users
@@ -449,17 +467,29 @@ function renderFabricFormOverlay(newRows, cols) {
     // "clear/close" so the two-step (clear filter first, then close) is
     // discoverable too.
     const filterActive = typeof picking.filter === 'string' && picking.filter.length > 0;
-    const escHint = filterActive ? '\\[esc] clear filter' : '\\[esc] close popover';
-    rows.push(`[dim]\\[up/down] move   \\[type] filter   \\[enter] pick   ${escHint}[/]`);
+    hint = formatHints([
+      { cap: 'up/down', label: 'move',   key: null },
+      { cap: 'type',    label: 'filter', key: null },
+      { cap: 'enter',   label: 'pick',   key: 'return' },
+      { cap: 'esc',     label: filterActive ? 'clear filter' : 'close popover', key: 'escape' },
+    ]);
   } else {
     const focused = f.fields[f.focusIdx];
     // Pre-release review (code fork) — same drift class as Brief 1: this hint
     // site was missed when `hasChoices` was centralized. Read the single-source
     // flag so a literal-only focused field advertises `[space] choices` too.
     // The flag is stamped by _normalize via js/leaves/ports/has-choices.js.
-    const spaceHint = (focused && focused.hasChoices) ? '   \\[space] choices' : '';
-    rows.push(`[dim]\\[tab] next   \\[shift-tab] prev${spaceHint}   \\[enter] run   \\[esc] cancel[/]`);
+    hint = formatHints([
+      { cap: 'tab',       label: 'next', key: '\t' },
+      { cap: 'shift-tab', label: 'prev', key: 'backtab' },
+      ...((focused && focused.hasChoices) ? [{ cap: 'space', label: 'choices', key: ' ' }] : []),
+      { cap: 'enter',     label: 'run',    key: 'return' },
+      { cap: 'esc',       label: 'cancel', key: 'escape' },
+    ]);
   }
+  // Declared hints → chips whose click is the key (fabricFormMode handler).
+  const lineChips = { [rows.length]: hint.chips };
+  rows.push(hint.markup);
 
   // Title — the action's label (friendlier than its key), falling back to
   // the actionKey, falling back to "Input" like fabric-field does. esc() the
@@ -481,8 +511,12 @@ function renderFabricFormOverlay(newRows, cols) {
   const anchorLineIdx = pickingLineIdx >= 0 ? pickingLineIdx : focusLineIdx;
   const scrollOffset = anchorLineIdx < 0 ? 0 : _scrollFor(anchorLineIdx, rows.length, innerH);
 
+  // Wheel steps the choices list while it's open (the up/down keys); with no
+  // list there is nothing to scroll by keyboard, so the box just consumes it.
+  const box = picking ? { 'wheel-up': { key: 'up' }, 'wheel-down': { key: 'down' } } : {};
   renderOverlay({ lines: rows, title, maxWidth: MAX_WIDTH, scrollOffset,
-                  targetRows: newRows || null, targetCols: cols || 0 });
+                  targetRows: newRows || null, targetCols: cols || 0,
+                  hit: { lineTargets, lineChips, box } });
 }
 
 // Overlay-compositor R3 descriptor. zIndex=120 preserves fabric-form's
@@ -497,6 +531,9 @@ function registerSelf(compositor) {
     render: (m, newRows, cols) => renderFabricFormOverlay(newRows, cols),
     modal: true,
     zIndex: 120,
+    // Typed per-field text (and a choices filter) → an outside click is
+    // swallowed, never discards the form (docs/mouse-hit-map.md §Backdrop).
+    mouse: { outside: 'swallow' },
   });
 }
 
