@@ -53,6 +53,7 @@ function update(model, msg) {
       let idx = rp.idx;
       if (msg.to === 'top')         idx = 0;
       else if (msg.to === 'bottom') idx = n - 1;
+      else if (Number.isInteger(msg.to)) idx = msg.to;   // absolute — a row click (docs/mouse-hit-map.md)
       // Number.isInteger guard instead of `msg.dir || 0` — same arithmetic
       // result today (no caller passes 0), but the integer-typed contract
       // is explicit and a malformed call with `dir: 'up'` falls through

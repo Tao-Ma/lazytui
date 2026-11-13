@@ -34,7 +34,7 @@ describe('[register-popup-overlay] paints iff registerPopupMode is on', () => {
     [m] = runtime.update(m, { type: 'register_popup_enter' });
     const out = captureOverlay(m, (nr, c) => renderRegisterPopup(nr, c));
     assert(out.includes('empty register'), `empty-state message absent — got: ${JSON.stringify(out)}`);
-    assert(/Enter promote/.test(out), `footer hint absent — got: ${JSON.stringify(out)}`);
+    assert(/\[Enter\] promote/.test(out), `footer hint absent — got: ${JSON.stringify(out)}`);
     assert(/Register history \(0\)/.test(out), `title absent — got: ${JSON.stringify(out)}`);
   });
 

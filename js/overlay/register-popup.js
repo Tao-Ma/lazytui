@@ -33,6 +33,7 @@ const { getModel } = require('../model/store');
 const { esc, visibleLen } = require('../leaves/text/ansi');
 const { renderOverlay, viewportDims, truncate } = require('../leaves/render/draw');
 const register = require('../leaves/register');
+const { formatHints } = require('../leaves/render/hints');
 
 const VIEWPORT = 12;
 
@@ -68,6 +69,10 @@ function render(newRows, cols) {
   const overlayMaxW = 80;
 
   const lines = [];
+  // Hit map (docs/mouse-hit-map.md): line k shows entry _scroll+k. A click moves
+  // the cursor there; a double-click also presses Enter (promote — via the
+  // registerPopupMode key handler). vh rides the Msg like the key handler's.
+  const lineTargets = [];
   if (n === 0) {
     lines.push(`[dim]  (empty register — yank text in detail panel first)[/]`);
   } else {
@@ -83,6 +88,8 @@ function render(newRows, cols) {
       let text = esc(preview);
       if (visibleLen(text) > budget) text = truncate(text, budget);
       const row = `  ${indexStr}  ${text}`;
+      const nav = { msg: { type: 'register_popup_nav', to: i, vh } };
+      lineTargets[lines.length] = { press: nav, double: [nav, { key: 'return' }] };
       if (i === _idx) lines.push(`[${require('../leaves/infra/themes').theme().selected}]${row}`);
       else            lines.push(row);
     }
@@ -91,7 +98,17 @@ function render(newRows, cols) {
   // Footer hint row (added to lines so it sits inside the popup body,
   // visually separated from entries by a blank).
   lines.push('');
-  lines.push(`[dim]j/k move · g/G ends · d drop · Enter promote · Esc close[/]`);
+  // Declared hints (was bare words `j/k move · … · Esc close`) so the single-key
+  // ones are clickable chips — the same `[k] label` style every popup uses.
+  const hint = formatHints([
+    { cap: 'j/k',   label: 'move',    key: null },
+    { cap: 'g/G',   label: 'ends',    key: null },
+    { cap: 'd',     label: 'drop',    key: 'd' },
+    { cap: 'Enter', label: 'promote', key: 'return' },
+    { cap: 'Esc',   label: 'close',   key: 'escape' },
+  ]);
+  const lineChips = { [lines.length]: hint.chips };
+  lines.push(hint.markup);
 
   renderOverlay({
     lines,
@@ -99,6 +116,7 @@ function render(newRows, cols) {
     count: n > 0 ? [_idx + 1, n] : null,
     maxWidth: overlayMaxW,
     targetRows: newRows || null, targetCols: cols || 0,
+    hit: { lineTargets, lineChips, box: { 'wheel-up': { key: 'up' }, 'wheel-down': { key: 'down' } } },
   });
 }
 
@@ -111,6 +129,8 @@ function registerSelf(compositor) {
     render: (m, newRows, cols) => render(newRows, cols),
     modal: true,
     zIndex: 70,
+    // Outside click = Esc = register_popup_cancel (changes nothing — safe).
+    mouse: { outside: { key: 'escape' } },
   });
 }
 
