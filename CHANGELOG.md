@@ -6,11 +6,17 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.56] — 2026-11-13
+
 Mouse hit-map, Release 1 — every popup is clickable
 ([docs/mouse-hit-map.md](docs/mouse-hit-map.md)). Field report: "when
 confirm popup shows, I cannot click mouse". Most popups dropped every click
 while open — only 4 of 15 overlays (menu, pane menu, free-config panel
-list, replay scrubber) had a mouse handler.
+list, replay scrubber) had a mouse handler. 28 commits
+(`f6d152c3..38275d37`): design doc, infrastructure, one commit per popup,
+then a 4-track pre-release review (architecture / file layout / code / doc
+parity) whose findings — 6 reproduced bugs among them — are fixed here.
+Releases 2–3 (pane chrome, pane bodies + drags) follow.
 
 ### Added
 - **Per-frame hit map.** Paint publishes every popup region it actually drew

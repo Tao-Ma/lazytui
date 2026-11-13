@@ -1,8 +1,8 @@
 # Mouse hit-map — first-class mouse input
 
-> **Status**: Release 1 code-complete on `main` (from `dc58dffd`,
-> 2026-11-13), 4-track pre-release review run and its findings fixed;
-> unreleased — awaiting the user's release call. Releases 2–3 not started. Written 2026-11-13. Trigger: field
+> **Status**: Release 1 SHIPPED in v0.6.56 (2026-11-13; `f6d152c3..38275d37`
+> + the release commit), including the 4-track pre-release review's fixes.
+> Releases 2–3 not started. Written 2026-11-13. Trigger: field
 > report *"when confirm popup shows, I cannot click mouse"*. Root-caused to
 > a routing gap, then widened (user call: "fix mouse from the ground up,
 > make it a first-class citizen") into this three-release plan.
