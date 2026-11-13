@@ -23,7 +23,11 @@ function update(model, msg) {
     case 'copy_nav': {
       const c = model.modal.copy;
       if (!c.options.length) return [model, []];
-      const idx = (c.idx + msg.dir + c.options.length) % c.options.length;
+      // `to: <idx>` — absolute (a row click, docs/mouse-hit-map.md), clamped;
+      // otherwise relative `dir`, wrapping (the j/k keys).
+      const idx = Number.isInteger(msg.to)
+        ? Math.max(0, Math.min(c.options.length - 1, msg.to))
+        : (c.idx + msg.dir + c.options.length) % c.options.length;
       if (idx === c.idx) return [model, []];
       return [_withModal(model, { copy: { ...c, idx } }), []];
     }

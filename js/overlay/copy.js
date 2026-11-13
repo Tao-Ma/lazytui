@@ -143,10 +143,17 @@ function renderCopyMenu(newRows, cols) {
     if (o.cancel) return `  [dim]${label}[/]`;         // dim when unselected
     return `  ${label}`;
   });
+  // Hit map (docs/mouse-hit-map.md): a row click moves the cursor there and
+  // presses Enter — the pick goes through the copyMode key handler, exactly as
+  // typed. The wheel steps the cursor like j/k.
+  const lineTargets = options.map((_, i) => ({
+    press: [{ msg: { type: 'copy_nav', to: i } }, { key: 'return' }],
+  }));
   renderOverlay({
     lines, title: 'Copy', maxWidth: 62,
     count: [idx + 1, options.length],
     targetRows: newRows || null, targetCols: cols || 0,
+    hit: { lineTargets, box: { 'wheel-up': { key: 'up' }, 'wheel-down': { key: 'down' } } },
   });
 }
 
@@ -162,6 +169,8 @@ function registerSelf(compositor) {
     render: (m, newRows, cols) => renderCopyMenu(newRows, cols),
     modal: true,
     zIndex: 20,
+    // Outside click = Esc = copy_cancel (copies nothing — safe).
+    mouse: { outside: { key: 'escape' } },
   });
 }
 
