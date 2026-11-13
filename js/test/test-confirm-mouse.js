@@ -122,6 +122,13 @@ describe('[4] outside / inside / wheel', () => {
     eq(open(), false);
     eq(reg(), ['REJECTED']);
   });
+  it('a click on the FOOTER row rejects too (the backdrop covers the whole screen)', () => {
+    openConfirm();
+    const vp = require('../leaves/render/draw').viewportDims();
+    click(5, vp.rows - 1);
+    eq(open(), false);
+    eq(reg(), ['REJECTED']);
+  });
   it('a right-click outside rejects too (backdrop owns every button)', () => {
     openConfirm();
     click(0, 0, 2);

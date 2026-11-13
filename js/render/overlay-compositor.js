@@ -107,6 +107,7 @@ function activeOverlayIds(model) {
  */
 const HIT_BAND_BASE = 1000;
 let _hitMapRef; const _hitMap = () => (_hitMapRef ||= require('../panel/hit-map'));
+let _drawRef; const _screenRows = () => (_drawRef ||= require('../leaves/render/draw')).viewportDims().rows;
 
 function _backdrop(outside, cols, rows) {
   return {
@@ -124,7 +125,10 @@ function paintActive(model, newRows, cols) {
     hm.enterOwner(d.id, HIT_BAND_BASE + 10 * (d.zIndex | 0));
     try {
       const outside = d.mouse && d.mouse.outside;
-      if (outside != null) hm.publishOwned(_backdrop(outside, cols, newRows.length), 0);
+      // FULL screen: newRows is the main frame, which stops above the footer row
+      // (painted separately) — sizing by it left the footer outside every
+      // backdrop, so a click there slipped past the popup's outside policy.
+      if (outside != null) hm.publishOwned(_backdrop(outside, cols, Math.max(newRows.length, _screenRows())), 0);
       d.render(model, newRows, cols);
     } finally {
       hm.exitOwner();
