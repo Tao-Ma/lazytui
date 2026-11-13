@@ -57,6 +57,9 @@ list, replay scrubber) had a mouse handler.
   clickable through the box.
 - register-popup's hint is now `[k] label` chips like every other popup (was
   bare words).
+- The fabric-form popup is up to 78 columns wide (was 72) so its full key-hint
+  line fits — at 72 the `[esc] cancel` hint was cut off when a choices field
+  had focus.
 - menu / pane-menu legacy `hitTest`s and the input.js menu mouse handler are
   removed (pane-menu keeps its outside-press close until Release 2).
 
