@@ -21,11 +21,15 @@
  * Hit map (docs/mouse-hit-map.md): each overlay's render is bracketed with
  * `hitMap.enterOwner(id, zBase)` so the regions its renderOverlay/publishBox
  * publishes carry the overlay id and an absolute z in the overlay's band
- * (`HIT_BAND_BASE + 10·zIndex + {0 backdrop, 1 box, 2 rows, 3 chips}`). A
+ * (`hitMap.BANDS.OVERLAY_BASE + 10·zIndex + {0 backdrop, 1 box, 2 rows, 3 chips}`). A
  * descriptor with `mouse.outside` (a handler — `{ key: 'escape' }` or
  * `'swallow'`) also gets a full-screen OPAQUE backdrop under its box: an
- * outside click realizes that handler, and nothing beneath the popup can be
- * hit. No `mouse` → no backdrop (misses fall through to the legacy cascade).
+ * outside click realizes that handler, and nothing beneath it in z can be hit.
+ * By default it sits in the overlay's band, above all pane chrome; a descriptor
+ * with `mouse.backdrop: 'below-chrome'` (an in-grid popup that leaves chrome
+ * live — jobs, pane-menu, which-key) puts it at z 35 instead, under the chrome
+ * band and marked `invisible` for the stale-frame rule. No `mouse` → no
+ * backdrop (misses fall through to the legacy cascade).
  *
  * Pure for tests: `activeOverlayIds(model)` reports the ordered id
  * list this frame would paint, without doing any rendering. `_reset()`
@@ -99,7 +103,6 @@ function activeOverlayIds(model) {
   return _active(model).map(d => d.id);
 }
 
-const HIT_BAND_BASE = 1000;
 const hitMap = require('../panel/hit-map');           // zero deps — no cycle
 const { viewportDims, HIT_Z } = require('../leaves/render/draw');
 
@@ -127,7 +130,7 @@ function _backdrop(outside, cols, rows) {
  */
 function paintActive(model, newRows, cols) {
   for (const d of _active(model)) {
-    hitMap.enterOwner(d.id, HIT_BAND_BASE + 10 * (d.zIndex | 0));
+    hitMap.enterOwner(d.id, hitMap.BANDS.OVERLAY_BASE + 10 * (d.zIndex | 0));
     try {
       const outside = d.mouse && d.mouse.outside;
       // FULL screen: newRows is the main frame, which stops above the footer row
@@ -140,7 +143,11 @@ function paintActive(model, newRows, cols) {
         // chrome band (z 35 < 40), so [_]/[≡]/border controls/✗ cancel stay
         // clickable while an outside click elsewhere runs the policy. Every other
         // backdrop sits in the overlay's own band, above all pane chrome.
-        if (d.mouse.backdrop === 'below-chrome') hitMap.publish({ ...bd, owner: d.id, z: hitMap.BANDS.BELOW_CHROME });
+        // It is invisible — the panes under it look (and their chrome is) live —
+        // so it is not "drawn" for the stale-frame rule (`invisible`): a body
+        // click batched behind the key that closed the popup goes to the legacy
+        // cascade, as it did before R2, instead of being swallowed.
+        if (d.mouse.backdrop === 'below-chrome') hitMap.publish({ ...bd, owner: d.id, z: hitMap.BANDS.BELOW_CHROME, invisible: true });
         else hitMap.publishOwned(bd, HIT_Z.backdrop);
       }
       d.render(model, newRows, cols);

@@ -573,6 +573,12 @@ function handleMouse(kind, x, y) {
   // backdrops (R2). Precedence is z-order. A miss (nothing published there, a
   // stale frame that drew nothing there, a non-discrete gesture) falls through
   // to the legacy cascade below — pane bodies, drags, free-config (R3).
+  // A new press starts a fresh gesture: disarm any prior selection / zoom arm
+  // FIRST — before the hit map (or a mode handler) can consume the press — so a
+  // press on a NON-selectable target (a chip, a tab, a tree marker, chrome, a
+  // viewer body) can't leave a stale arm that a later motion would begin. The
+  // body loop re-arms when the press lands on a selectable pane / a graph.
+  if (kind === 'press') { _armedSelect = null; _armedZoom = null; }
   if (mouseRouter.route(kind, mx, my, model)) return;
 
   // v0.6.3 Phase C1 — modal mouse routing through the
@@ -712,15 +718,9 @@ function handleMouse(kind, x, y) {
 
   // From here on: press only. The discrete button gestures (double / right /
   // middle) are resolved above through the mouse-bindings map; only a plain
-  // left press reaches the chrome/tab/detail pre-resolution + focus+select.
+  // left press reaches focus+select (chrome, tabs and fold markers resolved
+  // on the hit map before the cascade).
   if (kind !== 'press') return;
-
-  // A new press starts a fresh gesture: disarm any prior selection-arm so a
-  // press that lands on a NON-selectable target (viewer body, chrome) can't
-  // leave a stale arm that a later motion would begin. The body loop's
-  // "Other panels" arm re-sets it when the press lands on a selectable pane.
-  _armedSelect = null;
-  _armedZoom = null;
 
   let mutated = false;
 

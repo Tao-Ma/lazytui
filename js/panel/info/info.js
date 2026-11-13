@@ -18,6 +18,11 @@
  */
 'use strict';
 
+// panel/slot-strip, lazily required (load order) and cached: a require() per
+// render costs tens of µs (see render/paint's note on the same trap).
+let _slotStripRef = null;
+const _slotStrip = () => (_slotStripRef || (_slotStripRef = require('../slot-strip')));
+
 const { renderPanel } = require('../api');
 const { buildTextView } = require('../../leaves/text-view/render');
 const tvu = require('../../leaves/text/text-view-update');
@@ -136,7 +141,7 @@ function render(panel, w, h, slice, opts) {
     // 3b — thread the theme's selection/search tags into the pure leaf.
     selectedTag: t.selected, searchTags: { match: t.match, current: t.match_current },
     width: w, height: h,
-    ...require('../slot-strip').slotTitleOpts(panel), hotkey: panel.hotkey,
+    ..._slotStrip().slotTitleOpts(panel), hotkey: panel.hotkey,
     panelType: 'info', focused,
     chrome: opts && opts.chrome,
   });

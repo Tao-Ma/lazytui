@@ -25,8 +25,10 @@
  * slice's `tabList` nav state).
  *
  * Geometry: anchored dropdown from the target pane's top row (`y+1`,
- * the row below the `[≡]` trigger). Width clamps to the pane's width
- * (or MAX_W); height bottom-clamps to remaining space. Identical to the
+ * the row below the `[≡]` trigger). Width is the pane's width floored at 20
+ * and capped at MAX_W and the screen; the box shifts left when it would pass
+ * the right edge (a narrow right-hand pane); height bottom-clamps to remaining
+ * space. Identical to the
  * two overlays it replaces; works in normal / half / full because both
  * trigger and dropdown follow `visibleBoundsFor(paneId)`.
  */
@@ -387,7 +389,7 @@ function registerSelf(compositor) {
 
 module.exports = {
   seedCursor, openAt, render, items, viewportRows,
-  triggerVisible, _triggerState, _isViewer,
+  triggerVisible, _triggerState,
   _formatPaneRow,
   registerSelf,
 };

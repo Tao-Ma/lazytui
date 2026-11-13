@@ -146,17 +146,22 @@ function fitCell(s, width) {
  *   `count[1]` carries the true total. Default false (navigators pass the full
  *   list + scrollOffset and let renderPanel slice).
  * @param {string} [opts.color] - focused border color
- * @param {Array<string|{text}>} [opts.topControls] - opt-in interactive controls (top border):
- *   markup strings, or api.borderControlsFor entries `{ text, visibleW, spec, pane }` —
- *   an entry object is echoed back through the chrome sink with the pane-local x
- *   where it drew (`controls` / `bottomControl`), so the paint layer publishes its
- *   hit regions exactly there (docs/mouse-hit-map.md Release 2).
+ * @param {Array<object|string>} [opts.topControls] - opt-in interactive controls
  *   embedded in the top border, right-anchored one gap-dash left of the chrome
  *   glyphs. An ordered STRIP: the first entry paints leftmost, the last nearest
  *   the glyphs (the monitor refresh control `- Ns +` was the first consumer).
  *   Presence is title-INDEPENDENT (the title truncates to reserve the whole
- *   strip). Where each control drew is reported through the chrome sink, so
- *   its hit regions sit exactly on it.
+ *   strip). Pass api.borderControlsFor entries `{ text, visibleW, spec, pane }`:
+ *   each is echoed back through the chrome sink with the pane-local x it drew at
+ *   (`controls`), and paint publishes its hit regions exactly there
+ *   (docs/mouse-hit-map.md Release 2). A bare markup string still draws but is
+ *   NOT clickable (nothing to route its click to).
+ * @param {Array<object|string>} [opts.bottomControls] - the bottom-left legend
+ *   (one entry today — the item-action bar), same entry form; drawn iff
+ *   border-controls.bottomFits, reported as `bottomControl`.
+ * @param {Array<{x, w}>} [opts.titleTargets] - click targets inside `title`
+ *   (title-relative cells — a slot's tab strip, panel/slot-strip). Reported as
+ *   `tabs` only when every cell drew intact (not cut by truncation).
  * @returns {string} Rich markup string
  */
 function renderPanel({
@@ -192,9 +197,8 @@ function renderPanel({
   let chromeDrew = false;   // did the [≡]/[X]/[_] cluster actually paint (fits)?
   let triggerReg = null;    // the [≡] pane-local x-range IFF it survived leftPart truncation
   let tabsDrawn = null;     // [{ x0, x1, ref }] pane-local — titleTargets that survived truncation
-  let titleClip = null;     // pane-local exclusive column past which no intact title glyph drew
-                            // (the tab-strip hit-test clips its tabBounds to this — a slot strip
-                            // truncated on a narrow pane must not report a clipped tab as clickable)
+  let titleClip = null;     // pane-local exclusive column past which no intact title glyph drew —
+                            // a title target (tab) is reported only if it ends left of it
   const wantLeftTrigger  = chrome && chrome.tabTrigger;
   const wantRightCollapse = chrome && chrome.collapse;
   const wantRightClose    = chrome && chrome.close;
@@ -227,9 +231,9 @@ function renderPanel({
     if (title) leftPart += `${b.h}${title}`;
     // With a border-control strip, reserve the WHOLE right cluster (+ one
     // separator dash) so the TITLE truncates to fit it — the strip's presence is
-    // then title-INDEPENDENT (renders iff `╭─` + a dash + the cluster fit), which
-    // border-controls.fits mirrors for the hit-test so a click can never land
-    // where no control drew. Without controls, the pre-P4 behavior: the title
+    // then title-INDEPENDENT (renders iff `╭─` + a dash + the cluster fit), and
+    // where each control drew is reported (controlsDrawn) so its hit regions sit
+    // on it. Without controls, the pre-P4 behavior: the title
     // may use the full width and the whole chrome row drops if it and the glyphs
     // don't fit.
     const leftCap = hasControls ? (innerW + 2 - rightVis - 1) : (innerW + 2 - 2);
@@ -326,15 +330,14 @@ function renderPanel({
   // they follow `chromeDrew` (the whole-cluster `fits`). The `[≡]` trigger is
   // left-anchored INSIDE the independently-truncated leftPart, so it carries its
   // own survival check (`triggerReg`, set above) — `fits` alone would over-report
-  // it (the residual narrow-pane phantom the registry-read must not fire on).
-  // Emitted through the injected sink; a null ambient paneId (overlays / direct
-  // callers) is dropped by the registry.
+  // it (the residual narrow-pane phantom a click must not fire on). Emitted
+  // through the injected sink; paint publishes only for the pane it is rendering
+  // (an overlay's renderPanel publishes nothing).
   if (_chromeSink) {
     _chromeSink({
       trigger:  triggerReg,
       close:    chromeDrew && wantRightClose    ? { x0: width - 8, x1: width - 6 } : null,
       collapse: chromeDrew && wantRightCollapse ? { x0: width - 4, x1: width - 2 } : null,
-      titleClip,
       controls: controlsDrawn,
       tabs: tabsDrawn,
       bottomControl: bottomDrawn,

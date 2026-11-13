@@ -112,7 +112,7 @@ function refreshControlHits(x0, y, visibleW) {
 
 /**
  * A BORDER-CONTROL SPEC for the refresh control — the refresh KIND packaged for
- * the generic border-control strip (leaves/render/border-controls + api's
+ * the generic border-control strip (renderPanel's `topControls` + api's
  * borderControlsFor + the hit map). A pane registers this in its
  * `panelTypes[type].borderControls` array; the framework renders + hit-tests it
  * without knowing it's "the refresh control". This is the reuse seam: any
@@ -139,7 +139,8 @@ function refreshControlSpec({ owner, currentMs }) {
     },
     regions(x0, y, visibleW) {
       const h = refreshControlHits(x0, y, visibleW);
-      return [{ ...h.minus, action: 'dec' }, { ...h.plus, action: 'inc' }];
+      // Steppers: a fast 2nd click is a 2nd step (`repeat` — docs/mouse-hit-map.md).
+      return [{ ...h.minus, action: 'dec', repeat: true }, { ...h.plus, action: 'inc', repeat: true }];
     },
     dispatch(action) {
       return { owner, msg: { type: 'set_refresh_ms', dir: action === 'dec' ? -1 : 1 } };

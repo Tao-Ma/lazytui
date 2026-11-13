@@ -71,7 +71,6 @@ const { itemOpsBarSpec } = require('../../leaves/render/action-legend');   // su
 const { buildKillMenu } = require('../../leaves/proc/kill-signals');
 const tree = require('../../leaves/tree/tree');   // generic tree model (process-tree mode)
 const hitMap = require('../hit-map');             // per-frame hit map — drawn fold markers are clickable
-const { isChainActive } = require('../../leaves/input/modes');
 
 function _metric(topic) {
   const all = getModel().metrics;
@@ -469,11 +468,11 @@ function render(panel, w, h, slice, opts) {
       }
     }
   });
-  // In-pane band, and only with no chain mode active — a marker click was always
-  // gated like a pane-body click (the T13 chain gate), and in-grid overlays'
-  // below-chrome backdrops sit above this band anyway. The node id is absolute:
-  // a click on a stale frame folds the node the user saw.
-  if (!isChainActive(getModel().modes)) {
+  // In-pane band, and only when paint's opts.bodyLive says pane-body-gated clicks
+  // are live (no chain mode — the old T13 gate); in-grid overlays' below-chrome
+  // backdrops sit above this band anyway. The node id is absolute: a click on a
+  // stale frame folds the node the user saw.
+  if (opts && opts.bodyLive) {
     for (const mk of markers) {
       hitMap.publishLocal({
         id: `tree:${mk.id}`,

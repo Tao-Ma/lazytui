@@ -144,9 +144,8 @@ describe('[2c] ambient pane — publishLocal', () => {
     hm.publishLocal({ id: 'glyph', rect: R(16, 0, 3, 1), on: { press: 'swallow' } }, 40);
     hm.publishLocal({ id: 'wide', rect: R(18, 2, 6, 1), on: {} }, 30);    // runs past the right edge
     hm.publishLocal({ id: 'off', rect: R(25, 0, 3, 1), on: {} }, 30);     // wholly outside → dropped
-    eq(hm.currentPane().paneId, 'pane-a');
     hm.exitPane();
-    eq(hm.currentPane(), null);
+    hm.publishLocal({ id: 'after', rect: R(0, 0, 3, 1), on: {} }, 40);   // bracket closed → dropped
     const rs = hm.all();
     eq(rs.map(r => r.id).join(), 'glyph,wide');
     eq(JSON.stringify(rs[0].rect), JSON.stringify(R(26, 5, 3, 1)), 'pane-local → screen');

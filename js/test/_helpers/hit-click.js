@@ -17,7 +17,7 @@ const sm = require('../smoke/_helpers/smoke');
 const input = require('../../dispatch/control/input');
 const hm = require('../../panel/hit-map');
 const { compositeOverlays } = require('./overlay-capture');
-const { stripMarkup } = require('../../leaves/text/ansi');
+const { stripMarkup, charWidth } = require('../../leaves/text/ansi');
 const { getModel } = require('../../app/runtime');
 
 // Reset the parser's double-click triple to a far-off cell WITHOUT dispatching
@@ -64,7 +64,8 @@ function paintedText(owner, id) {
 
 /** Paint a FULL frame (forceFullRepaint — production paint, so the hit map is
  *  repopulated too) and decode the emitted bytes into 0-based screen rows of
- *  single chars (paint positions with cursor moves, not '\n'). */
+ *  CELLS (paint positions with cursor moves, not '\n'); a wide glyph occupies
+ *  its cell and leaves '' in the next. */
 function screenRows() {
   const paintMod = require('../../render/paint');
   let raw = '';
@@ -83,7 +84,17 @@ function screenRows() {
     }
     if (raw[i] === '\n') { cy++; cx = 0; i++; continue; }
     if (raw[i] === '\r') { cx = 0; i++; continue; }
-    (rows[cy] = rows[cy] || [])[cx] = raw[i]; cx++; i++;
+    // One code point (surrogate pairs included); a wide glyph fills its cell and
+    // leaves '' in the next (charWidth — the project's width truth), so x indices
+    // stay in screen cells for CJK / emoji titles.
+    const cp = raw.codePointAt(i);
+    const ch = String.fromCodePoint(cp);
+    const cw = charWidth(cp);
+    const row = (rows[cy] = rows[cy] || []);
+    if (cw === 0 && cx > 0) { row[cx - 1] = (row[cx - 1] || '') + ch; i += ch.length; continue; }
+    row[cx] = ch;
+    if (cw === 2) row[cx + 1] = '';
+    cx += cw || 1; i += ch.length;
   }
   return rows;
 }
@@ -101,7 +112,7 @@ function screenText(owner, id) {
 }
 
 /** The pane-chrome glyph a press at (mx, my) resolves to on the CURRENT hit map
- *  (no repaint — paint first): `id` ∈ collapse | close | trigger, chrome band
+ *  (no repaint — paint first): `id` ∈ collapse | close | trigger | cancel, chrome band
  *  only. The resolve result `{ region, handler }` or null. */
 function chromeAt(id, mx, my) {
   const h = hm.resolve(mx, my, 'press');

@@ -10,6 +10,10 @@
  *   [6] double-click on a glyph = one toggle
  *   [7] slot tab strip: a tab click activates it; a truncated tab and a chain
  *       mode publish nothing
+ *   [8] pre-release review regressions: Ctrl+\ (leave terminal) + a chrome
+ *       click in one chunk; a body click batched behind the key that closed an
+ *       in-grid popup; chrome pushed onto the footer row; a router-consumed press
+ *       disarms a pending text selection
  *
  * Run: node js/test/test-chrome-mouse.js
  */
@@ -181,6 +185,60 @@ describe('[7] slot tab strip', () => {
     sm.capture(() => sm.applyMsg({ type: 'mode_set', flag: 'jobsMode' }));
     hc.paint();
     eq(tabs().length, 0);
+  });
+});
+
+describe('[8] pre-release review regressions', () => {
+  it('Ctrl+\\ (leave terminal mode) + a [_] click in one chunk collapses it', () => {
+    boot();
+    const r = hc.region('pane-groups2', 'collapse');
+    sm.capture(() => sm.applyMsg({ type: 'terminal_enter' }));
+    hc.paint();
+    if (!getModel().modes.terminalMode) return;   // no PTY backend here → nothing to exercise
+    assert(hc.region('pane-groups2', 'collapse'), 'chrome still publishes under terminal mode');
+    chunk('\x1c' + sgr(r.rect.x + 1, r.rect.y));
+    eq(getModel().modes.terminalMode, false, 'left terminal mode');
+    eq(pane('pane-groups2').collapsed, true, 'the click collapsed it (not a body click)');
+  });
+  it('which-key cancelled by a key + a body click in one chunk: the click still focuses', () => {
+    boot();
+    toLayout({ type: 'focus_set', focus: 'pane-groups' });
+    sm.capture(() => sm.applyMsg({ type: 'enter_prefix' }));
+    hc.paint();
+    const bd = hm.all().find(r => r.id === 'backdrop' && r.z === hm.BANDS.BELOW_CHROME);
+    assert(bd && bd.invisible, 'the below-chrome backdrop is invisible to the stale rule');
+    const b = require('../leaves/wm/geometry').visibleBoundsFor(layout(), 'pane-groups2');
+    // `Z` (no binding under the leader) ends the chord; a bare Esc + CSI in one
+    // chunk is ambiguous to the tokenizer.
+    eq(layout().focus, 'pane-groups', 'precondition: focus elsewhere');
+    chunk('Z' + sgr(b.x + 3, b.y + 2));
+    eq(getModel().modes.prefixMode, false, 'chord ended');
+    eq(layout().focus, 'pane-groups2', 'the body click focused, as before R2');
+  });
+  it('a pane pushed onto the footer row publishes nothing there', () => {
+    const pool = {}, panels = [];
+    for (let i = 0; i < 5; i++) { pool['g' + i] = { id: 'g' + i, type: 'groups' }; panels.push({ id: 'g' + i, type: 'groups' }); }
+    sm.bootFresh({ layout: { pool, columns: [{ panels }] } });
+    toLayout({ type: 'view_set', mode: 'normal' });
+    sm.resize(60, 10);
+    hc.paint();
+    const availH = require('../leaves/wm/geometry').availRows(layout().dims);
+    const below = hm.all().filter(r => r.rect.y + r.rect.h > availH && r.z < 1000);
+    eq(below.map(r => `${r.owner}/${r.id}`), [], 'no pane region on or past the footer row');
+    const before = panes().map(p => !!p.collapsed).join();
+    hc.click(56, 9);
+    eq(panes().map(p => !!p.collapsed).join(), before, 'a footer click collapses nothing');
+  });
+  it('a press the hit map consumes disarms a pending text selection', () => {
+    boot();
+    const psel = require('../panel/select-view');
+    const b = require('../leaves/wm/geometry').visibleBoundsFor(layout(), 'pane-groups');
+    const r = hc.region('pane-groups2', 'collapse');
+    // press on the groups body (arms a selection), then — no release — a press
+    // on groups2's [_] (router-consumed, no mode opens), then motion over the
+    // groups body.
+    chunk(`\x1b[<0;${b.x + 3};${b.y + 2}M` + sgr(r.rect.x + 1, r.rect.y) + `\x1b[<32;${b.x + 6};${b.y + 2}M`);
+    eq(psel.selectionFor('pane-groups'), null, 'no selection began from the stale arm');
   });
 });
 

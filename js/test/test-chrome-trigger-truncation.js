@@ -1,5 +1,5 @@
 /**
- * Chrome-region ↔ paint agreement for the LEFT-anchored `[≡]` trigger under
+ * Drawn-chrome record ↔ paint agreement for the LEFT-anchored `[≡]` trigger under
  * leftPart truncation — the residual phantom the first phantom-hit fix (8d6c7580)
  * missed and a review caught.
  *
@@ -9,8 +9,8 @@
  * the published trigger on `fits` alone therefore over-reported it — a click would
  * land where only `[≡…` (or nothing) painted. The fix gates on the glyph's LAST
  * cell surviving truncation. This test drives the leaf renderPanel + the chrome
- * sink directly (no layout needed) and asserts: the registry publishes a trigger
- * range IFF the full `[≡]` was actually painted — across the truncation boundary,
+ * sink directly (no layout needed) and asserts: the record (what paint publishes
+ * on the hit map) carries a trigger range IFF the full `[≡]` was actually painted — across the truncation boundary,
  * for BOTH a trigger-only pane and a control-strip pane. It fails on the pre-fix
  * `chromeDrew`-only gate (which publishes a trigger where `[≡]` was clipped).
  *
@@ -46,8 +46,8 @@ describe('[trigger truncation] trigger-only pane — published range matches the
       const painted = top.includes('[≡]');           // full 3-cell glyph on screen
       const clickable = !!(reg && reg.trigger);
       if (painted) sawPainted = true; else sawClipped = true;
-      it(`hk=${JSON.stringify(hotkey)} w=${w}: registry trigger ⟺ painted [≡]`, () => {
-        eq(clickable, painted, `painted=${painted}, registry ${clickable ? 'HAS' : 'lacks'} trigger — top=${JSON.stringify(top)}`);
+      it(`hk=${JSON.stringify(hotkey)} w=${w}: recorded trigger ⟺ painted [≡]`, () => {
+        eq(clickable, painted, `painted=${painted}, record ${clickable ? 'HAS' : 'lacks'} trigger — top=${JSON.stringify(top)}`);
       });
     }
   }

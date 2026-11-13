@@ -43,11 +43,11 @@ describe('[sort-control] text + regions (paint ↔ hit-test source)', () => {
   it('a sorted label carries the direction glyph', () => {
     eq(sc.sortControlText('cpu' + sc.DESC).visibleW, 8);   // 'cpu↓' (4) + 4
   });
-  it('three regions: ‹ prev (2) / label reverse (mid) / › next (2)', () => {
+  it('three regions: ‹ prev (2) / label reverse (mid) / › next (2); only the steppers repeat', () => {
     const [prev, rev, next] = sc.sortControlHits(30, 0, 5);
-    eq(prev, { x0: 30, x1: 31, y: 0, action: 'prev' });
+    eq(prev, { x0: 30, x1: 31, y: 0, action: 'prev', repeat: true });
     eq(rev,  { x0: 32, x1: 32, y: 0, action: 'reverse' });
-    eq(next, { x0: 33, x1: 34, y: 0, action: 'next' });
+    eq(next, { x0: 33, x1: 34, y: 0, action: 'next', repeat: true });
     assert(prev.x1 < rev.x0 && rev.x1 < next.x0, 'non-overlapping, left→right');
   });
 });

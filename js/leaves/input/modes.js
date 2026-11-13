@@ -22,7 +22,8 @@
  *                                   force a full repaint when it closes)
  *   - render/footer inModal      ← isModal (footer owns the row → suppress
  *                                   panel hints + footer decorators)
- *   - input.js     chrome clicks ← suppressesChromeClicks
+ *   - render/paint chrome publish gate (chromeLive) ← suppressesChromeClicks
+ *                                   (terminalMode excepted — its mouse goes to the PTY)
  *   - panel/hit-map frame stamp  ← chainStamp (the `chain` field of stampOf)
  *   - overlay/hover-tooltip      ← isChainActive || isModal
  *
@@ -38,13 +39,15 @@
  */
 'use strict';
 
-// `suppressChrome` — chrome-glyph clicks ([_]/[+]/[x]) are blocked while
-// this mode is active (the mode owns input or paints a centered popup over
-// the chrome). NARROWER than overlay/chain: free-config + the in-grid modes
-// (filter / search / prefix / listSelect / pane-menu / jobs / agent)
-// deliberately let chrome clicks through. Hit-map R1 pairs it with the
-// overlay descriptors' `mouse.outside` (a backdrop iff suppressChrome) —
-// test-overlay-mouse-policy.js.
+// `suppressChrome` — pane-chrome clicks ([_]/[+]/[X]/[≡], border controls,
+// ✗ cancel) are blocked while this mode is active (the mode owns input or
+// paints a centered popup over the chrome): paint publishes no chrome hit
+// regions then (render/paint chromeLive). NARROWER than overlay/chain:
+// free-config + the in-grid modes (filter / search / prefix / listSelect /
+// pane-menu / jobs / agent) deliberately let chrome clicks through. It also
+// places an overlay's backdrop (test-overlay-mouse-policy.js): suppressChrome
+// → in the overlay's band, above chrome; else none, or `backdrop:
+// 'below-chrome'` (z 35).
 const MODES = [
   { flag: 'confirmMode',             chain: true,  overlay: true,  modal: false, reset: true, suppressChrome: true  },
   { flag: 'freeConfigTitleEditMode', chain: true,  overlay: false, modal: true,  reset: true, suppressChrome: true  },

@@ -1,8 +1,10 @@
 /**
  * Slot tab-strip geometry — tab-bar markup + click-bounds for a MULTI-tab slot
- * (panel/slot-strip.js). Each tab is a position-tab; the returned `tabBounds`
- * feeds the input.js mouse hit-test + the `[≡]` pane-menu, and `title` is the
- * Rich-markup string renderPanel(title=…) stamps into the top border.
+ * (panel/slot-strip.js). Each tab is a position-tab; `title` is the Rich-markup
+ * string renderPanel(title=…) stamps into the top border, and the returned
+ * `tabBounds` are each tab's pane-local cells (slot-strip derives the
+ * title-relative click targets from them; the tab-click smoke test uses them as
+ * an independent check of where the hit map publishes each tab).
  *
  * v0.6.3 C1: split out of `render/panel-widgets.js`. U2f: the old flat-strip
  * builder (buildTabStrip, for the retired viewer Component) is gone; the generic

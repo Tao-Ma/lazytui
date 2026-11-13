@@ -15,6 +15,11 @@
  */
 'use strict';
 
+// panel/slot-strip, lazily required (load order) and cached: a require() per
+// render costs tens of µs (see render/paint's note on the same trap).
+let _slotStripRef = null;
+const _slotStrip = () => (_slotStripRef || (_slotStripRef = require('../slot-strip')));
+
 const { renderPanel } = require('../api');
 const { buildTextView } = require('../../leaves/text-view/render');
 const tvu = require('../../leaves/text/text-view-update');
@@ -23,7 +28,6 @@ const astatus = require('../../leaves/text/action-status');
 const { visibleLen } = require('../../leaves/text/ansi');
 const { paneInnerH, paneInnerW } = require('../pane-viewport');
 const { getModel } = require('../../model/store');
-const { suppressesChromeClicks } = require('../../leaves/input/modes');
 const hitMap = require('../hit-map');
 
 // Ring cap for the retained line buffer. text-view backs BOTH routed action tabs
@@ -273,14 +277,10 @@ function _chipFor(paneId, innerW) {
 // (docs/mouse-hit-map.md Release 2): only when the affordance drew
 // (cancelX0 >= 0) on an on-screen inner row — the chip floats at the tail only
 // while bottom-stuck, so scrolled up it publishes nothing. Gated like the border
-// chrome it used to be hit-tested with: input-owning modes and a free-config
-// drag block it. Pane-local: +1 for the left border / top border.
-function _publishCancel(chip, row, innerH) {
-  if (chip.cancelX0 < 0 || row < 0 || row >= innerH) return;
-  const md = getModel().modes || {};
-  if (suppressesChromeClicks(md)) return;
-  const ls = require('../route').getInstanceSlice('layout');
-  if (ls && ls.freeConfig && ls.freeConfig.drag) return;
+// chrome it used to be hit-tested with: `live` is paint's opts.chromeLive (the
+// one place that gate is decided). Pane-local: +1 for the left / top border.
+function _publishCancel(chip, row, innerH, live) {
+  if (!live || chip.cancelX0 < 0 || row < 0 || row >= innerH) return;
   hitMap.publishLocal({
     id: 'cancel',
     rect: { x: 1 + chip.cancelX0, y: 1 + row, w: chip.cancelX1 - chip.cancelX0 + 1, h: 1 },
@@ -332,7 +332,7 @@ function render(panel, w, h, slice, opts) {
     displayLines.push(chip.line);
     if (wasBottom) {
       scroll = Math.max(0, displayLines.length - innerH);
-      _publishCancel(chip, displayLines.length - 1 - scroll, innerH);
+      _publishCancel(chip, displayLines.length - 1 - scroll, innerH, !!(opts && opts.chromeLive));
     }
   }
 
@@ -346,7 +346,7 @@ function render(panel, w, h, slice, opts) {
     // 3b — thread the theme's selection/search tags into the pure leaf.
     selectedTag: t.selected, searchTags: { match: t.match, current: t.match_current },
     width: w, height: h,
-    ...require('../slot-strip').slotTitleOpts(panel), hotkey: panel.hotkey,
+    ..._slotStrip().slotTitleOpts(panel), hotkey: panel.hotkey,
     panelType: 'text-view', focused,
     chrome: opts && opts.chrome,
   });

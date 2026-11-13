@@ -16,6 +16,11 @@
  */
 'use strict';
 
+// panel/slot-strip, lazily required (load order) and cached: a require() per
+// render costs tens of µs (see render/paint's note on the same trap).
+let _slotStripRef = null;
+const _slotStrip = () => (_slotStripRef || (_slotStripRef = require('../slot-strip')));
+
 const { renderPanel } = require('../api');
 
 function init(paneId, seed) {
@@ -60,7 +65,7 @@ function render(panel, w, h, slice, opts) {
   ];
   return renderPanel({
     width: w, height: h, lines,
-    ...require('../slot-strip').slotTitleOpts(panel), hotkey: panel.hotkey,
+    ..._slotStrip().slotTitleOpts(panel), hotkey: panel.hotkey,
     panelType: 'terminal',
     focused: !!(opts && opts.focused),
     chrome: opts && opts.chrome,

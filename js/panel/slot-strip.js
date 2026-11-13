@@ -5,8 +5,9 @@
  * reads e.g. `Info ─ Transcript ─ primary` and only the bracketed (active) entry
  * changes.
  *
- * Entry tags (consumed by the click hit-test in dispatch/control/input.js + the
- * `[≡]` menu in overlay/pane-menu.js):
+ * Entry tags (consumed by the tab clicks — `titleTargets`, published on the hit
+ * map where renderPanel drew each tab — and the `[≡]` menu in
+ * overlay/pane-menu.js):
  *   { kind:'position', poolId }  → set_active_tab poolId
  *
  * Returns null for a ≤1-tab slot (the pane keeps its own title). Impure shell
@@ -15,10 +16,13 @@
  */
 'use strict';
 
+// Lazily required (load order: api pulls the panel graph) and CACHED — this runs
+// per slot render, and a require() per call costs tens of µs.
+let _apiRef = null, _tsRef = null;
 function unifiedSlotStrip(pane) {
   if (!pane || !Array.isArray(pane.tabs)) return null;
-  const api = require('./api');
-  const ts = require('../leaves/wm/tab-strip');
+  const api = _apiRef || (_apiRef = require('./api'));
+  const ts = _tsRef || (_tsRef = require('../leaves/wm/tab-strip'));
   const layout = api.getInstanceSlice('layout');
   const pool = (layout && layout.arrange && layout.arrange.pool) || {};
 
@@ -36,8 +40,10 @@ function unifiedSlotStrip(pane) {
   const strip = ts.buildEntryStrip(entries, activeIdx, pane.hotkey, true);
   // Return the ENTRIES + activeIdx alongside the rendered strip so the `[≡]`
   // pane-menu shows the SAME list as the visible border strip (they must not
-  // disagree). `title`/`tabBounds` drive the visible strip + click hit-test;
-  // `entries`/`activeIdx` drive the menu.
+  // disagree). `title` is the visible strip; `tabBounds` (pane-local, with the
+  // hotkey + [≡] offsets) is an independent geometry oracle the tab-click smoke
+  // test checks the published regions against; `entries`/`activeIdx` drive the
+  // menu.
   // Title-RELATIVE click targets (x from the title's first cell) for renderPanel's
   // `titleTargets`: renderPanel knows where the title actually starts and which
   // tabs survived truncation, and reports only those (docs/mouse-hit-map.md R2).

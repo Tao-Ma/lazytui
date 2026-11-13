@@ -1,6 +1,6 @@
 /**
  * sort-control — the SORT SELECTOR border-control kind (`‹ cpu↓ ›`): a second
- * consumer of the top-border control strip (leaves/render/border-controls),
+ * consumer of the top-border control strip (renderPanel's `topControls`),
  * alongside the refresh control. Picks which column a sortable pane orders by,
  * and its direction.
  *
@@ -40,9 +40,9 @@ function sortControlText(label) {
  *  ranges, tagged with an opaque `action` the spec's dispatch interprets. */
 function sortControlHits(x0, y, visibleW) {
   return [
-    { x0, x1: x0 + 1, y, action: 'prev' },
+    { x0, x1: x0 + 1, y, action: 'prev', repeat: true },
     { x0: x0 + 2, x1: x0 + visibleW - 3, y, action: 'reverse' },
-    { x0: x0 + visibleW - 2, x1: x0 + visibleW - 1, y, action: 'next' },
+    { x0: x0 + visibleW - 2, x1: x0 + visibleW - 1, y, action: 'next', repeat: true },
   ];
 }
 

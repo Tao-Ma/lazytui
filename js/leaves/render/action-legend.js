@@ -14,7 +14,8 @@
  * inner width, so render + hit-test agree. Shown on the FOCUSED pane only,
  * suppressed in free-config.
  *
- * Owns DATA + GEOMETRY only. Placement (bottom-left) lives in border-controls.js;
+ * Owns DATA + GEOMETRY only. Placement (bottom-left, gated by
+ * border-controls.bottomFits) is renderPanel's;
  * the key-hint color is a render-time theme read (like draw.js).
  */
 'use strict';

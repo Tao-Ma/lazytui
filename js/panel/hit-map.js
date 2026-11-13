@@ -14,13 +14,18 @@
  *   - rect: screen cells, 0-based, [x, x+w) × [y, y+h).
  *   - on: gesture → handler, where gesture is a handleMouse kind (press, double,
  *     right, middle, wheel-up, wheel-down, …) and handler is DATA — `{ key }`,
- *     `{ msg, owner? }`, `{ intent }`, `'swallow'`, or an array of those.
+ *     `{ msg, owner? }`, `{ intent }`, `{ act, …args }`, `'swallow'`, or an
+ *     array of those (realized by dispatch/control/mouse-router).
+ *   - repeat: a fast 2nd click on the SAME region is another press (hint chips,
+ *     border-control steppers); otherwise the router swallows it.
+ *   - invisible: a policy region nobody sees (an in-grid popup's below-chrome
+ *     backdrop) — handles gestures on a fresh frame, but `claims` ignores it.
  *   - opaque: the region stops the resolve walk even when it has no handler for
  *     the gesture (a popup box, a modal backdrop). Rows and chips are not opaque,
  *     so an unhandled gesture over them falls to the box beneath.
  *
  * Lifecycle: `clear(stamp)` at the top of every main-frame paint (render/paint
- * render(), beside the chrome/tree/hover registries), repopulated in the same
+ * render(), beside the hover-region clear), repopulated in the same
  * synchronous pass. `stamp` is stampOf(model, layoutSlice) — WHAT the frame
  * showed: the active chain modes plus the identity of the state the popups paint
  * from. The router compares it with the current model (stampsEqual); a mismatch
@@ -48,12 +53,14 @@
 const { chainStamp } = require('../leaves/input/modes');
 const geometry = require('../leaves/wm/geometry');
 
-// Absolute z bands for pane-anchored regions (docs/mouse-hit-map.md §Z bands).
-// Overlays sit at 1000+ (compositor band), so every popup covers all of these.
+// Absolute z bands (docs/mouse-hit-map.md §Z bands) — the one table. Overlay
+// k sits at OVERLAY_BASE + 10·zIndex_k + draw.HIT_Z offsets (the compositor),
+// so every popup covers every pane-anchored band.
 const BANDS = Object.freeze({
-  IN_PANE: 30,        // tree fold markers
-  BELOW_CHROME: 35,   // in-grid overlay backdrops (jobs / pane-menu / which-key)
-  CHROME: 40,         // [_]/[+]/[X]/[≡], border controls, tab strip, ✗ cancel
+  IN_PANE: 30,          // tree fold markers
+  BELOW_CHROME: 35,     // in-grid overlay backdrops (jobs / pane-menu / which-key)
+  CHROME: 40,           // [_]/[+]/[X]/[≡], border controls, tab strip, ✗ cancel
+  OVERLAY_BASE: 1000,   // compositor-registered overlays
 });
 
 // The discrete pointer gestures the router resolves (R1) — the single list
@@ -106,8 +113,6 @@ function exitOwner() { _owner = null; }
 /** Bracket a pane's render (paint). `rect` is the pane's screen rect. */
 function enterPane(paneId, rect) { _pane = paneId && rect ? { owner: paneId, rect } : null; }
 function exitPane() { _pane = null; }
-/** The pane being rendered, or null — `{ paneId, rect }`. */
-function currentPane() { return _pane ? { paneId: _pane.owner, rect: _pane.rect } : null; }
 
 /** Publish a PANE-LOCAL region for the ambient pane at absolute `z`: the rect
  *  is translated by the pane's screen origin and clipped to the pane (a glyph
@@ -153,10 +158,14 @@ function resolve(mx, my, gesture) {
 // NOT the layout slice's identity: graph_hover writes that slice on every cell
 // change over a graph, and motion + press often share a stdin chunk — identity
 // would stale (and swallow) ordinary clicks.
+// panel/route, resolved lazily (route's own load graph is heavy) and CACHED: a
+// require() inside a per-frame / per-click function costs tens of µs each call
+// (render/paint documents the same trap) — stampOf runs on both paths.
+let _routeRef = null;
 function _geomKey(layoutSlice) {
   if (!layoutSlice) return '';
   let viewer = null;
-  try { viewer = require('./route').resolveViewerPaneId(); } catch (_) { /* boot edge */ }
+  try { viewer = (_routeRef || (_routeRef = require('./route'))).resolveViewerPaneId(); } catch (_) { /* boot edge */ }
   const m = geometry.visibleBoundsMap(layoutSlice, viewer);
   const d = layoutSlice.dims;
   let s = d ? `${d.cols}x${d.rows}|` : '|';
@@ -174,7 +183,8 @@ function _geomKey(layoutSlice) {
  *  open: their async mirrors replace the list, which shifts the index-targeted
  *  rows; when closed they must not stale every frame. `geom` (Release 2) covers
  *  pane chrome: a batched key that moves a pane stales the frame (_geomKey).
- *  Pure. */
+ *  Pure of the model except the half-view viewer pane, which _geomKey reads
+ *  from the route (the same read paint makes). */
 function stampOf(model, layoutSlice) {
   const md = (model && model.modes) || {};
   return {
@@ -199,14 +209,16 @@ function stampsEqual(a, b) {
 function frameStamp() { return _stamp; }
 
 /** Did the last frame publish ANY region containing (mx, my)? The stale-frame
- *  rule's question: was the user aiming at something this map drew there. */
+ *  rule's question: was the user aiming at something this map drew there. An
+ *  `invisible` region (an in-grid popup's below-chrome backdrop — a policy over
+ *  panes that look live, not something the user sees) does not count. */
 function claims(mx, my) {
-  return _regions.some(r => _contains(r.rect, mx, my));
+  return _regions.some(r => !r.invisible && _contains(r.rect, mx, my));
 }
 
 /** Snapshot of the published regions, publish order — tests + diag. */
 function all() { return _regions.map(({ _seq, ...r }) => r); }
 
 module.exports = { clear, publish, publishOwned, enterOwner, exitOwner,
-  enterPane, exitPane, currentPane, publishLocal, retractOwner, resolve, claims,
+  enterPane, exitPane, publishLocal, retractOwner, resolve, claims,
   stampOf, stampsEqual, frameStamp, all, DISCRETE_GESTURES, BANDS };

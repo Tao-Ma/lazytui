@@ -273,6 +273,38 @@ describe('[table-tree] click a ▾/▸ marker folds that node (paint↔hit-test)
     assert(route.getInstanceSlice(id).treeMode === true, 'chip click → tree');
   });
 
+  it('a DOUBLE-click on the ‹ tree › chip toggles once (a toggle part does not repeat)', () => {
+    boot();
+    const id = paneId();
+    const hc = require('./_helpers/hit-click');
+    sm.capture(() => sm.render());
+    const r = hc.region(id, 'ctl:tree:toggle');
+    assert(r && !r.repeat, 'the toggle part publishes without repeat');
+    assert(route.getInstanceSlice(id).treeMode === true, 'starts in tree mode');
+    hc.dblclickRegion(id, 'ctl:tree:toggle');
+    assert(route.getInstanceSlice(id).treeMode === false, 'one toggle → flat (not toggled back)');
+    const sortNext = hc.region(id, 'ctl:sort:next');
+    assert(sortNext && sortNext.repeat === true, 'a stepper part (sort ›) does repeat');
+  });
+
+  it('a collapsed pane shown in FULL view renders its controls, and they work', () => {
+    boot();
+    const id = paneId();
+    const hc = require('./_helpers/hit-click');
+    const p = mpool.allPanesInColumns(route.getInstanceSlice('layout').arrange).find(x => x.paneId === id);
+    dispatchMsg(route.wrap('layout', { type: 'focus_set', focus: id }));
+    dispatchMsg(route.wrap('layout', { type: 'panel_collapse_toggle', id: p.id }));
+    dispatchMsg(route.wrap('layout', { type: 'view_set', mode: 'full' }));
+    sm.capture(() => sm.render());
+    const r = hc.region(id, 'ctl:tree:toggle');
+    assert(r, 'full view paints the (collapsed) pane expanded, with its tree chip');
+    const before = route.getInstanceSlice(id).treeMode;
+    hc.clickRegion(id, 'ctl:tree:toggle');
+    assert(route.getInstanceSlice(id).treeMode === !before, 'the chip click toggled');
+    dispatchMsg(route.wrap('layout', { type: 'view_set', mode: 'normal' }));
+    dispatchMsg(route.wrap('layout', { type: 'panel_collapse_toggle', id: p.id }));
+  });
+
   it('a marker click is inert while a non-modal overlay owns the mouse (pane menu open)', () => {
     // Regression: the marker is a BODY-row affordance (in-pane band, published only
     // with no chain mode active) — NOT chrome. A pane-menu dropdown anchors at
