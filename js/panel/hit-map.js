@@ -21,9 +21,13 @@
  *
  * Lifecycle: `clear(stamp)` at the top of every main-frame paint (render/paint
  * render(), beside the chrome/tree/hover registries), repopulated in the same
- * synchronous pass. `stamp` is modes.chainStamp(model.modes) — the router
- * abstains when the CURRENT modes no longer match it (§Stale-frame rule). Before
- * the first paint the stamp is null, so every resolve abstains.
+ * synchronous pass. `stamp` is stampOf(model, layoutSlice) — WHAT the frame
+ * showed: the active chain modes plus the identity of the state the popups paint
+ * from. The router compares it with the current model (stampsEqual); a mismatch
+ * means the user aimed at a screen that no longer matches state (a batched
+ * Enter+click chunk — render-queue defers paint inside a batch) and the click
+ * must not resolve against the stale regions (§Stale-frame rule). Before the
+ * first paint the stamp is null — never equal to a live stamp.
  *
  * Ambient owner: the overlay compositor brackets each overlay's render with
  * `enterOwner(id, zBase)` / `exitOwner()`, so leaves that publish through the
@@ -36,6 +40,8 @@
  */
 'use strict';
 
+const { chainStamp } = require('../leaves/input/modes');
+
 const _regions = [];
 let _seq = 0;
 let _stamp = null;
@@ -47,7 +53,7 @@ function clear(stamp) {
   _regions.length = 0;
   _seq = 0;
   _sorted = null;
-  _stamp = stamp == null ? null : String(stamp);
+  _stamp = stamp == null ? null : stamp;
 }
 
 /** Record one region. Malformed regions (no rect / non-finite / empty) are
@@ -95,10 +101,45 @@ function resolve(mx, my, gesture) {
   return null;
 }
 
+/** What a frame showed, for the stale-frame check. Mode flags alone miss a
+ *  content change under an unchanged mode — Enter on a context-menu row that
+ *  REPLACES the menu with a submenu, Space toggling fabric-form's choices list,
+ *  typing that refilters the palette — so the stamp also carries the identity
+ *  of the slices popups paint from. Every popup reducer replaces `model.modal`
+ *  on a change and leaves it alone otherwise (clock_tick / focus_event keep it),
+ *  so identity is exact. `jobs` / `diagLog` count only while their window is
+ *  open: their async mirrors replace the list, which shifts the index-targeted
+ *  rows; when closed they must not stale every frame. Pure. */
+function stampOf(model, layoutSlice) {
+  const md = (model && model.modes) || {};
+  return {
+    chain: chainStamp(md),
+    modal: model ? model.modal : undefined,
+    prefixSeq: model ? model.prefixSeq : undefined,
+    paneMenu: layoutSlice ? layoutSlice.paneMenu : undefined,
+    jobs: md.jobsMode ? model.jobs : null,
+    diagLog: md.diagLogMode ? model.diagLog : null,
+  };
+}
+
+/** Field-wise identity comparison of two stamps (null never equals a stamp). */
+function stampsEqual(a, b) {
+  if (!a || !b) return false;
+  for (const k of Object.keys(b)) if (a[k] !== b[k]) return false;
+  return Object.keys(a).length === Object.keys(b).length;
+}
+
 /** The stamp the current regions were published under (null before a paint). */
 function frameStamp() { return _stamp; }
+
+/** Did the last frame publish ANY region containing (mx, my)? The stale-frame
+ *  rule's question: was the user aiming at something this map drew there. */
+function claims(mx, my) {
+  return _regions.some(r => _contains(r.rect, mx, my));
+}
 
 /** Snapshot of the published regions, publish order — tests + diag. */
 function all() { return _regions.map(({ _seq, ...r }) => r); }
 
-module.exports = { clear, publish, publishOwned, enterOwner, exitOwner, resolve, frameStamp, all };
+module.exports = { clear, publish, publishOwned, enterOwner, exitOwner, resolve, claims,
+  stampOf, stampsEqual, frameStamp, all };

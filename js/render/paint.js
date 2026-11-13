@@ -915,10 +915,10 @@ function render(model) {
   // (painted after) read it. Empty when nothing is hovered.
   hoverRegion.clear();
   // And the hit map (docs/mouse-hit-map.md): every clickable region this frame
-  // draws is republished below (overlays via the compositor). The stamp names the
-  // active chain modes, so the router abstains on a click aimed at a frame whose
-  // mode state has since changed (§Stale-frame rule).
-  hitMap.clear(modes.chainStamp(model.modes));
+  // draws is republished below (overlays via the compositor). The stamp records
+  // what this frame shows, so the router can tell a click aimed at a frame whose
+  // state has since changed (§Stale-frame rule).
+  hitMap.clear(hitMap.stampOf(model, layoutSlice));
   const viewMode = layoutSlice.viewMode;
   // Overlay-compositor migration Release 2 (docs/overlay-compositor-migration.md):
   // the view-mode dispatchers RETURN `{ newRows, COLS }` instead of running

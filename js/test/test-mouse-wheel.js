@@ -143,12 +143,7 @@ const { getModel } = require('../app/runtime');
 const modes = require('../leaves/input/modes');
 
 function _paintOverlays() {
-  require('../render/paint');   // wires the draw → hit-map sink (as at boot)
-  const hm = require('../panel/hit-map');
-  const { viewportDims } = require('../leaves/render/draw');
-  const { cols, rows } = viewportDims();
-  hm.clear(modes.chainStamp(getModel().modes));
-  require('../render/overlay-compositor').paintActive(getModel(), new Array(rows).fill(' '.repeat(cols)), cols);
+  require('./_helpers/overlay-capture').compositeOverlays(getModel());
 }
 
 describe('[4] T13 regression: handleMouse modal gating', () => {

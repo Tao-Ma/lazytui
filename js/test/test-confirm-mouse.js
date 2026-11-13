@@ -19,12 +19,8 @@
 
 const { describe, it, eq, assert, report } = require('./test-runner');
 const sm = require('./smoke/_helpers/smoke');
-const input = require('../dispatch/control/input');
+const hc = require('./_helpers/hit-click');
 const actions = require('../dispatch/control/actions');
-const hm = require('../panel/hit-map');
-const compositor = require('../render/overlay-compositor');
-const { chainStamp } = require('../leaves/input/modes');
-const { stripMarkup } = require('../leaves/text/ansi');
 const { getModel } = require('../app/runtime');
 
 const ACCEPT = { type: 'msg', msg: { type: 'register_push', text: 'ACCEPTED' } };
@@ -51,30 +47,18 @@ function openConfirm(cols = 120, rows = 30, opts = {}) {
   getModel().modal = { ...getModel().modal, onReject: REJECT };
   sm.capture(sm.render);          // a real paint publishes the hit map
 }
-// Fire an off-screen press first so the parser's double-click triple can't
-// pair this click with an earlier same-cell one from another test.
-function click(mx, my, button = 0) {
-  sm.capture(() => {
-    input._dispatchToken('\x1b[<0;250;90M');
-    input._dispatchToken(`\x1b[<${button};${mx + 1};${my + 1}M`);
-  });
-}
-function wheel(mx, my) { sm.capture(() => input._dispatchToken(`\x1b[<65;${mx + 1};${my + 1}M`)); }
-function region(id) { return hm.all().find(r => r.owner === 'confirm' && r.id === id) || null; }
+const click = hc.click;
+const wheel = (mx, my) => hc.wheel(mx, my, 'down');
+const region = (id) => hc.region('confirm', id);
 const reg = () => getModel().register.history.slice();
 const open = () => getModel().modes.confirmMode === true;
 
 describe('[1] paint↔hit agreement', () => {
   it('each chip region covers exactly the hint text painted there', () => {
     openConfirm();
-    // Re-composite into a buffer we can read, under the same hit-map bracket.
     const vp = require('../leaves/render/draw').viewportDims();
-    const newRows = new Array(vp.rows).fill(' '.repeat(vp.cols));
-    hm.clear(chainStamp(getModel().modes));
-    compositor.paintActive(getModel(), newRows, vp.cols);
-    const text = (r) => stripMarkup(newRows[r.rect.y]).slice(r.rect.x, r.rect.x + r.rect.w);
-    eq(text(region('chip:y')), '[y] confirm');
-    eq(text(region('chip:n')), '[n] cancel');
+    eq(hc.paintedText('confirm', 'chip:y'), '[y] confirm');
+    eq(hc.paintedText('confirm', 'chip:n'), '[n] cancel');
     const box = region('box');
     assert(box && box.opaque, 'opaque box published');
     const bd = region('backdrop');
@@ -166,11 +150,7 @@ describe('[5] double-click on [y]', () => {
     const real = actions.handleAction;
     actions.handleAction = (...a) => { calls.push(a[0]); return real(...a); };
     try {
-      sm.capture(() => {
-        input._dispatchToken('\x1b[<0;250;90M');
-        input._dispatchToken(`\x1b[<0;${y.rect.x + 2};${y.rect.y + 1}M`);   // press → accept
-        input._dispatchToken(`\x1b[<0;${y.rect.x + 2};${y.rect.y + 1}M`);   // same cell, fast → double
-      });
+      hc.dblclick(y.rect.x + 1, y.rect.y);   // press → accept, then same cell fast → double
     } finally { actions.handleAction = real; }
     eq(reg(), ['ACCEPTED'], 'exactly one accept');
     eq(calls.filter(c => c === 'run_selected'), [], 'no pane activate leaked');

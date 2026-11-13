@@ -95,6 +95,30 @@ describe('[2] lifecycle', () => {
   });
 });
 
+describe('[2b] frame stamp + claims', () => {
+  it('stampOf captures modes AND popup-state identity; stampsEqual is field-wise ===', () => {
+    const modal = { menu: { items: [] } };
+    const m = { modes: { menuOpen: true }, modal, prefixSeq: [] };
+    const a = hm.stampOf(m, { paneMenu: null });
+    assert(hm.stampsEqual(a, hm.stampOf(m, { paneMenu: null })), 'same state → equal');
+    assert(!hm.stampsEqual(a, hm.stampOf({ ...m, modal: { ...modal } }, { paneMenu: null })), 'modal replaced → stale');
+    assert(!hm.stampsEqual(a, hm.stampOf({ ...m, modes: {} }, { paneMenu: null })), 'mode closed → stale');
+    assert(!hm.stampsEqual(null, a) && !hm.stampsEqual(a, null), 'null never equals');
+  });
+  it('jobs / diagLog identity counts only while their window is open', () => {
+    const base = { modes: {}, modal: {}, jobs: [1] };
+    assert(hm.stampsEqual(hm.stampOf(base), hm.stampOf({ ...base, jobs: [2] })), 'closed → a jobs refresh is not staleness');
+    const open = { ...base, modes: { jobsMode: true } };
+    assert(!hm.stampsEqual(hm.stampOf(open), hm.stampOf({ ...open, jobs: [2] })), 'open → the list shifted under the rows');
+  });
+  it('claims: any published region containing the point', () => {
+    hm.clear('');
+    hm.publish({ id: 'b', rect: R(2, 2, 3, 3), z: 1, on: {} });
+    assert(hm.claims(3, 3));
+    assert(!hm.claims(0, 0));
+  });
+});
+
 describe('[3] formatHints', () => {
   it('reproduces the hand-built confirm hint markup byte-for-byte', () => {
     const { markup } = formatHints([

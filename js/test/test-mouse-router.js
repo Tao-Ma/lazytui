@@ -20,8 +20,11 @@ const dispatch = require('../dispatch/control/dispatch');
 const loop = require('../dispatch/runtime/loop');
 
 const R = (x, y, w, h) => ({ x, y, w, h });
-const MODEL = { modes: {} };                    // chainStamp → ''
-const CONFIRM = { modes: { confirmMode: true } };  // chainStamp → 'confirmMode'
+const MODEL = { modes: {} };
+const CONFIRM = { modes: { confirmMode: true } };
+// The frame stamp the router compares against (hit-map.stampOf) for a model.
+const api = require('../panel/api');
+const STAMP = (m) => hm.stampOf(m, api.getInstanceSlice('layout'));
 
 function withSpies(fn) {
   const calls = [];
@@ -70,13 +73,13 @@ describe('[1] realize', () => {
 describe('[2] route', () => {
   it('non-discrete gestures always fall through (motion/release stay legacy)', () => {
     router._reset();
-    hm.clear('');
+    hm.clear(STAMP(MODEL));
     hm.publish({ id: 'b', rect: R(0, 0, 10, 10), z: 1, opaque: true, on: {} });
     for (const k of ['motion', 'release', 'hover']) eq(router.route(k, 1, 1, MODEL), false, k);
   });
   it('a hit is realized and consumed', () => {
     router._reset();
-    hm.clear('');
+    hm.clear(STAMP(MODEL));
     hm.publish({ id: 'chip', rect: R(0, 0, 3, 1), z: 3, owner: 'confirm', on: { press: { key: 'y' } } });
     let r;
     const calls = withSpies(() => { r = router.route('press', 1, 0, MODEL); });
@@ -85,22 +88,38 @@ describe('[2] route', () => {
   });
   it('a miss falls through', () => {
     router._reset();
-    hm.clear('');
+    hm.clear(STAMP(MODEL));
     eq(router.route('press', 5, 5, MODEL), false);
   });
-  it('stale frame: the current modes differ from the stamp → abstain', () => {
+  it('stale frame, the old frame drew something here → SWALLOWED, nothing fires', () => {
     router._reset();
-    hm.clear('');   // painted with NO modal…
-    hm.publish({ id: 'pane', rect: R(0, 0, 10, 10), z: 1, owner: 'p', on: { press: { key: 'x' } } });
+    hm.clear(STAMP(CONFIRM));   // painted WITH confirm…
+    hm.publish({ id: 'chip:y', rect: R(0, 0, 10, 10), z: 1013, owner: 'confirm', on: { press: { key: 'y' } } });
     let r;
-    const calls = withSpies(() => { r = router.route('press', 1, 1, CONFIRM); });   // …but confirm is open now
-    eq(r, false, 'legacy decides (its T13 gate swallows)');
-    eq(calls, [], 'the stale pane region did not fire');
+    const calls = withSpies(() => { r = router.route('press', 1, 1, MODEL); });   // …closed since (batched `n`)
+    eq(r, true, 'consumed — not handed to the pane the popup covered');
+    eq(calls, [], 'the stale chip did not fire either');
   });
-  it('never painted (null stamp) → abstain', () => {
+  it('stale frame, nothing drawn at the point → the legacy cascade decides', () => {
+    router._reset();
+    hm.clear(STAMP(CONFIRM));
+    hm.publish({ id: 'box', rect: R(0, 0, 10, 10), z: 1011, owner: 'confirm', opaque: true, on: {} });
+    eq(router.route('press', 30, 30, MODEL), false);
+  });
+  it('same modes but different popup STATE is stale too (modal identity)', () => {
+    router._reset();
+    const before = { modes: { menuOpen: true }, modal: { menu: { items: ['a'] } } };
+    hm.clear(STAMP(before));
+    hm.publish({ id: 'row:0', rect: R(0, 0, 10, 1), z: 1102, owner: 'menu', on: { press: { msg: { type: 'menu_activate', idx: 0 } } } });
+    const after = { modes: { menuOpen: true }, modal: { menu: { items: ['submenu'] } } };   // replaced in place
+    let r;
+    const calls = withSpies(() => { r = router.route('press', 1, 0, after); });
+    eq(r, true, 'swallowed');
+    eq(calls, [], 'menu_activate idx 0 did NOT land on the replacement menu');
+  });
+  it('never painted (null stamp, empty map) → the legacy cascade decides', () => {
     router._reset();
     hm.clear(null);
-    hm.publish({ id: 'x', rect: R(0, 0, 10, 10), z: 1, on: { press: 'swallow' } });
     eq(router.route('press', 1, 1, MODEL), false);
   });
 });
@@ -108,11 +127,11 @@ describe('[2] route', () => {
 describe('[3] press→double continuation', () => {
   it('the press owner gone at the cell → the double is swallowed', () => {
     router._reset();
-    hm.clear('');
+    hm.clear(STAMP(MODEL));
     hm.publish({ id: 'row', rect: R(0, 0, 10, 1), z: 1012, owner: 'menu', on: { press: { msg: { type: 'menu_activate', idx: 0 } } } });
     withSpies(() => router.route('press', 2, 0, MODEL));
     // The pick closed the menu; next frame has only the pane underneath.
-    hm.clear('');
+    hm.clear(STAMP(MODEL));
     hm.publish({ id: 'pane', rect: R(0, 0, 10, 10), z: 10, owner: 'pane-actions', on: { double: { intent: { kind: 'activate' } } } });
     let r;
     const calls = withSpies(() => { r = router.route('double', 2, 0, MODEL); });
@@ -121,7 +140,7 @@ describe('[3] press→double continuation', () => {
   });
   it('the double is swallowed even when the frame is stale (batched chunk)', () => {
     router._reset();
-    hm.clear('confirmMode');
+    hm.clear(STAMP(CONFIRM));
     hm.publish({ id: 'chip', rect: R(0, 0, 5, 1), z: 1013, owner: 'confirm', on: { press: { key: 'y' } } });
     withSpies(() => router.route('press', 1, 0, CONFIRM));
     // `y` closed confirm, but the batch deferred the repaint: stamp still 'confirmMode'.
@@ -132,7 +151,7 @@ describe('[3] press→double continuation', () => {
   });
   it('the same owner still holds the cell → its double handler runs', () => {
     router._reset();
-    hm.clear('');
+    hm.clear(STAMP(MODEL));
     const on = { press: { msg: { type: 'jobs_nav', to: 1 } }, double: [{ msg: { type: 'jobs_nav', to: 1 } }, { key: 'return' }] };
     hm.publish({ id: 'row:1', rect: R(0, 3, 10, 1), z: 1062, owner: 'jobs', on });
     withSpies(() => router.route('press', 4, 3, MODEL));
@@ -141,7 +160,7 @@ describe('[3] press→double continuation', () => {
   });
   it('a double with no hit-map press before it takes the normal path', () => {
     router._reset();
-    hm.clear('');
+    hm.clear(STAMP(MODEL));
     eq(router.route('double', 1, 1, MODEL), false, 'falls through to legacy');
   });
 });
@@ -149,7 +168,7 @@ describe('[3] press→double continuation', () => {
 describe('[4] throwing handler', () => {
   it('is consumed and does not escape', () => {
     router._reset();
-    hm.clear('');
+    hm.clear(STAMP(MODEL));
     hm.publish({ id: 'boom', rect: R(0, 0, 3, 1), z: 1, owner: 'x', on: { press: { key: 'y' } } });
     const realKey = dispatch.handleKey;
     const realErr = console.error;

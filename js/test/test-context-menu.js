@@ -237,18 +237,13 @@ describe('[ctx-menu] ctx_run_action / ctx_run_command verbs', () => {
 describe('[ctx-menu] menu rows on the hit map — cell → item, published by the paint', () => {
   const { getModel } = require('../app/runtime');
   const hm = require('../panel/hit-map');
-  const compositor = require('../render/overlay-compositor');
-  const { viewportDims } = require('../leaves/render/draw');
-  const { chainStamp } = require('../leaves/input/modes');
-  require('../render/paint');   // wires the draw → hit-map sink (as at boot)
+  const { compositeOverlays } = require('./_helpers/overlay-capture');
 
   function seedAndPaint(items, anchor) {
     const m = getModel();
     m.modal.menu = { items, idx: 0, anchor, title: 'Actions' };
     m.modes.menuOpen = true;
-    const { cols, rows } = viewportDims();
-    hm.clear(chainStamp(m.modes));
-    compositor.paintActive(m, new Array(rows).fill(' '.repeat(cols)), cols);
+    compositeOverlays(m);
     m.modes.menuOpen = false;
   }
   // What a press at (mx,my) would do: an item idx, 'swallow', a key, or null.

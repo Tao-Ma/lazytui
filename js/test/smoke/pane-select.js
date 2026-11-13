@@ -114,6 +114,10 @@ describe('[3] right-click offers "Copy selection" for the active selection', () 
     require('../../dispatch/control/dispatch').applyMsg({ type: 'menu_close' });
     const own = selView.activeSelection();
     if (own) dispatchMsg(route.wrap(own.paneId, { type: 'select_cancel' }));
+    // Repaint, as the app's scheduled render does: until a frame without the
+    // menu is on screen, the hit map's stale-frame rule (docs/mouse-hit-map.md)
+    // swallows clicks aimed at the still-painted menu + backdrop.
+    rawFrame();
   });
 });
 

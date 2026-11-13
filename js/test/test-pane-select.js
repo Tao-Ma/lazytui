@@ -128,11 +128,7 @@ describe('[3] hit-test', () => {
   // (docs/mouse-hit-map.md); these pinned the retired pane-menu hitTest.
   const hm = require('../panel/hit-map');
   function paintOverlays() {
-    require('../render/paint');   // wires the draw → hit-map sink (as at boot)
-    const { cols, rows } = require('../leaves/render/draw').viewportDims();
-    hm.clear(require('../leaves/input/modes').chainStamp(require('../app/runtime').getModel().modes));
-    require('../render/overlay-compositor').paintActive(require('../app/runtime').getModel(),
-      new Array(rows).fill(' '.repeat(cols)), cols);
+    require('./_helpers/overlay-capture').compositeOverlays(require('../app/runtime').getModel());
   }
   // A press at (mx,my) on the pane-menu: the row index it navigates to,
   // 'swallow' (box border), or null (not on the dropdown).

@@ -16,9 +16,7 @@
 const sm = require('../smoke/_helpers/smoke');
 const input = require('../../dispatch/control/input');
 const hm = require('../../panel/hit-map');
-const compositor = require('../../render/overlay-compositor');
-const draw = require('../../leaves/render/draw');
-const { chainStamp } = require('../../leaves/input/modes');
+const { compositeOverlays } = require('./overlay-capture');
 const { stripMarkup } = require('../../leaves/text/ansi');
 const { getModel } = require('../../app/runtime');
 
@@ -59,11 +57,7 @@ function wheelRegion(owner, id, dir) { const { mx, my } = at(_need(owner, id)); 
  *  as production paint) and return the visible text under `owner/id`'s rect —
  *  the paint↔hit agreement check. Single-row regions only. */
 function paintedText(owner, id) {
-  const vp = draw.viewportDims();
-  const newRows = new Array(vp.rows).fill(' '.repeat(vp.cols));
-  hm.clear(chainStamp(getModel().modes));
-  // Captured: cmdline writes its prompt row straight through draw's writer.
-  sm.capture(() => compositor.paintActive(getModel(), newRows, vp.cols));
+  const newRows = compositeOverlays(getModel());
   const r = _need(owner, id);
   return stripMarkup(newRows[r.rect.y]).slice(r.rect.x, r.rect.x + r.rect.w);
 }

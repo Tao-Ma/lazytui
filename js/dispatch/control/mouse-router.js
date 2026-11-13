@@ -21,10 +21,14 @@
  * through to the legacy cascade, unchanged.
  *
  * Two guards:
- *   - STALE FRAME: the hit map is stamped with the chain modes active when it
- *     was painted; if the current modes differ (a batched Enter+click chunk —
- *     render-queue defers paint inside a batch) the router abstains rather than
- *     resolve against regions the model no longer matches.
+ *   - STALE FRAME: the hit map is stamped with what the frame showed
+ *     (hit-map.stampOf — chain modes + the popup state's identity). If the
+ *     current model differs (a batched `n`+click or Enter+click chunk —
+ *     render-queue defers paint inside a batch) the user aimed at a screen that
+ *     no longer exists. If that stale frame drew a region under the pointer the
+ *     click was meant for it → swallowed (resolving it against changed state,
+ *     or handing it to the pane the popup covered, are both wrong). If the stale
+ *     frame drew nothing there, the legacy cascade decides, as before.
  *   - PRESS→DOUBLE CONTINUATION: the parser emits a same-cell second click as
  *     `double`. When the FIRST click was a hit-map press (picking a popup item,
  *     which usually closes the popup), the double belongs to that press's owner:
@@ -37,7 +41,6 @@
 'use strict';
 
 const hitMap = require('../../panel/hit-map');
-const { chainStamp } = require('../../leaves/input/modes');
 const { paintNow: render } = require('../../leaves/infra/render-queue');
 const { seqForKey } = require('../../leaves/render/hints');
 
@@ -88,7 +91,7 @@ function _realizeAndPaint(hit, kind, mx, my) {
  *  stops), false to fall through to the legacy cascade. `mx`/`my` are 0-based. */
 function route(kind, mx, my, model) {
   if (!DISCRETE.has(kind)) return false;
-  const fresh = hitMap.frameStamp() === chainStamp(model && model.modes);
+  const fresh = hitMap.stampsEqual(hitMap.frameStamp(), hitMap.stampOf(model, _api().getInstanceSlice('layout')));
 
   if (kind === 'double' && _lastPress && _lastPress.mx === mx && _lastPress.my === my) {
     const owner = _lastPress.owner;
@@ -100,7 +103,7 @@ function route(kind, mx, my, model) {
   }
   if (kind === 'press' || kind === 'double') _lastPress = null;
 
-  if (!fresh) return false;
+  if (!fresh) return hitMap.claims(mx, my);   // stale: swallow what the old frame drew; else legacy
   const hit = hitMap.resolve(mx, my, kind);
   if (!hit) return false;
   if (kind === 'press') _lastPress = { mx, my, owner: hit.region.owner };

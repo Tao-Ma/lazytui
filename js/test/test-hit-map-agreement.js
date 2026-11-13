@@ -18,9 +18,8 @@ const { describe, it, eq, assert, report } = require('./test-runner');
 const sm = require('./smoke/_helpers/smoke');
 const hc = require('./_helpers/hit-click');
 const hm = require('../panel/hit-map');
-const compositor = require('../render/overlay-compositor');
 const draw = require('../leaves/render/draw');
-const { chainStamp } = require('../leaves/input/modes');
+const { compositeOverlays } = require('./_helpers/overlay-capture');
 const { stripMarkup } = require('../leaves/text/ansi');
 const { getModel } = require('../app/runtime');
 
@@ -49,9 +48,7 @@ const SCENARIOS = {
 
 function paintAndRead(owner) {
   const vp = draw.viewportDims();
-  const newRows = new Array(vp.rows).fill(' '.repeat(vp.cols));
-  hm.clear(chainStamp(getModel().modes));
-  sm.capture(() => compositor.paintActive(getModel(), newRows, vp.cols));
+  const newRows = compositeOverlays(getModel());
   const plain = newRows.map(r => stripMarkup(r));
   const regions = hm.all().filter(r => r.owner === owner);
   return { vp, plain, regions };
