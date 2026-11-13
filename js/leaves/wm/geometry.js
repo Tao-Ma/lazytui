@@ -499,9 +499,20 @@ function visibleBoundsFor(layoutSlice, key, viewerPaneId) {
   return _visibleBoundsMap(layoutSlice, viewerPaneId)[key] || null;
 }
 
+/** The whole visible-bounds map (paneId → rect) for the current view mode —
+ *  what the frame's panes occupy. The hit map's geometry stamp reads it
+ *  (panel/hit-map stampOf) so a batched key that moves a pane stales the frame.
+ *  A test-only `slice.paneBounds` override wins, as in visibleBoundsFor. */
+function visibleBoundsMap(layoutSlice, viewerPaneId) {
+  if (!layoutSlice) return null;
+  if (layoutSlice.paneBounds) return layoutSlice.paneBounds;
+  if (!layoutSlice.dims || !layoutSlice.arrange) return null;
+  return _visibleBoundsMap(layoutSlice, viewerPaneId);
+}
+
 module.exports = {
   distributeColumnHeights, getPanelViewportH, calcLayout, availRows,
-  getCurrentLayout, boundsFor, visibleBoundsFor, halfProjection,
+  getCurrentLayout, boundsFor, visibleBoundsFor, visibleBoundsMap, halfProjection,
   // Test seam: distributeColumnHeights is a pure function that returns
   // a { [type]: rows } map. Exposed so collapsed-honor + heightPct
   // math can be unit-tested without bringing up the whole runtime.

@@ -377,6 +377,9 @@ function _safeRender(panel, w, h, opts) {
   // so a throw can't leak the ambient into the next pane's render.
   const selectView = _selView();
   selectView.enterPane(panel.paneId);
+  // Hit map (docs/mouse-hit-map.md Release 2): the pane's SCREEN rect, so its
+  // chrome + in-pane affordances publish pane-local regions (publishLocal).
+  hitMap.enterPane(panel.paneId, { x: (opts && opts.x) | 0, y: (opts && opts.y) | 0, w, h });
   try {
     // v0.6.3 P4.2b — pass opts (carries chrome spec from composeRects)
     // as a 5th arg. Existing panel renderers ignore unknown args; the
@@ -416,6 +419,7 @@ function _safeRender(panel, w, h, opts) {
     return rows.join('\n');
   } finally {
     selectView.exitPane();
+    hitMap.exitPane();
   }
   return _normalizeRender(panel, raw, w, h).join('\n');
 }
@@ -468,9 +472,13 @@ function composeRects(layout, model) {
       freeConfigMode, dragging, focused,
       paneMenuTriggerState: paneMenuTriggerStateFor(panel.paneId),
     });
-    const raw = panel.collapsed
-      ? _renderCollapsed(panel, rect.w, chrome)
-      : _safeRender(panel, rect.w, rect.h, { chrome, focused });
+    let raw;
+    if (panel.collapsed) {
+      hitMap.enterPane(panel.paneId, { x: rect.x, y: rect.y, w: rect.w, h: rect.h });
+      try { raw = _renderCollapsed(panel, rect.w, chrome); } finally { hitMap.exitPane(); }
+    } else {
+      raw = _safeRender(panel, rect.w, rect.h, { chrome, focused, x: rect.x, y: rect.y });
+    }
     const lines = raw === '' ? [] : raw.split('\n');
     out.push({
       paneId: rect.paneId, type: rect.type,
@@ -583,8 +591,8 @@ function renderHalf(model, arrangeOverride) {
   // the viewer on the right.
   const leftFocused = mpane.paneMatchesFocus(leftPanel, layoutSlice.focus);
   const detailFocused = detailPanel ? mpane.paneMatchesFocus(detailPanel, layoutSlice.focus) : false;
-  let leftContent = _safeRender(leftPanel, halfW, availH, { chrome: leftChrome, focused: leftFocused });
-  let rightContent = detailPanel ? _safeRender(detailPanel, rightW, availH, { chrome: detailChrome, focused: detailFocused }) : '';
+  let leftContent = _safeRender(leftPanel, halfW, availH, { chrome: leftChrome, focused: leftFocused, x: 0, y: 0 });
+  let rightContent = detailPanel ? _safeRender(detailPanel, rightW, availH, { chrome: detailChrome, focused: detailFocused, x: halfW, y: 0 }) : '';
   const rects = [
     { x: 0, y: 0, w: halfW, h: availH,
       lines: leftContent === '' ? [] : leftContent.split('\n') },
@@ -621,7 +629,7 @@ function renderFull(model, arrangeOverride) {
   // v0.6.4 — thread opts.focused (full view always paints the focused
   // pane). Phase-5/Arc-1 moved focus styling onto opts.focused; without it
   // the full-screen pane renders unfocused (no border highlight).
-  let content = _safeRender(focusedPanel, COLS, availH, { chrome: fullChrome, focused: true });
+  let content = _safeRender(focusedPanel, COLS, availH, { chrome: fullChrome, focused: true, x: 0, y: 0 });
   const rects = [
     { x: 0, y: 0, w: COLS, h: availH,
       lines: content === '' ? [] : content.split('\n') },

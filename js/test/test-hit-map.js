@@ -4,6 +4,8 @@
  *
  *   [1] resolve: z order, publish-order tie-break, opaque stop, fall-through
  *   [2] lifecycle: clear + stamp, malformed regions ignored, owner bracket
+ *   [2b] frame stamp (incl. the R2 geometry field) + claims
+ *   [2c] ambient pane bracket — publishLocal translate + clip
  *   (formatHints / chipSurvives / seqForKey live in test-hints.js)
  *   [5] publishBox: rows follow the scroll window, chips clip, screen clip
  *
@@ -110,11 +112,46 @@ describe('[2b] frame stamp + claims', () => {
     const open = { ...base, modes: { jobsMode: true } };
     assert(!hm.stampsEqual(hm.stampOf(open), hm.stampOf({ ...open, jobs: [2] })), 'open → the list shifted under the rows');
   });
+  it('geom (R2): pane rects + dims stale the frame; hover / focus do not', () => {
+    // paneBounds is the geometry test override (visibleBoundsMap honors it), so
+    // the stamp sees exactly these rects.
+    const m = { modes: {}, modal: null };
+    const pb = { 'pane-a': R(0, 0, 40, 10), 'pane-b': R(0, 10, 40, 10) };
+    const L = (extra) => ({ paneMenu: null, dims: { cols: 80, rows: 24 }, paneBounds: pb, ...extra });
+    const a = hm.stampOf(m, L());
+    assert(hm.stampsEqual(a, hm.stampOf(m, L({ hover: { paneId: 'pane-a', col: 3, row: 1 } }))), 'hover → same frame');
+    assert(hm.stampsEqual(a, hm.stampOf(m, L({ focus: 'pane-b' }))), 'normal-view focus → same frame');
+    const collapsed = { ...pb, 'pane-a': R(0, 0, 40, 1), 'pane-b': R(0, 1, 40, 19) };
+    assert(!hm.stampsEqual(a, hm.stampOf(m, L({ paneBounds: collapsed }))), 'a pane collapsed → stale');
+    const swapped = { 'pane-a': pb['pane-b'], 'pane-b': pb['pane-a'] };
+    assert(!hm.stampsEqual(a, hm.stampOf(m, L({ paneBounds: swapped }))), 'same rects, panes swapped → stale');
+    assert(!hm.stampsEqual(a, hm.stampOf(m, L({ dims: { cols: 81, rows: 24 } }))), 'resize → stale');
+  });
   it('claims: any published region containing the point', () => {
     hm.clear('');
     hm.publish({ id: 'b', rect: R(2, 2, 3, 3), z: 1, on: {} });
     assert(hm.claims(3, 3));
     assert(!hm.claims(0, 0));
+  });
+});
+
+describe('[2c] ambient pane — publishLocal', () => {
+  it('translates by the pane origin, clips to the pane, stamps owner = paneId', () => {
+    hm.clear('');
+    hm.publishLocal({ id: 'x', rect: R(0, 0, 3, 1), on: {} }, 40);   // no ambient pane → dropped
+    eq(hm.all().length, 0, 'outside a bracket nothing publishes');
+    hm.enterPane('pane-a', R(10, 5, 20, 8));
+    hm.publishLocal({ id: 'glyph', rect: R(16, 0, 3, 1), on: { press: 'swallow' } }, 40);
+    hm.publishLocal({ id: 'wide', rect: R(18, 2, 6, 1), on: {} }, 30);    // runs past the right edge
+    hm.publishLocal({ id: 'off', rect: R(25, 0, 3, 1), on: {} }, 30);     // wholly outside → dropped
+    eq(hm.currentPane().paneId, 'pane-a');
+    hm.exitPane();
+    eq(hm.currentPane(), null);
+    const rs = hm.all();
+    eq(rs.map(r => r.id).join(), 'glyph,wide');
+    eq(JSON.stringify(rs[0].rect), JSON.stringify(R(26, 5, 3, 1)), 'pane-local → screen');
+    eq(rs[0].owner, 'pane-a'); eq(rs[0].z, 40);
+    eq(JSON.stringify(rs[1].rect), JSON.stringify(R(28, 7, 2, 1)), 'clipped at the pane edge');
   });
 });
 
