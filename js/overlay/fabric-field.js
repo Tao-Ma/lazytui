@@ -27,6 +27,7 @@
 const { getModel } = require('../model/store');
 const { esc } = require('../leaves/text/ansi');
 const { renderOverlay } = require('../leaves/render/draw');
+const { formatHints } = require('../leaves/render/hints');
 
 // Overlay-compositor migration (Release 2 Phase 2.c #2 — closes
 // Phase 2.c). The 1-port invoke-time popup, sibling of fabric-form (the
@@ -79,10 +80,18 @@ function renderFabricFieldOverlay(newRows, cols) {
   lines.push('');
   lines.push(buffer);
   lines.push('');
-  lines.push('[dim]\\[enter] run   \\[esc] cancel[/]');
+  // Hit map (docs/mouse-hit-map.md): declared hints → clickable chips that send
+  // the key (Enter submits, Esc cancels — the fabricFieldMode key handler).
+  const hint = formatHints([
+    { cap: 'enter', label: 'run',    key: 'return' },
+    { cap: 'esc',   label: 'cancel', key: 'escape' },
+  ]);
+  const lineChips = { [lines.length]: hint.chips };
+  lines.push(hint.markup);
 
   renderOverlay({ lines, title, maxWidth: 60,
-                  targetRows: newRows || null, targetCols: cols || 0 });
+                  targetRows: newRows || null, targetCols: cols || 0,
+                  hit: { lineChips, box: {} } });
 }
 
 // Overlay-compositor R3 descriptor. zIndex=130 preserves fabric-field's
@@ -97,6 +106,10 @@ function registerSelf(compositor) {
     render: (m, newRows, cols) => renderFabricFieldOverlay(newRows, cols),
     modal: true,
     zIndex: 130,
+    // Holds typed text → an outside click is swallowed, never discards it
+    // (docs/mouse-hit-map.md §Backdrop). Also covers the in-grid ports-pane
+    // editor (this overlay paints nothing then), matching today's T13 gate.
+    mouse: { outside: 'swallow' },
   });
 }
 
