@@ -33,7 +33,7 @@ const { getModel } = require('../../../app/runtime');
 // default). The smoke harness plays the "program" role for these tests, so it
 // threads the current model; scenarios keep calling sm.render() unchanged.
 const renderCurrent = () => render(getModel());
-const { initState } = require('../../../app/state');
+const { initState, disposePaneInstance } = require('../../../app/state');
 const route = require('../../../panel/route');
 const api = require('../../../panel/api');
 
@@ -81,18 +81,18 @@ function _grp(name, label, overrides) {
   return { name, label, ...DEFAULT_GROUP, ...overrides };
 }
 
-/** Reset the model + Component slices to a known-fresh state.
+/** Boot a scenario as a new process would: the model + every pane fresh.
  *
  *  Strategy:
  *    - Overwrite model.config with the requested groups (or sane default).
- *    - Call initState() — re-mints per-pane viewer/groups slices.
- *    - Clear viewer per-group maps that initState doesn't touch
- *      (contentTabs / tabState / viewerOverride).
+ *    - Dispose every PANE instance (state.disposePaneInstance — the mint's
+ *      own teardown: a terminal's PTY, an agent's session go with it).
+ *    - Call initState() — mints each pane from THIS config's pane def.
  *
- *  The instance store survives across scenarios (modules are cached and
- *  test-runner auto-registers layout/detail/groups on first require).
- *  Re-registering would shadow the existing primary; instead we reset
- *  the visible state on the existing slices. */
+ *  Components stay registered across scenarios (modules are cached and
+ *  test-runner auto-registers layout/detail/groups on first require), and
+ *  so do their services and kind seeds (the layout instance among them);
+ *  only the panes start over. */
 function bootFresh(opts) {
   opts = opts || {};
   const groups = opts.groups || {
@@ -118,19 +118,30 @@ function bootFresh(opts) {
   // own parts.
   getModel().modal = require('../../../model/store').init().modal;
   getModel().prefixSeq = [];
-  // List cursors: persistent instances (pane-groups, pane-actions, …) keep their
-  // slice across boots, so a scenario's cursor / scroll / multi-selection leaked
-  // into the next one. Reset those POSITIONAL fields only — the rest of `nav`
-  // (a table's default sort, …) comes from the pane's config — and BEFORE
-  // initState, which seeds the cursors it owns.
-  const mnav = require('../../../leaves/wm/nav');
-  route.eachInstance((inst) => {
-    const n = inst.slice && inst.slice.nav;
-    if (n && typeof n === 'object' && 'cursor' in n) {
-      const fresh = mnav.init();   // multiSel is a Set — a fresh one per pane
-      inst.slice.nav = { ...n, cursor: fresh.cursor, scroll: fresh.scroll, multiSel: fresh.multiSel };
-    }
-  });
+  // Every pane instance from the last scenario goes — with what it owns (a PTY,
+  // an agent session, an in-flight compute), through the mint's own teardown —
+  // so initState mints each pane from THIS config's pane def, as a new process
+  // does. The instances kept their ids across boots and initState doesn't
+  // re-mint an existing one, so a scenario's list cursors, a text-view's lines,
+  // cursor and search, a declared pane's settings leaked into the next — and the
+  // next config's own `lines:` (or `backend:`) never applied (pre-release review
+  // 2026-11-14). Services and kind seeds live for the process; they stay.
+  const panes = [];
+  route.eachInstance((inst) => { if (!inst.service && inst.id !== inst.kind) panes.push(inst); });
+  for (const inst of panes) disposePaneInstance(inst.id, inst.kind);
+  // A new process has each registered Component's kind seed (registerComponent
+  // mints it; the first pane mint disposes it). Re-register the Components whose
+  // kinds just lost every instance, so initState starts from what a process
+  // start has — not from its lazy auto-register fallback (state._groupsSlice),
+  // which reinstalls the built-in effects over a test's spies.
+  const emptied = new Set();
+  for (const inst of panes) {
+    if (route.getPrimaryByKind(inst.kind) === undefined) emptied.add(route.componentForPanel(inst.kind));
+  }
+  for (const name of emptied) {
+    const comp = name && api.getComponent(name);
+    if (comp) api.registerComponent(comp);
+  }
   initState();
   getModel().projectDir = '.';
   // Clear modal flags that may have been set by an earlier scenario.
@@ -140,25 +151,6 @@ function bootFresh(opts) {
   // any held pointer capture, the hover coalescing record — a scenario must not
   // inherit a drag or a "same cell" hover from the last one.
   require('../../../dispatch/control/mouse-router')._reset();
-  // U2f — reset the content-slot instances (info / text-view) between scenarios.
-  // rebuildLayoutFromConfig drops last scenario's minted content tabs, but the
-  // persistent Info/Transcript instances keep their id across boots (reconcile
-  // skips re-minting an existing tabInstId), so clear their buffers/view-state.
-  // Only those session tabs (a TRANSIENT pool entry): a text-view declared under
-  // `panels:` starts with its configured `lines`, which this must not wipe.
-  const bootPool = (route.getInstanceSlice('layout').arrange || {}).pool || {};
-  const mpane = require('../../../leaves/wm/pane');
-  route.eachInstance((inst) => {
-    if (inst.kind !== 'info' && inst.kind !== 'text-view') return;
-    const entry = bootPool[mpane.poolIdOf(inst.id)];
-    if (entry && !entry.transient) return;
-    const s = inst.slice;
-    s.lines = [];
-    s.scroll = 0;
-    s.search = { active: false, term: '', idx: 0, typing: '' };
-    s.select = { active: false, kind: 'char', anchor: { line: 0, col: 0 }, cursor: { line: 0, col: 0 } };
-    s.cursor = { line: 0, col: 0 };
-  });
   // Anchor on g1 so currentGroup is well-defined.
   const firstGroup = Object.keys(groups)[0];
   if (firstGroup) getModel().currentGroup = firstGroup;

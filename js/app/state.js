@@ -875,34 +875,40 @@ function reconcilePaneInstances() {
     if (inst.service || inst.id === inst.kind) return;
     if (!placedInstIds.has(inst.id)) orphans.push({ id: inst.id, kind: inst.kind });
   });
-  if (orphans.length) {
-    // C5 — abort a removed pane's in-flight keyed compute (config-status' slow
-    // git status/diff) so it doesn't run/land into a disposed instance. Keys
-    // are tied to the instance id (see config-status' cfgStatusCompute/Diff
-    // emits); cancelEffect no-ops if the key isn't live (the common case).
-    // Docker's fetch is service-owned (skipped above), aborted only at quit.
-    const effects = require('../dispatch/runtime/effects');
-    for (const { id, kind } of orphans) {
-      effects.cancelEffect(`cfgStatus:compute:${id}`);
-      effects.cancelEffect(`cfgStatus:diff:${id}`);
-      // U2d — a disposed `terminal` instance owns a live PTY keyed by its
-      // instance id (== ptyId). This orphan scan is the ONLY place that learns a
-      // terminal pane left the layout (a closed tab, a removed slot), so kill the
-      // PTY here. Idempotent: destroySession no-ops on an unknown/dead id, so it
-      // races safely with a concurrent clean-exit teardown.
-      if (kind === 'terminal') {
-        try { require('../io/terminal').destroySession(id); } catch (_) {}
-      }
-      // A disposed `agent` instance owns a live backend session keyed the
-      // same way (session id == instance id) — tear it down + forget it.
-      // Straggler events, incl. the backend's own final exit, drop via
-      // io/agent's stale-session guard.
-      if (kind === 'agent') {
-        try { require('../io/agent').destroy(id); } catch (_) {}
-      }
-      route.disposeInstance(id);
-    }
+  for (const { id, kind } of orphans) disposePaneInstance(id, kind);
+}
+
+/**
+ * The one teardown for a pane instance that goes away: what it owns outside
+ * the registry goes with it, then the instance. The mint's orphan scan runs it
+ * for a tab/pane no longer placed; the test harness's fresh boot (smoke
+ * bootFresh) runs it for every pane, so a scenario starts like a new process.
+ */
+function disposePaneInstance(id, kind) {
+  // C5 — abort a removed pane's in-flight keyed compute (config-status' slow
+  // git status/diff) so it doesn't run/land into a disposed instance. Keys
+  // are tied to the instance id (see config-status' cfgStatusCompute/Diff
+  // emits); cancelEffect no-ops if the key isn't live (the common case).
+  // Docker's fetch is service-owned (never disposed), aborted only at quit.
+  const effects = require('../dispatch/runtime/effects');
+  effects.cancelEffect(`cfgStatus:compute:${id}`);
+  effects.cancelEffect(`cfgStatus:diff:${id}`);
+  // U2d — a disposed `terminal` instance owns a live PTY keyed by its
+  // instance id (== ptyId). The orphan scan is the ONLY place that learns a
+  // terminal pane left the layout (a closed tab, a removed slot), so kill the
+  // PTY here. Idempotent: destroySession no-ops on an unknown/dead id, so it
+  // races safely with a concurrent clean-exit teardown.
+  if (kind === 'terminal') {
+    try { require('../io/terminal').destroySession(id); } catch (_) {}
   }
+  // A disposed `agent` instance owns a live backend session keyed the
+  // same way (session id == instance id) — tear it down + forget it.
+  // Straggler events, incl. the backend's own final exit, drop via
+  // io/agent's stale-session guard.
+  if (kind === 'agent') {
+    try { require('../io/agent').destroy(id); } catch (_) {}
+  }
+  _route().disposeInstance(id);
 }
 
 function initState() {
@@ -1041,6 +1047,9 @@ function selectGroup(idx) {
 module.exports = {
   // Boot layer + dispatch-layer group helpers, defined here.
   loadConfig, loadConfigObject, initState, selectGroup, resetGroupContext,
+  // The one pane-instance teardown (the mint's orphan scan; the test harness's
+  // fresh boot).
+  disposePaneInstance,
   // #D13 — exposed for tests: the Model→Sub reconciler, its pure desired-set
   // projection, the per-descriptor add/merge, and the live-set teardown/reset.
   reconcileSubscriptions, _desiredSubs, _addDesired, _resetSubscriptions,
