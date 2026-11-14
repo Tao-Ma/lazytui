@@ -83,7 +83,9 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   the pane is repainted when the popup closes. A terminal pane beside the
   popup's pane, or beside a terminal pane that is minimized or switched to
   another tab, keeps its screen too (its rows sharing the other pane's went
-  blank). (Keys on a focused terminal
+  blank). And a terminal pane that shrinks or moves (the pane above it
+  restored, a free-config reorder) no longer leaves its text on the rows it
+  gave up. (Keys on a focused terminal
   pane go to lazytui until you press Enter — so `p` opens the action palette;
   after Enter they go to the program until `Ctrl+\`.)
 - **Leader bindings on named keys fire from the keyboard.** A `keys:` binding

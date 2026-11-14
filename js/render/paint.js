@@ -984,14 +984,27 @@ function render(model) {
   // rewrites them from the underlying panels — no full clear, no whole-frame
   // bytes over a slow link. The overlay pass prunes the bookkeeping at the
   // end of the frame, so the reclaim fires once per vanish.
+  // MOVED / RESIZED is the same gap for the cells a surface GAVE UP: its grid
+  // stays on them wherever the new layout's cells are blank in the same style
+  // (a terminal shrinking as the pane above it is restored, a free-config
+  // reorder moving it — round-2 review 2026-11-14, since v0.6.58). A surface
+  // whose interior rectangle changed reclaims its old rows the same way; its own
+  // repaint (dimChanged / the `wrote` record) puts its grid back where it is now.
   if (_paintedOverlayIds.size) {
-    const nowVisible = new Set();
+    const nowVisible = new Map();
     for (const s of visibleTerminalSurfaces(model, previewArrange)) {
-      if (getSession(s.id)) nowVisible.add(s.id);
+      if (getSession(s.id)) nowVisible.set(s.id, s);
     }
     for (const id of _paintedOverlayIds) {
-      if (nowVisible.has(id)) continue;
       const rows = _overlayLastRows.get(id);
+      const s = nowVisible.get(id);
+      if (s) {
+        const top = s.bounds.y + 1, left = s.bounds.x + 1;
+        const same = rows && rows.top === top && rows.left === left &&
+          rows.bottom === top + s.rows && rows.right === left + s.cols;
+        if (rows && !same) invalidateRows(rows.top, rows.bottom);
+        continue;
+      }
       if (rows) invalidateRows(rows.top, rows.bottom);
       else _frame.forceFull = true;   // no recorded bounds — reclaim conservatively
     }

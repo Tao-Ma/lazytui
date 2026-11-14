@@ -23,6 +23,7 @@
  *   [4] minimizing one terminal leaves the other intact (and restoring it)
  *   [5] switching one terminal's slot to another tab leaves the other intact
  *   [6] a row invalidated from elsewhere comes back
+ *   [7] a terminal that shrinks leaves nothing in the cells it gave up
  *
  * Run: node js/test/test-terminal-frame-overwrite.js
  */
@@ -190,6 +191,42 @@ const hs = require('./_helpers/host-screen').install({ cols: 160, rows: 40 });
   invalidateRows(y, y + 1);
   await hs.paint();
   eq(bWrong(), [], `B row ${y} is repainted after its frame record was dropped`);
+
+  section('[7] a terminal that shrinks leaves nothing in the cells it gave up');
+  {
+    // A terminal grows into the rows of the pane above it while that pane is
+    // minimized, prints there, then shrinks back when it is restored: its text
+    // stayed on the rows it gave up wherever the restored pane's cells are blank
+    // (round-2 review 2026-11-14, since v0.6.58). A moved / resized surface now
+    // reclaims its old rows.
+    terminal.destroyAll();
+    const yml2 = path.join(dir, 'grow.yml');
+    fs.writeFileSync(yml2, [
+      'project_dir: .', 'groups:', '  g1:', '    label: Group 1', '    actions:', '      hello: { label: Hello, script: echo hello }',
+      'panels:', '  groups: { type: groups, title: Groups }', '  tc: { type: terminal, title: TC, cmd: "sleep 60" }',
+      '  detail: { type: detail, title: Detail }',
+      'layout:', '  columns:', '    - width: 70', '      panels: [groups, tc]', '    - width: flex', '      panels: [detail]', '',
+    ].join('\n'));
+    sm.bootFresh(parse(yml2));
+    sm.resize(160, 40);
+    await hs.paint();
+    const idC = mpane.newPaneId('tc');
+    const surfC = () => visibleTerminalSurfaces(getModel()).find(x => x.id === idC);
+    const groupsPane = () => panes().find(p => p.id === 'groups');
+    dispatchMsg(route.wrap('layout', { type: 'panel_collapse_toggle', id: groupsPane().id }));
+    await hs.paint();
+    const big = surfC();
+    await hs.feed(terminal.getSession(idC).screen, Array.from({ length: big.rows }, (_, i) => `GROWN${i}`).join('\r\n'));
+    await hs.paint();
+    const grownRows = () => { const out = []; for (let y = 0; y < 40; y++) if (/GROWN/.test(hs.line(y).slice(0, 70))) out.push(y); return out; };
+    assert(grownRows().length > 30, `precondition: the terminal drew down most of the column (${grownRows().length} rows)`);
+    dispatchMsg(route.wrap('layout', { type: 'panel_collapse_toggle', id: groupsPane().id }));
+    await hs.paint();
+    const small = surfC();
+    assert(small.rows < big.rows, 'precondition: it shrank');
+    const outside = grownRows().filter(y => y < small.bounds.y + 1 || y >= small.bounds.y + 1 + small.rows);
+    eq(outside, [], `no terminal text outside its interior (rows ${small.bounds.y + 1}..${small.bounds.y + small.rows})`);
+  }
 
   terminal.destroyAll();
   fs.rmSync(dir, { recursive: true, force: true });

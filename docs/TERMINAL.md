@@ -166,7 +166,9 @@ the frame's diff — across every terminal interior on that row, with the blank
 pane body. That happens on more than coverage: the vanish reclaim of a surface
 that stopped painting (minimized, its slot switched tab, its tab closed), an
 `invalidate` from elsewhere, a replay frame with change highlighting (which
-rewrites each changed row). The row's cache key sees none of them, so
+rewrites each changed row) — and a surface that MOVED or was RESIZED reclaims the
+rows it occupied last frame the same way, so the cells it gave up (a terminal
+shrinking as the pane above it is restored) don't keep its text. The row's cache key sees none of them, so
 `painter.paintFrame` returns `wrote` (row → the `[x0, x1)` column runs it
 wrote) and the terminal painter repaints every grid row whose interior the frame
 wrote over — a terminal beside the one that vanished, or beside the popup's
