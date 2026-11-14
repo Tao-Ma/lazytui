@@ -31,7 +31,11 @@ a failed target logs a warning without failing the release.
 2. Update `CHANGELOG.md`:
    - Rename `[Unreleased]` to `[X.Y.Z] — YYYY-MM-DD`.
    - Add a fresh empty `[Unreleased]` section above it.
-   - Update the compare links at the bottom of the file.
+   - Update the compare links at the bottom of the file: a `[X.Y.Z]` link
+     comparing the previous version to `vX.Y.Z`, and `[Unreleased]` comparing
+     `vX.Y.Z...HEAD`. `js/test/test-changelog-links.js` fails if a heading and
+     the links disagree, so a feature commit that overwrites a fresh release
+     heading is caught too.
 3. Bump `package.json` `version` to `X.Y.Z`.
 4. Commit:
    ```sh

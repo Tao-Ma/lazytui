@@ -2357,6 +2357,8 @@ fabric-field modal's two paths (ports-pane manual edit vs invoke-time prompt).
   module JS is not stored in the WAL — a cross-machine replay needs the modules
   present at their recorded paths). Docs: PROJECT.md, PLUGINS.md, SPEC.md.
 
+## [0.6.22] — 2026-08-19
+
 ### Added
 
 - **Process-tree view for the `table` panel (`tree: { parent: ppid }`), on a generic
@@ -2413,6 +2415,8 @@ fabric-field modal's two paths (ports-pane manual edit vs invoke-time prompt).
   the command is injection-proof and never fires against init/garbage. Opt-in only
   — a `table` on a non-pid topic (net/disk) omits the flag. The host-monitor demo's
   Processes pane is now killable.
+
+## [0.6.21] — 2026-08-18
 
 ### Fixed
 
@@ -5546,7 +5550,15 @@ release tarballs. Full pre-squash development history is preserved
 on the internal gitea mirror under the `backup/main-history` branch
 and the `v0.1.0-pre-squash` tag.
 
-[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.49...HEAD
+[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.57...HEAD
+[0.6.57]: https://github.com/Tao-Ma/lazytui/compare/v0.6.56...v0.6.57
+[0.6.56]: https://github.com/Tao-Ma/lazytui/compare/v0.6.55...v0.6.56
+[0.6.55]: https://github.com/Tao-Ma/lazytui/compare/v0.6.54...v0.6.55
+[0.6.54]: https://github.com/Tao-Ma/lazytui/compare/v0.6.53...v0.6.54
+[0.6.53]: https://github.com/Tao-Ma/lazytui/compare/v0.6.52...v0.6.53
+[0.6.52]: https://github.com/Tao-Ma/lazytui/compare/v0.6.51...v0.6.52
+[0.6.51]: https://github.com/Tao-Ma/lazytui/compare/v0.6.50...v0.6.51
+[0.6.50]: https://github.com/Tao-Ma/lazytui/compare/v0.6.49...v0.6.50
 [0.6.49]: https://github.com/Tao-Ma/lazytui/compare/v0.6.48...v0.6.49
 [0.6.48]: https://github.com/Tao-Ma/lazytui/compare/v0.6.47...v0.6.48
 [0.6.47]: https://github.com/Tao-Ma/lazytui/compare/v0.6.46...v0.6.47
@@ -5554,7 +5566,16 @@ and the `v0.1.0-pre-squash` tag.
 [0.6.45]: https://github.com/Tao-Ma/lazytui/compare/v0.6.44...v0.6.45
 [0.6.44]: https://github.com/Tao-Ma/lazytui/compare/v0.6.43...v0.6.44
 [0.6.43]: https://github.com/Tao-Ma/lazytui/compare/v0.6.42...v0.6.43
+[0.6.42]: https://github.com/Tao-Ma/lazytui/compare/v0.6.41...v0.6.42
+[0.6.41]: https://github.com/Tao-Ma/lazytui/compare/v0.6.40...v0.6.41
+[0.6.40]: https://github.com/Tao-Ma/lazytui/compare/v0.6.39...v0.6.40
+[0.6.39]: https://github.com/Tao-Ma/lazytui/compare/v0.6.38...v0.6.39
+[0.6.38]: https://github.com/Tao-Ma/lazytui/compare/v0.6.37...v0.6.38
+[0.6.37]: https://github.com/Tao-Ma/lazytui/compare/v0.6.36...v0.6.37
 [0.6.36]: https://github.com/Tao-Ma/lazytui/compare/v0.6.35...v0.6.36
+[0.6.35]: https://github.com/Tao-Ma/lazytui/compare/v0.6.34...v0.6.35
+[0.6.34]: https://github.com/Tao-Ma/lazytui/compare/v0.6.33...v0.6.34
+[0.6.33]: https://github.com/Tao-Ma/lazytui/compare/v0.6.32...v0.6.33
 [0.6.32]: https://github.com/Tao-Ma/lazytui/compare/v0.6.31...v0.6.32
 [0.6.31]: https://github.com/Tao-Ma/lazytui/compare/v0.6.30...v0.6.31
 [0.6.30]: https://github.com/Tao-Ma/lazytui/compare/v0.6.29...v0.6.30
@@ -5585,7 +5606,9 @@ and the `v0.1.0-pre-squash` tag.
 [0.6.5]: https://github.com/Tao-Ma/lazytui/compare/v0.6.4...v0.6.5
 [0.6.4]: https://github.com/Tao-Ma/lazytui/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/Tao-Ma/lazytui/compare/v0.6.2...v0.6.3
-[0.6.2]: https://github.com/Tao-Ma/lazytui/compare/v0.5.0...v0.6.2
+[0.6.2]: https://github.com/Tao-Ma/lazytui/compare/v0.6.1...v0.6.2
+[0.6.1]: https://github.com/Tao-Ma/lazytui/compare/v0.6.0...v0.6.1
+[0.6.0]: https://github.com/Tao-Ma/lazytui/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Tao-Ma/lazytui/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Tao-Ma/lazytui/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Tao-Ma/lazytui/releases/tag/v0.3.0
