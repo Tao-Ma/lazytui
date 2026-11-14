@@ -49,7 +49,7 @@ sound and stay:
 | Gesture classifier (press/double/right/middle, wheel 64/65 vs 66/67) | `input.js:1184 _classifyPress` | correct; double-click window already YAML-tunable |
 | Intent layer (focus/select/activate/context/scroll) | `dispatch/control/intent.js` | the keyboard↔mouse parity seam (v0.6.4 Theme F) — the router *targets* it |
 | `mouse:` YAML gesture→intent bindings | `dispatch/control/mouse-bindings.js` | user-facing contract; unchanged |
-| Terminal-mode mouse (PTY passthrough / scrollback) | `input.js:1002 _classifyTerminalChunk` | bypasses `handleMouse` entirely, by design |
+| Terminal-mode mouse (re-encoded for the PTY child / scrollback) | `input.js` `_classifyTerminalToken` → `_reportTerminalMouse` | bypasses `handleMouse` entirely, by design |
 | Reducer Msgs (`menu_activate`, `select_*`, `pool_drag_*`, …) | various | the router emits the SAME Msgs; no new store concepts |
 
 ## Diagnosis — three root causes (+ one latent)
@@ -1102,7 +1102,8 @@ main).
 
 ## Non-goals
 
-- Terminal-mode (embedded PTY) mouse — stays raw passthrough.
+- Terminal-mode (embedded PTY) mouse — stays outside the router: the child gets
+  it, made pane-relative (docs/TERMINAL.md §Input).
 - Horizontal wheel (66/67) — still dropped; lazytui has no horizontal axis.
 - New mouse *features* (drag-to-reorder lists, resize popups, hover
   highlight of chips). The hit map makes them cheap later; not in scope.

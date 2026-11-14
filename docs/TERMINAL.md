@@ -208,24 +208,29 @@ runs is the pool entry's `config.cmd`, which the finalizer spawns.
 
 ## Input (`js/dispatch/control/input.js`)
 
-When `model.modes.terminalMode` is true, the stdin closure routes the raw chunk
-to `_handleTerminalChunk` (bracketed paste, then per-event control matching) →
-`_handleTerminalModeData`, bypassing normal key parsing. Outside terminal mode a
+When `model.modes.terminalMode` is true, the stdin closure routes each chunk to
+`_handleTerminalChunk`, bypassing the normal key ladder. The chunk is still split
+into input events by the same tokenizer and carry as normal mode — a sequence
+split across chunks (by the host's read or the network) rejoins, and one that
+never completes reaches the child after the 50 ms carry window — and each event is
+classified on its own (`_classifyTerminalToken`, pure, unit-tested), so nothing
+depends on how input was batched. Keys reach the PTY in one write per run, in
+stream order with the mouse reports between them. Outside terminal mode a
 focused terminal pane gets nothing: its keys are lazytui's (`Enter type here`).
 The kitty keyboard protocol is popped on entry (`kkp_suspend`), so the host
 sends legacy key bytes while the child has the keyboard.
 
-- **Exit key** — `Ctrl+\` (`0x1c`) dispatches `{type:'terminal_exit'}`; a
-  dead/missing session also exits (and drops the keystroke). The PTY child keeps
-  running.
-- **Scrollback keys** — `Shift+PageUp`/`PageDown` (`\x1b[5;2~` / `\x1b[6;2~`),
-  `Shift+Home`/`End` (`\x1b[1;2H` / `\x1b[1;2F`) — at a prompt (the main
-  screen). On the alternate screen (a full-screen child: vim, less, htop) there
+- **Exit key** — `Ctrl+\` (`0x1c`) dispatches `{type:'terminal_exit'}`; the rest
+  of the chunk goes to the normal-mode pipeline. A dead/missing session also
+  exits, dropping the keys typed for it. The PTY child keeps running.
+- **Scrollback keys** — `Shift+PageUp`/`PageDown`, `Shift+Home`/`End` (in any
+  form the host sends: `\x1b[5;2~`, `\x1b[1;2H`, tmux's `\x1b[1;2~`, …) — at a
+  prompt (the main screen). On the alternate screen (a full-screen child: vim, less, htop) there
   is no scrollback to show, so they are the child's keys and forward. Plain
   Page/Home/End always go to the child.
 - **Keys as xterm sends them** — the child is told `TERM=xterm-256color`, so a
-  key reaches it in xterm's form, not the host's (`_keysToChild`,
-  `leaves/input/key-decode`): arrows, Home/End, Insert/Delete, Page keys and
+  key reaches it in xterm's form, not the host's (`toXtermKey`,
+  `leaves/input/key-decode`) — beside a mouse event too: arrows, Home/End, Insert/Delete, Page keys and
   F1–F12 (with modifiers) are decoded from any common host form (xterm, VT220 —
   what tmux/screen send — rxvt, linux console) and re-encoded as xterm would for
   the child's cursor mode (`sessionInputModes(id).appCursor`: SS3 for unmodified
@@ -233,25 +238,25 @@ sends legacy key bytes while the child has the keyboard.
   chords, unknown sequences — passes byte-for-byte. (Under tmux, Home/End arrive
   as `CSI 1 ~`/`CSI 4 ~`, which nvim ignores for an xterm.)
 - **Focus reports** (`CSI I`/`CSI O`, turned on at the host) are lazytui's
-  `focus_event` as in normal mode, and reach the child only if it asked
+  `focus_event` as in normal mode — batched with a click too, so the
+  focus-gated polls resume — and reach the child only if it asked
   (`CSI ? 1004 h`).
 - **Bracketed paste** — a host paste goes to the child verbatim (no key
-  translation, no Ctrl+\ or scrollback matching inside it, across chunks),
-  wrapped in `CSI 200 ~`/`CSI 201 ~` only if the child turned bracketed paste on
+  translation, no Ctrl+\ or scrollback matching inside it, across chunks — its
+  markers too may split across chunks: a trailing piece of the close marker is
+  held for the next chunk), wrapped in `CSI 200 ~`/`CSI 201 ~` only if the child turned bracketed paste on
   (`CSI ? 2004 h`); a child that didn't would read the markers as typed text.
-- **Smart mouse forwarding** — `_classifyTerminalChunk` (pure, unit-tested)
-  decides per chunk using `sessionMouseMode(id)`. When the child enabled DEC
+- **Smart mouse forwarding** — per event, by `sessionMouseMode(id)`. When the child enabled DEC
   mouse reporting (vim, htop, `less --mouse`), each host mouse event is decoded,
   made relative to the terminal's grid, and re-encoded by the pane's emulator for
   the protocol + encoding the child asked for (`reportMouse`; e.g. no hover for a
-  button-event child, the legacy X10 bytes when it didn't ask for SGR); keys in
-  the same chunk keep their order. A press, wheel or hover outside the grid is not
+  button-event child, the legacy X10 bytes when it didn't ask for SGR). A press, wheel or hover outside the grid is not
   the child's; a drag motion or release outside clamps to the edge (no stuck
   button). When it hasn't (`'none'`), the wheel is the framework's scrollback
-  control (3 lines / notch); non-wheel mouse is dropped; any non-mouse residue
-  forwards.
-- **Snap to bottom** — an ordinary keystroke at the prompt first
-  `scrollSessionToBottom`s, so typing always leaves scrollback.
+  control (3 lines / notch); non-wheel mouse is dropped.
+- **Snap to bottom** — a keystroke (or a paste) first `scrollSessionToBottom`s,
+  so typing always leaves scrollback — whether or not the child reports the
+  mouse.
 
 Wheel-on-a-terminal-pane while *not* in terminal mode also scrolls the PTY
 scrollback (`pane-mouse.handleWheel` keys on `instanceKind(paneId) === 'terminal'` →

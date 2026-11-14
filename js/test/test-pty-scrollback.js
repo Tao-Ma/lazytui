@@ -1,8 +1,8 @@
 /**
  * Embedded-PTY scrollback arc (v0.6.5 §5(a)) — covers:
- *   - the PURE terminal-mode chunk classifier (_classifyTerminalChunk):
- *     keyboard scrollback gestures, the mouse-mode forward gate, and
- *     wheel→scroll extraction with keystroke residue.
+ *   - the PURE terminal-mode event classifier (_classifyTerminalToken):
+ *     keyboard scrollback gestures, mouse reports vs wheel→scroll, focus,
+ *     paste, exit, keys.
  *   - the scrollback EFFECTS on io/terminal (scrollSession / pages /
  *     toTop / toBottom / sessionScrollInfo / sessionMouseMode) against an
  *     injected headless Terminal — no PTY spawned.
@@ -22,72 +22,81 @@ term.stdout.write = (chunk, ...rest) => {
 
 const { Terminal } = require('@xterm/headless');
 const { describe, it, eq, assert, report } = require('./test-runner');
-const { _classifyTerminalChunk } = require('../dispatch/control/input');
+const { _classifyTerminalToken } = require('../dispatch/control/input');
 const terminal = require('../io/terminal');
 
 // --- Pure classifier --------------------------------------------------------
+// One terminal-mode input event at a time (the chunk walk — batching, order,
+// the carry across chunks — is pinned in test-terminal-input-events).
 
-describe('_classifyTerminalChunk — keyboard scrollback gestures', () => {
+describe('_classifyTerminalToken — keyboard scrollback gestures', () => {
   it('Shift+PageUp → scroll one page back', () => {
-    eq(_classifyTerminalChunk('\x1b[5;2~', 'none'), { kind: 'scroll', pages: -1 });
+    eq(_classifyTerminalToken('\x1b[5;2~', 'none'), { kind: 'scroll', pages: -1 });
   });
   it('Shift+PageDown → scroll one page forward', () => {
-    eq(_classifyTerminalChunk('\x1b[6;2~', 'none'), { kind: 'scroll', pages: +1 });
+    eq(_classifyTerminalToken('\x1b[6;2~', 'none'), { kind: 'scroll', pages: +1 });
   });
   it('Shift+Home → scroll to top', () => {
-    eq(_classifyTerminalChunk('\x1b[1;2H', 'none'), { kind: 'scroll', toTop: true });
+    eq(_classifyTerminalToken('\x1b[1;2H', 'none'), { kind: 'scroll', toTop: true });
   });
   it('Shift+End → scroll to bottom', () => {
-    eq(_classifyTerminalChunk('\x1b[1;2F', 'none'), { kind: 'scroll', toBottom: true });
+    eq(_classifyTerminalToken('\x1b[1;2F', 'none'), { kind: 'scroll', toBottom: true });
+  });
+  it('in the VT220 form a terminal under tmux sends too', () => {
+    eq(_classifyTerminalToken('\x1b[1;2~', 'none'), { kind: 'scroll', toTop: true });
+    eq(_classifyTerminalToken('\x1b[4;2~', 'none'), { kind: 'scroll', toBottom: true });
   });
   it('the scrollback gestures fire even when the child wants mouse', () => {
     // Shift+Page* are framework gestures, not something a child reads — so
     // they intercept regardless of mouseMode.
-    eq(_classifyTerminalChunk('\x1b[5;2~', 'any'), { kind: 'scroll', pages: -1 });
+    eq(_classifyTerminalToken('\x1b[5;2~', 'any'), { kind: 'scroll', pages: -1 });
   });
-  it('PLAIN PageUp (no Shift) forwards to the child', () => {
-    eq(_classifyTerminalChunk('\x1b[5~', 'none'), { kind: 'forward', data: '\x1b[5~', snap: true });
+  it('on the alternate screen (a full-screen program) they are the program\'s keys', () => {
+    eq(_classifyTerminalToken('\x1b[5;2~', 'none', true), { kind: 'key' });
+  });
+  it('PLAIN PageUp (no Shift), Ctrl+Shift+PageUp → keys for the child', () => {
+    eq(_classifyTerminalToken('\x1b[5~', 'none'), { kind: 'key' });
+    eq(_classifyTerminalToken('\x1b[5;6~', 'none'), { kind: 'key' });
   });
 });
 
-describe('_classifyTerminalChunk — mouse-mode forward gate', () => {
+describe('_classifyTerminalToken — mouse', () => {
   // Mouse events are decoded for re-encoding in the child's terms, pane-relative
   // (field report 2026-11-14: raw forwarding put an nvim click ~35 columns off;
   // the delivery is pinned end-to-end in test-terminal-mouse-forward).
-  it('child with mouse reporting on → a report plan (mouse decoded, keys kept in order)', () => {
-    const wheel = '\x1b[<64;5;5M';
-    const wheelUp = { x: 5, y: 5, button: 'wheel', action: 'wheel-up', shift: false, alt: false, ctrl: false };
-    eq(_classifyTerminalChunk(wheel, 'vt200'), { kind: 'report', parts: [{ mouse: wheelUp }] });
-    eq(_classifyTerminalChunk(wheel, 'any'),   { kind: 'report', parts: [{ mouse: wheelUp }] });
-    eq(_classifyTerminalChunk(`a${wheel}b`, 'drag'),
-      { kind: 'report', parts: [{ text: 'a' }, { mouse: wheelUp }, { text: 'b' }] });
+  const wheelUp = { x: 5, y: 5, button: 'wheel', action: 'wheel-up', shift: false, alt: false, ctrl: false };
+  it('child with mouse reporting on → a report (decoded)', () => {
+    eq(_classifyTerminalToken('\x1b[<64;5;5M', 'vt200'), { kind: 'report', mouse: wheelUp });
+    eq(_classifyTerminalToken('\x1b[<64;5;5M', 'any'), { kind: 'report', mouse: wheelUp });
+    eq(_classifyTerminalToken('\x1b[<0;7;9m', 'drag'),
+      { kind: 'report', mouse: { x: 7, y: 9, button: 'left', action: 'up', shift: false, alt: false, ctrl: false } });
   });
-  it('child with mouse reporting on, no mouse bytes → forward raw (no snap)', () => {
-    eq(_classifyTerminalChunk('ls\r', 'vt200'), { kind: 'forward', data: 'ls\r' });
+  it('… except what a child can\'t be sent (a wheel release) → dropped', () => {
+    eq(_classifyTerminalToken('\x1b[<64;5;5m', 'vt200'), { kind: 'drop' });
   });
-  it('plain keystroke (no mouse) → forward + snap to bottom', () => {
-    eq(_classifyTerminalChunk('ls\r', 'none'), { kind: 'forward', data: 'ls\r', snap: true });
+  // SGR button 64 = wheel-up (bit6 set, bit0 clear), 65 = wheel-down.
+  it('mouse reporting off: wheel-up → 3 lines back, wheel-down → 3 forward', () => {
+    eq(_classifyTerminalToken('\x1b[<64;5;5M', 'none'), { kind: 'wheel', lines: -3 });
+    eq(_classifyTerminalToken('\x1b[<65;5;5M', 'none'), { kind: 'wheel', lines: +3 });
+  });
+  it('mouse reporting off: a press, a horizontal wheel, a wheel release → dropped', () => {
+    eq(_classifyTerminalToken('\x1b[<0;5;5M', 'none'), { kind: 'drop' });
+    eq(_classifyTerminalToken('\x1b[<66;5;5M', 'none'), { kind: 'drop' });
+    eq(_classifyTerminalToken('\x1b[<64;5;5m', 'none'), { kind: 'drop' });
   });
 });
 
-describe('_classifyTerminalChunk — wheel extraction (mouseMode none)', () => {
-  it('wheel-up → +3 lines back (negative), no residue', () => {
-    // SGR button 64 = wheel-up (bit6 set, bit0 clear).
-    eq(_classifyTerminalChunk('\x1b[<64;5;5M', 'none'), { kind: 'mouse', lines: -3, residue: '' });
+describe('_classifyTerminalToken — the rest', () => {
+  it('Ctrl+\\ exits; the paste open marker starts a paste', () => {
+    eq(_classifyTerminalToken('\x1c', 'none'), { kind: 'exit' });
+    eq(_classifyTerminalToken('\x1b[200~', 'vt200'), { kind: 'paste' });
   });
-  it('wheel-down → +3 lines forward', () => {
-    // button 65 = wheel-down (bit6 + bit0).
-    eq(_classifyTerminalChunk('\x1b[<65;5;5M', 'none'), { kind: 'mouse', lines: +3, residue: '' });
+  it('host focus reports are lazytui\'s', () => {
+    eq(_classifyTerminalToken('\x1b[I', 'none'), { kind: 'focus', focused: true });
+    eq(_classifyTerminalToken('\x1b[O', 'vt200'), { kind: 'focus', focused: false });
   });
-  it('multiple wheel events in one chunk accumulate', () => {
-    eq(_classifyTerminalChunk('\x1b[<64;5;5M\x1b[<64;5;5M\x1b[<64;5;5M', 'none'),
-       { kind: 'mouse', lines: -9, residue: '' });
-  });
-  it('non-wheel mouse (a left press) is dropped, no scroll', () => {
-    eq(_classifyTerminalChunk('\x1b[<0;5;5M', 'none'), { kind: 'mouse', lines: 0, residue: '' });
-  });
-  it('keystroke interleaved with a wheel → scroll + forward the residue', () => {
-    eq(_classifyTerminalChunk('\x1b[<64;5;5Mx', 'none'), { kind: 'mouse', lines: -3, residue: 'x' });
+  it('text, control bytes, other keys → keys', () => {
+    for (const k of ['l', '\r', '\x03', '\x1b[A', '\x1b[1~', '\x1bj']) eq(_classifyTerminalToken(k, 'none'), { kind: 'key' }, JSON.stringify(k));
   });
 });
 

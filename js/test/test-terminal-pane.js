@@ -26,7 +26,7 @@ const route = require('../panel/route');
 const { visibleTerminalSurfaces, focusedTerminalId } = require('../panel/terminal-surfaces');
 const { dispatchMsg, applyMsg } = require('../dispatch/runtime/loop');
 const { getModel } = require('../model/store');
-const { _handleTerminalModeData } = require('../dispatch/control/input');
+const { _handleTerminalChunk } = require('../dispatch/control/input');
 
 // The test-runner auto-registers only layout/detail/groups; register the pane
 // types this test mints (as test-mint-tab does for text-view).
@@ -151,7 +151,7 @@ describe('[terminal-pane] P1a — focus resolution + clean-exit auto-close', () 
 });
 
 describe('[terminal-pane] P1b — input forwarding + _onSessionExit fan-out', () => {
-  it('_handleTerminalModeData forwards keystrokes to the FOCUSED terminal pane PTY', () => {
+  it('_handleTerminalChunk forwards keystrokes to the FOCUSED terminal pane PTY', () => {
     sm.bootFresh();
     const focus = route.getInstanceSlice('layout').focus;
     dispatchMsg(route.wrap('layout', {
@@ -160,7 +160,7 @@ describe('[terminal-pane] P1b — input forwarding + _onSessionExit fan-out', ()
     // mint focus-follows the focused slot → the terminal pane is focused.
     applyMsg({ type: 'terminal_enter' });
     writeToSessionCalls.length = 0;
-    _handleTerminalModeData('hi');
+    _handleTerminalChunk('hi', () => {});
     eq(writeToSessionCalls.length, 1, 'forwarded once');
     eq(writeToSessionCalls[0].id, 'pane-term-1', 'to the FOCUSED terminal pane PTY (focusedTerminalId)');
     eq(writeToSessionCalls[0].data, 'hi', 'the exact bytes');

@@ -13,10 +13,11 @@
  * A multi-token chunk paints ONCE (render-queue beginBatch/endBatch); a
  * single-token chunk keeps the synchronous per-key paint.
  *
- * Terminal mode bypasses parsing: bytes go straight to the active PTY,
- * except Ctrl+\ which exits terminal mode, the Shift+Page/Home/End scrollback
- * keys, and mouse events (re-encoded for the child, pane-relative — or turned
- * into scrollback when the child has no mouse reporting).
+ * Terminal mode tokenizes the same way but sends the events to the focused
+ * terminal pane's program (§Terminal-mode input): keys re-encoded as xterm
+ * sends them, mouse events made pane-relative for the program (or scrollback
+ * when it has no mouse reporting), a paste verbatim — except Ctrl+\, which
+ * exits terminal mode, and the Shift+Page/Home/End scrollback keys.
  */
 'use strict';
 
@@ -24,7 +25,8 @@ const { paintNow: render, beginBatch, endBatch } = require('../../leaves/infra/r
 const { getModel } = require('../../model/store');
 const { enableMouse, enableFocusEvents, enableBracketedPaste } = require('../../io/term');
 const { focusedTerminalId, visibleTerminalSurfaces } = require('../../panel/terminal-surfaces');
-const { writeToSession, isSessionDead } = require('../../io/terminal');
+const terminal = require('../../io/terminal');
+const { writeToSession, isSessionDead } = terminal;
 const { tokenizeInput } = require('../../leaves/input/tokenize');
 const { kkpToLegacy } = require('../../leaves/input/kkp-decode');
 const { toXtermKey, decodeKey } = require('../../leaves/input/key-decode');
@@ -57,44 +59,40 @@ function handleMouse(kind, x, y) {
   mouseRouter.route(kind, x - 1, y - 1, getModel());
 }
 
-// --- Terminal-mode keystroke handling ---
+// --- Terminal-mode input ---
+//
+// While a terminal pane has the keyboard (modes.terminalMode) stdin goes to its
+// program — but a chunk is still split into input EVENTS first, with the same
+// tokenizer and the same carry as normal mode (_makeDataHandler: a sequence
+// split across chunks rejoins; one that never completes is flushed to the
+// program after _CARRY_FLUSH_MS). Each event is classified on its own
+// (_classifyTerminalToken), so nothing depends on how the host or the network
+// happened to batch it:
+//   exit    Ctrl+\ — leave terminal mode; the rest of the chunk goes to the
+//           normal-mode pipeline (reemit)
+//   scroll  Shift+PageUp/PageDown/Home/End, in any form the host sends —
+//           framework scrollback, on the normal screen only (a full-screen
+//           program on the alternate screen has no scrollback: they are its keys)
+//   report  an SGR mouse event while the program has mouse reporting on —
+//           made pane-relative and encoded for the program (_reportTerminalMouse)
+//   wheel   a vertical wheel press while it hasn't — scrollback, 3 lines
+//   drop    any other mouse event while it hasn't
+//   focus   a host focus report (lazytui turns them on at the host) —
+//           lazytui's focus (focus_event, as in normal mode); it reaches the
+//           program only if the program asked for them (`CSI ? 1004 h`)
+//   paste   the bracketed-paste open marker — what follows, up to the close
+//           marker, goes to the program verbatim (_termPaste)
+//   key     anything else — re-encoded as xterm sends it (toXtermKey)
+// Keys reach the PTY in ONE write per run, in stream order with the mouse
+// reports between them. Field report + pre-release review 2026-11-14: keys
+// beside a mouse report went out raw (focus reports leaked, a focus-in batched
+// with a click never reached lazytui, tmux's Home went untranslated), and a
+// paste close marker split across chunks was never seen, so the paste never
+// ended and Ctrl+\ went to the program.
 
-/**
- * Handle a raw stdin chunk while getModel().modes.terminalMode is true. Extracted
- * from the stdin closure so tests can drive it directly.
- *
- * Returns true if the chunk was consumed (caller should skip the
- * rest of the input pipeline). Never returns false today — terminal
- * mode swallows everything until Ctrl+\ flips us out. Still returns
- * a bool so future expansion (e.g., chord prefixes) has a contract.
- *
- * Side effects:
- *  - `\x1c` (Ctrl+\) → terminalMode=false. If viewMode was 'full'
- *    (auto-zoom from a `type: spawn`), drops it to 'normal' and
- *    forceFullRepaints so the chrome reclaims the screen. The PTY
- *    child keeps running; the user can navigate back via tabs.
- *  - Session already dead (id missing or isSessionDead) → same
- *    flip + zoom-drop, plus the keystroke is dropped on the floor.
- *  - Live session → writeToSession forwards the bytes to the PTY.
- */
-// v0.6.5 §5(a) Phase 3 — PURE classifier for a terminal-mode stdin chunk.
-// Decides, given the chunk and the child's DEC mouse-tracking mode, what
-// the impure handler should do. No I/O, no session access — unit-testable.
-// Returns one of:
-//   { kind:'scroll', pages?, toTop?, toBottom? } — a framework scrollback
-//        gesture (Shift+Page/Home/End), intercepted regardless of mouseMode.
-//   { kind:'forward', data, snap? } — forward raw to the PTY. `snap` asks
-//        the caller to return to the live bottom first (a keystroke at the
-//        prompt should leave scrollback).
-//   { kind:'report', parts } — the child enabled mouse reporting and the chunk
-//        carried mouse events: `parts` in stream order, each `{ text }` (keys,
-//        forwarded as-is) or `{ mouse }` (a decoded event — _decodeSgrMouse —
-//        the caller makes pane-relative and has the pane's emulator encode).
-//   { kind:'mouse', lines, residue } — mouseMode is 'none' and the chunk
-//        carried SGR mouse bytes: `lines` is the net scrollback delta from
-//        wheel events, `residue` is the non-mouse remainder to forward.
-//        Non-wheel mouse is dropped (the child never enabled mouse reporting).
-const _SGR_MOUSE_RE = /\x1b\[<(\d+);(\d+);(\d+)([Mm])/g;
+// One SGR mouse event — the tokenizer hands each one over as its own token.
+// Shared with the normal-mode ladder (_dispatchToken).
+const _SGR_MOUSE_RE = /^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/;
 
 // One host SGR mouse report (lazytui runs the host terminal in SGR, 1006) →
 // an emulator-neutral event `{ x, y (host, 1-based), button, action, shift,
@@ -115,143 +113,39 @@ function _decodeSgrMouse(btn, x, y, final) {
   return { x, y, button, action, ...mods };
 }
 
-function _classifyTerminalChunk(data, mouseMode, altScreen = false) {
-  // Framework keyboard scrollback — Shift+Page/Home/End (xterm CSI `;2`
-  // modifier form). Plain Page/Home/End (no Shift) fall through to the
-  // child, which may use them (less / vim). On the ALTERNATE screen (a
-  // full-screen program: vim, less, htop) there is no scrollback to show, so
-  // they are the program's keys and forward like any other.
+// Shift + these keys scroll the pane's scrollback (on the normal screen).
+const _SCROLL_KEYS = {
+  pageup: { pages: -1 }, pagedown: { pages: +1 }, home: { toTop: true }, end: { toBottom: true },
+};
+
+/**
+ * PURE: what one terminal-mode input event is, given the program's mouse
+ * tracking mode (io/terminal sessionMouseMode — 'none' when off) and whether
+ * it is on the alternate screen. Returns `{ kind }` (see the table above) plus
+ * `pages | toTop | toBottom` (scroll), `mouse` (report — _decodeSgrMouse),
+ * `lines` (wheel), `focused` (focus).
+ */
+function _classifyTerminalToken(tok, mouseMode, altScreen = false) {
+  if (tok === '\x1c') return { kind: 'exit' };
+  if (tok === _PASTE_OPEN) return { kind: 'paste' };
+  if (tok === '\x1b[I' || tok === '\x1b[O') return { kind: 'focus', focused: tok === '\x1b[I' };
+  const mm = _SGR_MOUSE_RE.exec(tok);
+  if (mm) {
+    const btn = parseInt(mm[1], 10);
+    if (mouseMode !== 'none') {
+      const mouse = _decodeSgrMouse(btn, parseInt(mm[2], 10), parseInt(mm[3], 10), mm[4]);
+      return mouse ? { kind: 'report', mouse } : { kind: 'drop' };
+    }
+    // Vertical wheel press (bit 6 set, bit 1 clear; a release is no step):
+    // bit 0 = down. Horizontal wheel and every other button: dropped.
+    if ((btn & 0x42) === 0x40 && mm[4] !== 'm') return { kind: 'wheel', lines: (btn & 1) ? 3 : -3 };
+    return { kind: 'drop' };
+  }
   if (!altScreen) {
-    if (data === '\x1b[5;2~') return { kind: 'scroll', pages: -1 };   // Shift+PageUp
-    if (data === '\x1b[6;2~') return { kind: 'scroll', pages: +1 };   // Shift+PageDown
-    if (data === '\x1b[1;2H') return { kind: 'scroll', toTop: true };    // Shift+Home
-    if (data === '\x1b[1;2F') return { kind: 'scroll', toBottom: true }; // Shift+End
+    const k = decodeKey(tok);
+    if (k && k.shift && !k.alt && !k.ctrl && _SCROLL_KEYS[k.key]) return { kind: 'scroll', ..._SCROLL_KEYS[k.key] };
   }
-
-  // Child enabled mouse reporting (vim, htop, less --mouse): keys forward raw;
-  // each mouse event is decoded for re-encoding in the child's own terms.
-  if (mouseMode !== 'none') {
-    if (!data.includes('\x1b[<')) return { kind: 'forward', data };
-    const parts = [];
-    let last = 0, m;
-    _SGR_MOUSE_RE.lastIndex = 0;
-    while ((m = _SGR_MOUSE_RE.exec(data)) !== null) {
-      if (m.index > last) parts.push({ text: data.slice(last, m.index) });
-      last = m.index + m[0].length;
-      const ev = _decodeSgrMouse(parseInt(m[1], 10), parseInt(m[2], 10), parseInt(m[3], 10), m[4]);
-      if (ev) parts.push({ mouse: ev });
-    }
-    if (last < data.length) parts.push({ text: data.slice(last) });
-    return { kind: 'report', parts };
-  }
-
-  // mouseMode 'none', no mouse bytes → ordinary keystrokes: forward and
-  // snap to the live bottom so the user types at the prompt.
-  if (!data.includes('\x1b[<')) return { kind: 'forward', data, snap: true };
-
-  // mouseMode 'none' WITH SGR mouse bytes → intercept. Wheels become
-  // scrollback; non-wheel mouse drops; non-mouse residue forwards.
-  const re = /\x1b\[<(\d+);(\d+);(\d+)([Mm])/g;
-  let lines = 0, residue = '', last = 0, m;
-  while ((m = re.exec(data)) !== null) {
-    residue += data.slice(last, m.index);
-    last = m.index + m[0].length;
-    const btn = parseInt(m[1], 10);
-    if ((btn & 0x42) === 0x40 && m[4] !== 'm') {  // vertical wheel press (bit6 set, bit1 clear); ignore release
-      lines += (btn & 1) ? 3 : -3;                // bit0: down → +3, up → -3
-    }
-    // horizontal wheel (66/67) + non-wheel mouse (click/motion/release): dropped
-  }
-  residue += data.slice(last);
-  return { kind: 'mouse', lines, residue };
-}
-
-function _handleTerminalModeData(data) {
-  // Ctrl+\ exits terminal mode; a dead/missing session exits too (and drops
-  // the keystroke). Both flow through the terminal_exit Msg, which clears the
-  // flag, drops a 'full' auto-zoom to 'normal', and emits a force_full_repaint
-  // Cmd when it did so. render() paints the result.
-  if (data === '\x1c') {
-    applyMsg({ type: 'terminal_exit' });
-    render();
-    return true;
-  }
-  // U2d — route to the FOCUSED pane's terminal (a minted `terminal` pane or the
-  // legacy viewer terminal). A null id also covers the multi-terminal edge where
-  // focus moved onto a non-terminal pane while terminalMode lingered: exit the
-  // mode (the key is dropped, as for a dead session — matches pre-U2d).
-  const id = focusedTerminalId();
-  if (!id || isSessionDead(id)) {
-    applyMsg({ type: 'terminal_exit' });
-    render();
-    return true;
-  }
-  // v0.6.5 §5(a) Phase 3 — scrollback + smart mouse forwarding.
-  const term = require('../../io/terminal');
-  const plan = _classifyTerminalChunk(data, term.sessionMouseMode(id), term.sessionInputModes(id).altScreen);
-  if (plan.kind === 'scroll') {
-    let moved;
-    if (plan.toTop)            moved = term.scrollSessionToTop(id);
-    else if (plan.toBottom)    moved = term.scrollSessionToBottom(id);
-    else                       moved = term.scrollSessionPages(id, plan.pages);
-    if (moved) render();      // skip the repaint when already at the edge
-    return true;
-  }
-  if (plan.kind === 'report') {
-    _reportTerminalMouse(id, plan.parts);
-    return true;
-  }
-  if (plan.kind === 'mouse') {
-    let moved = false;
-    if (plan.lines) moved = term.scrollSession(id, plan.lines) || moved;
-    if (plan.residue) {
-      // A keystroke interleaved with the mouse bytes returns us to the
-      // prompt before it's forwarded.
-      term.scrollSessionToBottom(id);
-      _keysToChild(id, plan.residue);
-      moved = true;
-    }
-    if (moved) render();
-    return true;
-  }
-  // forward — snap to the live bottom first if a keystroke arrived while
-  // scrolled back (only repaint when the snap actually moved the viewport;
-  // the PTY's own onData → scheduleOverlay drives the echo otherwise).
-  if (plan.snap && term.scrollSessionToBottom(id)) render();
-  _keysToChild(id, plan.data);
-  return true;
-}
-
-// Keys on their way to the program, in the terms of the terminal the pane
-// claims to be (TERM=xterm-256color) and the modes the program set — what a
-// real xterm would send, not whatever the host sent. Field report 2026-11-14:
-// under tmux, Home/End arrive as `CSI 1 ~` / `CSI 4 ~`, which nvim ignores for
-// an xterm. Per token (leaves/input/key-decode):
-//  - a special key (arrows, Home/End, Insert/Delete, Page keys, F1–F12, with
-//    modifiers) is re-encoded as xterm sends it, SS3 for unmodified arrows /
-//    Home / End when the program set application cursor keys;
-//  - a focus report (`CSI I` / `CSI O` — lazytui turns them on at the host) is
-//    lazytui's (focus_event, as in normal mode) and reaches the program only if
-//    IT asked for them (`CSI ? 1004 h`) — a program that didn't sees them as
-//    typed garbage (`^[[I` in `cat -v`);
-//  - everything else (text, control bytes, Alt chords, sequences this does not
-//    name, a trailing partial) passes byte-for-byte.
-// One write per call, so a batched chunk still reaches the PTY in one piece.
-function _keysToChild(id, data) {
-  if (!data) return;
-  const modes = require('../../io/terminal').sessionInputModes(id);
-  const { tokens, carry } = tokenizeInput(data);
-  let out = '';
-  for (const tok of tokens) {
-    if (tok === '\x1b[I' || tok === '\x1b[O') {
-      _hostFocus(tok === '\x1b[I');
-      if (modes.sendFocus) out += tok;
-      continue;
-    }
-    out += toXtermKey(tok, { appCursor: modes.appCursor });
-  }
-  out += carry;
-  if (out) writeToSession(id, out);
+  return { kind: 'key' };
 }
 
 // A bracketed paste from the host while a terminal pane has the keyboard. The
@@ -263,123 +157,165 @@ function _keysToChild(id, data) {
 // paired even if the program flips its mode mid-paste. The stdin handler drops
 // it whenever a chunk arrives outside terminal mode.
 let _termPaste = null;   // null | { marked: bool }
-function _pasteToChild(text) {
+function _pasteToChild(id, text) {
   if (!text) return;
-  const id = focusedTerminalId();
-  if (!id || isSessionDead(id)) return;
-  require('../../io/terminal').scrollSessionToBottom(id);
+  terminal.scrollSessionToBottom(id);
   writeToSession(id, text);
 }
-function _handleTerminalPaste(data, reemit) {
+// How many trailing bytes of `s` could be the start of `marker` (a proper
+// prefix) — held back so a marker split across chunks rejoins.
+function _markerPrefixAtEnd(s, marker) {
+  for (let n = Math.min(marker.length - 1, s.length); n > 0; n--) {
+    if (s.endsWith(marker.slice(0, n))) return n;
+  }
+  return 0;
+}
+
+// Deliver one mouse event to the program: made relative to the terminal's grid
+// (the overlay paints cell (0,0) at host column bounds.x + 2, row bounds.y + 2
+// — 1-based) and encoded by the pane's emulator for the protocol + encoding the
+// program asked for (io/terminal reportMouse; it also drops what the program's
+// protocol doesn't take, e.g. hover for a button-event program). A press, wheel
+// or hover outside the grid is not the program's (the border, another pane); a
+// drag motion or release outside clamps to the edge, as a terminal does at its
+// window edge, so the program never keeps a stuck button.
+function _reportTerminalMouse(id, surf, ev) {
+  if (!surf) return;
+  let col = ev.x - surf.bounds.x - 2, row = ev.y - surf.bounds.y - 2;
+  const inside = col >= 0 && row >= 0 && col < surf.cols && row < surf.rows;
+  if (!inside) {
+    const dragging = ev.action === 'up' || (ev.action === 'move' && ev.button !== 'none');
+    if (!dragging) return;
+    col = Math.min(Math.max(col, 0), surf.cols - 1);
+    row = Math.min(Math.max(row, 0), surf.rows - 1);
+  }
+  terminal.reportMouse(id, { col, row, button: ev.button, action: ev.action,
+                             shift: ev.shift, alt: ev.alt, ctrl: ev.ctrl });
+}
+
+function _exitTerminalMode() {
+  applyMsg({ type: 'terminal_exit' });
+  render();
+}
+
+/**
+ * One terminal-mode stdin chunk (the carry from the previous chunk already
+ * joined on — _makeDataHandler). `reemit(rest)` hands the bytes after a mode
+ * exit to the normal-mode pipeline. Paints batch: scroll repaints and the
+ * exit's full repaint coalesce into one frame.
+ *
+ * Ctrl+\ (`\x1c`) → terminal_exit: clears the flag, drops a 'full' auto-zoom to
+ * 'normal' and repaints in full; the program keeps running. A dead or missing
+ * session (focus moved off the terminal pane while the mode lingered) exits
+ * too, dropping the keys typed for it — the run up to the next exit or scroll
+ * key; the rest re-emits.
+ */
+function _handleTerminalChunk(data, reemit) {
+  beginBatch();
+  try { _terminalWalk(data, reemit); } finally { endBatch(); }
+}
+
+function _terminalWalk(data, reemit) {
+  const id = focusedTerminalId();
+  if (!id || isSessionDead(id)) {
+    _exitTerminalMode();
+    _termPaste = null;
+    const { tokens, carry } = tokenizeInput(data);
+    const kinds = tokens.map(t => _classifyTerminalToken(t, 'none').kind);
+    let i = 0;
+    while (i < tokens.length && kinds[i] !== 'exit' && kinds[i] !== 'scroll') i++;
+    if (i === tokens.length) return;          // all of it was typed for the program
+    if (kinds[i] === 'exit') i++;             // a Ctrl+\ is spent on the exit
+    const rest = tokens.slice(i).join('') + carry;
+    if (rest) reemit(rest);
+    return;
+  }
+  const mouseMode = terminal.sessionMouseMode(id);
+  const modes = terminal.sessionInputModes(id);
+  let surf;            // the pane's surface, looked up for the first mouse report
+  let keys = '';       // key bytes not yet written (one write per run)
+  let typed = false;   // a keystroke in the run → back to the live bottom first
+  const flushKeys = () => {
+    if (typed && terminal.scrollSessionToBottom(id)) render();
+    if (keys) writeToSession(id, keys);
+    keys = ''; typed = false;
+  };
   while (data) {
     if (_termPaste) {
       const end = data.indexOf(_PASTE_CLOSE);
-      if (end < 0) { _pasteToChild(data); return; }
-      _pasteToChild(data.slice(0, end) + (_termPaste.marked ? _PASTE_CLOSE : ''));
+      if (end < 0) {
+        const hold = _markerPrefixAtEnd(data, _PASTE_CLOSE);
+        _pasteToChild(id, data.slice(0, data.length - hold));
+        _holdCarry(data.slice(data.length - hold));
+        return;
+      }
+      _pasteToChild(id, data.slice(0, end) + (_termPaste.marked ? _PASTE_CLOSE : ''));
       _termPaste = null;
       data = data.slice(end + _PASTE_CLOSE.length);
       continue;
     }
-    const open = data.indexOf(_PASTE_OPEN);
-    if (open < 0) { _handleTerminalKeys(data, reemit); return; }
-    if (open > 0) {
-      _handleTerminalKeys(data.slice(0, open), reemit);
-      if (!getModel().modes.terminalMode) { reemit(data.slice(open)); return; }
-    }
-    const id = focusedTerminalId();
-    _termPaste = { marked: !!(id && require('../../io/terminal').sessionInputModes(id).bracketedPaste) };
-    if (_termPaste.marked) _pasteToChild(_PASTE_OPEN);
-    data = data.slice(open + _PASTE_OPEN.length);
-  }
-}
-
-// Deliver a 'report' plan: keys as-is, each mouse event made relative to the
-// terminal's grid (the overlay paints cell (0,0) at host column bounds.x + 2,
-// row bounds.y + 2 — 1-based) and encoded by the pane's emulator for the
-// protocol + encoding the child asked for (io/terminal reportMouse; it also
-// drops what the child's protocol doesn't take, e.g. hover for a button-event
-// child). A press, wheel or hover outside the grid is not the child's (the
-// border, another pane); a drag motion or release outside clamps to the edge,
-// as a terminal does at its window edge, so the child never keeps a stuck
-// button.
-function _reportTerminalMouse(id, parts) {
-  const term = require('../../io/terminal');
-  const surf = visibleTerminalSurfaces(getModel()).find(s => s.id === id);
-  for (const part of parts) {
-    if (part.text != null) { writeToSession(id, part.text); continue; }
-    if (!surf) continue;
-    const ev = part.mouse;
-    let col = ev.x - surf.bounds.x - 2, row = ev.y - surf.bounds.y - 2;
-    const inside = col >= 0 && row >= 0 && col < surf.cols && row < surf.rows;
-    if (!inside) {
-      const dragging = ev.action === 'up' || (ev.action === 'move' && ev.button !== 'none');
-      if (!dragging) continue;
-      col = Math.min(Math.max(col, 0), surf.cols - 1);
-      row = Math.min(Math.max(row, 0), surf.rows - 1);
-    }
-    term.reportMouse(id, { col, row, button: ev.button, action: ev.action,
-                           shift: ev.shift, alt: ev.alt, ctrl: ev.ctrl });
-  }
-}
-
-// Terminal-mode control events the per-chunk exact matches encode: the
-// mode-exit chord plus the framework scrollback keys (_classifyTerminalChunk
-// / _handleTerminalModeData match these against a WHOLE chunk).
-const _TERM_CONTROLS = new Set([
-  '\x1c',                                          // Ctrl+\ — exit terminal mode
-  '\x1b[5;2~', '\x1b[6;2~', '\x1b[1;2H', '\x1b[1;2F',  // Shift+Page/Home/End
-]);
-
-/**
- * Terminal-mode chunk walk (review 2026-08-05). The whole-chunk exact
- * matches above have the same SSH-batching hole the normal-mode ladder
- * had: autorepeat Shift+PageUp arrives as `\x1b[5;2~\x1b[5;2~` in ONE
- * chunk (matched nothing → forwarded to the child), and Ctrl+\ batched
- * behind other keys (`q\x1c`) was forwarded as a literal FS byte instead
- * of exiting — terminal mode WEDGED over a laggy link.
- *
- * Split the chunk into events; consecutive non-control events re-join
- * (tokens are exact contiguous slices, so the PTY receives byte-identical
- * data in ONE write) and each control event exact-matches as before. A
- * trailing partial is NEVER held back from the PTY — it joins the last
- * run (a control sequence split ACROSS chunks doesn't match, same as the
- * pre-tokenizer behavior). Any piece can exit the mode (Ctrl+\ or the
- * dead-session rule); the rest of the chunk then belongs to the
- * normal-mode pipeline and re-emits. A multi-piece walk batches paints
- * (scroll repaints + the exit's full repaint coalesce into one frame).
- */
-function _handleTerminalChunk(data, reemit) {
-  if (_termPaste || data.includes(_PASTE_OPEN)) { _handleTerminalPaste(data, reemit); return; }
-  _handleTerminalKeys(data, reemit);
-}
-
-function _handleTerminalKeys(data, reemit) {
-  const { tokens, carry } = tokenizeInput(data);
-  const parts = carry ? tokens.concat([carry]) : tokens;
-  // Single event (the local per-keystroke case): the historical path.
-  if (parts.length <= 1) { _handleTerminalModeData(data); return; }
-  beginBatch();
-  try {
-    let i = 0;
-    while (i < parts.length) {
-      let piece;
-      if (_TERM_CONTROLS.has(parts[i])) {
-        piece = parts[i];
-        i++;
-      } else {
-        let j = i;
-        while (j < parts.length && !_TERM_CONTROLS.has(parts[j])) j++;
-        piece = parts.slice(i, j).join('');
-        i = j;
+    const { tokens, carry } = tokenizeInput(data);
+    data = '';
+    for (let i = 0; i < tokens.length; i++) {
+      const tok = tokens[i];
+      const ev = _classifyTerminalToken(tok, mouseMode, modes.altScreen);
+      switch (ev.kind) {
+        case 'key':
+          keys += toXtermKey(tok, { appCursor: modes.appCursor });
+          typed = true;
+          break;
+        case 'focus':
+          _hostFocus(ev.focused);
+          if (modes.sendFocus) keys += tok;
+          break;
+        case 'report':
+          flushKeys();
+          if (surf === undefined) surf = visibleTerminalSurfaces(getModel()).find(s => s.id === id) || null;
+          _reportTerminalMouse(id, surf, ev.mouse);
+          break;
+        case 'wheel':
+          flushKeys();
+          if (terminal.scrollSession(id, ev.lines)) render();
+          break;
+        case 'scroll': {
+          flushKeys();
+          const moved = ev.toTop ? terminal.scrollSessionToTop(id)
+                      : ev.toBottom ? terminal.scrollSessionToBottom(id)
+                      : terminal.scrollSessionPages(id, ev.pages);
+          if (moved) render();   // skip the repaint when already at the edge
+          break;
+        }
+        case 'paste':
+          flushKeys();
+          _termPaste = { marked: !!modes.bracketedPaste };
+          if (_termPaste.marked) _pasteToChild(id, _PASTE_OPEN);
+          data = tokens.slice(i + 1).join('') + carry;
+          break;
+        case 'exit': {
+          flushKeys();
+          _exitTerminalMode();
+          const rest = tokens.slice(i + 1).join('') + carry;
+          if (rest) reemit(rest);
+          return;
+        }
+        // 'drop': a mouse event the program didn't ask for
       }
-      _handleTerminalModeData(piece);
-      if (!getModel().modes.terminalMode) {
-        const rest = parts.slice(i).join('');
-        if (rest) reemit(rest);
-        return;
-      }
+      if (ev.kind === 'paste') break;
     }
-  } finally { endBatch(); }
+    if (_termPaste) continue;          // the rest of the chunk is the paste
+    flushKeys();
+    _holdCarry(carry);
+  }
+  flushKeys();
+}
+
+// The carry's flush in terminal mode: the bytes never completed a sequence,
+// so they are the program's as they are (pasted text, inside a paste).
+function _flushTerminalCarry(bytes) {
+  const id = focusedTerminalId();
+  if (!id || isSessionDead(id)) return;
+  if (_termPaste) _pasteToChild(id, bytes);
+  else writeToSession(id, bytes);
 }
 
 // --- Stdin setup ---
@@ -402,13 +338,11 @@ const _PASTE_MAX = 256 * 1024;   // 256 KB cap (R16)
 const _PASTE_OPEN = '\x1b[200~';
 const _PASTE_CLOSE = '\x1b[201~';
 
-// One SGR mouse event, anchored — the tokenizer hands us exactly one
-// sequence per token. (T25/R15's multi-event-per-chunk handling — fast
-// drags coalescing several events into one chunk — now falls out of the
-// tokenizer: each event is its own token, and keys interleaved with the
-// mouse bytes dispatch too instead of being dropped by the old
-// `if (sawMouse) return`.)
-const _MOUSE_RE = /^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/;
+// SGR mouse events: one per token (_SGR_MOUSE_RE, above). (T25/R15's
+// multi-event-per-chunk handling — fast drags coalescing several events into
+// one chunk — falls out of the tokenizer: each event is its own token, and
+// keys interleaved with the mouse bytes dispatch too instead of being dropped
+// by the old `if (sawMouse) return`.)
 
 // v0.6.4 Theme F Phase 3 — double-click derivation lives HERE, in the
 // parser: it is the only layer that sees raw press timing, and a
@@ -481,12 +415,37 @@ function setupKeyListener() {
 // sequence is CARRIED into the next chunk; a short flush timer logs +
 // drops it if no continuation arrives (a deliberate Esc-then-`[` can't
 // wedge the pipeline — flush equals the old incomplete-chunk treatment).
+// Terminal mode shares the carry (a mouse report, a key to re-encode or a
+// paste marker split across chunks rejoins there too); its flush hands the
+// bytes to the program instead (_flushTerminalCarry).
 const _CARRY_FLUSH_MS = 50;
 let _carry = '';
 let _carryTimer = null;
 
 function _clearCarryTimer() {
   if (_carryTimer) { clearTimeout(_carryTimer); _carryTimer = null; }
+}
+
+// Hold `c` for the next chunk (it replaces any carry), flushing it after
+// _CARRY_FLUSH_MS if nothing continues it — in whichever mode is current then.
+function _holdCarry(c) {
+  _clearCarryTimer();
+  _carry = c;
+  if (!c) return;
+  _carryTimer = setTimeout(() => {
+    const held = _carry;
+    _carry = '';
+    _carryTimer = null;
+    if (getModel().modes.terminalMode) { _flushTerminalCarry(held); return; }
+    // No continuation arrived — the "incomplete sequence" was a deliberate
+    // Esc-prefix keyboard chord after all. Log + drop, exactly the
+    // pre-tokenizer treatment of an incomplete chunk.
+    require('../../io/event-log').record('input', {
+      kind: 'unknown_escape',
+      bytes: held.length > 64 ? held.slice(0, 64) + '...' : held,
+    });
+  }, _CARRY_FLUSH_MS);
+  if (_carryTimer.unref) _carryTimer.unref();
 }
 
 function _makeDataHandler(stdin) {
@@ -502,9 +461,14 @@ function _makeDataHandler(stdin) {
   };
 
   return (data) => {
-    // Terminal mode: forward to the PTY, matching control events per-EVENT
-    // so batched chunks can't wedge the mode (Ctrl+\ exits).
-    if (getModel().modes.terminalMode) { _handleTerminalChunk(data, reemit); return; }
+    // Terminal mode: to the program, event by event (_handleTerminalChunk),
+    // with the carry from the previous chunk joined on.
+    if (getModel().modes.terminalMode) {
+      const joined = _carry + data;
+      _holdCarry('');
+      _handleTerminalChunk(joined, reemit);
+      return;
+    }
     _termPaste = null;     // a terminal-mode paste can't continue outside terminal mode
 
     // T25 — bracketed paste accumulator (B13). If we're mid-paste OR
@@ -536,24 +500,8 @@ function _makeDataHandler(stdin) {
 
     // Tokenize, joining any partial sequence carried from the previous
     // chunk. A fresh chunk supersedes the pending carry flush.
-    _clearCarryTimer();
     const { tokens, carry } = tokenizeInput(_carry + data);
-    _carry = carry;
-    if (_carry) {
-      _carryTimer = setTimeout(() => {
-        // No continuation arrived — the "incomplete sequence" was a
-        // deliberate Esc-prefix keyboard chord after all. Log + drop,
-        // exactly the pre-tokenizer treatment of an incomplete chunk.
-        const c = _carry;
-        _carry = '';
-        _carryTimer = null;
-        require('../../io/event-log').record('input', {
-          kind: 'unknown_escape',
-          bytes: c.length > 64 ? c.slice(0, 64) + '...' : c,
-        });
-      }, _CARRY_FLUSH_MS);
-      if (_carryTimer.unref) _carryTimer.unref();
-    }
+    _holdCarry(carry);
     if (!tokens.length) return;
 
     // Multi-token chunk → one trailing paint (render-queue.beginBatch).
@@ -573,7 +521,9 @@ function _makeDataHandler(stdin) {
       }
       // A terminal-mode flip on the FINAL token leaves no next iteration
       // to hand off through — but the pending carry belongs to the PTY
-      // stream now, not the keyboard parser, so forward it the same way.
+      // stream now, not the keyboard parser: hand it to the terminal path
+      // (which holds it again for the next chunk, or exits the mode at once
+      // when the session is already dead).
       if (_carry && getModel().modes.terminalMode) reemit('');
     } finally { if (batch) endBatch(); }
   };
@@ -711,7 +661,7 @@ function _dispatchToken(tok) {
   if (tok === '\x1b[I' || tok === '\x1b[O') return _hostFocus(tok === '\x1b[I');
 
   // SGR mouse event: \x1b[<button;x;yM (press / motion) or m (release).
-  const mm = _MOUSE_RE.exec(tok);
+  const mm = _SGR_MOUSE_RE.exec(tok);
   if (mm) return _dispatchMouseEvent(mm);
 
   if (tok === '\x1b[A') return handleKey('up');
@@ -769,7 +719,7 @@ function _dispatchToken(tok) {
   handleKey(tok, tok);
 }
 
-/** One SGR mouse event (an anchored _MOUSE_RE match). */
+/** One SGR mouse event (an _SGR_MOUSE_RE match). */
 function _dispatchMouseEvent(mm) {
   const btn      = parseInt(mm[1]);
   const x        = parseInt(mm[2]);
@@ -815,9 +765,8 @@ module.exports = {
   setupKeyListener,
   applyKeyboardMode,        // boot: apply the resolved keyboard mode (tui.js)
   beginKeyboardDetection,   // exported for tests (in-process handshake driving)
-  _handleTerminalModeData,  // exported for tests
-  _handleTerminalChunk,     // exported for tests (terminal-mode chunk: paste, controls, keys)
-  _classifyTerminalChunk,   // exported for tests (v0.6.5 PTY scrollback classifier)
+  _handleTerminalChunk,     // exported for tests (terminal-mode chunk: paste, controls, keys, mouse)
+  _classifyTerminalToken,   // exported for tests (pure: one terminal-mode input event)
   _handleWheel: (...a) => require('./pane-mouse').handleWheel(...a),   // exported for tests (moved to pane-mouse, R3)
   handleMouse,              // exported for tests
   _classifyPress,           // exported for tests (Theme F Phase 3 double-click derivation)

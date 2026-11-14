@@ -33,7 +33,7 @@ const route = require('../panel/route');
 const { visibleTerminalSurfaces } = require('../panel/terminal-surfaces');
 const { getModel } = require('../model/store');
 const { dispatchMsg, applyMsg } = require('../dispatch/runtime/loop');
-const { _handleTerminalModeData } = require('../dispatch/control/input');
+const { _handleTerminalChunk } = require('../dispatch/control/input');
 
 // Frames the app paints (escape sequences) are not this test's subject; the
 // runner's plain report lines pass through.
@@ -64,7 +64,7 @@ const show = (w) => JSON.stringify(Buffer.isBuffer(w) ? [...w] : w);
   const X = (col) => surf.bounds.x + 2 + col;
   const Y = (row) => surf.bounds.y + 2 + row;
   const sgr = (btn, col, row, fin = 'M') => `\x1b[<${btn};${X(col)};${Y(row)}${fin}`;
-  const send = (data) => { writes = []; _handleTerminalModeData(data); return writes; };
+  const send = (data) => { writes = []; _handleTerminalChunk(data, () => {}); return writes; };
 
   section('[1] SGR child: click + release arrive pane-relative');
   // io/term-screen encodes through xterm's internal mouse service (the public

@@ -100,7 +100,15 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   Focus reports and paste markers reach a program only if it asked for them
   (`cat -v` showed `^[[I^[[200~hi^[[201~` for a paste of `hi`); pasted text
   goes through untouched. Shift+PageUp/PageDown/Home/End go to a full-screen
-  program (vim, less) instead of scrolling an empty scrollback.
+  program (vim, less) instead of scrolling an empty scrollback, and at a prompt
+  scroll it in whichever form your terminal sends them. Over a slow link a key,
+  a mouse event or a paste marker split across two reads is put back together
+  first: a split paste end no longer leaves every later key (`Ctrl+\`
+  included) going to the program as pasted text, and a split click no longer
+  reaches it with whole-screen coordinates. Keys typed together with a click
+  are translated too, and a focus change arriving with a click reaches lazytui.
+  Typing always returns a scrolled-back pane to its live bottom, also when the
+  program reports the mouse.
 - **Programs in a terminal pane can ask for its colours.** nvim (and other
   programs) ask the terminal for its default background and foreground to pick
   a light or dark colour scheme; nothing answered, so nvim always assumed

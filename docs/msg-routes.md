@@ -1285,7 +1285,9 @@ lives off-model in `io/agent`; every visible byte is folded here by pure arms so
 the xterm grid lives in `io/terminal`, painted by the terminal OVERLAY over the
 pane's inner bounds; `render` draws only chrome. `slice.{cmd,label,onExit}`. `update`
 is a **no-op** — no reducer-managed content; the PTY lifecycle (lazy spawn + resize)
-is reconciled in the dispatch finalizer, keystrokes forwarded straight to the PTY.
+is reconciled in the dispatch finalizer; terminal-mode input goes to the PTY from
+`input.js` (§Terminal-mode input — keys re-encoded as xterm sends them, mouse made
+pane-relative), never through `update`.
 
 | Msg | Writes | Emits | Purity |
 |---|---|---|---|
