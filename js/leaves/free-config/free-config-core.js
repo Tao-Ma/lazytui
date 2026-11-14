@@ -74,11 +74,16 @@ function snapshot(arrange) {
   return JSON.parse(JSON.stringify(arrange));
 }
 
+// The snapshot's columns, detail split AND pool: an edit can change a pool
+// entry (the title edit names the pane on its entry), and a tab placed in the
+// snapshot's columns needs its entry — so undo/redo restore the arrange the
+// snapshot holds, not just its placement.
 function _applySnapshot(arrange, snap) {
   return {
     ...arrange,
     columns: snap.columns,
     detailHeightPct: snap.detailHeightPct,
+    pool: snap.pool || arrange.pool,
   };
 }
 

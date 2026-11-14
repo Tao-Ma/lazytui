@@ -968,7 +968,7 @@ via a `mode_set`/`mode_clear` Cmd.
 | `free_config_enter` | resets `freeConfig`, opens `panelList` (if hidden panes), focus | `mode_set{freeConfigMode}` ★m | ✓⁶ |
 | `free_config_exit` | commits focus ★w, clears `freeConfig`/`panelList` | `mode_clear{freeConfigMode}` + `mode_clear{freeConfigTitleEditMode}` ★m + `show_selected_info` | ✓ |
 | `free_config_nav`/`reorder`/`move_col`/`resize`/`panel_height`/`undo`/`redo` | `arrange`/`focus` (via `mfc`/`mfcCore` pure leaves) | — | ✓ |
-| `free_config_title_enter`/`submit`/`key`/`cancel` | `freeConfig.titleEdit` (+ commits title) | `mode_set`/`mode_clear{freeConfigTitleEditMode}` ★m | shell⁷ |
+| `free_config_title_enter`/`submit`/`key`/`cancel` | `freeConfig.titleEdit` (+ commits the title: the selected pane's pool entry + its mirrored `title`) | `mode_set`/`mode_clear{freeConfigTitleEditMode}` ★m | shell⁷ |
 | `free_config_mouse_press`/`motion`/`release` | `freeConfig.drag` (+ `previewArrange` on target change) | `force_full_repaint` ★f (on target shift) | ✓ |
 | `pool_drag_start`/`motion`/`release` | `freeConfig.drag` (+ `previewArrange`) | start/motion `force_full_repaint` ★f; release re-emits `pool_hide`/`pool_show` | ✓ |
 | `free_config_clear_undo` | clears undo/redo stacks | — | ✓ |

@@ -125,6 +125,10 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   showed a separate label such panes never had, not the `title:` on the border.
   It now shows the name the border or tab strip shows (`[terminal: Dev]`). An
   `edit` terminal now reads `[terminal: ✎ tui.yml]`, like its tab.
+- **Renaming a pane in free-config (`t`) renames only that pane, and
+  `:save-layout` keeps the name.** It renamed every pane of the same type
+  (two tables both took the new title), and only on the border: the tab strip,
+  the footer and the saved layout kept the old name. Undo restores it.
 - **Panes declared under `panels:` start with their own settings.** A pane's
   settings reached its Component in one shape at startup and another after a
   tab switch, and several Components read the one that was missing at startup.

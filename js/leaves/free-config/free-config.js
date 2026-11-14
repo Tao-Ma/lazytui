@@ -224,7 +224,16 @@ function titleEnter(slice) {
   return { ...slice, freeConfig: { ...d, titleEdit: { text: p.title || '' } } };
 }
 
-/** Commit a non-empty, changed title to the focused panel (pushes one undo). */
+/**
+ * Commit a non-empty, changed title to the selected pane (pushes one undo).
+ * The name is the pool entry's — what the border, the tab strip, the footer
+ * (leaves/wm/pane titleOf) and `:save-layout` all read — so the entry gets it,
+ * and the pane's mirrored `title` with it. Only THAT pane: it renamed every pane
+ * of the same type, and only on the pane objects, so the tab strip and footer
+ * kept the old name and `:save-layout` lost the new one (pre-release review
+ * 2026-11-14). The entry is the slot's active tab's, or a content slot's own
+ * (its identity is the slot, not its Info / Transcript tab).
+ */
 function setSelectedTitle(slice, text) {
   const d = slice.freeConfig;
   if (!d) return slice;
@@ -232,11 +241,14 @@ function setSelectedTitle(slice, text) {
   if (!p || text.length === 0 || text === p.title) return slice;
 
   let next = pushUndo(slice);
+  const pool = next.arrange.pool || {};
+  const poolId = p.role === 'content' ? p.id : (p.activeTabId || p.id);
+  const nextPool = pool[poolId] ? { ...pool, [poolId]: { ...pool[poolId], title: text } } : pool;
   const nextColumns = next.arrange.columns.map(col => ({
     ...col,
-    panels: (col.panels || []).map(x => x.type === p.type ? { ...x, title: text } : x),
+    panels: (col.panels || []).map(x => x.paneId === p.paneId ? { ...x, title: text } : x),
   }));
-  next = { ...next, arrange: { ...next.arrange, columns: nextColumns }, dirty: true };
+  next = { ...next, arrange: { ...next.arrange, columns: nextColumns, pool: nextPool }, dirty: true };
   return next;
 }
 
