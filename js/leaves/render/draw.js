@@ -512,7 +512,7 @@ const HIT_Z = Object.freeze({ backdrop: 0, box: 1, row: 2, chip: 3 });
  *   box                    handler map for the box itself (e.g. wheel → up/down)
  */
 function publishBox({ x, y, w, h, scrollOffset = 0, lines = [],
-                      lineTargets = null, lineChips = null, box = null }) {
+                      lineTargets = null, lineChips = null, box = null, rowW = null }) {
   if (!_hitSink || !(w > 0) || !(h > 0)) return;
   const { cols: COLS, rows: ROWS } = viewportDims();
   // Clip a rect to the screen; null when nothing is left on-screen.
@@ -533,7 +533,9 @@ function publishBox({ x, y, w, h, scrollOffset = 0, lines = [],
     const sy = y + 1 + i;
     const target = lineTargets && lineTargets[li];
     if (target) {
-      const r = clip(x + 1, sy, innerW, 1);
+      // rowW: a row target covers only the first rowW inner cells (a list
+      // column beside a preview — panel-list); default the whole inner width.
+      const r = clip(x + 1, sy, rowW != null ? Math.max(0, Math.min(innerW, rowW | 0)) : innerW, 1);
       if (r) _hitSink({ id: `row:${li}`, rect: r, on: target }, HIT_Z.row);
     }
     const chips = lineChips && lineChips[li];
@@ -677,7 +679,7 @@ function renderOverlay({ lines, title, count = null, maxWidth = 44, anchor = nul
   }
   if (hit) {
     publishBox({ x: offX, y: offY, w: menuW, h: menuH, scrollOffset, lines,
-                 lineTargets: hit.lineTargets, lineChips: hit.lineChips, box: hit.box });
+                 lineTargets: hit.lineTargets, lineChips: hit.lineChips, box: hit.box, rowW: hit.rowW });
   }
 }
 

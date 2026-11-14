@@ -225,7 +225,8 @@ function _geomKey(layoutSlice) {
  *  on a change and leaves it alone otherwise (clock_tick / focus_event keep it),
  *  so identity is exact. `jobs` / `diagLog` count only while their window is
  *  open: their async mirrors replace the list, which shifts the index-targeted
- *  rows; when closed they must not stale every frame. `geom` (Release 2) covers
+ *  rows; when closed they must not stale every frame (likewise free-config's
+ *  `panelList`, Release 3). `geom` (Release 2) covers
  *  pane chrome: a batched key that moves a pane stales the frame (_geomKey).
  *  Pure of the model except the half-view viewer pane, which _geomKey reads
  *  from the route (the same read paint makes). */
@@ -238,6 +239,9 @@ function stampOf(model, layoutSlice) {
     paneMenu: layoutSlice ? layoutSlice.paneMenu : undefined,
     jobs: md.jobsMode ? model.jobs : null,
     diagLog: md.diagLogMode ? model.diagLog : null,
+    // free-config's panel list (Release 3): its rows are index-targeted pool-drag
+    // sources, and the list box changes with the cursor / items.
+    panelList: md.freeConfigMode && layoutSlice ? layoutSlice.panelList : null,
     geom: _geomKey(layoutSlice),
   };
 }

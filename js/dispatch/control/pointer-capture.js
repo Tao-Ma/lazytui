@@ -16,7 +16,7 @@
  *                                         on selectable content) — no capture
  *     motion(state, ev)  → dirty?         ev = { mx, my, x, y }
  *     release(state, ev) → dirty?         the slot is already empty
- *     pressWhileHeld:    'drop' | 'swallow'
+ *     pressWhileHeld:    'drop' | 'swallow' | (state) → 'drop' | 'swallow'
  *                        a press arriving while the capture is held (a lost
  *                        release): 'drop' ends the capture (cancel runs) and the
  *                        press routes normally; 'swallow' consumes the press and
@@ -94,7 +94,11 @@ function release(ev) { return _call('release', ev); }
 function press(ev) {
   const s = _slot;
   if (!s) return { swallow: false, dirty: false };
-  if (s.ctl.pressWhileHeld === 'swallow') return { swallow: true, dirty: false };
+  let policy = s.ctl.pressWhileHeld;
+  if (typeof policy === 'function') {
+    try { policy = policy.call(s.ctl, s.state); } catch (e) { _record(s.name, 'pressWhileHeld', e); policy = 'drop'; }
+  }
+  if (policy === 'swallow') return { swallow: true, dirty: false };
   _slot = null;
   let dirty = false;
   if (typeof s.ctl.cancel === 'function') {

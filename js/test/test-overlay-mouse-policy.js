@@ -29,7 +29,7 @@ function flagOf(d) {
   return hits.length === 1 ? hits[0] : null;
 }
 
-const BELOW_CHROME = ['jobs', 'pane-menu', 'which-key'];
+const BELOW_CHROME = ['jobs', 'pane-menu', 'which-key', 'panel-list'];
 
 describe('[policy] backdrop placement follows suppressChrome', () => {
   const ds = compositor._all();

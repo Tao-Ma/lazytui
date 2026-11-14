@@ -35,7 +35,6 @@ const OVERLAY_LIST_ONLY_WIDTH = 60;
 const MIN_SIDE_BY_SIDE = 75;      // need at least this many cols for two-pane
 const LIST_W = 36;                // left-pane content width when side-by-side
 const SEP = ' │ ';
-const HEADER_ROWS_TOP = 1;
 
 function _slice() { return getInstanceSlice('layout'); }
 
@@ -220,13 +219,24 @@ function _padRight(row, w) {
 // `force_full_repaint` Cmds from `panel_list_open`, `panel_list_close`,
 // and `free_config_enter`'s auto-open conditional in `js/panel/layout.js`
 // (those were Class A workarounds for the overlay bypassing newRows).
-// Hit map (docs/mouse-hit-map.md): the box OWNS its cells — without it, pane
-// chrome drawn under the box ([X] / [_] in free-config) took clicks aimed at the
-// list or the preview (hiding / collapsing a pane the user could not see). Its
-// rows are pool-drag sources the legacy free-config handler still runs (they
-// move onto pointer capture in Release 3), so every gesture is handed to the
-// legacy cascade ('legacy') instead of being realized here.
-const LEGACY_BOX = { box: { press: 'legacy', double: 'legacy', right: 'legacy', middle: 'legacy', 'wheel-up': 'legacy', 'wheel-down': 'legacy' } };
+// Hit map (docs/mouse-hit-map.md): the box OWNS its cells (opaque, consumes
+// every gesture) — without it, pane chrome drawn under the box ([X] / [_] in
+// free-config) took clicks aimed at the list or the preview (hiding /
+// collapsing a pane the user could not see). Each NON-essential item row is a
+// pool-drag source: a press starts the `pool-drag` pointer capture
+// (dispatch/control/free-config-capture) for that item. The header, the
+// `── hidden ──` separator, essential rows and the preview publish no target —
+// the box swallows a press there (Release 3; before it, such a press dragged
+// whichever item was highlighted).
+function _hit(items, rowW) {
+  const placedCount = items.filter(it => it.status !== 'hidden').length;
+  const targets = [null];                                    // the header row
+  for (let i = 0; i < items.length; i++) {
+    if (i === placedCount && placedCount > 0 && placedCount < items.length) targets.push(null, null);   // blank + separator
+    targets.push(items[i].status === 'essential' ? null : { press: { capture: 'pool-drag', idx: i, id: items[i].id } });
+  }
+  return { lineTargets: targets, box: {}, rowW };
+}
 
 function renderPanelListOverlay(newRows, cols) {
   const slice = _slice();
@@ -251,7 +261,7 @@ function renderPanelListOverlay(newRows, cols) {
       maxWidth: wantW,
       count: items.length ? [cursor + 1, items.length] : undefined,
       targetRows: newRows || null, targetCols: cols || 0,
-      hit: LEGACY_BOX,
+      hit: _hit(items, null),
     });
     return;
   }
@@ -267,8 +277,8 @@ function renderPanelListOverlay(newRows, cols) {
   //   - the list isn't truncated (>= listLines.length)
   //   - the overlay still fits the terminal (<= termH - OVERLAY_H_MARGIN)
   //   - we don't shrink below a usable minimum (8 rows)
-  // previewLines is then padded to EXACTLY previewH so hitTest's bounds
-  // math (which also uses previewH) matches the actual painted height.
+  // previewLines is then padded to EXACTLY previewH, so the box height is
+  // fixed by the preview (the hit map publishes the box renderOverlay drew).
   const targetPreviewArea = Math.floor(termW * termH / 5);
   const idealPreviewH = Math.ceil(targetPreviewArea / previewW);
   const previewH = Math.max(
@@ -291,70 +301,8 @@ function renderPanelListOverlay(newRows, cols) {
     maxWidth: wantW,
     count: items.length ? [cursor + 1, items.length] : undefined,
     targetRows: newRows || null, targetCols: cols || 0,
-    hit: LEGACY_BOX,
+    hit: _hit(items, listW),   // a row's drag source is its list column, not the preview beside it
   });
-}
-
-/**
- * Compute the overlay's screen rectangle + the index of the LIST-side
- * item under (mx, my). Preview-pane clicks return `itemIdx: null` (no
- * item to drag), but `bounds` reflects the whole overlay box so
- * input.js can still detect "click inside vs outside". Pure derivation;
- * mirrors renderPanelListOverlay's geometry.
- */
-function hitTest(mx, my) {
-  const slice = _slice();
-  if (!slice || !slice.panelList || !slice.panelList.open) return null;
-  const items = mpool.panelListItems(slice.arrange);
-
-  const { cols: termW, rows: termH } = viewportDims();
-  const sideBySide = termW >= MIN_SIDE_BY_SIDE && items.length > 0;
-  const wantW = sideBySide
-    ? Math.min(OVERLAY_MAX_WIDTH, termW - OVERLAY_W_MARGIN)
-    : Math.min(OVERLAY_LIST_ONLY_WIDTH, termW - 2);
-  const innerW = Math.max(10, wantW - 2);
-  const listW = sideBySide ? Math.min(LIST_W, Math.floor(innerW / 2)) : innerW;
-
-  const listLines = _buildListLines(items, slice.panelList.cursor || 0, listW);
-  let previewH = 0;
-  if (sideBySide) {
-    const sepVisLen = visibleLen(SEP);
-    const previewW = Math.max(10, innerW - listW - sepVisLen);
-    const targetPreviewArea = Math.floor(termW * termH / 5);
-    const idealPreviewH = Math.ceil(targetPreviewArea / previewW);
-    previewH = Math.max(
-      Math.max(listLines.length, 8),
-      Math.min(idealPreviewH, termH - OVERLAY_H_MARGIN, OVERLAY_MAX_HEIGHT),
-    );
-  }
-  const visualRows = Math.max(listLines.length, previewH);
-  const H = Math.min(visualRows + 2, termH - 2);
-  const offY = Math.max(0, Math.floor((termH - H) / 2));
-  const offX = Math.max(0, Math.floor((termW - wantW) / 2));
-  if (mx < offX || mx >= offX + wantW || my < offY || my >= offY + H) return null;
-
-  const bounds = { x: offX, y: offY, w: wantW, h: H };
-
-  // Preview-pane click → no item, just bounds (drag start refused).
-  const listRightCol = offX + 1 + listW;  // +1 for left border
-  if (mx >= listRightCol) return { bounds, itemIdx: null };
-
-  // List-side hit-test (unchanged from list-only layout).
-  const placedCount = items.filter(it => it.status !== 'hidden').length;
-  const localY = my - offY - 1 /* top border */ - HEADER_ROWS_TOP;
-  if (localY < 0) return { bounds, itemIdx: null };
-  let itemIdx = null;
-  if (localY < placedCount) {
-    itemIdx = localY;
-  } else if (placedCount > 0 && placedCount < items.length) {
-    const hiddenLocalY = localY - placedCount - 2;
-    if (hiddenLocalY >= 0 && hiddenLocalY < items.length - placedCount) {
-      itemIdx = placedCount + hiddenLocalY;
-    }
-  } else if (placedCount === 0) {
-    if (localY < items.length) itemIdx = localY;
-  }
-  return { bounds, itemIdx };
 }
 
 // Overlay-compositor R3 descriptor. zIndex=60 preserves panel-list's
@@ -368,7 +316,13 @@ function registerSelf(compositor) {
     render: (m, newRows, cols) => renderPanelListOverlay(newRows, cols),
     modal: true,
     zIndex: 60,
+    // Free-config owns the mouse outside the list (Release 3): a press anywhere
+    // the chrome band doesn't claim closes the list if it is open, then starts
+    // the layout drag (resize / move — the `free-config` pointer capture). The
+    // backdrop sits BELOW the chrome band (free-config leaves chrome live) and
+    // runs on press only: other gestures were swallowed before and still are.
+    mouse: { backdrop: 'below-chrome', outside: { act: 'free-config-press' }, outsideGestures: ['press'] },
   });
 }
 
-module.exports = { renderPanelListOverlay, hitTest, registerSelf };
+module.exports = { renderPanelListOverlay, registerSelf };

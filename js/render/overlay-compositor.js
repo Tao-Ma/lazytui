@@ -15,7 +15,7 @@
  *     render:   (model, newRows, cols) => void,// mutates newRows
  *     modal:    bool,                          // enforces flat-modal
  *     zIndex:   int,                           // paint order (hi = on top)
- *     mouse:    { outside, backdrop? } | undefined,  // hit-map backdrop policy (below)
+ *     mouse:    { outside, backdrop?, outsideGestures? } | undefined,  // hit-map backdrop policy (below)
  *   }
  *
  * Hit map (docs/mouse-hit-map.md): each overlay's render is bracketed with
@@ -27,9 +27,11 @@
  * outside click realizes that handler, and nothing beneath it in z can be hit.
  * By default it sits in the overlay's band, above all pane chrome; a descriptor
  * with `mouse.backdrop: 'below-chrome'` (an in-grid popup that leaves chrome
- * live — jobs, pane-menu, which-key) puts it at z 35 instead, under the chrome
- * band and marked `invisible` for the stale-frame rule. No `mouse` → no
- * backdrop (misses fall through to the legacy cascade).
+ * live — jobs, pane-menu, which-key, and free-config's panel-list) puts it at
+ * z 35 instead, under the chrome band and marked `invisible` for the
+ * stale-frame rule. `mouse.outsideGestures` narrows which gestures run the
+ * policy (default press / right / middle; the rest are swallowed) — free-config
+ * starts a layout press on `press` only. No `mouse` → no backdrop.
  *
  * Pure for tests: `activeOverlayIds(model)` reports the ordered id
  * list this frame would paint, without doing any rendering. `_reset()`
@@ -113,10 +115,11 @@ const { viewportDims, HIT_Z } = require('../leaves/render/draw');
 // otherwise the box moved/shrank between the clicks (or a popup opened in
 // between) and the second click must not cancel what the user never aimed at
 // (review C4).
-const _OUTSIDE_GESTURES = new Set(['press', 'right', 'middle']);
-function _backdrop(outside, cols, rows) {
+const _OUTSIDE_GESTURES = Object.freeze(['press', 'right', 'middle']);
+function _backdrop(outside, cols, rows, gestures) {
+  const take = new Set(Array.isArray(gestures) ? gestures : _OUTSIDE_GESTURES);
   const on = {};
-  for (const g of hitMap.DISCRETE_GESTURES) on[g] = _OUTSIDE_GESTURES.has(g) ? outside : 'swallow';
+  for (const g of hitMap.DISCRETE_GESTURES) on[g] = take.has(g) ? outside : 'swallow';
   return { id: 'backdrop', rect: { x: 0, y: 0, w: cols, h: rows }, opaque: true, on };
 }
 
@@ -137,7 +140,7 @@ function paintActive(model, newRows, cols) {
       // (painted separately) — sizing by it left the footer outside every
       // backdrop, so a click there slipped past the popup's outside policy.
       if (outside != null) {
-        const bd = _backdrop(outside, cols, Math.max(newRows.length, viewportDims().rows));
+        const bd = _backdrop(outside, cols, Math.max(newRows.length, viewportDims().rows), d.mouse.outsideGestures);
         // An in-grid overlay that leaves pane chrome live (jobs / pane-menu /
         // which-key — modes.js suppressChrome:false) puts its backdrop BELOW the
         // chrome band (z 35 < 40), so [_]/[≡]/border controls/✗ cancel stay

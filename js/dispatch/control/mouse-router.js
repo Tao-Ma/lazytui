@@ -20,10 +20,6 @@
  *                      the press starts a drag; motion / release then go to
  *                      that controller wherever the pointer is.
  *   'swallow'          consume, no-op.
- *   'legacy'           the region owns these cells, but the legacy cascade
- *                      realizes the gesture (route returns false) — an overlay
- *                      whose clicks have not moved onto the hit map yet
- *                      (panel-list, until Release 3's pointer capture).
  *   [h1, h2, …]        realize each in order (row double-click = nav + return).
  *
  * Scope: DISCRETE gestures (press / double / right / middle / wheel) resolve
@@ -70,9 +66,11 @@ const intent = require('./intent');
 const acts = require('./mouse-acts');
 const capture = require('./pointer-capture');
 const eventLog = require('../../io/event-log');
-// The pane-body acts + the text-select / graph-zoom controllers register
-// themselves on load (Release 3) — loaded here so every router has them.
+// The pane-body acts + the text-select / graph-zoom controllers, and the
+// free-config ones, register themselves on load (Release 3) — loaded here so
+// every router has them.
 require('./pane-mouse');
+require('./free-config-capture');
 
 const DISCRETE = new Set(hitMap.DISCRETE_GESTURES);
 
@@ -203,7 +201,6 @@ function route(kind, mx, my, model) {
     hit = hitMap.resolve(mx, my, kind);
   }
   if (!hit) return false;
-  if (hit.handler === 'legacy') return false;   // owned here, realized by the legacy cascade
   if (moved(hit)) return true;                  // its pane switched tabs → swallow
   if (kind === 'press') _lastPress = { mx, my, owner: hit.region.owner, id: hit.region.id, repeat: !!hit.region.repeat };
   _realizeAndPaint(hit, kind, mx, my);

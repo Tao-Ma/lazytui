@@ -58,71 +58,15 @@ const { cleanup } = require('../runtime/cleanup');
 // `isChainActive(model.modes) return;` guard catches the event so it
 // doesn't leak into normal-mode click/wheel routing.
 
-/** free-config — owns the entire mouse pipeline. Routes pool-drag /
- *  tab-drag / tab-bar press / panel-list overlay / free-config drag,
- *  each via dispatchMsg into the layout slice. Always consumes (the
- *  mode owns the mouse), so non-press/motion/release just short-circuit
- *  to true. */
-function _mouseHandleFreeConfigMode(kind, mx, my, model) {
-  const slice = getInstanceSlice('layout');
-  const drag = slice && slice.freeConfig && slice.freeConfig.drag;
-  const isPoolDrag = drag && (drag.kind === 'pool-armed' || drag.kind === 'pool-dragging');
-
-  if (isPoolDrag) {
-    if (kind === 'motion')       dispatchMsg(wrap('layout', { type: 'pool_drag_motion', mx, my, cols: cols() }));
-    else if (kind === 'release') dispatchMsg(wrap('layout', { type: 'pool_drag_release' }));
-    render();
-    return true;
-  }
-
-  // (U2f — the flat content-tab-strip press/drag path retired: content is
-  // position-tabs now, so free-config tab-reorder is the position-tab drag, not
-  // a flat viewer strip. The viewer.tabBoundsFor hit-test + tab_drag_* dispatch
-  // are gone.)
-
-  if (kind === 'press' && slice && slice.panelList && slice.panelList.open) {
-    const { hitTest } = require('../../overlay/panel-list');
-    const mpool = require('../../leaves/wm/pool');
-    const hit = hitTest(mx, my);
-    if (hit) {
-      let cursor = slice.panelList.cursor;
-      if (hit.itemIdx !== null) cursor = hit.itemIdx;
-      const items = mpool.panelListItems(slice.arrange);
-      const item = items[cursor];
-      if (item && item.status !== 'essential') {
-        if (hit.itemIdx !== null && hit.itemIdx !== slice.panelList.cursor) {
-          dispatchMsg(wrap('layout', { type: 'panel_list_open', cursor }));
-        }
-        dispatchMsg(wrap('layout', { type: 'pool_drag_start', id: item.id, mx, my }));
-        render();
-        return true;
-      }
-      // Header/footer / essential row — swallow without dispatch.
-      // No state change → no render needed (mirrors prior bare
-      // `return;` here). Returns true so dispatcher stops the cascade.
-      return true;
-    }
-    // Click outside overlay: close it, then fall through to free-config drag.
-    dispatchMsg(wrap('layout', { type: 'panel_list_close' }));
-  }
-
-  // Motion without an in-flight drag is a no-op in the leaf — skip
-  // dispatch AND render entirely (P5.10). Press / release always fire.
-  if (kind === 'motion' && !drag) return true;
-  if (kind === 'press')        dispatchMsg(wrap('layout', { type: 'free_config_mouse_press',  mx, my, cols: cols() }));
-  else if (kind === 'motion')  dispatchMsg(wrap('layout', { type: 'free_config_mouse_motion', mx, my, cols: cols() }));
-  else if (kind === 'release') dispatchMsg(wrap('layout', { type: 'free_config_mouse_release' }));
-  render();
-  return true;
-}
+// (free-config's handler retired — Release 3: the panel-list descriptor's
+// below-chrome backdrop starts the `free-config` pointer capture and its item
+// rows the `pool-drag` one; see ./free-config-capture.)
 
 // (menuOpen's handler retired — the menu resolves on the hit map now,
 // docs/mouse-hit-map.md Release 1; the router runs before this registry.)
 // (agentMode's wheel pass-through retired too — Release 3: under agentMode the
 // pane bodies publish their wheel handlers (paint's wheelLive), clicks none.)
-const _modeMouseHandlers = {
-  freeConfigMode:  _mouseHandleFreeConfigMode,
-};
+const _modeMouseHandlers = {};
 
 // Mouse mode precedence — DERIVED from the keyboard chain (CHAIN_MODES,
 // the single source of mode ordering in `./modes`), filtered to the
