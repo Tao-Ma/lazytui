@@ -10,7 +10,7 @@
  *     with blank-of-width filling any gaps. Output is exactly
  *     `rows` entries, each `cols` cells wide (visibleLen).
  *
- *   paintFrame(prevRows, newRows, force) → { ansi, didFull }
+ *   paintFrame(prevRows, newRows, force) → { ansi, didFull, wrote }
  *     Row-level diff between prevRows and newRows. Returns the
  *     ANSI bytes the caller should write to stdout + a flag for
  *     whether the entire screen was repainted (caller uses to
@@ -115,10 +115,14 @@ function composeRows(rects, cols, rows) {
  * for the changed rows. When `force` is true OR the row count
  * changed, emit a full-screen clear + repaint.
  *
- * Returns `{ ansi: string, didFull: boolean }`. Caller writes ansi
- * to stdout. `didFull` lets the caller invalidate any sibling
- * diff caches (today's terminal-overlay prevFrame). Pure — no
- * stdout side-effect, no module-local mutation.
+ * Returns `{ ansi: string, didFull: boolean, wrote: Map }`. Caller
+ * writes ansi to stdout. `didFull` lets the caller invalidate any
+ * sibling diff caches (today's terminal-overlay prevFrame); on an
+ * incremental frame `wrote` says which cells it wrote — row →
+ * `[[c0, c1), …]` — so a sibling that paints outside this diff (the
+ * terminal surfaces) repaints exactly the cells the frame wrote over
+ * (a whole-row write records `[0, Infinity)`). Pure — no stdout
+ * side-effect, no module-local mutation.
  */
 // `opts` (optional): `{ mode: 'line'|'cell', hlOn?, hlOff? }` — replay change
 // highlighting. Only the INCREMENTAL branch decorates: on a full repaint every
@@ -129,6 +133,7 @@ function paintFrame(prevRows, newRows, force, opts) {
   const n = newRows.length;
   let ansi = '';
   let didFull = false;
+  const wrote = new Map();
   const hl = opts && opts.mode && opts.mode !== 'off' ? opts : null;
   if (force || prevRows.length !== n) {
     // Set the themed screen colours BEFORE the erase so `\x1b[2J` clears to the
@@ -156,7 +161,9 @@ function paintFrame(prevRows, newRows, force, opts) {
           // A2 — cell-granular: emit only changed cells, each carrying its own
           // MoveTo + trailing RESET (no row-level \x1b[..;1H or \x1b[K — the row
           // is fixed-width so cells overwrite in place).
-          ansi += cellGrid.diffRowToAnsi(prevRows[i], newRows[i], i);
+          const spans = [];
+          ansi += cellGrid.diffRowToAnsi(prevRows[i], newRows[i], i, spans);
+          if (spans.length) wrote.set(i, spans);
         } else {
           const body = hl
             ? cellDiff.highlightRow(prevRows[i], newRows[i], hl.mode, hl.hlOn, hl.hlOff)
@@ -165,11 +172,12 @@ function paintFrame(prevRows, newRows, force, opts) {
           // place, so EL is redundant here too — and erases the last cell on
           // last-column-flag terminals (see the full-repaint branch above).
           ansi += `\x1b[${i + 1};1H` + body + RESET;
+          wrote.set(i, [[0, Infinity]]);
         }
       }
     }
   }
-  return { ansi, didFull };
+  return { ansi, didFull, wrote };
 }
 
 module.exports = { composeRows, paintFrame, visibleLen };

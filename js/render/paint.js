@@ -677,15 +677,17 @@ function renderFull(model, arrangeOverride) {
 // per frame, extracted so `render()` can splice migrated overlays into
 // `newRows` (overlay-compositor Release 2) between the view-mode compose
 // and the diff emit. A COLS or row-count change forces full the same way
-// the per-mode tail did before.
+// the per-mode tail did before. Returns `{ didFull, wrote }` — paintFrame's
+// record of what it wrote, which the terminal surfaces need (they paint
+// outside this diff; see renderTerminalOverlay).
 function _paintMainFrame(newRows, COLS) {
   if (COLS !== _frame.prevCols || newRows.length !== _frame.prevRows.length) _frame.forceFull = true;
   _frame.prevCols = COLS;
-  const { ansi, didFull } = painter.paintFrame(_frame.prevRows, newRows, _frame.forceFull, _frame.hl);
+  const { ansi, didFull, wrote } = painter.paintFrame(_frame.prevRows, newRows, _frame.forceFull, _frame.hl);
   if (didFull) _frame.forceFull = false;
   if (ansi) _emit(ansi);
   _frame.prevRows = newRows;
-  return didFull;
+  return { didFull, wrote };
 }
 
 
@@ -696,11 +698,13 @@ function _paintMainFrame(newRows, COLS) {
 // Forcing a full repaint for such a session replaces the old single
 // `_frame.lastOverlayId` "the one terminal switched" force, generalized to N.
 let _paintedOverlayIds = new Set();
-// The screen rows (0-based, half-open) each painted surface's interior covered
-// on its LAST paint — the counterpart bookkeeping for the VANISH direction
-// (render()'s reclaim check invalidates exactly these rows when a surface
-// stops painting). Kept here, not on the session, because a closed tab's
-// session is already destroyed by the time the reclaiming frame renders.
+// The screen cells (0-based, half-open rows [top, bottom) × columns
+// [left, right)) each painted surface's interior covered on its LAST paint —
+// the counterpart bookkeeping for the VANISH direction (render()'s reclaim
+// check invalidates exactly these rows when a surface stops painting), and the
+// columns render()'s coverage check watches. Kept here, not on the session,
+// because a closed tab's session is already destroyed by the time the
+// reclaiming frame renders.
 const _overlayLastRows = new Map();
 // The overlay coverage of the frame ON SCREEN — `newRows.covered` from the last
 // render() (row → [[x0, x1), …], recorded by row-compositor.compositeRow for
@@ -709,9 +713,23 @@ const _overlayLastRows = new Map();
 // popups: on render()'s pass and on the PTY fast path between renders (the popup
 // from the last frame is still on screen).
 let _covered = null;
-function _spanSig(cov, y) {
+// The coverage of screen row `y` inside columns [left, right) — a terminal
+// interior's — as a comparable string. A popup beside a terminal (same rows,
+// other columns) does not touch it.
+function _spanSig(cov, y, left, right) {
   const spans = cov && cov.get(y);
-  return spans ? spans.join(';') : '';
+  if (!spans) return '';
+  let sig = '';
+  for (const [a, b] of spans) {
+    const a1 = Math.max(a, left), b1 = Math.min(b, right);
+    if (a1 < b1) sig += `${a1},${b1};`;
+  }
+  return sig;
+}
+// Does any [c0, c1) run in `runs` overlap columns [left, right)?
+function _overlaps(runs, left, right) {
+  if (runs) for (const [a, b] of runs) if (a < right && b > left) return true;
+  return false;
 }
 
 // #D6 — model is threaded in (no `= getModel()` default), same as render():
@@ -722,7 +740,14 @@ function _spanSig(cov, y) {
 // `forceAll` — the caller (render(), after the main paint cleared the screen)
 // requests a full repaint of every overlay this frame; the debounced fast-path
 // (PTY onData → scheduleOverlay) omits it, so it stays a targeted diff.
-function renderTerminalOverlay(model, arrangeOverride, forceAll) {
+// `wrote` — render() passes what its frame diff just wrote (row → [[c0, c1), …],
+// painter.paintFrame): a grid row whose interior cells the frame wrote over is
+// repainted whatever its cache says. The frame writes the pane's BLANK interior
+// there whenever its record of a row was dropped — a popup's coverage changing
+// (below in render()), a sibling surface's vanish reclaim, an `invalidate` from
+// elsewhere, a highlighted replay frame that rewrites whole rows — and the
+// row's cache key can't see any of those.
+function renderTerminalOverlay(model, arrangeOverride, forceAll, wrote) {
   const surfaces = visibleTerminalSurfaces(model, arrangeOverride);
   const nowPainted = new Set();
   let out = '';
@@ -745,7 +770,7 @@ function renderTerminalOverlay(model, arrangeOverride, forceAll) {
     // Interior rows this surface writes (incl. the exit prompt on the last
     // inner row and the scrollback tag on the first) — the vanish-reclaim
     // range. The border/strip rows stay main-pass-owned.
-    _overlayLastRows.set(id, { top: bounds.y + 1, bottom: bounds.y + 1 + innerH });
+    _overlayLastRows.set(id, { top: bounds.y + 1, bottom: bounds.y + 1 + innerH, left: bounds.x + 1, right: bounds.x + 1 + innerW });
 
     // Per-session force-full triggers (replacing the old _frame singletons):
     //  - appeared: this session was not painted last pass (its region may be
@@ -814,7 +839,8 @@ function renderTerminalOverlay(model, arrangeOverride, forceAll) {
       let text = '';
       for (const r of rr) text += sgrRun(r.sgr) + r.text;
       const key = spans ? `${text}\0${spans.join(';')}` : text;
-      if (!force && session.prevFrame[row] === key) continue;
+      const overwritten = wrote && _overlaps(wrote.get(y), x0, x0 + innerW);
+      if (!force && !overwritten && session.prevFrame[row] === key) continue;
       session.prevFrame[row] = key;
       if (!spans) { out += `\x1b[${y + 1};${x0 + 1}H${text}${RESET}`; continue; }
       for (const [a, b] of spans) {
@@ -1031,24 +1057,26 @@ function render(model) {
   // is blank in the same style (padding, an empty row) would be skipped and the
   // grid would show through the popup. Same reconciliation as the vanish reclaim
   // above: invalidate exactly those rows, so this frame's diff rewrites them;
-  // the overlay pass then redraws the grid in their uncovered spans (its row
-  // key carries the spans, so it changed too).
+  // the overlay pass then redraws the grid in their uncovered spans (the frame
+  // reports it wrote over them). Only coverage INSIDE a surface's columns
+  // counts: elsewhere on the row prevRows is true, and a popup beside a
+  // terminal has nothing to reconcile.
   const covered = newRows.covered || null;
   if ((covered || _covered) && _overlayLastRows.size) {
-    for (const { top, bottom } of _overlayLastRows.values()) {
+    for (const { top, bottom, left, right } of _overlayLastRows.values()) {
       for (let y = top; y < bottom; y++) {
-        if (_spanSig(covered, y) !== _spanSig(_covered, y)) invalidateRows(y, y + 1);
+        if (_spanSig(covered, y, left, right) !== _spanSig(_covered, y, left, right)) invalidateRows(y, y + 1);
       }
     }
   }
   _covered = covered;
-  const mainDidFull = _paintMainFrame(newRows, COLS);
+  const { didFull: mainDidFull, wrote } = _paintMainFrame(newRows, COLS);
   // Only force the terminal-overlay repaint when main paint actually
   // cleared the screen (resize, overlay-close, first frame). In the steady
   // state main paint is diff-based and leaves the PTY region untouched, so
   // each surface's own per-session diff cache is enough. The debounced
   // fast-path (PTY onData → scheduleOverlay) omits forceAll → targeted diff.
-  renderTerminalOverlay(model, previewArrange, mainDidFull);
+  renderTerminalOverlay(model, previewArrange, mainDidFull, wrote);
   // blessed-exceptions Phase A — render produces NO slice writes: `innerH`
   // is computed in the post-dispatch finalizer (A.1), `paneBounds` is a pure
   // derived selector (A.2), and the former `tabBounds` render-write is gone

@@ -182,8 +182,13 @@ function rowToCells(ansi) {
  * `\x1b[rowIdx+1;col+1H`). Returns '' when the rows render identically (rare:
  * the caller only invokes this when the markup strings differ, but a difference
  * confined to trailing SGR yields no visible-cell change).
+ *
+ * `wrote` (optional array): receives each run of columns this diff writes, as
+ * half-open `[c0, c1)` pairs — so a caller that paints parts of the screen
+ * OUTSIDE this diff (the terminal surfaces) can tell which of its cells the
+ * frame just wrote over.
  */
-function diffRowToAnsi(prevMarkup, curMarkup, rowIdx) {
+function diffRowToAnsi(prevMarkup, curMarkup, rowIdx, wrote) {
   const a = rowToCells(richToAnsi(prevMarkup));
   const b = rowToCells(richToAnsi(curMarkup));
   const cols = Math.max(a.length, b.length);
@@ -210,10 +215,14 @@ function diffRowToAnsi(prevMarkup, curMarkup, rowIdx) {
     if (!changed[c]) continue;
     const cell = b[c];
     if (!cell || cell.cont) continue;            // emit only at glyph starts
-    if (c !== cursor) { out += `\x1b[${rowIdx + 1};${c + 1}H`; cursor = c; }
+    if (c !== cursor) {
+      out += `\x1b[${rowIdx + 1};${c + 1}H`; cursor = c;
+      if (wrote) wrote.push([c, c]);
+    }
     if (cell.sgr !== lastSgr) { out += RESET + cell.sgr; lastSgr = cell.sgr; }
     out += cell.g;
     cursor += cell.w;
+    if (wrote) wrote[wrote.length - 1][1] = cursor;
   }
   if (out) out += RESET;     // close the row so style can't bleed into later writes
   return out;

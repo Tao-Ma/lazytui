@@ -172,9 +172,13 @@ greppable.
                                    natural row delta — no sig trackers,
                                    no per-overlay force_full_repaint;
                                    cell-grid.js; LAZYTUI_CELL_DIFF=0 =
-                                   whole-row diff)
-     5. renderTerminalOverlay     (PTY buffer per-row diff — out-of-
-                                   band surface, bypasses newRows)
+                                   whole-row diff; returns `wrote`, the
+                                   cells it wrote)
+     5. renderTerminalOverlay     (PTY buffer per-row diff — painted
+                                   outside the frame diff, under the
+                                   popups' coverage `newRows.covered`;
+                                   repaints rows the frame `wrote` over
+                                   — docs/TERMINAL.md §Rendering)
      6. renderFooter              (footer row writes direct)
         │
         ▼

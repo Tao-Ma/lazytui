@@ -269,8 +269,11 @@ module.exports = {
 buffer (`newRows.covered`: row → `[[x0, x1), …]`, non-enumerable). The
 terminal surfaces paint AFTER the frame and outside its cell-diff, so they read
 it to stay under the popups, and render() invalidates the frame rows whose
-coverage changed over a grid (the diff's record of those cells is the blank
-interior, not the grid on screen). Closing a popup over a terminal pane had left
+coverage changed over a grid's columns (the diff's record of those cells is the
+blank interior, not the grid on screen). An invalidated row is rewritten whole,
+over any terminal beside the popup too, so `painter.paintFrame` reports the
+cells it wrote (`wrote`) and every terminal surface repaints the rows the frame
+wrote over. Closing a popup over a terminal pane had left
 the rows it covered blank since end-of-Release-2 cleanup `6d1e7f53` (v0.6.51)
 removed the overlay-close whole-screen repaint — the one consumer outside the
 diff that the cleanup's "cell-diff clears the residue" argument did not cover.

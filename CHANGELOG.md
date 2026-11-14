@@ -76,7 +76,10 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   (since 0.6.51). While a popup was open, the program's output also painted
   over it, and blank rows of the popup could show the terminal through them.
   The popup now stays on top while the program keeps drawing around it, and
-  the pane is repainted when the popup closes. (Keys on a focused terminal
+  the pane is repainted when the popup closes. A terminal pane beside the
+  popup's pane, or beside a terminal pane that is minimized or switched to
+  another tab, keeps its screen too (its rows sharing the other pane's went
+  blank). (Keys on a focused terminal
   pane go to lazytui until you press Enter — so `p` opens the action palette;
   after Enter they go to the program until `Ctrl+\`.)
 - **Leader bindings on named keys fire from the keyboard.** A `keys:` binding

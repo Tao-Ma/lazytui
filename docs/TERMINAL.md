@@ -148,11 +148,23 @@ composites into the frame through `row-compositor.compositeRow`, which records
 the columns each one covers (`newRows.covered`). render() keeps that coverage
 (`_covered`, also used by the PTY fast path between frames), and the grid is
 drawn only in each row's uncovered spans (`leaves/render/occlusion`), with the
-spans in the row-cache key. Where a row's coverage changes (a popup opens,
-moves, closes) render() also invalidates that frame row before the diff: the
-diff's record of the interior is the blank pane body, not the grid on screen,
-so a blank popup cell would otherwise be skipped and the grid would show
-through. The scrollback tag and the exit prompt are spliced into the grid rows
+spans in the row-cache key. Where a row's coverage changes INSIDE the grid's
+columns (a popup over it opens, moves, closes) render() also invalidates that
+frame row before the diff: the diff's record of the interior is the blank pane
+body, not the grid on screen, so a blank popup cell would otherwise be skipped
+and the grid would show through. A popup beside the pane (same rows, other
+columns) changes nothing there and invalidates nothing.
+
+**The frame says what it wrote over.** An invalidated row is rewritten WHOLE by
+the frame's diff — across every terminal interior on that row, with the blank
+pane body. That happens on more than coverage: the vanish reclaim of a surface
+that stopped painting (minimized, its slot switched tab, its tab closed), an
+`invalidate` from elsewhere, a replay frame with change highlighting (which
+rewrites each changed row). The row's cache key sees none of them, so
+`painter.paintFrame` returns `wrote` (row → the `[x0, x1)` column runs it
+wrote) and the terminal painter repaints every grid row whose interior the frame
+wrote over — a terminal beside the one that vanished, or beside the popup's
+pane, keeps its grid. The scrollback tag and the exit prompt are spliced into the grid rows
 (`spliceRuns`), so they are cached and clipped like the grid.
 Render is **read-only** for the PTY (the spawn/resize moved to the finalizer);
 it positions the overlay against the focused viewer's committed (or, mid-drag,
