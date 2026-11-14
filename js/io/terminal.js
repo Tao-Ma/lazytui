@@ -180,27 +180,49 @@ function sessionSize(id) {
 // re-feeding the recorded byte stream (`feedReplay`) or restoring a checkpoint
 // snapshot (`restoreReplaySession`), per docs/foreign-components.md §Replay.
 
-/** Replay: create (or return) a PTY-less session backed by an emulator screen. */
-function ensureReplaySession(id, cols, rows) {
-  if (sessions[id]) return sessions[id];
-  sessions[id] = { pty: null, screen: emu.createScreen(cols, rows), cmd: null, cwd: null,
+// A replayed stream only ever reaches a PTY-less session. Session ids are
+// deterministic (the pane's id), so a `:record-load` from the same config
+// collides with the live sessions; the first replay entry for such an id
+// REPLACES the live session (its program is stopped — the documented
+// `:record-load` caveat: the pane comes back frozen at its live grid). Fed into
+// the live session instead, the recorded bytes mixed with the live output, and
+// its emulator answered the RECORDED queries (DA, cursor position, OSC 10/11)
+// into the LIVE program's stdin; a recorded resize resized the live PTY.
+function _replaySession(id, cols, rows) {
+  const s = sessions[id];
+  if (s && s.replay) return s;
+  const size = s ? emu.screenSize(s.screen) : null;
+  if (s) destroySession(id);
+  sessions[id] = { pty: null, screen: emu.createScreen(cols || size.cols, rows || size.rows), cmd: null, cwd: null,
     exited: false, exitCode: null, _onDataSub: null, replay: true };
   return sessions[id];
 }
 
-/** Replay: write a recorded PTY output chunk to the session's screen. The
- *  optional `cb` fires after the emulator finishes parsing (tests flush with it). */
+/** Replay: create (or return) a PTY-less session backed by an emulator screen
+ *  — replacing a live one with the same id. */
+function ensureReplaySession(id, cols, rows) {
+  return _replaySession(id, cols, rows);
+}
+
+/** Replay: write a recorded PTY output chunk to the session's screen (a live
+ *  session with that id is replaced first). The optional `cb` fires after the
+ *  emulator finishes parsing (tests flush with it). */
 function feedReplay(id, data, cb) {
-  const s = sessions[id];
-  if (s) emu.writeScreen(s.screen, data, cb);
+  if (sessions[id]) emu.writeScreen(_replaySession(id).screen, data, cb);
   else if (cb) cb();
+}
+
+/** Replay: a recorded resize (a live session with that id is replaced first). */
+function resizeReplaySession(id, cols, rows) {
+  if (sessions[id]) { _replaySession(id); resizeSession(id, cols, rows); }
 }
 
 /** Replay: mark a session exited. The exit FAN-OUT is replayed from the Msg
  *  log, so this only flips local state — it does NOT invoke the exit handler. */
 function markReplayExit(id, code) {
-  const s = sessions[id];
-  if (s) { s.exited = true; s.exitCode = code; }
+  if (!sessions[id]) return;
+  const s = _replaySession(id);
+  s.exited = true; s.exitCode = code;
 }
 
 /** Checkpoint: materialize a session's screen (styled grid as SGR lines + geometry + scroll). */
@@ -232,8 +254,8 @@ function restoreReplaySession(id, snap, cb) {
 /** Replay teardown (`:record-load` exit): restore the sessions that were live
  *  when replay began — `grids` is the `snapshotAllSessions()` map captured then.
  *  Sessions ids deterministically collide with live ones (`group_key`), so the
- *  fold writes replay bytes into live screens; without this, exit would leave
- *  those panes showing replay output. Sessions present now but NOT in the
+ *  fold replaced those sessions with replay ones (_replaySession); without this,
+ *  exit would leave those panes showing replay output. Sessions present now but NOT in the
  *  snapshot were spawned during replay → destroyed. Each snapshotted screen is
  *  rebuilt PTY-less (a `:record-load` over live terminals freezes them at the
  *  live grid rather than resurrecting the PTY — see docs/v0.6.6-replay.md). */
@@ -357,7 +379,7 @@ module.exports = {
   sessionViewportRows, sessionCursor, sessionSize,
   resizeSession, destroySession, destroyAll,
   restartSession, isSessionDead,
-  ensureReplaySession, feedReplay, markReplayExit,
+  ensureReplaySession, feedReplay, resizeReplaySession, markReplayExit,
   snapshotSession, snapshotAllSessions, restoreReplaySession, restoreLiveSessions,
   setExitHandler, setRenderHook, setJobsHooks, setSessionRecorder,
   // v0.6.5 §5(a) — scrollback effects.

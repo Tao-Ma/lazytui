@@ -114,6 +114,57 @@ const SID = 'g1_shell';   // a deterministic group_key id — the colliding case
     it('the session is now PTY-less (frozen at the live grid)', () => assert(restored && restored.pty === null, 'frozen replay session'));
   });
 
+  // ---- [5] a replay never reaches a LIVE program (pre-release review T1-4) ----
+  // The live sessions above are PTY-less. With a PTY-backed one, the replayed
+  // stream used to be fed INTO it: its emulator answered the RECORDED queries
+  // into the live program's stdin (the reply wiring of 19ebbf2b), and a
+  // recorded resize resized the live PTY. The first replay entry for a live id
+  // now replaces the session (the documented `:record-load` caveat).
+  if (terminal.ptyAvailable()) {
+    const os = require('os');
+    const replay = require('../dispatch/runtime/replay');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lazytui-replay-live-'));
+    const child = path.join(dir, 'child.js');
+    const stdinLog = (n) => path.join(dir, `stdin-${n}`);
+    fs.writeFileSync(child, `process.stdin.setRawMode(true); process.stdout.write('READY\\n');
+process.stdin.on('data', d => require('fs').appendFileSync(process.argv[2], d.toString('latin1')));`);
+    const live = {};
+    for (const n of ['a', 'b']) {
+      const id = `g1_live_${n}`;
+      terminal.ensureSession(id, `${process.execPath} ${child} ${stdinLog(n)}`, 80, 24, dir);
+      live[n] = { id, resized: false };
+      const p = terminal.getSession(id).pty;
+      const resize = p.resize.bind(p);
+      p.resize = (...args) => { live[n].resized = true; return resize(...args); };
+    }
+    for (let i = 0; i < 150; i++) {
+      if (['a', 'b'].every(n => gridText(live[n].id).includes('READY'))) break;
+      await new Promise(res => setTimeout(res, 30));
+    }
+    const queries = 'hello\x1b[c\x1b[>c\x1b[6n\x1b]11;?\x07';
+    replay.replayTo([
+      { seq: 1, kind: 'term', ev: 'spawn', id: live.a.id, cols: 80, rows: 24 },   // a: spawned, then fed
+      { seq: 2, kind: 'term', ev: 'out', id: live.a.id, d: queries },
+      { seq: 3, kind: 'term', ev: 'resize', id: live.b.id, cols: 70, rows: 20 },  // b: no spawn in the log
+      { seq: 4, kind: 'term', ev: 'out', id: live.b.id, d: queries },
+    ], Infinity, { useCheckpoints: true });
+    await new Promise(res => setTimeout(res, 400));
+    const read = (n) => { try { return fs.readFileSync(stdinLog(n), 'latin1'); } catch { return ''; } };
+    describe('[5] a replay never reaches a live program', () => {
+      for (const n of ['a', 'b']) {
+        it(`${live[n].id}: its program read nothing from the replay`, () => eq(read(n), ''));
+        it(`${live[n].id}: the session is the replay's now (PTY-less)`, () => {
+          const s = terminal.getSession(live[n].id);
+          assert(s && s.replay && s.pty === null, 'replaced by a replay session');
+        });
+        it(`${live[n].id}: its live PTY was not resized`, () => eq(live[n].resized, false));
+      }
+      it('the replay still shows the recorded output', () => assert(/hello/.test(gridText(live.b.id)), gridText(live.b.id)));
+    });
+    terminal.destroyAll();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+
   try { fs.unlinkSync(wal); } catch {}
   report();
 })();

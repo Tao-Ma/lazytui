@@ -99,7 +99,7 @@ function _applyEntry(e) {
   } else if (e.kind === 'term') {
     if (e.ev === 'spawn') terminal.ensureReplaySession(e.id, e.cols, e.rows);
     else if (e.ev === 'out') terminal.feedReplay(e.id, e.d);
-    else if (e.ev === 'resize') terminal.resizeSession(e.id, e.cols, e.rows);
+    else if (e.ev === 'resize') terminal.resizeReplaySession(e.id, e.cols, e.rows);
     else if (e.ev === 'exit') terminal.markReplayExit(e.id, e.code);
   }
 }

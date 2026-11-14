@@ -29,7 +29,9 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   query went unanswered: vim picks its mouse encoding from the `ESC [ > c`
   answer, nvim waits on `ESC [ c`, and fzf `--height` reads the cursor
   position. The emulator's replies now reach the program, as a real terminal's
-  would.
+  would. A replay (`:record-load`) never sends answers to a running program:
+  replay replaces a running terminal pane's session when it first reaches it,
+  where it used to feed the recording into the live one.
 - **Mouse clicks in a terminal pane land where you click.** In terminal mode a
   program that turned mouse reporting on (vim, nvim, htop) got the host
   terminal's bytes unchanged: whole-screen coordinates (a click in an nvim pane
