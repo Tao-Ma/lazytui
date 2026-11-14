@@ -1519,7 +1519,6 @@ capture (`dispatch/control/pointer-capture.js`):
 |---|---|
 | `{ key, seq? }` | `dispatch.handleKey(key, seq ?? seqForKey(key))` — the keystroke itself, so every popup Msg a click produces is the one its key handler produces |
 | `{ msg, owner? }` | `applyMsg(msg)` · `dispatchMsg(wrap(owner, msg))` (row picks: `menu_activate{idx}`, `*_nav{to}`, `palette_pick`, `fabric_form_focus`, `fabric_form_choices_pick`) |
-| `{ intent }` | `intent.realize(intent)` (§10.1) |
 | `{ act, …args }` | a named input-time action in `dispatch/control/mouse-acts.js`, computed against CURRENT state: `pane-menu-open` → `focus_set` (viewer) + `pane_menu_open{paneId, cursor, scroll}` (layout); `border-control` → the spec's own `dispatch(action, pane)` → `dispatchMsg(wrap(owner, msg))` (`set_refresh_ms`, `set_sort`, `sort_reverse`, `tree_mode_toggle`, `graph_zoom`, `item_action`, the composite cycler) — after re-checking the control is still shown |
 | `{ act }` (R3) | `pane-press` → `select_cancel` (prior selections) + the `focus` / `select` intents (§10.1) + a capture request; `pane-gesture` → the `mouse:` binding's intent (`activate` / `context` → `menu_open`); `pane-wheel` → the `scroll` intent; `pane-hover` → `wrap('layout', graph_hover)` (coalesced); `free-config-press` → `panel_list_close` (if open) + a capture request; `replay-seek` → `replay-control.seekToFraction` |
 | `{ capture, …args }` | start a pointer capture — controllers: `text-select` (`select_begin` / `select_extend` / `register_push` / `select_cancel`, wrapped to the pane), `graph-zoom` (layout `graph_drag` / `graph_zoom`), `free-config` (layout `free_config_mouse_press/motion/release`), `pool-drag` (layout `panel_list_open{cursor}` + `pool_drag_start/motion/release`) |
@@ -1532,7 +1531,8 @@ a fold marker → `wrap(paneId, tree_toggle{id})`.
 
 Shell-tier like the rest of §10: it reads `getModel()` + the layout slice to
 check the frame stamp (stale frames swallow what they drew; one that drew
-nothing visible there repaints and resolves fresh, a pane body only; the stamp
+nothing visible there repaints and resolves fresh, a pane body or the empty
+screen only; the stamp
 includes the visible pane geometry, free-config's panel list and the replay
 view).
 

@@ -147,7 +147,7 @@ function _chromeContext(model, layoutSlice) {
   };
   return {
     chromeFor: _decor().chromeFor,
-    // The two click gates, decided ONCE per frame here and handed to every pane
+    // The click gates, decided ONCE per frame here and handed to every pane
     // render (opts.chromeLive / opts.bodyLive), so the chrome publisher, text-
     // view's ✗ cancel and table's fold markers can't disagree:
     //   chromeLive — chrome-band clicks ([_]/[X]/[≡], border controls, ✗ cancel):

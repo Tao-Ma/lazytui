@@ -13,9 +13,11 @@
  *
  * An act receives the handler and the event point `{ mx, my, x, y }` (0-based
  * mx/my, 1-based SGR x/y) — a pane body is ONE region, so the row under the
- * pointer is resolved at click time (Release 3). It returns nothing, or a
+ * pointer is resolved at click time (Release 3). It returns nothing, a
  * capture request `{ capture: name, ...args }` that the router hands to
- * ./pointer-capture (a press that starts a drag). Other modules register their
+ * ./pointer-capture (a press that starts a drag), or `false` — nothing changed
+ * (or the act painted itself), so the router skips its paint. A hover act
+ * (`pane-hover`) returns whether it dispatched: truthy = repaint. Other modules register their
  * acts by name (`register`) — the pane-body acts live with the pane mouse code.
  *
  * A target that is gone or no longer clickable is a
@@ -109,7 +111,8 @@ function register(name, fn) {
 }
 
 /** Realize an `{ act, ...args }` handler at event point `ev`. Unknown act →
- *  no-op. Returns the act's capture request, if any. */
+ *  no-op. Returns what the act returned (a capture request, `false` = no
+ *  paint, or — for hover — whether it dispatched). */
 function realize(h, ev) {
   const fn = h && Object.prototype.hasOwnProperty.call(ACTS, h.act) ? ACTS[h.act] : null;
   return fn ? fn(h, ev || {}) : undefined;

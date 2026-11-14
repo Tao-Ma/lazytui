@@ -146,6 +146,13 @@ function _paintOverlays() {
   require('./_helpers/overlay-capture').compositeOverlays(getModel());
 }
 
+// Since mouse hit-map R3 the gate is what PAINT publishes (no pane bodies under
+// a chain mode). This bare harness cannot run the full render(), so the
+// filter / prefix cases below resolve against whatever frame was published
+// last — a STALE one (the mode flag changed the stamp), which swallows the
+// event. They still pin "no leak into focus / scroll / the groups cascade";
+// the paint gate itself is pinned end to end in test-pane-body-mouse.js [1]
+// (raw SGR after a real paint under each mode).
 describe('[4] T13 regression: handleMouse modal gating', () => {
   it('wheel over a panel during filterMode does NOT change focus or scroll', () => {
     setupContentSlot();
@@ -200,7 +207,9 @@ describe('[4] T13 regression: handleMouse modal gating', () => {
   // [1] (_handleWheel direct call). handleMouse's full path also calls
   // render() at the bottom, which pulls in chrome paint + config reads
   // the bare test harness doesn't seed — out of scope for this gate
-  // regression. The gate is proven by [4]'s three "during X mode" cases.
+  // regression. Since mouse hit-map R3 the gate itself (no pane bodies under a
+  // chain mode) is proven end to end in test-pane-body-mouse.js [1]; the cases
+  // above pin only that nothing leaks (see the note on [4]).
 });
 
 report();

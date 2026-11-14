@@ -52,6 +52,14 @@ to TUI modules use `../<module>`; the harness import is `./test-runner`
 input via `handleKey` / `handleMouse` / `applyMsg`, and asserts on
 the model state plus the captured rendered frame.
 
+**Mouse tests paint first.** Every pointer event resolves on the hit map
+the LAST paint published (docs/mouse-hit-map.md) — a click or hover before
+any paint (or after a state change the test hasn't painted) resolves
+against nothing, or a stale frame. Paint, then send raw SGR through
+`input._dispatchToken`: `js/test/_helpers/hit-click.js` (`paint`, `click`,
+`clickRegion`, `screenRows`, …) does both; batched chunks go through
+`input._makeDataHandler` (see `test-mouse-stale-frame.js`).
+
 ```
 node js/scripts/run-smoke.js               # run all
 node js/scripts/run-smoke.js routing       # filter by name substring

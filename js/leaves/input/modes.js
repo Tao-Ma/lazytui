@@ -24,6 +24,9 @@
  *                                   panel hints + footer decorators)
  *   - render/paint chrome publish gate (chromeLive) ← suppressesChromeClicks
  *                                   (terminalMode excepted — its mouse goes to the PTY)
+ *   - render/paint body / empty-screen / wheel publish gates (bodyLive,
+ *                                   wheelLive) ← isChainActive (the pre-R3 T13
+ *                                   mouse gate, expressed at paint)
  *   - panel/hit-map frame stamp  ← chainStamp (the `chain` field of stampOf)
  *   - overlay/hover-tooltip      ← isChainActive || isModal
  *
@@ -124,13 +127,11 @@ function suppressesChromeClicks(md) { return MODES.some(m => m.suppressChrome &&
 
 /** True when ANY modeChain mode is active — i.e. the keyboard side
  *  would route the next key through a modal handler rather than the
- *  framework default. Used by handleMouse to mirror keyboard modal
- *  gating: while a modal claims keys, mouse events should not
- *  cascade into focus changes / selection / scroll that the user
- *  can't see through the overlay. The hit-map router and the freeConfigMode
- *  special-case run BEFORE this gate in handleMouse (popup regions resolve
- *  first; free-config owns the mouse pipeline); terminalMode is non-chain by
- *  design and not covered here. */
+ *  framework default. The mouse mirrors that gating AT PAINT (mouse hit-map
+ *  R3): render/paint publishes no pane bodies / empty-screen region while a
+ *  modal claims keys (bodyLive; agentMode keeps the body wheel — wheelLive), so
+ *  a click can't reach focus / selection / scroll the user can't see through
+ *  the overlay. terminalMode is non-chain by design and not covered here. */
 function isChainActive(md) { return CHAIN_MODES.some(f => md[f]); }
 
 /** A stable string naming the active chain modes (precedence order) — '' when

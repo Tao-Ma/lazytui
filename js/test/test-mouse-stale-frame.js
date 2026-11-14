@@ -125,14 +125,19 @@ describe('[5] Release 3 — pane bodies on the map', () => {
     sm.bootFresh();
     sm.resize(120, 30);
     sm.capture(() => api.dispatchMsg(api.wrap('layout', { type: 'view_set', mode: 'normal' })));
-    sm.capture(() => api.dispatchMsg(api.wrap('layout', { type: 'focus_set', focus: 'pane-groups' })));
+    sm.capture(() => api.dispatchMsg(api.wrap('layout', { type: 'focus_set', focus: 'pane-detail' })));
     hc.paint();
-    const b = geo.visibleBoundsFor(layout(), 'pane-detail');
-    const mx = b.x + 3, my = b.y + b.h - 3;
+    // A point on the groups pane in the normal layout — after `+` (half view)
+    // it may sit on another pane; either way the press must do nothing.
+    const g = geo.visibleBoundsFor(layout(), 'pane-groups');
+    const mx = g.x + 3, my = g.y + 2;
     assert(require('../panel/hit-map').claims(mx, my), 'precondition: the body region is drawn there');
+    const navBefore = JSON.stringify(api.getInstanceSlice('pane-groups').nav);
     chunk('+' + sgr(mx, my));
     eq(layout().viewMode, 'half', 'the key ran (geometry changed → stale)');
-    eq(layout().focus, 'pane-groups', 'the click aimed at the old layout did not focus anything');
+    eq(layout().focus, 'pane-detail', 'the click aimed at the old layout focused nothing');
+    eq(JSON.stringify(api.getInstanceSlice('pane-groups').nav), navBefore, 'nor selected a row');
+    eq(require('../dispatch/control/pointer-capture').held(), null, 'nor armed a drag');
     sm.capture(() => api.dispatchMsg(api.wrap('layout', { type: 'view_set', mode: 'normal' })));
   });
   it('decision A: leaving an in-grid mode (no regions over the panes) + a body click → repaint, the click reaches the pane', () => {

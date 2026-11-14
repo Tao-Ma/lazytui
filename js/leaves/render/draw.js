@@ -510,6 +510,8 @@ const HIT_Z = Object.freeze({ backdrop: 0, box: 1, row: 2, chip: 3 });
  *   lineTargets            handler maps index-aligned with `lines` (null = inert)
  *   lineChips              { [lineIdx]: chips } from leaves/render/hints.formatHints
  *   box                    handler map for the box itself (e.g. wheel → up/down)
+ *   rowW                   row targets cover only the first rowW inner cells (a
+ *                          list column beside a preview — panel-list); default all
  */
 function publishBox({ x, y, w, h, scrollOffset = 0, lines = [],
                       lineTargets = null, lineChips = null, box = null, rowW = null }) {
@@ -629,7 +631,7 @@ function _tabTriggerMarkup(state, focused, fc) {
 /**
  * Box geometry for an overlay popup — the single source renderOverlay paints
  * from AND hands to publishBox for the hit map (renderMenu sizes its scroll
- * window from it too; replay-scrubber's hitTestSeek reads it), so a click
+ * window from it too; replay-scrubber's seek cells read it), so a click
  * never lands on a cell the box didn't paint. Returns 0-based
  * top-left {offX, offY} + {menuW, menuH} (outer dims, borders included).
  *

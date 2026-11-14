@@ -22,11 +22,11 @@ greppable.
         ▼
 ════════════════════════════ DISPATCH ══════════════════════════════
    handleKey / handleMouse      (js/dispatch/control/{dispatch,input}.js)
-        │   handleMouse first asks the HIT-MAP ROUTER (mouse-router.js):
-        │   the topmost region the last paint published under the pointer
+        │   handleMouse IS the HIT-MAP ROUTER call (mouse-router.js): the
+        │   topmost region the last paint published under the pointer
         │   (panel/hit-map; z-ordered, data handlers) — a { key } handler
-        │   re-enters handleKey, so a clicked popup hint IS that keystroke.
-        │   A miss falls through to the legacy mouse cascade below.
+        │   re-enters handleKey, so a clicked popup hint IS that keystroke;
+        │   drags ride one pointer-capture slot. Nothing claimed → dropped.
         │
         ├──── modeChain active? ──yes──→ mode handler ──→ applyMsg
         │     (filter, menu, cmdline,                       │
@@ -222,21 +222,24 @@ keyboard verbs with no pointer analog (`/`, `:`, `y`, `v`, `?`, `+`/`_`,
 text-select drag) sit *outside* the five-intent set and keep their own
 dispatch. See [v0.6.4-input.md](v0.6.4-input.md).
 
-**Hit map (mouse hit-map R1–R2, [mouse-hit-map.md](mouse-hit-map.md)).**
-Ahead of that cascade, `handleMouse` routes discrete gestures (press /
-double / right / middle / wheel) through `mouse-router`: paint publishes
-every clickable region it actually drew into `panel/hit-map` — popups (R1);
-pane chrome, border controls, the slot tab strip, `✗ cancel` and tree fold
-markers (R2); pane bodies follow in R3 — each with DATA handlers: `{ key }`
-(realized through `handleKey`, so a clicked `[y]` is the `y` keystroke),
-`{ msg }`, `{ intent }`, `{ act }` (a named input-time action that computes
-its Msg against current state — border controls, the `[≡]` open),
-`'swallow'`. The topmost region wins (z-order, not source order); a popup's
+**Hit map (mouse hit-map R1–R3, [mouse-hit-map.md](mouse-hit-map.md)).**
+`handleMouse` is the `mouse-router` call: paint publishes every clickable
+region it actually drew into `panel/hit-map` — popups (R1); pane chrome,
+border controls, the slot tab strip, `✗ cancel` and tree fold markers (R2);
+pane bodies, the empty screen, free-config's panel list + backdrop and the
+replay owner (R3) — each with DATA handlers: `{ key }` (realized through
+`handleKey`, so a clicked `[y]` is the `y` keystroke), `{ msg }`, `{ act }`
+(a named input-time action that computes its Msg against current state —
+border controls, the `[≡]` open, the pane-body press / gestures / wheel /
+hover), `{ capture }` (start a drag on the pointer-capture slot — text
+select, graph zoom, free-config, pool drag), `'swallow'`. The topmost region wins (z-order, not source order); a popup's
 backdrop carries its outside-click policy (in-grid popups put it below the
 chrome band). Frames are stamped with what they showed — popup state plus the
 visible pane geometry — so a click batched behind a key never resolves
-against regions the model no longer matches. A miss falls through to the
-legacy cascade (pane bodies, drags, free-config).
+against regions the model no longer matches (one that drew nothing visible
+under the pointer repaints and resolves a pane body fresh). Modal gating is
+what paint publishes: no pane bodies while a chain mode is active. A gesture
+nothing claims is dropped.
 
 **Single-writer per layer is structural.** Only `runtime.update`
 writes the root model; only each Component's own `update` writes its

@@ -20,6 +20,11 @@
  * ellipsis, the cancel block, a fold marker. Non-vacuity: every kind is seen,
  * and some width drops a pane's chrome (so the drop path is exercised).
  *
+ * Release 3 — PANE BODIES (same sweep): exactly one body region per visible
+ * pane, anchored at its painted origin, full width (clipped to the screen),
+ * never taller than the pane nor on the footer row, owned by `pane:<paneId>`;
+ * none for an off-screen pane, none at all under a chain mode (free-config).
+ *
  * Run: node js/test/test-hit-map-agreement.js
  */
 'use strict';

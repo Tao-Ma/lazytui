@@ -49,7 +49,7 @@ applied by the loop's generic fallback (`dispatch/runtime/loop._selectFallback`)
 | Pure geometry (display-col ↔ codepoint, selected text, highlight) + the shared state arms (`reduceSelect`) | `leaves/text/select-core.js` |
 | Generic per-pane state fallback (unclaimed `select_*` → `slice.select`) | `dispatch/runtime/loop.js` `_selectFallback` |
 | Capture each pane's content, apply the highlight, resolve the owner + text | `panel/select-view.js`, hung off the `renderPanel` wrapper in `panel/api.js` |
-| Drive the mouse (press → arm, motion → begin/extend, release → settle) | `dispatch/control/input.js` |
+| Drive the mouse (press → arm, motion → begin/extend, release → settle) | `dispatch/control/pane-mouse.js` — the `pane-press` act arms; the `text-select` pointer-capture controller (`pointer-capture.js`) begins / extends / settles |
 | Enablement (global default + per-pane override) | `panel/select-config.js` |
 
 Every pane already draws its box through `panel/api.js`'s `renderPanel`, so that

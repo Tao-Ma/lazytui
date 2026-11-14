@@ -10,7 +10,6 @@
  *                      list / an outside-click is exactly the key the user could
  *                      have typed (no mouse-only reducer arms, no drift).
  *   { msg, owner? }    applyMsg(msg), or dispatchMsg(wrap(owner, msg)).
- *   { intent }         intent.realize(intent) — the v0.6.4 shared vocabulary.
  *   { act, ...args }   a named input-time action (./mouse-acts) — the Msg is
  *                      computed at click time against current state (border
  *                      controls, the `[≡]` open), after re-checking the target.
@@ -66,7 +65,6 @@ const { seqForKey } = require('../../leaves/render/hints');
 const dispatch = require('./dispatch');
 const loop = require('../runtime/loop');
 const api = require('../../panel/api');
-const intent = require('./intent');
 const acts = require('./mouse-acts');
 const capture = require('./pointer-capture');
 const eventLog = require('../../io/event-log');
@@ -100,7 +98,6 @@ function realizeHandler(h, ctx) {
     else dispatch.applyMsg(h.msg);
     return;
   }
-  if (h.intent) { intent.realize(h.intent); return; }
   if (h.capture) { _startCapture(h, ctx); return; }
   if (h.act) {
     const req = acts.realize(h, ctx && ctx.ev);
@@ -233,7 +230,8 @@ function _hover(mx, my) {
   return true;
 }
 
-/** Test seam — forget the press→double continuation and any held capture. */
-function _reset() { _lastPress = null; capture._reset(); }
+/** Test seam — forget the press→double continuation, any held capture and the
+ *  hover coalescing record (smoke's bootFresh calls it between scenarios). */
+function _reset() { _lastPress = null; capture._reset(); require('./pane-mouse')._resetHover(); }
 
 module.exports = { route, realizeHandler, _reset };

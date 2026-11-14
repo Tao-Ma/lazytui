@@ -142,14 +142,16 @@ function paintActive(model, newRows, cols) {
       if (outside != null) {
         const bd = _backdrop(outside, cols, Math.max(newRows.length, viewportDims().rows), d.mouse.outsideGestures);
         // An in-grid overlay that leaves pane chrome live (jobs / pane-menu /
-        // which-key — modes.js suppressChrome:false) puts its backdrop BELOW the
+        // which-key / free-config's panel-list — modes.js suppressChrome:false)
+        // puts its backdrop BELOW the
         // chrome band (z 35 < 40), so [_]/[≡]/border controls/✗ cancel stay
         // clickable while an outside click elsewhere runs the policy. Every other
         // backdrop sits in the overlay's own band, above all pane chrome.
         // It is invisible — the panes under it look (and their chrome is) live —
         // so it is not "drawn" for the stale-frame rule (`invisible`): a body
-        // click batched behind the key that closed the popup goes to the legacy
-        // cascade, as it did before R2, instead of being swallowed.
+        // click batched behind the key that closed the popup repaints and
+        // resolves fresh (mouse-router, R3 decision A) — it reaches the pane, as
+        // before R2, instead of being swallowed.
         if (d.mouse.backdrop === 'below-chrome') hitMap.publish({ ...bd, owner: d.id, z: hitMap.BANDS.BELOW_CHROME, invisible: true });
         else hitMap.publishOwned(bd, HIT_Z.backdrop);
       }

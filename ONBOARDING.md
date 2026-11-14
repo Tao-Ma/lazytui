@@ -103,10 +103,11 @@ The release also ships prebuilt per-platform `lazytui` CLI binaries. Full recipe
   push cascades into the reducer (not the handler). See `docs/PRINCIPLES.md` §12.
 - **Paint↔hit-test agreement** — a click resolves only on what the frame actually
   drew. Paint publishes every clickable region (popups, pane chrome, border
-  controls, tab strip, tree markers) with a data handler to the per-frame hit map
-  (`panel/hit-map`); one z-ordered router resolves it (`docs/mouse-hit-map.md`).
-  Never add a click-time re-derivation of a clickable's geometry (pane bodies
-  and drags still use the legacy cascade until hit-map Release 3).
+  controls, tab strip, tree markers, pane bodies, the replay owner) with a data
+  handler to the per-frame hit map (`panel/hit-map`); one z-ordered router
+  resolves it and drags ride one pointer-capture slot (`docs/mouse-hit-map.md`).
+  Never add a click-time re-derivation of a clickable's geometry. A mouse test
+  must paint before it clicks (`js/test/_helpers/hit-click.js`).
 - **Docs are prose, tests are blind to it** — after moving a symbol or changing
   layout, grep the old name and fix code comments + living docs (`docs/msg-routes.md`
   is the Msg-route map; `docs/LAYOUT.md` the panel/config reference).

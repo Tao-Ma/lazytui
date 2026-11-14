@@ -351,7 +351,7 @@ describe('[9] round-2 review regressions', () => {
     const before = panes().map(p => p.id).join();
     hc.click(covered.rect.x + 1, covered.rect.y);
     eq(panes().map(p => p.id).join(), before, 'no pane hidden');
-    eq(getModel().modes.freeConfigMode, true, 'still in free-config (the legacy handler took the click)');
+    eq(getModel().modes.freeConfigMode, true, 'still in free-config (the panel list\'s box took the click)');
     toLayout({ type: 'free_config_exit' });
   });
 });

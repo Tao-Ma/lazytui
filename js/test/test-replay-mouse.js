@@ -72,11 +72,35 @@ describe('[1] replay owns the mouse', () => {
     tok(sgr(0, d.x + 3, d.y + 3));
     eq(layout().focus, 'pane-groups', 'a pane click did not focus');
     tok(sgr(2, d.x + 3, d.y + 3));
-    eq(sm.getModel ? sm.getModel().modes.menuOpen : require('../app/runtime').getModel().modes.menuOpen, false, 'a right-click opened no menu');
-    const before = layout();
-    sm.capture(() => input.handleMouse('hover', d.x + 4, d.y + 4));
-    assert(layout() === before, 'hover wrote nothing into the frozen app');
+    eq(require('../app/runtime').getModel().modes.menuOpen, false, 'a right-click opened no menu');
+    const g = geo.visibleBoundsFor(layout(), 'pane-groups');
+    const navBefore = JSON.stringify(api.getInstanceSlice('pane-groups').nav);
+    sm.capture(() => input._dispatchToken(sgr(65, g.x + 3, g.y + 2)));   // wheel-down over groups
+    eq(JSON.stringify(api.getInstanceSlice('pane-groups').nav), navBefore, 'the wheel moved nothing');
     eq(SEEKS, [], 'no seek');
+    restore();
+  });
+  it('hover over replay is a TRUE no-op — a live graph value is neither updated nor cleared (hover-out would clear it)', () => {
+    const paneCfg = { id: 'g', type: 'stats', title: 'CPU', config: { topic: 'gh.cpu', row: '_', metrics: ['cpu'], window: 300, y_axis: 'off' } };
+    sm.bootFresh({
+      groups: { grp: { label: 'G', containers: [], actions: { a: { cmd: 'echo', label: 'A' } } } },
+      layout: { pool: { g: paneCfg }, columns: [{ panels: [paneCfg] }] },
+    });
+    sm.resize(120, 30);
+    require('../app/runtime').getModel().metrics = { 'gh.cpu': { series: { _: Array.from({ length: 300 }, (_x, i) => ({ cpu: i % 100 })) },
+                                                                schema: { columns: { cpu: { type: 'percent' } } } } };
+    inject();
+    DATA = null;
+    hc.paint();
+    const body = hm.all().find(r => r.z === hm.BANDS.BODY);
+    const mx = body.rect.x + 40, my = body.rect.y + 10;
+    sm.capture(() => input.handleMouse('hover', mx + 1, my + 1));
+    const live = layout().hover;
+    assert(live && live.paneId === body.paneId, 'a graph hover is live before replay');
+    DATA = replaying('mini');
+    hc.paint();
+    sm.capture(() => input.handleMouse('hover', mx + 3, my + 2));   // another graph cell, under the replay owner
+    assert(layout().hover === live, 'hover untouched (neither moved to the new cell nor cleared)');
     restore();
   });
 });

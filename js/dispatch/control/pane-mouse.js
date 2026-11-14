@@ -49,13 +49,14 @@ const capture = require('./pointer-capture');
 
 // Cached lazy requires — these run per click AND per hover cell; a require()
 // inside a hot function costs tens of µs per call (render/paint documents it).
-let _selViewRef, _selConfigRef;
+let _selViewRef, _selConfigRef, _terminalRef;
 const selView = () => (_selViewRef || (_selViewRef = require('../../panel/select-view')));
 const selConfig = () => (_selConfigRef || (_selConfigRef = require('../../panel/select-config')));
+const terminal = () => (_terminalRef || (_terminalRef = require('../../io/terminal')));
 
 /**
- * Wheel-on-panel: hit-test (mx, my) against every panel's bounds and
- * scroll the one under the cursor. Returns true if any state mutated
+ * Wheel-on-panel: scroll the pane under the cursor — the one the hit map
+ * resolved (`paneId`, R3), else whichever visible pane's bounds hold (mx, my). Returns true if any state mutated
  * (so the caller knows to repaint). Focus is intentionally NOT
  * changed — users can wheel through a side panel while keeping the
  * keyboard focused elsewhere, which is the friendlier-than-click
@@ -91,7 +92,7 @@ function handleWheel(mx, my, delta, paneId) {
       // matches the typical wheel notch. Returns whether the viewport moved so
       // the caller's paint gating is unchanged.
       const termId = route.activeInstanceOf(p.paneId);
-      if (termId) return require('../../io/terminal').scrollSession(termId, delta * 3);
+      if (termId) return terminal().scrollSession(termId, delta * 3);
       continue;
     }
     if (instanceKind(p.paneId) === 'agent') {
@@ -192,7 +193,7 @@ function _rowIndexAt(paneId, b, my) {
 
 // v0.6.4 Theme F Phase 4 — side-effect-free hit resolution for a discrete
 // button gesture: which pane + which row sits under the cursor. Mirrors the
-// click body arm's geometry but WITHOUT its chrome/tab/detail/text-select
+// `pane-press` act's row geometry but WITHOUT its text-select / zoom
 // pre-resolution — a button gesture on chrome / a tab / the border lands
 // off-row (navIdx < 0) and is therefore inert for an `activate` mapping.
 // Returns { paneId, navIdx } (navIdx >= 0 iff on a selectable row), or null
@@ -303,8 +304,8 @@ function _realizeButtonGesture(intentName, x, y, mx, my, paneId) {
       return;
     }
     case 'activate': {
-      // Focus + select + activate the row under the cursor — the click body
-      // arm's path, gated on landing ON a row.
+      // Focus + select + activate the row under the cursor — the `pane-press`
+      // act's path, gated on landing ON a row.
       const hit = _resolveBodyHit(mx, my, paneId);
       if (hit && hit.navIdx >= 0) {
         intent.realize(intent.focusPane(hit.paneId, { skipInfo: true }));
@@ -326,9 +327,8 @@ function _realizeButtonGesture(intentName, x, y, mx, my, paneId) {
 // other pane gets the loop's generic fallback. A left press ARMS a potential
 // selection (records the anchor); the FIRST motion begins it — so a plain
 // click still selects a row / focuses, and only a drag starts text selection.
-// Module-local, transient (like the free-config drag).
-// (Release 3 — the press arm is the text-select / graph-zoom pointer-capture
-// controller below; one capture slot replaces _armedSelect / _armedZoom.)
+// The arm is the `text-select` pointer capture (below) — input-shell, transient;
+// one capture slot replaced _armedSelect / _armedZoom (Release 3).
 
 // Is this pane a selection target? Not opted out via config (per-panel
 // `select:` / global default — panel/select-config).

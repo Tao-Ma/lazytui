@@ -30,8 +30,12 @@ move, panel-list pool drag) run on one pointer-capture slot.
   press started, wherever the pointer moves (over a popup or another pane);
   behavior is otherwise unchanged, including a press that arrives without a
   release first.
-- **Replay owns the mouse through the hit map** — a click on the mini bar
-  seeks; everything else is swallowed, in every pane view.
+- **A key that starts or stops replay, batched with a click,** no longer lets
+  the click reach the wrong session: the frame records the replay view, so the
+  click is swallowed (replay still owns the mouse while active — a click on
+  the mini bar seeks, everything else is swallowed).
+- **A tab switch batched with a click on that pane's body** swallows the click
+  (another tab's content is under the pointer); other panes stay live.
 
 ### Fixed
 - **A press on the free-config panel list's header, separator or preview

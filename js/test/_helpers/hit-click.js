@@ -42,8 +42,13 @@ function wheel(mx, my, dir) { sm.capture(() => input._dispatchToken(sgr(dir === 
 
 // `owner` is a region owner — an overlay's descriptor id — or a paneId: a pane's
 // regions are owned by `pane:<paneId>` (hit-map §Owner namespace) and carry
-// `paneId`, so tests name a pane by its paneId.
-function regions(owner) { return hm.all().filter(r => r.owner === owner || (r.paneId !== undefined && r.paneId === owner)); }
+// `paneId`, so tests name a pane by its paneId. An exact owner match wins, so
+// the overlay `pane-menu` never picks up a pool pane whose paneId is `pane-menu`.
+function regions(owner) {
+  const all = hm.all();
+  const own = all.filter(r => r.owner === owner);
+  return own.length ? own : all.filter(r => r.paneId !== undefined && r.paneId === owner);
+}
 function region(owner, id) { return regions(owner).find(r => r.id === id) || null; }
 function at(r) { return { mx: r.rect.x + Math.floor(r.rect.w / 2), my: r.rect.y + Math.floor(r.rect.h / 2) }; }
 

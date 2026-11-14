@@ -116,6 +116,10 @@ function bootFresh(opts) {
   // Clear modal flags that may have been set by an earlier scenario.
   const modes = require('../../../leaves/input/modes');
   modes.resetModes(getModel().modes);
+  // Mouse input-shell state (docs/mouse-hit-map.md): the press→double record,
+  // any held pointer capture, the hover coalescing record — a scenario must not
+  // inherit a drag or a "same cell" hover from the last one.
+  require('../../../dispatch/control/mouse-router')._reset();
   // U2f — reset the content-slot instances (info / text-view) between scenarios.
   // rebuildLayoutFromConfig drops last scenario's minted content tabs, but the
   // persistent Info/Transcript instances keep their id across boots (reconcile

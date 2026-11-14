@@ -7,7 +7,7 @@
  * then dispatches through one ladder:
  *   - SGR mouse: \x1b[<button;x;yM (press) / m (release) — left/right/middle
  *     presses + left drag/release + wheel + button-less hover (_dispatchMouseEvent);
- *     handleMouse asks the hit-map router first (docs/mouse-hit-map.md)
+ *     handleMouse is the hit-map router call (docs/mouse-hit-map.md)
  *   - Arrow keys, PgUp/Dn, Esc, Enter, Ctrl+C — into named keys
  *   - Anything else — passed through as both `key` and `seq` to handleKey
  * A multi-token chunk paints ONCE (render-queue beginBatch/endBatch); a
@@ -20,7 +20,7 @@
 
 const { paintNow: render, beginBatch, endBatch } = require('../../leaves/infra/render-queue');
 const { getModel } = require('../../model/store');
-const { enableMouse, enableFocusEvents, enableBracketedPaste, cols } = require('../../io/term');
+const { enableMouse, enableFocusEvents, enableBracketedPaste } = require('../../io/term');
 const { focusedTerminalId } = require('../../panel/terminal-surfaces');
 const { writeToSession, isSessionDead } = require('../../io/terminal');
 const { tokenizeInput } = require('../../leaves/input/tokenize');

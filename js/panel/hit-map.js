@@ -14,7 +14,8 @@
  *   - rect: screen cells, 0-based, [x, x+w) × [y, y+h).
  *   - on: gesture → handler, where gesture is a handleMouse kind (press, double,
  *     right, middle, wheel-up, wheel-down, …) and handler is DATA — `{ key }`,
- *     `{ msg, owner? }`, `{ intent }`, `{ act, …args }`, `'swallow'`, or an
+ *     `{ msg, owner? }`, `{ act, …args }`, `{ capture, …args }`
+ *     (start a drag — dispatch/control/pointer-capture), `'swallow'`, or an
  *     array of those (realized by dispatch/control/mouse-router).
  *   - repeat: a fast 2nd click on the SAME region is another press (hint chips,
  *     border-control steppers); otherwise the router swallows it.
@@ -79,7 +80,7 @@ const BANDS = Object.freeze({
   SCREEN: 0,            // empty-screen button gestures (right-click → context menu)
   BODY: 10,             // one region per visible pane body (Release 3)
   IN_PANE: 30,          // tree fold markers
-  BELOW_CHROME: 35,     // in-grid overlay backdrops (jobs / pane-menu / which-key)
+  BELOW_CHROME: 35,     // in-grid overlay backdrops (jobs / pane-menu / which-key / free-config's panel-list)
   CHROME: 40,           // [_]/[+]/[X]/[≡], border controls, tab strip, ✗ cancel
   OVERLAY_BASE: 1000,   // compositor-registered overlays
   REPLAY: 20000,        // the replay owner — above every overlay band (hover-tooltip's is 1000 + 10·999)

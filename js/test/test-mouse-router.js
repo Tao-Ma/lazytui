@@ -2,10 +2,14 @@
  * Mouse router (dispatch/control/mouse-router) — docs/mouse-hit-map.md.
  *
  *   [1] realize: each handler form reaches the right dispatch seam
- *   [2] route: discrete-only, stale-frame abstain, hit → consumed
+ *   [2] route: motion / release only to a held capture, hover always the
+ *       router's; stale frame swallows what it drew; hit → consumed
  *   [3] press→double continuation guard
  *   [4] a throwing handler is consumed + logged, never escapes
  *   [5] one paint per click; each routed click is event-logged
+ *   [6] pointer capture: start / motion / release routing, decline, acts
+ *       returning a capture, lost release (drop / swallow), throwing
+ *       controller, unique names
  *
  * The dispatch seams are spied by swapping the module exports the router
  * resolves lazily at call time (dispatch.handleKey / applyMsg, loop.dispatchMsg).
@@ -72,7 +76,7 @@ describe('[1] realizeHandler', () => {
 });
 
 describe('[2] route', () => {
-  it('non-discrete gestures fall through when no capture is held (motion/release → legacy arms)', () => {
+  it('non-discrete gestures fall through when no capture is held (motion/release → not consumed)', () => {
     router._reset();
     hm.clear(STAMP(MODEL));
     hm.publish({ id: 'b', rect: R(0, 0, 10, 10), z: 1, opaque: true, on: {} });
@@ -134,7 +138,7 @@ describe('[3] press→double continuation', () => {
     withSpies(() => router.route('press', 2, 0, MODEL));
     // The pick closed the menu; next frame has only the pane underneath.
     hm.clear(STAMP(MODEL));
-    hm.publish({ id: 'pane', rect: R(0, 0, 10, 10), z: 10, owner: 'pane-actions', on: { double: { intent: { kind: 'activate' } } } });
+    hm.publish({ id: 'body', rect: R(0, 0, 10, 10), z: 10, owner: 'pane:pane-actions', on: { double: { msg: { type: 'pane_activate_test' } } } });
     let r;
     const calls = withSpies(() => { r = router.route('double', 2, 0, MODEL); });
     eq(r, true, 'consumed');
@@ -148,7 +152,7 @@ describe('[3] press→double continuation', () => {
     // `y` closed confirm, but the batch deferred the repaint: stamp still 'confirmMode'.
     let r;
     const calls = withSpies(() => { r = router.route('double', 1, 0, MODEL); });
-    eq(r, true, 'consumed, not handed to the legacy pane path');
+    eq(r, true, 'consumed, not handed to the pane beneath');
     eq(calls, []);
   });
   it('the same owner still holds the cell → its double handler runs', () => {
@@ -182,7 +186,7 @@ describe('[3] press→double continuation', () => {
   it('a double with no hit-map press before it takes the normal path', () => {
     router._reset();
     hm.clear(STAMP(MODEL));
-    eq(router.route('double', 1, 1, MODEL), false, 'falls through to legacy');
+    eq(router.route('double', 1, 1, MODEL), false, 'not consumed (nothing there)');
   });
 });
 
@@ -275,7 +279,7 @@ describe('[6] pointer capture', () => {
     eq(router.route('motion', 25, 4, MODEL), true, 'motion over a popup box stays with the drag');
     eq(router.route('release', 26, 5, MODEL), true);
     eq(capture.held(), null, 'release ended it');
-    eq(router.route('motion', 3, 3, MODEL), false, 'after release: no capture → legacy');
+    eq(router.route('motion', 3, 3, MODEL), false, 'after release: no capture → not consumed');
     eq(LOG, ['t-drag:start:2,3:x', 't-drag:motion:25,4', 't-drag:release:26,5']);
     eq(n, 3, 'press + dirty motion + dirty release each paint');
     done();

@@ -66,6 +66,25 @@ describe('[1] gating at paint', () => {
     eq(layout().focus, 'pane-groups', 'focus unchanged');
     sm.capture(() => sm.applyMsg({ type: 'mode_clear', flag: 'filterMode' }));
   });
+  it('the T13 wheel cases, paint-gated: under filter / a leader chord a wheel over a pane moves nothing', () => {
+    for (const setup of [
+      () => sm.applyMsg({ type: 'mode_set', flag: 'filterMode' }),
+      () => { sm.applyMsg({ type: 'mode_set', flag: 'prefixMode' }); getModel().prefixSeq = ['g']; },
+    ]) {
+      boot();
+      toLayout({ type: 'focus_set', focus: 'pane-detail' });
+      const before = JSON.stringify({ sel: api.getInstanceSlice('pane-groups'), focus: layout().focus });
+      sm.capture(setup);
+      hc.paint();                                   // the frame the user sees under the mode
+      const g = geo.visibleBoundsFor(layout(), 'pane-groups');
+      eq(bodies().filter(b => b.paneId === 'pane-groups').length, 0, 'no body under the mode');
+      sm.capture(() => input._dispatchToken(sgr(65, g.x + 3, g.y + 2)));   // wheel-down
+      eq(JSON.stringify({ sel: api.getInstanceSlice('pane-groups'), focus: layout().focus }), before, 'nothing moved');
+      sm.capture(() => sm.applyMsg({ type: 'mode_clear', flag: 'filterMode' }));
+      sm.capture(() => sm.applyMsg({ type: 'mode_clear', flag: 'prefixMode' }));
+      getModel().prefixSeq = [];
+    }
+  });
   it('agentMode: bodies publish the wheel only (the transcript scrolls under the input), no clicks', () => {
     boot();
     sm.capture(() => sm.applyMsg({ type: 'mode_set', flag: 'agentMode' }));
@@ -114,6 +133,22 @@ describe('[3] errored / renderer-less panes keep their body', () => {
       hc.click(b.rect.x + 2, b.rect.y + 2);
       eq(layout().focus, 'pane-groups', 'the click focused it');
     } finally { def.render = real; console.error = err; }
+  });
+  it('a pane kind with no renderer paints blank but still publishes its body (a click focuses it)', () => {
+    boot();
+    toLayout({ type: 'focus_set', focus: 'pane-detail' });
+    const comp = api.getComponent(api.getComponentOwningPanel('groups'));
+    const def = comp.panelTypes.groups;
+    const real = def.render;
+    delete def.render;
+    try {
+      hc.paint();
+      const b = bodies().find(r => r.paneId === 'pane-groups');
+      assert(b, 'the renderer-less pane publishes its body');
+      eq(b.rect, geo.visibleBoundsFor(layout(), 'pane-groups'), 'over the pane\'s bounds');
+      hc.click(b.rect.x + 2, b.rect.y + 2);
+      eq(layout().focus, 'pane-groups', 'the click focused it');
+    } finally { def.render = real; }
   });
 });
 
