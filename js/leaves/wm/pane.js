@@ -62,7 +62,10 @@ function titleOf(entry) {
  * The entry's own settings (`config`, as the parser keeps them in the pool) are
  * there twice: spread at the top level, so a renderer reads an option straight
  * off `panel` (`panel.topic`), and nested under `config`. Framework keys win over
- * a same-named setting. `title` is titleOf(entry).
+ * a same-named setting. `title` is titleOf(entry). A setting named like a SLOT
+ * field (SLOT_KEYS — `role`, `tabs`, `paneId`, …) stays under `config` only: the
+ * slot sets those, and a `role: content` setting made its pane a second content
+ * slot (its tabs replaced by Info / Transcript; it took the viewer).
  *
  * Every place that turns a pool entry into a pane def calls this: boot
  * (arrange.rebuildLayoutFromConfig), a tab switch / add / remove
@@ -76,11 +79,17 @@ function titleOf(entry) {
  *
  * `place` = { hotkey, columnIndex } of the slot. Pure; `entry` is not mutated.
  */
+// The fields a SLOT carries on a placed pane (leaves/wm/arrange widenPane,
+// _rebuildLegacyFields) — never from a pane's settings.
+const SLOT_KEYS = ['paneId', 'tabs', 'activeTabId', 'heightPct', 'collapsed', 'role'];
+
 function panelDef(entry, place) {
   const config = (entry && entry.config) || {};
   const p = place || {};
+  const settings = { ...config };
+  for (const k of SLOT_KEYS) delete settings[k];
   return {
-    ...config,
+    ...settings,
     id: entry.id,
     type: entry.type,
     title: titleOf(entry),
@@ -224,4 +233,5 @@ module.exports = {
   removeTab,
   canRemoveTab,
   paneMatchesFocus,
+  SLOT_KEYS,
 };

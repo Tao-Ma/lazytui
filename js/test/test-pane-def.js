@@ -219,5 +219,32 @@ section('[5] a nested `config:` is flagged, not silently dropped');
   eq([d.backend, d.provider, d.model], ['pi', 'local', 'm1'], 'and its pane runs pi with the provider and model');
 }
 
+section('[6] a setting named like a slot field stays a setting');
+{
+  // `role`, `tabs`, `paneId`, … are the SLOT's (mpane.SLOT_KEYS). As settings
+  // they stay under `config`: a `role: content` setting made its pane a second
+  // content slot — its own tabs replaced by Info / Transcript, the viewer moved
+  // to it (pre-release review 2026-11-14, inherited).
+  const d = mpane.panelDef({ id: 'x', type: 't', config: { role: 'content', tabs: ['y'], paneId: 'p', topic: 'k' } });
+  eq([d.role, d.tabs, d.paneId, d.topic], [undefined, undefined, undefined, 'k'], 'not at the top level');
+  eq([d.config.role, d.config.tabs], ['content', ['y']], 'still readable under config');
+  const head = 'project_dir: .\ngroups:\n  g1:\n    label: G\n    actions:\n      hello: { label: Hello, script: echo hello }\n';
+  sm.bootFresh(writeConfig(head + `panels:
+  groups: { type: groups, title: Groups }
+  tv: { type: text-view, title: TV, role: content, lines: [x] }
+  notes: { type: text-view, title: Notes, lines: [n] }
+  detail: { type: detail, title: Detail }
+layout:
+  columns:
+    - width: 30
+      panels: [groups]
+    - panels: [{ tabs: [tv, notes] }, detail]
+`));
+  const arr = route.getInstanceSlice('layout').arrange;
+  const tv = mpool.allPanesInColumns(arr).find(p => p.paneId === 'pane-tv');
+  eq([tv.role, tv.tabs.map(t => t.id)], [undefined, ['tv', 'notes']], 'the pane keeps its own tabs');
+  eq(route.resolveViewerPaneId(), 'pane-detail', 'the viewer is the detail slot');
+}
+
 for (const d of dirs) fs.rmSync(d, { recursive: true, force: true });
 report();

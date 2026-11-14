@@ -176,15 +176,23 @@ The panel's own settings (every key of its `panels:` entry except `type` and
 `title`) are there **twice**: spread at the top level (`panel.topic`) and
 nested under `config` (`panel.config.topic`). Read either; `config` is the
 safer one, since a framework key (`id`, `type`, `title`, `hotkey`,
-`columnIndex`, `config`) wins over a same-named setting at the top level.
+`columnIndex`, `config`) wins over a same-named setting at the top level, and a
+setting named like a slot field (`paneId`, `tabs`, `activeTabId`, `heightPct`,
+`collapsed`, `role` — `mpane.SLOT_KEYS`) is under `config` only.
 `title` is the entry's title, else its type's name.
 
 - `seed.paneDef` is the def of the instance's **own** tab. In a multi-tab
-  slot every tab gets its own settings, not the active tab's.
-- `subscriptions(paneDef)` and `render(panel)` receive the placed pane: the
-  active tab's def plus the slot's fields (`paneId`, `tabs`, `activeTabId`,
-  …). The one exception is the content slot (`role: 'content'`, the viewer
-  slot), which keeps its own identity whichever tab is active.
+  slot every tab gets its own settings, not the active tab's. It carries no
+  slot fields (`paneId` is `init`'s first argument).
+- `render(panel)` receives the placed pane: the active tab's def plus the
+  slot's fields (`paneId`, `tabs`, `activeTabId`, …). The one exception is the
+  content slot (`role: 'content'`, the viewer slot), which keeps its own
+  identity whichever tab is active. The Panels list's preview of a hidden
+  panel renders it from a bare def — no slot fields, no `paneId`.
+- `subscriptions(paneDef)` is asked per placed slot, of the Component of the
+  slot's type, with the same pane `render` gets — so only a slot's ACTIVE tab
+  subscribes, and a Component shown as a tab of the content slot (whose type is
+  `detail`) is not asked.
 
 Register with `api.registerComponent(component)`. In-tree built-ins are
 registered from the static list in `app/components.js`. A **consumer project**

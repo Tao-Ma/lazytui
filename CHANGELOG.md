@@ -145,7 +145,9 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   `config:` under any pane is not read, and the config now says so
   (`panels.nested_config` warning, also in `--lint`) instead of the pane
   quietly starting without its settings (a terminal written that way ran
-  `$SHELL`).
+  `$SHELL`). A setting named like a slot field (`role`, `tabs`, …) stays a
+  setting: `role: content` on a pane made it a second viewer slot, its own
+  tabs replaced by Info and Transcript.
 
 ## [0.6.58] — 2026-11-14
 
