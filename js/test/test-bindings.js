@@ -35,21 +35,26 @@ describe('[E9] detail footer — tab count variants', () => {
 // A focused `terminal` pane has its own context (field report 2026-11-14: it
 // fell through to the list hints; the terminal variants above it in the viewer
 // table were unreachable since terminals became their own pane kind).
-describe('terminal footer — dead / closable / onScreen', () => {
-  it('alive, on screen → Enter type here', () => {
-    eq(b.footerFor('terminal', { dead: false, closable: false, onScreen: true }),
+describe('terminal footer — dead / closable / typeable', () => {
+  // typeable = on screen (an interior) AND a PTY can run (node-pty installed).
+  it('alive, typeable → Enter type here', () => {
+    eq(b.footerFor('terminal', { dead: false, closable: false, onScreen: true, typeable: true }),
       ' ←→ panel | +/_ view | x menu | q quit | Enter type here');
   });
   it('alive, minimized (no interior) → no Enter hint', () => {
-    eq(b.footerFor('terminal', { dead: false, closable: true, onScreen: false }),
+    eq(b.footerFor('terminal', { dead: false, closable: true, onScreen: false, typeable: false }),
+      ' ←→ panel | +/_ view | x menu | q quit');
+  });
+  it('on screen but no PTY can run (node-pty absent) → no Enter hint', () => {
+    eq(b.footerFor('terminal', { dead: false, closable: false, onScreen: true, typeable: false }),
       ' ←→ panel | +/_ view | x menu | q quit');
   });
   it('dead, closable → x close + Enter restart', () => {
-    eq(b.footerFor('terminal', { dead: true, closable: true, onScreen: true }),
+    eq(b.footerFor('terminal', { dead: true, closable: true, onScreen: true, typeable: true }),
       ' ←→ panel | +/_ view | x close | q quit | Enter restart');
   });
   it('dead, the slot\'s last tab → x menu + Enter restart', () => {
-    eq(b.footerFor('terminal', { dead: true, closable: false, onScreen: true }),
+    eq(b.footerFor('terminal', { dead: true, closable: false, onScreen: true, typeable: true }),
       ' ←→ panel | +/_ view | x menu | q quit | Enter restart');
   });
 });

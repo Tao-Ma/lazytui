@@ -31,7 +31,7 @@
  *               a modal-mode flag ('copyMode'/'menuOpen'/…) — see CONTEXTS.
  *     label   — the rendered hint, e.g. 'x menu', '↑↓ select', 'Enter run'.
  *     when    — optional pure (ctx) => bool guard (ctx = live facts the footer
- *               passes: { total } for detail, { dead, closable, onScreen } for
+ *               passes: { total } for detail, { dead, closable, typeable } for
  *               terminal). Absent =
  *               always shown.
  *     footer  — false to hide from the footer (help-only). Default true.
@@ -71,8 +71,9 @@ const BINDINGS = {
   ],
   // A focused `terminal` pane (field report 2026-11-14: it showed the list
   // hints, and nothing said Enter hands the keyboard over). Facts from
-  // panel/terminal-surfaces focusedTerminalState: dead / closable / onScreen.
-  // Enter does nothing on a terminal with no interior (minimized) → no hint;
+  // panel/terminal-surfaces focusedTerminalState: dead / closable / typeable.
+  // Enter does nothing on a terminal with no interior (minimized), or where no
+  // PTY can run (node-pty absent) → no hint;
   // `x` closes a dead tab only when the slot keeps another (else it's the menu).
   terminal: [
     { label: '←→ panel',        order: 10 },
@@ -80,8 +81,8 @@ const BINDINGS = {
     { label: 'x close',         order: 30, when: (c) => c.dead && c.closable },
     { label: 'x menu',          order: 31, when: (c) => !(c.dead && c.closable) },
     { label: 'q quit',          order: 40 },
-    { label: 'Enter type here', order: 50, when: (c) => c.onScreen && !c.dead },
-    { label: 'Enter restart',   order: 51, when: (c) => c.onScreen && c.dead },
+    { label: 'Enter type here', order: 50, when: (c) => c.typeable && !c.dead },
+    { label: 'Enter restart',   order: 51, when: (c) => c.typeable && c.dead },
   ],
 
   // (Per-panel extras — docker i/L/s, config-status t/s/r, history Enter, files'

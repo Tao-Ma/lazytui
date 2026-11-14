@@ -209,7 +209,8 @@ function _exitTerminalMode() {
  *
  * Ctrl+\ (`\x1c`) → terminal_exit: clears the flag, drops a 'full' auto-zoom to
  * 'normal' and repaints in full; the program keeps running. A dead or missing
- * session (focus moved off the terminal pane while the mode lingered) exits
+ * session (focus moved off the terminal pane while the mode lingered, or no
+ * PTY support) exits
  * too, dropping the keys typed for it — the run up to the next exit or scroll
  * key; the rest re-emits.
  */
@@ -220,7 +221,9 @@ function _handleTerminalChunk(data, reemit) {
 
 function _terminalWalk(data, reemit) {
   const id = focusedTerminalId();
-  if (!id || isSessionDead(id)) {
+  // No program to type into: the focus left the terminal pane, its program
+  // exited, or it has no session at all (none spawned yet, or no PTY support).
+  if (!id || isSessionDead(id) || !terminal.getSession(id)) {
     _exitTerminalMode();
     _termPaste = null;
     const { tokens, carry } = tokenizeInput(data);

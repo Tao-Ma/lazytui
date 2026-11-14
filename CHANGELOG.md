@@ -45,7 +45,9 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   list hints (`↑↓ select | / filter`, neither of which applies) and nothing
   said that Enter hands the keyboard to the program. It now shows `Enter type
   here` (or `Enter restart` once the program exited), and no Enter hint while
-  the pane is minimized.
+  the pane is minimized or when terminals can't run (the optional node-pty is
+  not installed — Enter then does nothing, where it entered a terminal mode
+  that swallowed every key until `Ctrl+\`).
 - **`x` on an exited terminal that is its slot's only tab opens the menu**
   instead of doing nothing (such a tab can't be closed, e.g. a configured
   `type: terminal` pane). So does `x` on an exited agent pane or a text-view

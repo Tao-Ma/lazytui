@@ -29,7 +29,7 @@ const { getPanelDef, getItems, getMergedActions, getInstanceSlice,
         wrap, getFocus, instanceKind } = require('../../panel/api');
 const { dispatchMsg } = require('../runtime/loop');
 const { focusedTerminalId, visibleTerminalSurfaces } = require('../../panel/terminal-surfaces');
-const { isSessionDead, restartSession } = require('../../io/terminal');
+const { isSessionDead, restartSession, ptyAvailable } = require('../../io/terminal');
 const { getModel } = require('../../model/store');
 const route = require('../../panel/route');
 const { killAction: _killAction } = require('../../leaves/proc/kill-signals');
@@ -135,6 +135,10 @@ function activateTerminal() {
   // the pane, then Enter.
   const surf = visibleTerminalSurfaces(getModel()).find(s => s.id === id);
   if (!surf) return;
+  // No PTY can run (the optional node-pty is not installed — the pane shows a
+  // notice): no session to type into, so no terminal mode either. It was
+  // entered, and every key vanished into the missing session until Ctrl+\.
+  if (!ptyAvailable()) return;
   if (isSessionDead(id)) restartSession(id, surf.cols, surf.rows);
   applyMsg({ type: 'terminal_enter' });
 }

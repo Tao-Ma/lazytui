@@ -52,5 +52,39 @@ describe('[terminal] degrades gracefully when the optional node-pty is absent', 
   });
 });
 
+describe('[terminal] without node-pty a terminal pane offers no typing (the keys)', () => {
+  // Enter put the pane in terminal mode with no session behind it: the footer
+  // said `Enter type here`, and every key after Enter vanished into the missing
+  // session until Ctrl+\ (pre-release review 2026-11-14).
+  process.stdout.columns = 160; process.stdout.rows = 40;
+  const tl = require('./_helpers/terminal-layout');
+  const route = require('../panel/route');
+  const { getModel } = require('../model/store');
+  const { dispatchMsg, applyMsg } = require('../dispatch/runtime/loop');
+  const { focusedTerminalState } = require('../panel/terminal-surfaces');
+  // The real stdin handler (terminal-mode routing lives there).
+  const stdin = new (require('events').EventEmitter)();
+  stdin.on('data', require('../dispatch/control/input')._makeDataHandler(stdin));
+  const key = (t) => require('./smoke/_helpers/smoke').capture(() => stdin.emit('data', t));
+  const fx = tl.boot({ cmd: 'sleep 60' });
+  dispatchMsg(route.wrap('layout', { type: 'focus_set', focus: fx.pane().paneId }));
+  it('the footer offers no Enter (on screen, but nothing to type into)', () => {
+    const st = focusedTerminalState(getModel());
+    eq([st.onScreen, st.typeable], [true, false]);
+    const hints = require('../leaves/input/bindings').footerFor('terminal', st);
+    assert(!/Enter/.test(hints), hints);
+  });
+  it('Enter does not enter terminal mode', () => {
+    key('\r');
+    eq(getModel().modes.terminalMode, false);
+  });
+  it('a terminal mode entered anyway ends at the first key (no session to type into)', () => {
+    applyMsg({ type: 'terminal_enter' });
+    key('j');
+    eq(getModel().modes.terminalMode, false);
+  });
+  fx.cleanup();
+});
+
 Module._load = _load;   // restore (belt-and-suspenders; process exits after report)
 report();

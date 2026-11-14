@@ -31,6 +31,7 @@
 const geo = require('../leaves/wm/geometry');
 const mpool = require('../leaves/wm/pool');
 const mpane = require('../leaves/wm/pane');
+const terminal = require('../io/terminal');   // a true leaf: no cycle
 
 // The grid a pane rect can show inside its border, or null when there is none:
 // a minimized pane is a 1-row bar, and a pane squeezed below 3 rows / 3 columns
@@ -108,7 +109,8 @@ function focusedTerminalTitle() {
 // What the FOCUSED terminal pane's keys do right now, for the footer and `x`:
 // null when the focus isn't a terminal; else { id, dead (the child exited —
 // Enter restarts), closable (`x` closes the tab; else `x` is the menu),
-// onScreen (a surface — has an interior; Enter types into it / restarts it) }.
+// onScreen (a surface — has an interior), typeable (on screen AND a PTY can
+// run — the optional node-pty is installed: Enter types into it / restarts it) }.
 function focusedTerminalState(model) {
   const id = focusedTerminalId();
   if (!id) return null;
@@ -118,11 +120,13 @@ function focusedTerminalState(model) {
   const focus = route.getFocus();
   const pane = layoutSlice && layoutSlice.arrange &&
     mpool.allPanesInColumns(layoutSlice.arrange).find(p => p.paneId === focus);
+  const onScreen = visibleTerminalSurfaces(model).some(s => s.id === id);
   return {
     id,
-    dead: require('../io/terminal').isSessionDead(id),
+    dead: terminal.isSessionDead(id),
     closable: _closable(pane),
-    onScreen: visibleTerminalSurfaces(model).some(s => s.id === id),
+    onScreen,
+    typeable: onScreen && terminal.ptyAvailable(),
   };
 }
 
