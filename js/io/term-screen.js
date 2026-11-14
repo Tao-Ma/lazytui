@@ -252,10 +252,16 @@ function _readRow(line, width, cell) {
   const n = line ? Math.min(width, line.length) : 0;
   for (let x = 0; x < n; x++) {
     line.getCell(x, cell);
-    if (cell.getWidth() === 0) continue;               // right half of a wide glyph
     let text = cell.getChars();
-    const w = text === '' ? 1 : _textWidth(text);
+    if (cell.getWidth() === 0 && text === '') continue; // right half of a wide glyph
+    let w = text === '' ? 1 : _textWidth(text);
     if (text === '') text = ' ';                        // never-written / erased cell
+    // A zero-width character with nothing to join (a ZWSP, a combining mark or
+    // VS16 at the start of a row) gets a cell of its own in the emulator (width
+    // 0, but the cursor moved past it): skipped like a wide glyph's right half,
+    // the rest of the row landed one column left of where the program put it.
+    // It paints as a space carrying the mark — the column the emulator gave it.
+    if (w === 0) { text = ' ' + text; w = 1; }
     if (col + w > width) break;                         // never past the edge
     const f = cell.getFgColorMode() + cell.getFgColor();
     const b = cell.getBgColorMode() + cell.getBgColor();

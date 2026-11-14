@@ -89,6 +89,22 @@ const rgb = (v) => '#' + v.toString(16).padStart(6, '0');
     eq(ts.readViewport(s, 3, 8).runs[2].map(r => [r.sgr, r.text]), [['', '⚡wide'], ['41', '⚡']],
       'at 8 columns it fits, with its own bg');
   }
+  {
+    // A zero-width character with nothing to join — at the start of a row —
+    // gets a cell of its own in the emulator (width 0, the cursor moves past
+    // it). Skipped like a wide glyph's right half, the rest of the row painted
+    // one column left of the program's cursor (pre-release review 2026-11-14).
+    const { stringWidth } = require('../leaves/text/char-width');
+    for (const [name, bytes] of [['ZWSP', '\u200babc|'], ['combining mark', '\u0301abc|'],
+                                 ['VS16', '\ufe0fxy|'], ['ZWJ after CR', 'zz\r\u200dq|'],
+                                 ['a mark that joins', 'a\u0301b|'], ['CJK', '日本|']]) {
+      const s = ts.createScreen(20, 2);
+      await flush(s, bytes);
+      const row = ts.readViewport(s, 1, 20).rows[0];
+      eq([stringWidth(row.slice(0, row.indexOf('|'))), stringWidth(row)], [ts.screenCursor(s).x - 1, 20],
+        `${name}: the | sits where the program's cursor put it; the row is 20 columns`);
+    }
+  }
 
   if (!terminal.ptyAvailable()) {
     _origErr('  (skipped [2]–[4]: the optional node-pty dependency is not installed)');
