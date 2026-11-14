@@ -22,14 +22,14 @@
  *   'swallow'          consume, no-op.
  *   [h1, h2, …]        realize each in order (row double-click = nav + return).
  *
- * Scope: DISCRETE gestures (press / double / right / middle / wheel) resolve
- * on the map. motion / release never do — a drag that crosses a popup box must
- * not be swallowed by it: they go to the held pointer capture, if any, wherever
- * the pointer is (Release 3); with none held they fall through to the legacy
- * cascade (its select / zoom / free-config arms, until those move onto capture).
- * A press while a capture is held runs the controller's lost-release policy
- * first. A miss (no region, or a stale frame) returns false and handleMouse
- * falls through to the legacy cascade, unchanged.
+ * Scope: every pointer event (input.handleMouse is this call). DISCRETE
+ * gestures (press / double / right / middle / wheel) resolve on the map.
+ * motion / release never do — a drag that crosses a popup box must not be
+ * swallowed by it: they go to the held pointer capture, if any, wherever the
+ * pointer is; with none held they do nothing. A press while a capture is held
+ * runs the controller's lost-release policy first. `hover` resolves to a body's
+ * hover act, else clears (_hover). A gesture nothing claims does nothing (the
+ * return value says whether anything did — tests).
  *
  * Two guards:
  *   - STALE FRAME: the hit map is stamped with what the frame showed
@@ -39,7 +39,11 @@
  *     no longer exists. If that stale frame drew a region under the pointer the
  *     click was meant for it → swallowed (resolving it against changed state,
  *     or handing it to the pane the popup covered, are both wrong). If the stale
- *     frame drew nothing there, the legacy cascade decides, as before.
+ *     frame drew nothing VISIBLE there (an in-grid mode publishes no bodies; a
+ *     below-chrome backdrop is invisible), the router repaints at once and
+ *     resolves against the fresh frame — taking only a pane body or the empty
+ *     screen (what the pre-R3 legacy cascade did against live state); a popup
+ *     the batched key opened keeps its outside policy dormant.
  *   - PRESS→DOUBLE CONTINUATION: the parser emits a same-cell second click as
  *     `double`. When the FIRST click was a hit-map press (picking a popup item,
  *     which usually closes the popup), the double belongs to that press's owner:
@@ -138,11 +142,11 @@ function _realizeAndPaint(hit, kind, mx, my) {
   render();
 }
 
-/** Route one gesture. Returns true when the hit map consumed it (the caller
- *  stops), false to fall through to the legacy cascade. `mx`/`my` are 0-based. */
+/** Route one gesture. Returns true when something consumed it, false when
+ *  nothing did (the event is dropped). `mx`/`my` are 0-based. */
 function route(kind, mx, my, model) {
   if (kind === 'motion' || kind === 'release') {
-    if (!capture.held()) return false;   // no drag in flight → legacy arms
+    if (!capture.held()) return false;   // no drag in flight → nothing to do
     const dirty = kind === 'motion' ? capture.motion(_ev(mx, my)) : capture.release(_ev(mx, my));
     if (dirty) render();
     return true;
@@ -190,7 +194,7 @@ function route(kind, mx, my, model) {
     // It drew nothing visible here (an in-grid mode with no regions over the
     // panes — filter / search / agent, or an invisible below-chrome backdrop):
     // repaint now and resolve against the fresh frame, taking only what the
-    // legacy cascade would have taken against live state — a pane body or the
+    // pre-R3 legacy cascade took against live state — a pane body or the
     // empty screen. A popup the batched key opened must not run its outside
     // policy on a click aimed at a screen without it (Release 3, decision A).
     paintSync();

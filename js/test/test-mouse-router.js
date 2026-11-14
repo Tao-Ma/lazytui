@@ -102,7 +102,7 @@ describe('[2] route', () => {
     eq(r, true, 'consumed — not handed to the pane the popup covered');
     eq(calls, [], 'the stale chip did not fire either');
   });
-  it('stale frame, nothing drawn at the point → the legacy cascade decides', () => {
+  it('stale frame, nothing drawn at the point, no renderer to repaint → not consumed', () => {
     router._reset();
     hm.clear(STAMP(CONFIRM));
     hm.publish({ id: 'box', rect: R(0, 0, 10, 10), z: 1011, owner: 'confirm', opaque: true, on: {} });
@@ -119,7 +119,7 @@ describe('[2] route', () => {
     eq(r, true, 'swallowed');
     eq(calls, [], 'menu_activate idx 0 did NOT land on the replacement menu');
   });
-  it('never painted (null stamp, empty map) → the legacy cascade decides', () => {
+  it('never painted (null stamp, empty map), no renderer → not consumed', () => {
     router._reset();
     hm.clear(null);
     eq(router.route('press', 1, 1, MODEL), false);

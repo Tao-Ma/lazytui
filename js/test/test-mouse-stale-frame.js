@@ -12,8 +12,11 @@
  *       the user never saw)
  *   [3] fabric-form Space (opens choices) + click another field: swallowed —
  *       never the unreachable "list open on svc, focus on host" state
- *   [4] stale frame that drew NOTHING under the pointer: the legacy cascade
- *       still decides (pane-menu dropdown closed by Esc, click on a pane)
+ *   [4] stale frame that drew NOTHING visible under the pointer: repaint and
+ *       resolve fresh (pane-menu dropdown closed by `T`, click on a pane)
+ *   [5] Release 3 — pane bodies: a pane-moving key + body click is swallowed;
+ *       decision A (leaving an in-grid mode + click reaches the pane; a popup
+ *       the batched key opened keeps its outside policy dormant)
  *
  * Run: node js/test/test-mouse-stale-frame.js
  */
@@ -95,11 +98,11 @@ describe('[3] fabric-form: Space + click another field', () => {
   });
 });
 
-describe('[4] stale frame drew nothing there → legacy decides', () => {
+describe('[4] stale frame drew nothing visible there → repaint, resolve fresh', () => {
   it('pane-menu closed by T, click on a pane outside the dropdown → focus moves (as before)', () => {
     // pane-menu's outside-close is a below-chrome backdrop (R2), but an
     // INVISIBLE one: it does not count as drawn for the stale rule, so the
-    // stale frame drew nothing under this point and legacy decides.
+    // stale frame drew nothing under this point → repaint, resolve fresh.
     sm.bootFresh();
     sm.resize(120, 30);
     sm.capture(() => api.dispatchMsg(api.wrap('layout', { type: 'pane_menu_open', paneId: 'pane-groups', cursor: 0, scroll: 0 })));

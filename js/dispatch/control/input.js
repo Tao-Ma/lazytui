@@ -23,9 +23,6 @@ const { getModel } = require('../../model/store');
 const { enableMouse, enableFocusEvents, enableBracketedPaste, cols } = require('../../io/term');
 const { focusedTerminalId } = require('../../panel/terminal-surfaces');
 const { writeToSession, isSessionDead } = require('../../io/terminal');
-const { getInstanceSlice, wrap } = require('../../panel/api');
-const { dispatchMsg } = require('../runtime/loop');
-const { isChainActive, CHAIN_MODES } = require('../../leaves/input/modes');
 const { tokenizeInput } = require('../../leaves/input/tokenize');
 const { kkpToLegacy } = require('../../leaves/input/kkp-decode');
 // v0.6.4 Theme F Phase 4 — the gesture→intent map + tunable double-click
@@ -39,112 +36,22 @@ const { cleanup } = require('../runtime/cleanup');
 
 // --- Mouse handling ---
 
-// The wheel-over-pane handler moved to ./pane-mouse (handleWheel) in Release 3;
-// re-exported below as _handleWheel for the tests that drive it.
-
-// v0.6.3 Phase C1 — mouse-routing registry mirroring keyboard's
-// `_modeHandlers` in dispatch.js. Each handler takes
-// `(kind, mx, my, model)` and returns `true` if it consumed the
-// event (caller stops cascade). Walked by `_dispatchActiveModeMouse`
-// in CHAIN_MODES order — first active claiming handler wins.
-//
-// Handlers OWN their render() call — most dispatch a Msg and paint,
-// but some consume-no-render paths exist (panel-list header/footer
-// click, motion without an in-flight drag) and skip paint
-// deliberately as a perf optimization (P5.10).
-//
-// Handlers that DON'T consume (e.g. agentMode on a click)
-// return false; the dispatcher falls through, and the subsequent
-// `isChainActive(model.modes) return;` guard catches the event so it
-// doesn't leak into normal-mode click/wheel routing.
-
-// (free-config's handler retired — Release 3: the panel-list descriptor's
-// below-chrome backdrop starts the `free-config` pointer capture and its item
-// rows the `pool-drag` one; see ./free-config-capture.)
-
-// (menuOpen's handler retired — the menu resolves on the hit map now,
-// docs/mouse-hit-map.md Release 1; the router runs before this registry.)
-// (agentMode's wheel pass-through retired too — Release 3: under agentMode the
-// pane bodies publish their wheel handlers (paint's wheelLive), clicks none.)
-const _modeMouseHandlers = {};
-
-// Mouse mode precedence — DERIVED from the keyboard chain (CHAIN_MODES,
-// the single source of mode ordering in `./modes`), filtered to the
-// modes with a mouse handler. Pre-C1 this was a hand-pinned array
-// (the since-merged tabList/paneSelect modes, then freeConfig); deriving it
-// keeps the mouse side from silently disagreeing with the keyboard side —
-// exactly what a second hardcoded list risked. The remaining modes
-// (freeConfig / agent) are mutually exclusive by invariant (mode_set/clear
-// flips one at a time), so the order is observationally moot; if
-// that invariant ever relaxes, mouse now resolves the SAME winner as
-// keyboard (freeConfig first) instead of the opposite.
-const _MOUSE_MODE_PRECEDENCE = CHAIN_MODES.filter(f => f in _modeMouseHandlers);
-
-/** Walks _MOUSE_MODE_PRECEDENCE in order, fires the first active
- *  handler. Returns true when a handler claimed the event (caller
- *  stops). Wedge-guarded like `_dispatchActiveMode` for keyboard —
- *  a throwing handler clears its flag so subsequent clicks don't
- *  trap in the throwing path. */
-function _dispatchActiveModeMouse(kind, mx, my, model) {
-  for (const flag of _MOUSE_MODE_PRECEDENCE) {
-    if (!model.modes[flag]) continue;
-    const handler = _modeMouseHandlers[flag];
-    if (!handler) continue;
-    try {
-      if (handler(kind, mx, my, model)) return true;
-    } catch (e) {
-      console.error('[mode-mouse]', flag, e && e.message);
-      try {
-        require('../../io/event-log').record('error', {
-          where: 'mouse_handler', flag, kind, mx, my,
-          message: e && e.message, stack: e && e.stack,
-        });
-      } catch (_) { /* event-log unavailable */ }
-      // Clear the wedged flag via update so single-writer holds.
-      try { applyMsg({ type: 'mode_clear', flag }); } catch (_) {}
-      return false;
-    }
-  }
-  return false;
-}
-
-// (The pane-body resolvers — row index, context, button gestures — moved to
-// ./pane-mouse in Release 3, with the body acts that use them.)
-
-
+/**
+ * One pointer event (x, y 1-based SGR) → the hit-map router
+ * (docs/mouse-hit-map.md). Everything the mouse can do is a region the last
+ * frame published, z-ordered, with a DATA handler — popups (R1), pane chrome +
+ * border controls + tab strip + ✗ cancel + tree markers + in-grid backdrops
+ * (R2), pane bodies + the empty screen + hover, the drag in flight (pointer
+ * capture — motion / release go to it wherever the pointer is), free-config and
+ * the replay owner (R3). Precedence is z-order; modal gating is what paint
+ * publishes (a popup's backdrop; no pane bodies while a chain mode is active).
+ * A gesture nothing claims does nothing. The pane-body code lives in
+ * ./pane-mouse, free-config's in ./free-config-capture.
+ */
 function handleMouse(kind, x, y) {
-  // Phase 4 — runtime.update returns NEW model objects; read getModel()
-  // at entry so post-Msg state is what subsequent reads see.
-  const model = getModel();
-  // x, y are 1-based from SGR; convert to 0-based
-  const mx = x - 1;
-  const my = y - 1;
-
-  // (The replay early-route retired — Release 3: while interactive replay is
-  // active, paint publishes a full-screen owner region at hit-map BANDS.REPLAY
-  // that swallows every gesture, and the scrubber's mini bar publishes its seek
-  // cells above it.)
-
-  // Hit map (docs/mouse-hit-map.md) — the topmost region the last frame drew
-  // under the pointer, z-ordered, with a DATA handler: popups (R1), pane chrome
-  // + border controls + tab strip + ✗ cancel + tree markers, in-grid overlay
-  // backdrops (R2), pane bodies + the empty screen + hover, and the drag in
-  // flight (pointer capture — motion / release go to it wherever the pointer
-  // is) (R3). Precedence is z-order. A miss falls through to what is left of
-  // the legacy cascade below — free-config (R3 step 4).
-  if (mouseRouter.route(kind, mx, my, model)) return;
-
-  // v0.6.3 Phase C1 — modal mouse routing through the `_modeMouseHandlers`
-  // registry (mirrors keyboard's `_modeHandlers` in dispatch.js). Handlers own
-  // their render() call so consume-no-render paths (panel-list header click,
-  // motion without drag) can skip paint as a perf optimization.
-  if (_dispatchActiveModeMouse(kind, mx, my, model)) return;
-
-  // T13 — mirror keyboard modal gating: while any chain mode claims keystrokes,
-  // nothing below may react. (Since Release 3 pane bodies publish only when no
-  // chain mode is active — the gate is expressed at paint; nothing reacts below
-  // this line any more. It retires with the registry above, R3 step 6.)
-  if (isChainActive(model.modes)) return;
+  // Phase 4 — runtime.update returns NEW model objects; read getModel() at
+  // entry so post-Msg state is what the router reads.
+  mouseRouter.route(kind, x - 1, y - 1, getModel());
 }
 
 // --- Terminal-mode keystroke handling ---
@@ -745,7 +652,7 @@ module.exports = {
   _handleTerminalModeData,  // exported for tests
   _classifyTerminalChunk,   // exported for tests (v0.6.5 PTY scrollback classifier)
   _handleWheel: (...a) => require('./pane-mouse').handleWheel(...a),   // exported for tests (moved to pane-mouse, R3)
-  handleMouse,              // exported for tests (T13 modal-gate regression)
+  handleMouse,              // exported for tests
   _classifyPress,           // exported for tests (Theme F Phase 3 double-click derivation)
   _makeDataHandler,         // exported for tests (input-burst smoke drives the real handler)
   _dispatchToken,           // exported for tests (round-4 Fork 2 — key-path integration for fabric-form Tab)

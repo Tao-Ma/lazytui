@@ -108,7 +108,7 @@ function registerSelf(compositor) {
     zIndex: 130,
     // Holds typed text → an outside click is swallowed, never discards it
     // (docs/mouse-hit-map.md §Backdrop). Also covers the in-grid ports-pane
-    // editor (this overlay paints nothing then), matching today's T13 gate.
+    // editor (this overlay paints nothing then), like the pre-R3 T13 gate.
     mouse: { outside: 'swallow' },
   });
 }

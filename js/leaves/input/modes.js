@@ -96,9 +96,9 @@ const MODES = [
   // `agent` pane: keystrokes compose the message draft. LAST in the chain so
   // every popup above (confirm, menu, jobs, …) wins while open; in-grid like
   // fabricFieldMode. Mouse while chatting: chrome-glyph clicks stay live
-  // (suppressChrome:false) and the WHEEL scrolls the transcript (an agentMode
-  // mouse handler passes it through); other clicks/drags are chain-gated like
-  // any modal (input.js T13).
+  // (suppressChrome:false) and the WHEEL scrolls the transcript (pane bodies
+  // publish their wheel under agentMode — paint's wheelLive); other clicks /
+  // drags find no body region, like under any chain mode (docs/mouse-hit-map.md).
   { flag: 'agentMode',               chain: true,  overlay: false, modal: true,  reset: true, suppressChrome: false },
   // Non-chain modes (see header).
   { flag: 'terminalMode',            chain: false, overlay: false, modal: true,  reset: true, suppressChrome: true  },
