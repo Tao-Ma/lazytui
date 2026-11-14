@@ -77,6 +77,12 @@ function setJobsHooks(j) {
  *  Injected at boot (io stays a leaf — see header); unset = no recording. */
 function setSessionRecorder(fn) { _sessionRecorder = (typeof fn === 'function') ? fn : null; }
 
+// A PTY needs at least one cell. Callers size from a pane's interior, which
+// the surface selector (panel/terminal-surfaces) only hands over when it is
+// ≥ 1×1; this is the leaf's own floor (a non-positive size threw from
+// resizeSession's prevFrame truncation, and node-pty / the emulator reject it).
+const _validSize = (cols, rows) => Number.isInteger(cols) && Number.isInteger(rows) && cols >= 1 && rows >= 1;
+
 /**
  * Create or return existing session. Lazy — created on first access
  * (first render of the active terminal tab).
@@ -85,6 +91,7 @@ function ensureSession(id, cmd, cols, rows, cwd) {
   if (sessions[id]) return sessions[id];
   if (!pty) return null;   // optional node-pty absent — no PTY sessions (the panel
                            // render shows a notice; the finalizer's null-safe reads skip).
+  if (!_validSize(cols, rows)) return null;   // nothing spawned; a later call with room spawns it
   const screen = emu.createScreen(cols, rows);
   const shell = process.env.SHELL || '/bin/bash';
   // cwd is injected by the caller (the spawn directory = model.projectDir).
@@ -235,7 +242,7 @@ function writeToSession(id, data) {
 /** Resize a session's PTY and screen. */
 function resizeSession(id, cols, rows) {
   const s = sessions[id];
-  if (!s) return;
+  if (!s || !_validSize(cols, rows)) return;   // keep the last size
   if (s.pty) { try { s.pty.resize(cols, rows); } catch {} }
   emu.resizeScreen(s.screen, cols, rows);
   if (_sessionRecorder) _sessionRecorder({ id, ev: 'resize', cols, rows });
@@ -267,6 +274,7 @@ function destroyAll() {
 function restartSession(id, cols, rows) {
   const old = sessions[id];
   if (!old) return null;
+  if (!_validSize(cols, rows)) return null;   // refuse BEFORE killing the old one
   const cmd = old.cmd;
   const cwd = old.cwd;
   destroySession(id);

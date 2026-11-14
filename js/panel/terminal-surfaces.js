@@ -4,12 +4,16 @@
  * #D15 overlay-repaint poll gate (app/state.js#_termTabOnScreen) so the two can
  * never disagree about whether a terminal is visible (U2d P0b).
  *
- * A surface = { id (PTY session id == the terminal tab-instance id), bounds (the
- * pane's rect), focused (holds keyboard focus → gets the hardware cursor) }.
- * Every visible `terminal`-kind pane instance is a surface, derived PURELY from
- * the arrange (a pane whose ACTIVE tab's pool entry type === 'terminal'); the
- * ptyId === the tab-instance id (`pane-<poolId>`), matching the finalizer's PTY
- * reconcile and the orphan-dispose destroySession.
+ * A surface = { id (PTY session id == the terminal tab-instance id), poolId,
+ * bounds (the pane's rect), cols/rows (its interior — the PTY's size), focused
+ * (holds keyboard focus → gets the hardware cursor) }.
+ * Every visible `terminal`-kind pane instance WITH AN INTERIOR (terminalInterior
+ * below) is a surface, derived PURELY from the arrange (a pane whose ACTIVE tab's
+ * pool entry type === 'terminal'); the ptyId === the tab-instance id
+ * (`pane-<poolId>`), matching the orphan-dispose destroySession. The finalizer's
+ * PTY reconcile (dispatch/runtime/finalize.js) and Enter's activate
+ * (dispatch/control/actions.js) read this selector too — one rule for "on
+ * screen", so sizing, painting and typing can't disagree.
  *
  * (U2d P2b — the legacy viewer-content-tab terminal source is GONE: terminals
  * are their own panes now, so there is exactly one producer.)
@@ -26,6 +30,19 @@
 const geo = require('../leaves/wm/geometry');
 const mpool = require('../leaves/wm/pool');
 const mpane = require('../leaves/wm/pane');
+
+// The grid a pane rect can show inside its border, or null when there is none:
+// a minimized pane is a 1-row bar, and a pane squeezed below 3 rows / 3 columns
+// has no inner cell. A terminal with no interior is NOT a surface — the PTY is
+// not sized to it (a 1-row bar gave `rows = -1`: resizeSession threw on every
+// dispatch while the pane stayed minimized), the overlay does not paint it (the
+// vanish reclaim then clears the grid it last painted), and Enter does not type
+// into it. Field report 2026-11-14 (an nvim pane, minimized).
+function terminalInterior(bounds) {
+  if (!bounds) return null;
+  const cols = bounds.w - 2, rows = bounds.h - 2;
+  return (cols >= 1 && rows >= 1) ? { cols, rows } : null;
+}
 
 function visibleTerminalSurfaces(model, arrangeOverride) {
   const route = require('./route');
@@ -48,8 +65,11 @@ function visibleTerminalSurfaces(model, arrangeOverride) {
     const entry = poolId && pool[poolId];
     if (!entry || entry.type !== 'terminal') continue;
     const b = geo.visibleBoundsFor(boundsSlice, p.paneId, viewerPaneId);
-    if (!b) continue;
-    out.push({ id: mpane.newPaneId(poolId), bounds: b, focused: terminalMode && focus === p.paneId });
+    const inner = terminalInterior(b);
+    if (!inner) continue;
+    out.push({ id: mpane.newPaneId(poolId), poolId, bounds: b,
+               cols: inner.cols, rows: inner.rows,
+               focused: terminalMode && focus === p.paneId });
   }
   return out;
 }

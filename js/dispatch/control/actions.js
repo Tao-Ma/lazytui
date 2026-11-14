@@ -23,12 +23,12 @@
 'use strict';
 
 const { allPanels, getSel } = require('../../panel/nav-state');
-const { getPanelViewportH, visibleBoundsFor } = require('../../leaves/wm/geometry');
+const { getPanelViewportH } = require('../../leaves/wm/geometry');
 const { runAction } = require('../runtime/action-runner');
 const { getPanelDef, getItems, getMergedActions, getInstanceSlice,
         wrap, getFocus, instanceKind } = require('../../panel/api');
 const { dispatchMsg } = require('../runtime/loop');
-const { focusedTerminalId } = require('../../panel/terminal-surfaces');
+const { focusedTerminalId, visibleTerminalSurfaces } = require('../../panel/terminal-surfaces');
 const { isSessionDead, restartSession } = require('../../io/terminal');
 const { getModel } = require('../../model/store');
 const route = require('../../panel/route');
@@ -128,14 +128,14 @@ function _pageStep(paneId) {
 function activateTerminal() {
   const id = focusedTerminalId();
   if (!id) return;
-  if (isSessionDead(id)) {
-    // Size the restarted session to the FOCUSED pane's CONTAINER bounds —
-    // getFocus() is the terminal pane (U2d) or the viewer (legacy); either way
-    // the pane whose terminal is being activated. resolveViewerPaneId supplies
-    // the half/full projection context.
-    const bounds = visibleBoundsFor(getInstanceSlice('layout'), getFocus(), route.resolveViewerPaneId());
-    if (bounds) restartSession(id, bounds.w - 2, bounds.h - 2);
-  }
+  // The focused terminal's on-screen surface — the same selector the overlay
+  // paints and the finalizer sizes from. None (minimized to its 1-row bar, or
+  // no interior) → nothing to type into: no terminal mode (keys would go to an
+  // invisible child) and no restart (it was sized to the bar: rows -1). Restore
+  // the pane, then Enter.
+  const surf = visibleTerminalSurfaces(getModel()).find(s => s.id === id);
+  if (!surf) return;
+  if (isSessionDead(id)) restartSession(id, surf.cols, surf.rows);
   applyMsg({ type: 'terminal_enter' });
 }
 

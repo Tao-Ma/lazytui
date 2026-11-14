@@ -35,9 +35,9 @@ const route = require('../../panel/route');
 const { getModel } = require('../../model/store');
 const geo = require('../../leaves/wm/geometry');
 const mpool = require('../../leaves/wm/pool');
-const mpane = require('../../leaves/wm/pane');
 const { syncPanelScroll } = require('../../panel/nav-state');
 const terminal = require('../../io/terminal');
+const { visibleTerminalSurfaces } = require('../../panel/terminal-surfaces');
 const diag = require('../../io/diag-log');
 // Replay flag (zero-dependency sibling — safe to top-require; no load cycle).
 const replay = require('./replay');
@@ -137,38 +137,29 @@ function finalizeDispatch() {
     // (blessed-exception B retired). It rides onto each viewer Msg via the
     // viewer's `augmentMsg` (computed from the pane's committed geometry) and
     // the viewer's own reducer commits it. What remains is the PTY reconcile.
-    const viewerPaneId = route.resolveViewerPaneId();
     // v0.6.5 §5 / U2d — PTY-session reconcile for the visible `terminal` PANE
     // instances. This is the side-effect that used to run in render (paint.js's
     // ensureSession/resizeSession); moving it here makes render a pure read of
     // the session buffer. It is the SAME dispatch-runtime reconcile category as
-    // the instance-mint above. Visible-only: walk the placed panes, keep those
-    // whose ACTIVE tab is a terminal (derived purely from the arrange — the same
-    // filter the overlay's visibleTerminalSurfaces + the orphan-dispose
-    // destroySession use), ensure/resize each PTY keyed by the tab-instance id
-    // (== ptyId), sized to the pane's committed geometry. visibleBoundsFor reads
-    // the committed arrange (not render's drag-preview override), so the PTY
-    // holds its committed dims through a free-config drag — no SIGWINCH churn per
-    // zone crossing. ensureSession is idempotent (no re-spawn when it exists). A
-    // backgrounded terminal tab isn't the active tab → not ensured here, but its
-    // PTY stays alive until the tab/pane is removed (D-e). visibleBoundsFor null
-    // → off-screen → skip.
+    // the instance-mint above. Visible-only: the SAME surfaces the overlay paints
+    // (panel/terminal-surfaces — a pane whose ACTIVE tab is a terminal AND has an
+    // interior), each PTY keyed by the tab-instance id (== ptyId) and sized to the
+    // pane's committed interior. The selector reads the committed arrange (render
+    // alone passes the drag-preview override), so the PTY holds its committed
+    // dims through a free-config drag — no SIGWINCH churn per zone crossing.
+    // ensureSession is idempotent (no re-spawn when it exists). A backgrounded
+    // terminal tab isn't the active tab → not ensured here, but its PTY stays
+    // alive until the tab/pane is removed (D-e). Off-screen (half/full) or no
+    // interior (a minimized pane's 1-row bar) → not a surface → the PTY keeps its
+    // last size, and a never-shown one is not spawned until it has room.
     {
-      const arrange = layoutSlice.arrange;
-      const pool = (arrange && arrange.pool) || {};
-      for (const p of mpool.allPanesInColumns(arrange)) {
-        if (!p.paneId) continue;
-        const poolId = p.activeTabId;
-        const entry = poolId && pool[poolId];
-        if (!entry || entry.type !== 'terminal') continue;
-        const tb = geo.visibleBoundsFor(layoutSlice, p.paneId, viewerPaneId);
-        if (!tb) continue;
-        const ptyId = mpane.newPaneId(poolId);
-        const cmd = (entry.config && entry.config.cmd) || process.env.SHELL || '/bin/bash';
-        const cols = tb.w - 2, rows = tb.h - 2;
-        terminal.ensureSession(ptyId, cmd, cols, rows, getModel().projectDir);
-        const sz = terminal.sessionSize(ptyId);
-        if (sz && (sz.cols !== cols || sz.rows !== rows)) terminal.resizeSession(ptyId, cols, rows);
+      const pool = (layoutSlice.arrange && layoutSlice.arrange.pool) || {};
+      for (const s of visibleTerminalSurfaces(getModel())) {
+        const entry = pool[s.poolId];
+        const cmd = (entry && entry.config && entry.config.cmd) || process.env.SHELL || '/bin/bash';
+        terminal.ensureSession(s.id, cmd, s.cols, s.rows, getModel().projectDir);
+        const sz = terminal.sessionSize(s.id);
+        if (sz && (sz.cols !== s.cols || sz.rows !== s.rows)) terminal.resizeSession(s.id, s.cols, s.rows);
       }
     }
     // v0.6.6 replay arc — auto-cadence checkpoint (once per outermost dispatch).

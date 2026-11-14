@@ -6,6 +6,23 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Minimizing a `terminal` pane no longer errors or leaves its screen
+  behind** (field report: an nvim pane). The PTY was resized to the 1-row
+  bar (`rows = -1`), so every dispatch logged `[dispatch] post-dispatch
+  scroll clamp error: Invalid array length` until the pane was restored. The
+  editor's last screen also stayed painted where the pane body had been. A
+  terminal pane with no interior (minimized, or squeezed below 3×3) is no
+  longer treated as on screen: its PTY keeps its last size, the old grid is
+  cleared, and restoring it paints it back at the same size. The PTY sizing,
+  the overlay, its repaint poll and Enter now share one selector, so they
+  can't disagree about what is on screen.
+- **Enter on a minimized terminal pane does nothing** instead of entering
+  terminal mode with the terminal hidden (keys went to an editor you couldn't
+  see), and a dead session is no longer restarted at the bar's negative size.
+  Restore the pane, then press Enter.
+
 ## [0.6.58] — 2026-11-14
 
 Mouse hit-map, Release 3 — pane bodies, drags and replay on the hit map; the

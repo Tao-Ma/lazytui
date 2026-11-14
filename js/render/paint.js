@@ -717,9 +717,10 @@ function renderTerminalOverlay(model, arrangeOverride, forceAll) {
   let cursorOut = '';   // the focused surface's cursor move — appended LAST so
                         // it isn't stranded mid-buffer by a later surface's rows.
   for (const surf of surfaces) {
-    const { id, bounds, focused } = surf;
-    const innerW = bounds.w - 2;
-    const innerH = bounds.h - 2;
+    // cols/rows = the surface's interior (terminal-surfaces terminalInterior —
+    // ≥ 1×1; a pane without one is not a surface, so its departure takes the
+    // vanish reclaim in render()).
+    const { id, bounds, focused, cols: innerW, rows: innerH } = surf;
 
     // v0.6.5 §5 — render is READ-ONLY for the PTY overlay. The session's
     // lifecycle (lazy spawn on first activation + resize to the committed pane

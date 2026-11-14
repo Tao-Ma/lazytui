@@ -150,6 +150,12 @@ The terminal maps element-for-element onto the contract:
 
 The lifecycle reconcile lives in `dispatch/runtime/finalize.js` (the active
 terminal tab's `ensureSession`/`resizeSession` to the pane's committed geometry).
+It walks the same `visibleTerminalSurfaces` selector (`panel/terminal-surfaces.js`)
+the overlay paints and Enter activates from, so "on screen" has one definition: a
+terminal pane needs an interior of at least 1×1 to be a surface. A minimized pane
+(a 1-row bar) is not one: its PTY keeps its last size and is not painted, and a
+terminal that has never had room is not spawned until it does. `io/terminal`
+refuses a non-positive size on its own as well.
 The descriptor lives in the model: which tab is a terminal, its session id, the
 pane dims. The contents (the xterm grid) never enter the model. Render reads them
 live in `render/paint.js` (`getSession`/`sessionScrollInfo`) and `render/footer.js`.
