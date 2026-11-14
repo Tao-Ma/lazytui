@@ -290,6 +290,20 @@ describe('[10] --spec — Component authoring spec bundle', () => {
     // Every SPEC_DOCS file should land in the bundled output. A path
     // regression would surface here as a missing-doc stderr + rc 1.
     assert(!r.stderr.includes('missing doc'), 'no "missing doc" stderr');
+    // …and the bundle is what SPEC.md's own read order promises — every doc
+    // its index lists, in that order (DATAFLOW was listed and left out).
+    const docs = path.join(__dirname, '..', '..', 'docs');
+    const spec = fs.readFileSync(path.join(docs, 'SPEC.md'), 'utf8');
+    const index = spec.slice(spec.indexOf('## Index — read order'));
+    const names = [...index.matchAll(/^\d+\. \*\*([A-Z]+)\*\*/gm)].map(m => m[1]);
+    assert(names.length >= 6, `SPEC.md lists its read order (${names.join(', ')})`);
+    let at = -1;
+    for (const n of names) {
+      const head = fs.readFileSync(path.join(docs, `${n}.md`), 'utf8').split('\n')[0];
+      const i = r.stdout.indexOf(head, at + 1);
+      assert(i > at, `${n}.md is in the bundle, after the one before it`);
+      at = i;
+    }
   });
 });
 

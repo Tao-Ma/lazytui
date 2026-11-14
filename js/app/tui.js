@@ -72,19 +72,22 @@ Free-config (interactive layout editor) is reachable at runtime via
 the \`:free-config\` cmdline verb.
 
 The Component authoring spec is the concatenation of SPEC.md plus
-PRINCIPLES.md, PLUGINS.md, PROJECT.md, HUB.md, LAYOUT.md from this
-repo. Use it to write a new Component without searching the codebase.
+PRINCIPLES.md, PLUGINS.md, DATAFLOW.md, PROJECT.md, HUB.md, LAYOUT.md
+from this repo. Use it to write a new Component without searching the codebase.
 AI agents: read --spec output before writing Component code.`;
 
 // Order matters — SPEC.md is the entry/quickstart, then invariants,
-// then Component contract, then user-project contract (consumer-side
-// of the same boundary), then optional layers, then layout reference.
+// then Component contract, then the runtime view of it (DATAFLOW), then
+// user-project contract (consumer-side of the same boundary), then
+// optional layers, then layout reference — SPEC.md's "Index — read order"
+// (test-cli [10] holds the two to the same list).
 // (DECORATORS.md retired in v0.5 Phase 5; the file is a one-page
 // retirement note and isn't part of the authoring bundle anymore.)
 const SPEC_DOCS = [
   'SPEC.md',
   'PRINCIPLES.md',
   'PLUGINS.md',
+  'DATAFLOW.md',
   'PROJECT.md',
   'HUB.md',
   'LAYOUT.md',
