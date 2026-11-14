@@ -38,16 +38,15 @@ const { dispatchMsg, applyMsg } = require('../dispatch/runtime/loop');
 const { _makeDataHandler } = require('../dispatch/control/input');
 
 // Frames the app paints are not this test's subject.
-const _origWrite = process.stdout.write.bind(process.stdout);
-process.stdout.write = (chunk, ...rest) => (String(chunk).includes('\x1b') ? true : _origWrite(chunk, ...rest));
+const _out = require('./_helpers/host-screen').muteFrames();
 
 const feedScreen = (screen, bytes) => new Promise((res) => screen.write(bytes, res));
 const wait = (ms) => new Promise((res) => setTimeout(res, ms));
 
 (async () => {
   if (!terminal.ptyAvailable()) {
-    _origWrite('  (skipped: the optional node-pty dependency is not installed)\n');
-    process.stdout.write = _origWrite;
+    _out.write('  (skipped: the optional node-pty dependency is not installed)\n');
+    _out.restore();
     report();
     return;
   }
@@ -129,6 +128,6 @@ const wait = (ms) => new Promise((res) => setTimeout(res, ms));
 
   terminal.destroyAll();
   fx.cleanup();
-  process.stdout.write = _origWrite;
+  _out.restore();
   report();
-})().catch((e) => { process.stdout.write = _origWrite; console.error(e); process.exit(1); });
+})().catch((e) => { _out.restore(); console.error(e); process.exit(1); });

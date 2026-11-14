@@ -1,5 +1,5 @@
 /**
- * The terminal-pane field layout (pg_spectrum dev.sh, 2026-11-14) as a test
+ * The terminal-pane field layout (a dev-server project, 2026-11-14) as a test
  * fixture: a `type: terminal` pane alone in a flex middle column, between a
  * fixed-width groups column and an actions/detail column. Built from YAML
  * through the REAL parser (bootFresh takes the parsed config), so the pane gets
@@ -10,8 +10,14 @@
  *   fx.pane()   → the terminal's column pane (re-read: the arrange is immutable)
  *   fx.id       → its PTY session id (== the tab-instance id)
  *   fx.cleanup()
+ *   await tl.waitFor(id, 'needle')   // until the session's screen shows it
+ *
+ * Requiring it loads the test runner first (layout registers before the
+ * terminal Component — the other order logs a registration-order warning).
  */
 'use strict';
+
+require('../test-runner');
 
 const fs = require('fs');
 const os = require('os');
@@ -69,4 +75,16 @@ function boot({ cmd = 'sleep 60', cols = 160, rows = 40 } = {}) {
   };
 }
 
-module.exports = { boot, terminalPane };
+/** Wait (up to ~4.5 s) until terminal session `id`'s screen shows `needle` —
+ *  a program's output reaches the emulator asynchronously. Resolves to whether
+ *  it did. */
+async function waitFor(id, needle, rows = 60, cols = 200) {
+  const terminal = require('../../io/terminal');
+  for (let i = 0; i < 150; i++) {
+    if (terminal.getSession(id) && terminal.sessionViewportRows(id, rows, cols).rows.join('\n').includes(needle)) return true;
+    await new Promise(res => setTimeout(res, 30));
+  }
+  return false;
+}
+
+module.exports = { boot, terminalPane, waitFor };

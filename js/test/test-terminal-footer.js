@@ -39,22 +39,12 @@ const { EventEmitter } = require('events');
 // Every frame the app writes goes to a virtual terminal (paint is a diff
 // against the previous frame, so the screen must see them all); the runner's
 // plain report lines pass through.
-const { Terminal } = require('@xterm/headless');
-const vt = new Terminal({ cols: 160, rows: 40, allowProposedApi: true });
-let _frames = '';
-const _origWrite = process.stdout.write.bind(process.stdout);
-process.stdout.write = (chunk, ...rest) => {
-  const str = String(chunk);
-  if (str.includes('\x1b')) { _frames += str; return true; }
-  return _origWrite(chunk, ...rest);
-};
+const hs = require('./_helpers/host-screen').install({ cols: 160, rows: 40 });
+const { vt } = hs;
 async function screen() {
-  sm.render();
-  await new Promise(res => setImmediate(res));
-  const bytes = _frames; _frames = '';
-  await new Promise(res => vt.write(bytes, res));
+  await hs.paint();
   const rows = [];
-  for (let y = 0; y < vt.rows; y++) rows.push(vt.buffer.active.getLine(y).translateToString(true));
+  for (let y = 0; y < vt.rows; y++) rows.push(hs.line(y));
   return rows;
 }
 const footer = async () => (await screen())[39];
@@ -65,7 +55,7 @@ const collapse = (p) => dispatchMsg(route.wrap('layout', { type: 'panel_collapse
 (async () => {
   if (!terminal.ptyAvailable()) {
     console.log('  (skipped: the optional node-pty dependency is not installed)');
-    process.stdout.write = _origWrite;
+    hs.restore();
     report();
     return;
   }
@@ -184,6 +174,6 @@ const collapse = (p) => dispatchMsg(route.wrap('layout', { type: 'panel_collapse
 
   terminal.destroyAll();
   fx.cleanup();
-  process.stdout.write = _origWrite;
+  hs.restore();
   report();
 })();

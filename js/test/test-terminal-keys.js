@@ -37,8 +37,7 @@ const { _makeDataHandler } = require('../dispatch/control/input');
 const flush = (t, bytes) => new Promise((res) => t.write(bytes, res));
 
 // Frames the app paints (the Ctrl+\ exit repaints) are not report lines.
-const _origWrite = process.stdout.write.bind(process.stdout);
-process.stdout.write = (chunk, ...rest) => (String(chunk).includes('\x1b') ? true : _origWrite(chunk, ...rest));
+const _out = require('./_helpers/host-screen').muteFrames();
 
 (async () => {
   if (!terminal.ptyAvailable()) {

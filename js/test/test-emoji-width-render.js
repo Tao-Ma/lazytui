@@ -1,8 +1,8 @@
 /**
  * Emoji are drawn 2 columns wide by the host, and the frame accounts for it.
  *
- * Field report 2026-11-14 (pg_spectrum dev.sh: nvim with LazyVim in a
- * `type: terminal` pane): rows carrying ⚡/💤 ran one column past the pane's
+ * Field report 2026-11-14 (nvim with LazyVim in a `type: terminal` pane):
+ * rows carrying ⚡/💤 ran one column past the pane's
  * right border. Reproduced beyond terminal panes — an action labelled
  * `✅ done 🚀 go` pushed the Actions pane's right border off-screen, a `⚡` in a
  * group label shifted the Groups border. charWidth scored every emoji 1 (its
@@ -33,7 +33,7 @@ const { section, assert, eq, report } = require('./test-runner');
 const sm = require('./smoke/_helpers/smoke');
 const terminal = require('../io/terminal');
 const { visibleTerminalSurfaces } = require('../panel/terminal-surfaces');
-const { render } = require('../render/paint');
+const { waitFor } = require('./_helpers/terminal-layout');
 const { getModel } = require('../model/store');
 const { parse } = require('../parser');
 
@@ -57,24 +57,8 @@ const HOST = {
   },
 };
 const COLS = 120, ROWS = 30;
-const vt = new Terminal({ cols: COLS, rows: ROWS, allowProposedApi: true });
-vt.unicode.register(HOST);
-vt.unicode.activeVersion = HOST.version;
-
-let _frames = '';
-const _origWrite = process.stdout.write.bind(process.stdout);
-process.stdout.write = (chunk, ...rest) => {
-  const str = String(chunk);
-  if (str.includes('\x1b')) { _frames += str; return true; }
-  return _origWrite(chunk, ...rest);
-};
-const flush = (bytes) => new Promise((res) => vt.write(bytes, res));
-async function paintAndSync() {
-  render(getModel());
-  await new Promise(res => setImmediate(res));
-  const bytes = _frames; _frames = '';
-  await flush(bytes);
-}
+const hs = require('./_helpers/host-screen').install({ cols: COLS, rows: ROWS, unicode: HOST });
+const { vt, paint: paintAndSync } = hs;
 const _cell = vt.buffer.active.getNullCell();
 function cellAt(x, y) {
   const ln = vt.buffer.active.getLine(y);
@@ -142,19 +126,14 @@ fs.writeFileSync(yml, [
 
   section('[2] a terminal row the program fills ends at the pane border');
   if (!terminal.ptyAvailable()) {
-    _origWrite('  (skipped: the optional node-pty dependency is not installed)\n');
+    hs.write('  (skipped: the optional node-pty dependency is not installed)\n');
   } else {
     const surf = () => visibleTerminalSurfaces(getModel())[0];
     assert(surf(), 'precondition: the terminal pane is an on-screen surface');
     const { id } = surf();
     // Wait for the program's output to reach the session's screen.
-    let rows = [];
-    for (let i = 0; i < 100; i++) {
-      const s = terminal.getSession(id);
-      if (s) rows = terminal.sessionViewportRows(id, 2, surf().cols).rows;
-      if (rows[1] && rows[1].includes('x')) break;
-      await new Promise(res => setTimeout(res, 30));
-    }
+    await waitFor(id, 'x');
+    const rows = terminal.sessionViewportRows(id, 2, surf().cols).rows;
     assert(rows[0] && rows[0].startsWith('⚡'), `precondition: the first row starts with ⚡ (${JSON.stringify((rows[0] || '').slice(0, 8))})`);
     await paintAndSync();
     const { bounds, cols } = surf();
@@ -166,7 +145,7 @@ fs.writeFileSync(yml, [
     terminal.destroyAll();
   }
 
-  process.stdout.write = _origWrite;
+  hs.restore();
   fs.rmSync(dir, { recursive: true, force: true });
   report();
-})().catch((e) => { process.stdout.write = _origWrite; console.error(e); process.exit(1); });
+})().catch((e) => { hs.restore(); console.error(e); process.exit(1); });

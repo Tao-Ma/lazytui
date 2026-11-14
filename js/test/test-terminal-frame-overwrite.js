@@ -114,12 +114,9 @@ const hs = require('./_helpers/host-screen').install({ cols: 160, rows: 40 });
   const panes = () => mpool.allPanesInColumns(route.getInstanceSlice('layout').arrange);
   const paneOf = (id) => panes().find(p => p.id === id);
   const idA = mpane.newPaneId('ta'), idB = mpane.newPaneId('tb');
-  for (let i = 0; i < 150; i++) {
-    const a = terminal.sessionViewportRows(idA, 40, 160).rows.join('\n');
-    const b = terminal.sessionViewportRows(idB, 40, 160).rows.join('\n');
-    if (a.includes('AAA60') && b.includes('BBB60')) break;
-    await new Promise(res => setTimeout(res, 30));
-  }
+  const { waitFor } = require('./_helpers/terminal-layout');
+  await waitFor(idA, 'AAA60');
+  await waitFor(idB, 'BBB60');
   await hs.paint();
   await hs.paint();
 

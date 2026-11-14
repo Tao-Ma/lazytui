@@ -2,8 +2,8 @@
  * A popup over a terminal pane stays on top while open, and the pane comes back
  * when it closes.
  *
- * Field report 2026-11-14 (nvim in a `type: terminal` pane, pg_spectrum
- * dev.sh): `p` on the focused pane opened the action palette (expected — the
+ * Field report 2026-11-14 (nvim in a `type: terminal` pane): `p` on the
+ * focused pane opened the action palette (expected — the
  * pane wasn't in terminal mode), and closing it left the rows it had covered
  * blank. The terminal grid is painted AFTER the main frame, outside its
  * cell-diff; every popup composites INTO the frame. Since v0.6.51 a popup close
@@ -31,7 +31,6 @@ process.stdout.columns = 160; process.stdout.rows = 40;
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { Terminal } = require('@xterm/headless');
 const { describe, it, section, assert, eq, report } = require('./test-runner');
 const tl = require('./_helpers/terminal-layout');
 const terminal = require('../io/terminal');
@@ -39,7 +38,7 @@ const route = require('../panel/route');
 const { compositeRow } = require('../leaves/render/row-compositor');
 const { uncovered, sliceRuns, spliceRuns } = require('../leaves/render/occlusion');
 const { visibleTerminalSurfaces } = require('../panel/terminal-surfaces');
-const { render, renderTerminalOverlay } = require('../render/paint');
+const { renderTerminalOverlay } = require('../render/paint');
 const { getModel } = require('../model/store');
 const { dispatchMsg } = require('../dispatch/runtime/loop');
 
@@ -77,32 +76,14 @@ describe('[2] occlusion helpers', () => {
 });
 
 // --- the field case, on a decoded screen ------------------------------------
-const vt = new Terminal({ cols: 160, rows: 40, allowProposedApi: true });
-let _frames = '';
-const _origWrite = process.stdout.write.bind(process.stdout);
-process.stdout.write = (chunk, ...rest) => {
-  const str = String(chunk);
-  if (str.includes('\x1b')) { _frames += str; return true; }
-  return _origWrite(chunk, ...rest);
-};
-const flush = (t, bytes) => new Promise((res) => t.write(bytes, res));
-async function sync() {
-  await new Promise(res => setImmediate(res));
-  const bytes = _frames; _frames = '';
-  await flush(vt, bytes);
-}
-async function paintAndSync() { render(getModel()); await sync(); }
-const line = (y) => vt.buffer.active.getLine(y).translateToString(true);
-function find(needle) {
-  for (let y = 0; y < vt.rows; y++) { const x = line(y).indexOf(needle); if (x >= 0) return { x, y }; }
-  return null;
-}
+const hs = require('./_helpers/host-screen').install({ cols: 160, rows: 40 });
+const { sync, line, find, feed: flush, paint: paintAndSync } = hs;
 const key = (bytes) => require('../dispatch/control/input')._dispatchToken(bytes);
 
 (async () => {
   if (!terminal.ptyAvailable()) {
-    _origWrite('  (skipped [3]–[5]: the optional node-pty dependency is not installed)\n');
-    process.stdout.write = _origWrite;
+    hs.write('  (skipped [3]–[5]: the optional node-pty dependency is not installed)\n');
+    hs.restore();
     report();
     return;
   }
@@ -112,11 +93,7 @@ const key = (bytes) => require('../dispatch/control/input')._dispatchToken(bytes
   const fx = tl.boot({ cmd: `sh ${script}` });
   const pane = fx.pane();
   dispatchMsg(route.wrap('layout', { type: 'focus_set', focus: pane.paneId }));
-  for (let i = 0; i < 100; i++) {
-    const rows = terminal.sessionViewportRows(fx.id, 40, 160).rows.join('\n');
-    if (rows.includes('ROW60')) break;
-    await new Promise(res => setTimeout(res, 30));
-  }
+  await tl.waitFor(fx.id, 'ROW60');
   await paintAndSync();
   const surf = visibleTerminalSurfaces(getModel())[0];
   const ix0 = surf.bounds.x + 1, iy0 = surf.bounds.y + 1;     // the grid's first cell on screen
@@ -165,6 +142,6 @@ const key = (bytes) => require('../dispatch/control/input')._dispatchToken(bytes
   terminal.destroyAll();
   fx.cleanup();
   fs.rmSync(dir, { recursive: true, force: true });
-  process.stdout.write = _origWrite;
+  hs.restore();
   report();
-})().catch((e) => { process.stdout.write = _origWrite; console.error(e); process.exit(1); });
+})().catch((e) => { hs.restore(); console.error(e); process.exit(1); });

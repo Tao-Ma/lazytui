@@ -27,13 +27,11 @@
 
 process.stdout.columns = 160; process.stdout.rows = 40;
 
-const { Terminal } = require('@xterm/headless');
 const { section, assert, eq, report } = require('./test-runner');
 const tl = require('./_helpers/terminal-layout');   // the field layout (dev.sh)
 const terminal = require('../io/terminal');
 const route = require('../panel/route');
 const { visibleTerminalSurfaces } = require('../panel/terminal-surfaces');
-const { render } = require('../render/paint');
 const { getModel } = require('../model/store');
 const { dispatchMsg, applyMsg } = require('../dispatch/runtime/loop');
 const sm = require('./smoke/_helpers/smoke');
@@ -51,38 +49,20 @@ const pressEnter = () => require('../dispatch/control/input')._dispatchToken('\r
 
 // Every frame the app writes — the explicit renders below AND the ones the
 // render queue schedules on its own (setImmediate) — goes to a virtual
-// terminal, so the screen it holds is what the user would see. Frames carry
-// escape sequences; the runner's plain report lines pass through.
-const vt = new Terminal({ cols: 160, rows: 40, allowProposedApi: true });
-let _frames = '';
-const _origWrite = process.stdout.write.bind(process.stdout);
-process.stdout.write = (chunk, ...rest) => {
-  const str = String(chunk);
-  if (str.includes('\x1b')) { _frames += str; return true; }
-  return _origWrite(chunk, ...rest);
-};
-const flush = (t, bytes) => new Promise((res) => t.write(bytes, res));
-// Paint a frame, let any scheduled paint run, then feed it all to the screen.
-async function paintAndSync() {
-  render(getModel());
-  await new Promise(res => setImmediate(res));
-  const bytes = _frames; _frames = '';
-  await flush(vt, bytes);
-}
+// terminal (_helpers/host-screen), so the screen it holds is what the user
+// would see.
+const hs = require('./_helpers/host-screen').install({ cols: 160, rows: 40 });
+const { vt, feed: flush, paint: paintAndSync } = hs;
 function screenText() {
-  const buf = vt.buffer.active;
   const out = [];
-  for (let y = 0; y < vt.rows; y++) {
-    const ln = buf.getLine(y);
-    out.push(ln ? ln.translateToString(true) : '');
-  }
+  for (let y = 0; y < vt.rows; y++) out.push(hs.line(y));
   return out.join('\n');
 }
 
 (async () => {
   if (!terminal.ptyAvailable()) {
     _origErr('  (skipped: the optional node-pty dependency is not installed)');
-    process.stdout.write = _origWrite;
+    hs.restore();
     report();
     return;
   }
@@ -167,6 +147,6 @@ function screenText() {
   terminal.destroyAll();
   fx.cleanup();
   console.error = _origErr;
-  process.stdout.write = _origWrite;
+  hs.restore();
   report();
 })();

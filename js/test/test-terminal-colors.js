@@ -26,32 +26,18 @@ process.stdout.columns = 160; process.stdout.rows = 40;
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { Terminal } = require('@xterm/headless');
 const { section, assert, eq, report } = require('./test-runner');
 const tl = require('./_helpers/terminal-layout');
 const terminal = require('../io/terminal');
 const ts = require('../io/term-screen');
 const { enableScreenColors } = require('../leaves/text/ansi');
-const { render, setColorDepth } = require('../render/paint');
+const { setColorDepth } = require('../render/paint');
 const { getModel } = require('../model/store');
 const sm = require('./smoke/_helpers/smoke');
 
-const vt = new Terminal({ cols: 160, rows: 40, allowProposedApi: true });
-let _frames = '';
-const _origWrite = process.stdout.write.bind(process.stdout);
+const hs = require('./_helpers/host-screen').install({ cols: 160, rows: 40 });
+const { vt, feed: flush, paint: paintAndSync } = hs;
 const _origErr = console.error;
-process.stdout.write = (chunk, ...rest) => {
-  const str = String(chunk);
-  if (str.includes('\x1b')) { _frames += str; return true; }
-  return _origWrite(chunk, ...rest);
-};
-const flush = (t, bytes) => new Promise((res) => t.write(bytes, res));
-async function paintAndSync() {
-  render(getModel());
-  await new Promise(res => setImmediate(res));
-  const bytes = _frames; _frames = '';
-  await flush(vt, bytes);
-}
 const _cell = vt.buffer.active.getNullCell();
 function cellAt(x, y) { vt.buffer.active.getLine(y).getCell(x, _cell); return _cell; }
 // The screen position of the first character of `needle`.
@@ -117,11 +103,7 @@ const rgb = (v) => '#' + v.toString(16).padStart(6, '0');
     setColorDepth('truecolor');
     const fx = tl.boot({ cmd: `sh ${script}` });
     const id = fx.id;
-    for (let i = 0; i < 100; i++) {
-      const rows = terminal.getSession(id) ? terminal.sessionViewportRows(id, 1, 120).rows : [];
-      if (rows[0] && rows[0].includes('PLAIN')) break;
-      await new Promise(res => setTimeout(res, 30));
-    }
+    await tl.waitFor(id, 'PLAIN');
 
     section('[2] painted cells carry the program\'s attributes; a colour-only change repaints');
     await paintAndSync();
@@ -195,7 +177,7 @@ const rgb = (v) => '#' + v.toString(16).padStart(6, '0');
     eq(ts.readViewport(old, 2, 30).rows.map(x => x.trimEnd()), ['text-only', 'snapshot'], 'a text-only snapshot still restores');
   }
 
-  process.stdout.write = _origWrite;
+  hs.restore();
   report();
-})().catch((e) => { process.stdout.write = _origWrite; console.error(e); process.exit(1); });
+})().catch((e) => { hs.restore(); console.error(e); process.exit(1); });
 

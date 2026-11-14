@@ -37,8 +37,7 @@ const { _handleTerminalChunk } = require('../dispatch/control/input');
 
 // Frames the app paints (escape sequences) are not this test's subject; the
 // runner's plain report lines pass through.
-const _origWrite = process.stdout.write.bind(process.stdout);
-process.stdout.write = (chunk, ...rest) => (String(chunk).includes('\x1b') ? true : _origWrite(chunk, ...rest));
+const _out = require('./_helpers/host-screen').muteFrames();
 
 const flush = (screen, bytes) => new Promise((res) => screen.write(bytes, res));
 const show = (w) => JSON.stringify(Buffer.isBuffer(w) ? [...w] : w);
@@ -46,7 +45,7 @@ const show = (w) => JSON.stringify(Buffer.isBuffer(w) ? [...w] : w);
 (async () => {
   if (!terminal.ptyAvailable()) {
     console.log('  (skipped: the optional node-pty dependency is not installed)');
-    process.stdout.write = _origWrite;
+    _out.restore();
     report();
     return;
   }
@@ -129,6 +128,6 @@ const show = (w) => JSON.stringify(Buffer.isBuffer(w) ? [...w] : w);
   applyMsg({ type: 'terminal_exit' });
   terminal.destroyAll();
   fx.cleanup();
-  process.stdout.write = _origWrite;
+  _out.restore();
   report();
 })();
