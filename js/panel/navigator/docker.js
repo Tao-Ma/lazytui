@@ -39,7 +39,7 @@ const {
   esc, theme, renderPanel,
   getSel, getScroll, isMultiSel, getFilter,
   execAsync,
-  streamCommand, scheduleRender,
+  streamCommand,
   leaveTerminalMode,
   getItems: apiGetItems, selectedOrFocused,
   serviceSlice,

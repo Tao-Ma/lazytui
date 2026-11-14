@@ -28,7 +28,7 @@ const { runAction } = require('../runtime/action-runner');
 const { getPanelDef, getItems, getMergedActions, getInstanceSlice,
         wrap, getFocus, instanceKind } = require('../../panel/api');
 const { dispatchMsg } = require('../runtime/loop');
-const { focusedTerminalId, visibleTerminalSurfaces } = require('../../panel/terminal-surfaces');
+const { focusedTerminalId, surfaceOf } = require('../../panel/terminal-surfaces');
 const { isSessionDead, restartSession, ptyAvailable } = require('../../io/terminal');
 const { getModel } = require('../../model/store');
 const route = require('../../panel/route');
@@ -133,7 +133,7 @@ function activateTerminal() {
   // no interior) → nothing to type into: no terminal mode (keys would go to an
   // invisible child) and no restart (it was sized to the bar: rows -1). Restore
   // the pane, then Enter.
-  const surf = visibleTerminalSurfaces(getModel()).find(s => s.id === id);
+  const surf = surfaceOf(getModel(), id);
   if (!surf) return;
   // No PTY can run (the optional node-pty is not installed — the pane shows a
   // notice): no session to type into, so no terminal mode either. It was

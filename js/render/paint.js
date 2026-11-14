@@ -26,7 +26,7 @@
  */
 'use strict';
 
-const { RESET, richToAnsi, sgrRun, esc, visibleLen, wrapColor, sealMarkup } = require('../leaves/text/ansi');
+const { RESET, sgrRun, esc, visibleLen, wrapColor, sealMarkup } = require('../leaves/text/ansi');
 const { uncovered, sliceRuns, spliceRuns } = require('../leaves/render/occlusion');
 const { cols, rows, stdout, showCursor, hideCursor } = require('../io/term');
 const { allPanels } = require('../panel/nav-state');

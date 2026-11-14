@@ -24,7 +24,7 @@
 const { paintNow: render, beginBatch, endBatch } = require('../../leaves/infra/render-queue');
 const { getModel } = require('../../model/store');
 const { enableMouse, enableFocusEvents, enableBracketedPaste } = require('../../io/term');
-const { focusedTerminalId, visibleTerminalSurfaces } = require('../../panel/terminal-surfaces');
+const { focusedTerminalId, surfaceOf } = require('../../panel/terminal-surfaces');
 const terminal = require('../../io/terminal');
 const { writeToSession, isSessionDead } = terminal;
 const { tokenizeInput } = require('../../leaves/input/tokenize');
@@ -276,7 +276,7 @@ function _terminalWalk(data, reemit) {
           break;
         case 'report':
           flushKeys();
-          if (surf === undefined) surf = visibleTerminalSurfaces(getModel()).find(s => s.id === id) || null;
+          if (surf === undefined) surf = surfaceOf(getModel(), id);
           _reportTerminalMouse(id, surf, ev.mouse);
           break;
         case 'wheel':

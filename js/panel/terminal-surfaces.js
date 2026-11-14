@@ -106,6 +106,12 @@ function focusedTerminalTitle() {
   return mpane.titleOf(pool[mpane.poolIdOf(id)]) || null;
 }
 
+// The visible surface of terminal session `id` (its pane on screen, with an
+// interior), or null.
+function surfaceOf(model, id) {
+  return visibleTerminalSurfaces(model).find(s => s.id === id) || null;
+}
+
 // What the FOCUSED terminal pane's keys do right now, for the footer and `x`:
 // null when the focus isn't a terminal; else { id, dead (the child exited —
 // Enter restarts), closable (`x` closes the tab; else `x` is the menu),
@@ -120,7 +126,7 @@ function focusedTerminalState(model) {
   const focus = route.getFocus();
   const pane = layoutSlice && layoutSlice.arrange &&
     mpool.allPanesInColumns(layoutSlice.arrange).find(p => p.paneId === focus);
-  const onScreen = visibleTerminalSurfaces(model).some(s => s.id === id);
+  const onScreen = !!surfaceOf(model, id);
   return {
     id,
     dead: terminal.isSessionDead(id),
@@ -130,4 +136,4 @@ function focusedTerminalState(model) {
   };
 }
 
-module.exports = { visibleTerminalSurfaces, focusedTerminalId, focusedTerminalTitle, focusedTerminalState };
+module.exports = { visibleTerminalSurfaces, surfaceOf, focusedTerminalId, focusedTerminalTitle, focusedTerminalState };

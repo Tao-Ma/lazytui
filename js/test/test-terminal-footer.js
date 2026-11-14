@@ -32,7 +32,7 @@ const sm = require('./smoke/_helpers/smoke');
 const terminal = require('../io/terminal');
 const route = require('../panel/route');
 const { getModel } = require('../model/store');
-const { dispatchMsg, applyMsg } = require('../dispatch/runtime/loop');
+const { dispatchMsg } = require('../dispatch/runtime/loop');
 const { _dispatchToken, _makeDataHandler } = require('../dispatch/control/input');
 const { EventEmitter } = require('events');
 
