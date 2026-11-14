@@ -232,8 +232,9 @@ for "the same thing but headless."
   `@xterm/headless` for embedded PTY tabs, `js-yaml` for config parsing,
   `eastasianwidth` (UAX #11 wide) + `wcwidth` (POSIX zero-width) for the
   Unicode character-width truth function, topped up with the runtime's own
-  Unicode data (Wide emoji, newer combining marks); the embedded terminal
-  measures with the same function.
+  Unicode data (Wide emoji, newer combining marks — where the runtime has it;
+  a Node built without ICU measures with the two tables alone); the embedded
+  terminal measures with the same function.
 - **Tests**: JS unit suites under `js/test/`, an opt-in
   pre-release smoke harness under `js/test/smoke/`, and
   a live integration harness under `test/`. See [docs/TESTING.md](docs/TESTING.md).

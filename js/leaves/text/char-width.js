@@ -61,8 +61,16 @@ const wcwidth = require('wcwidth');
 // rest of charWidth gives it: 0 where `wcwidth`'s own table says so (the older
 // Arabic number signs U+0600–0603, U+06DD), else 1 (U+0605, the Egyptian
 // hieroglyph format controls) — measured 2026-11-14.
-const _ZERO_RE = /^(?:[\p{Mn}\p{Me}]|(?=\p{Cf})\p{Default_Ignorable_Code_Point})$/u;
-const _EMOJI_WIDE_RE = /^(?!\p{Regional_Indicator})\p{Emoji_Presentation}$/u;
+//
+// The `\p{…}` property classes read the runtime's Unicode data (ICU). A Node
+// built without it (`--without-intl`) can't even PARSE a `\p` literal — this
+// module would fail to load, and every render with it. So both are built here,
+// in try/catch; without them the width is the two tables' alone (`wcwidth`
+// zero, `eastasianwidth` wide): emoji 1 column, newer combining marks 1 — the
+// widths before 2026-11-14, still the host's for most text.
+const _unicodeClass = (src) => { try { return new RegExp(src, 'u'); } catch (_) { return null; } };
+const _ZERO_RE = _unicodeClass('^(?:[\\p{Mn}\\p{Me}]|(?=\\p{Cf})\\p{Default_Ignorable_Code_Point})$');
+const _EMOJI_WIDE_RE = _unicodeClass('^(?!\\p{Regional_Indicator})\\p{Emoji_Presentation}$');
 
 // Memo: width + 1 per codepoint (0 = not computed yet). The whole code space is
 // 1.1 MB of zero pages until touched — bounded, unlike a Map keyed by input.
@@ -70,9 +78,9 @@ const _memo = new Uint8Array(0x110000);
 
 function _compute(cp) {
   const ch = String.fromCodePoint(cp);
-  if (wcwidth(ch) === 0 || _ZERO_RE.test(ch)) return 0;
+  if (wcwidth(ch) === 0 || (_ZERO_RE && _ZERO_RE.test(ch))) return 0;
   const c = eastAsianWidth(ch);
-  return (c === 'W' || c === 'F' || _EMOJI_WIDE_RE.test(ch)) ? 2 : 1;
+  return (c === 'W' || c === 'F' || (_EMOJI_WIDE_RE && _EMOJI_WIDE_RE.test(ch))) ? 2 : 1;
 }
 
 function charWidth(cp) {

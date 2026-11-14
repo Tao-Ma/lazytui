@@ -216,4 +216,28 @@ describe('[5] visibleLen sums codepoint widths (the render contract)', () => {
   });
 });
 
+describe('[6] a runtime without Unicode property data still loads it', () => {
+  // `\p{…}` needs ICU; a Node built --without-intl can't even parse a `\p`
+  // regex LITERAL, so a literal in char-width.js would stop the module (and
+  // every render) from loading. The classes are built with the RegExp
+  // constructor, in try/catch, and fall back to the tables alone.
+  const fs = require('fs');
+  const path = require('path');
+  const file = path.join(__dirname, '..', 'leaves', 'text', 'char-width.js');
+  it('no \\p{…} regex literal in the source', () => {
+    const code = fs.readFileSync(file, 'utf8').split('\n').filter(l => !/^\s*\/\//.test(l)).join('\n');
+    assert(!/\/[^/\n]*\\p\{[^/\n]*\/[a-z]*u/.test(code), 'a \\p literal would not parse without ICU');
+  });
+  it('the constructor throwing → the tables alone: CJK 2, combining 0, emoji 1, ASCII 1', () => {
+    const { spawnSync } = require('child_process');
+    const src = `const R = RegExp;
+      global.RegExp = function (s, f) { if (String(s).includes('\\\\p{')) throw new SyntaxError('no ICU'); return new R(s, f); };
+      const { charWidth } = require(${JSON.stringify(file)});
+      process.stdout.write(JSON.stringify([0x4E00, 0x0301, 0x1F4A4, 0x41].map(charWidth)));`;
+    const r = spawnSync(process.execPath, ['-e', src], { encoding: 'utf8' });
+    eq(r.status, 0, `loads: ${r.stderr}`);
+    eq(JSON.parse(r.stdout || 'null'), [2, 0, 1, 1]);
+  });
+});
+
 report();
