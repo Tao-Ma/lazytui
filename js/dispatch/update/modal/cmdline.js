@@ -99,7 +99,10 @@ function update(model, msg) {
         return [_withModal(model, { cmdline: { ...c, text, sel: 0, scroll: 0 } }), [{ type: 'cmdline_rebuild' }]];
       }
       if (msg.seq === '\x7f') {
-        return [_withModal(model, { cmdline: { ...c, text: c.text.slice(0, -1), sel: 0 } }), [{ type: 'cmdline_rebuild' }]];
+        // One CODEPOINT (a pasted emoji is two UTF-16 units — slice(0, -1) left
+        // half a surrogate pair).
+        const text = Array.from(c.text).slice(0, -1).join('');
+        return [_withModal(model, { cmdline: { ...c, text, sel: 0 } }), [{ type: 'cmdline_rebuild' }]];
       }
       if (msg.seq && msg.seq.length === 1 && msg.seq.charCodeAt(0) >= 32 && msg.seq.charCodeAt(0) < 127) {
         return [_withModal(model, { cmdline: { ...c, text: c.text + msg.seq, sel: 0 } }), [{ type: 'cmdline_rebuild' }]];

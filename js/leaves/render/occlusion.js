@@ -16,7 +16,7 @@
  */
 'use strict';
 
-const { charWidth } = require('../text/char-width');
+const { charWidth, stringWidth } = require('../text/char-width');
 
 /** The parts of [lo, hi) no span in `spans` ([[a, b), …], any order, may
  *  overlap or fall outside) covers, as [[a, b), …] left to right. */
@@ -69,7 +69,7 @@ function sliceRuns(runs, c0, c1) {
  *  `insert` runs; anything past `width` is dropped. */
 function spliceRuns(runs, width, col, insert) {
   let w = 0;
-  for (const r of insert) for (const ch of r.text) w += charWidth(ch.codePointAt(0));
+  for (const r of insert) w += stringWidth(r.text);
   const end = Math.min(width, col + w);
   const mid = sliceRuns(insert, 0, end - col);
   return sliceRuns(runs, 0, col).concat(mid, sliceRuns(runs, end, width));

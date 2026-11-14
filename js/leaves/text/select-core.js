@@ -15,7 +15,7 @@
  */
 'use strict';
 
-const { stripMarkup, charWidth, esc } = require('./ansi');
+const { stripMarkup, charWidth, stringWidth, esc } = require('./ansi');
 
 /** Plain (markup-stripped) projection of content line `i`. */
 function plainLineAt(lines, i) {
@@ -24,11 +24,7 @@ function plainLineAt(lines, i) {
 }
 
 /** Display width of a plain string (CJK/wide-aware). */
-function displayWidth(plain) {
-  let w = 0;
-  for (const ch of plain) w += charWidth(ch.codePointAt(0));
-  return w;
-}
+const displayWidth = stringWidth;
 
 /**
  * START boundary: the codepoint index of the first character whose display

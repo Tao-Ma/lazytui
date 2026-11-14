@@ -36,7 +36,7 @@
 'use strict';
 
 const { Terminal } = require('@xterm/headless');
-const { charWidth } = require('../leaves/text/char-width');
+const { charWidth, stringWidth } = require('../leaves/text/char-width');
 const { screenColors } = require('../leaves/text/ansi');
 
 // The emulator measures with the frame's width truth. A program's output is laid
@@ -231,12 +231,7 @@ function _attrBits(c) {
     (c.isInvisible() ? 64 : 0) | (c.isStrikethrough() ? 128 : 0) | (c.isOverline() ? 256 : 0);
 }
 
-function _textWidth(s) {
-  if (s.length === 1) return charWidth(s.charCodeAt(0));
-  let w = 0;
-  for (const ch of s) w += charWidth(ch.codePointAt(0));
-  return w;
-}
+const _textWidth = stringWidth;
 
 /** One buffer line → runs `[{ sgr, text }]` exactly `width` columns wide. */
 function _readRow(line, width, cell) {

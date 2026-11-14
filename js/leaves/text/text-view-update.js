@@ -23,7 +23,7 @@
 
 const ms = require('./search');
 const sc = require('./select-core');
-const { stripMarkup, charWidth } = require('./ansi');
+const { stripMarkup, stringWidth } = require('./ansi');
 
 // Effective viewport rows; pre-first-render fallback is 1 (see viewer.js FIX-2).
 function _innerH(slice) { return slice.innerH > 0 ? slice.innerH : 1; }
@@ -62,10 +62,7 @@ function _scrollView(slice, delta, lines) {
 function _lineWidth(lines, i) {
   const ln = lines[i];
   if (ln == null) return 0;
-  const plain = stripMarkup(ln);
-  let w = 0;
-  for (const ch of plain) w += charWidth(ch.codePointAt(0));
-  return w;
+  return stringWidth(stripMarkup(ln));
 }
 
 function _moveCursor(slice, dline, dcol, lines) {

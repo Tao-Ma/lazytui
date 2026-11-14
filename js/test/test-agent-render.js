@@ -70,6 +70,21 @@ describe('[agent render] input row', () => {
     assert(out2.includes('[reverse]a[/]'), 'cursor on the first char');
     assert(plain(out2).includes('abcdefghij'), 'head visible');
   });
+  it('the window is measured in columns: CJK / emoji neither overrun nor split', () => {
+    // Pre-release review 2026-11-14: it windowed by UTF-16 units — a CJK draft
+    // ran past the pane, and the cursor cell could cut an emoji's surrogate pair.
+    const { visibleLen } = require('../leaves/text/ansi');
+    let s = agent.init('p1', null);
+    const cjk = '日本語のテキスト'.repeat(4);            // 32 chars, 64 columns
+    s = { ...s, inputDraft: { text: cjk, cursor: cjk.length } };
+    const row = plain(draw(s, { w: 24, typing: true })).split('\n').find(l => l.includes('›'));
+    assert(visibleLen(row) <= 24, `the input row fits the pane: ${JSON.stringify(row)} (${visibleLen(row)})`);
+    assert(row.includes('…') && row.includes('キスト'), 'scrolled to the cursor at the end');
+    const emo = 'go 🚀 now';
+    const at = emo.indexOf('🚀');
+    const out = String(draw({ ...s, inputDraft: { text: emo, cursor: at } }, { typing: true }));
+    assert(out.includes('[reverse]🚀[/]'), `the cursor cell holds the whole emoji: ${JSON.stringify(out.slice(out.indexOf('›'), out.indexOf('›') + 40))}`);
+  });
   it('not typing: full (leaf-truncated) text, no cursor cell', () => {
     let s = agent.init('p1', null);
     s = { ...s, inputDraft: { text: 'draft here', cursor: 2 } };

@@ -47,7 +47,7 @@
  */
 'use strict';
 
-const { charWidth } = require('./char-width');
+const { charWidth, stringWidth } = require('./char-width');
 // Semantic theme tokens resolve against the LIVE palette at paint (below). themes
 // is a dependency-free infra leaf, so this is an acyclic leaf→leaf edge.
 const { theme } = require('../infra/themes');
@@ -376,10 +376,7 @@ function sealMarkup(s) {
  * Display width of text in terminal columns.
  */
 function visibleLen(text) {
-  const plain = stripMarkup(text);
-  let w = 0;
-  for (const ch of plain) w += charWidth(ch.codePointAt(0));
-  return w;
+  return stringWidth(stripMarkup(text));
 }
 
 /**
@@ -538,4 +535,4 @@ function wrapColor(color, content) {
 }
 
 module.exports = {
-  sealMarkup, richToAnsi, sgrRun, screenColors, stripMarkup, visibleLen, charWidth, esc, wrapColor, stripControls, enableScreenColors, RESET };
+  sealMarkup, richToAnsi, sgrRun, screenColors, stripMarkup, visibleLen, charWidth, stringWidth, esc, wrapColor, stripControls, enableScreenColors, RESET };

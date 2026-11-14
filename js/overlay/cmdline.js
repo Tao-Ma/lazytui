@@ -15,7 +15,7 @@
 'use strict';
 
 const { getModel } = require('../model/store');
-const { richToAnsi, RESET, visibleLen, esc } = require('../leaves/text/ansi');
+const { richToAnsi, RESET, visibleLen, stringWidth, esc } = require('../leaves/text/ansi');
 const { theme } = require('../leaves/infra/themes');
 const { renderPanel, viewportDims, writeOut, publishBox } = require('../leaves/render/draw');
 const { compositeRow } = require('../leaves/render/row-compositor');
@@ -112,11 +112,12 @@ function renderCmdline(newRows, cols) {
   const padded = prompt + ' '.repeat(Math.max(0, COLS - visibleLen(prompt)));
   let buf = `\x1b[${ROWS};1H` + richToAnsi(`[${t.footer}]${padded}[/]`) + RESET;
 
-  // Cursor at end of typed text. column = 1 (leading space) + ':' + _text.
-  // Visibility is derived in layout.render() — only the *position* is
-  // set here (and only while cmd mode is active). Cursor positioning
-  // is terminal state, not a cell, so it stays direct too.
-  const cursorCol = 2 + 1 + _text.length;
+  // Cursor at end of typed text: column = 1 (leading space) + ':' + the text's
+  // WIDTH (columns, not UTF-16 units — a CJK or emoji command argument put it
+  // left of the text end). Visibility is derived in layout.render() — only the
+  // *position* is set here (and only while cmd mode is active). Cursor
+  // positioning is terminal state, not a cell, so it stays direct too.
+  const cursorCol = 2 + 1 + stringWidth(_text);
   buf += `\x1b[${ROWS};${cursorCol}H`;
 
   // Through draw's injected writer → paint's depth funnel (P3) — never raw

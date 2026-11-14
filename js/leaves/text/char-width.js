@@ -92,4 +92,14 @@ function charWidth(cp) {
   return w;
 }
 
-module.exports = { charWidth };
+/** Display width of a PLAIN string (no markup, no escapes): the sum of its
+ *  codepoints' widths — the one copy (the emulator's cell text, the occlusion
+ *  splice, the text view's line width, the selection geometry, visibleLen). */
+function stringWidth(s) {
+  if (s.length === 1) return charWidth(s.charCodeAt(0));
+  let w = 0;
+  for (const ch of s) w += charWidth(ch.codePointAt(0));
+  return w;
+}
+
+module.exports = { charWidth, stringWidth };

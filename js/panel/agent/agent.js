@@ -45,7 +45,7 @@ const _slotStrip = () => (_slotStripRef || (_slotStripRef = require('../slot-str
 
 const tvu = require('../../leaves/text/text-view-update');
 const ms = require('../../leaves/text/search');
-const { esc } = require('../../leaves/text/ansi');
+const { esc, charWidth } = require('../../leaves/text/ansi');
 const { buildTextView } = require('../../leaves/text-view/render');
 const { renderPanel, theme } = require('../api');
 const { paneInnerH } = require('../pane-viewport');
@@ -409,19 +409,34 @@ function _inputLine(slice, typing, w) {
   if (!typing) {
     return raw ? `[${t.accent}]›[/] ${esc(raw)}` : `[${t.accent}]›[/] [dim]Enter to chat[/]`;
   }
-  const c = Math.max(0, Math.min(raw.length, d.cursor | 0));
+  // The draft as CODEPOINTS with their column widths: the window and the
+  // cursor cell are measured in columns, so CJK / emoji neither overrun the pane
+  // nor get their surrogate pair split by the cursor cell (it windowed by UTF-16
+  // units). `d.cursor` is a UTF-16 offset → the codepoint it starts.
+  const chars = Array.from(raw);
+  const c = Array.from(raw.slice(0, Math.max(0, Math.min(raw.length, d.cursor | 0)))).length;
+  const cw = chars.map(ch => charWidth(ch.codePointAt(0)));
   // Budget: pane interior (w-2) minus the '› ' prefix and one slack column
   // for the left '…' marker; the cursor cell may sit one past the text end.
   const avail = Math.max(8, (w | 0) - 5);
+  const cursorW = c < chars.length ? cw[c] : 1;
+  let toCursor = 0;                                  // columns before the cursor
+  for (let i = 0; i < c; i++) toCursor += cw[i];
   let start = 0;
-  if (raw.length + 1 > avail && c > avail - 2) {
-    start = Math.min(c - (avail - 2), raw.length + 1 - avail);
+  if (toCursor + cursorW > avail) {
+    // Scroll: drop chars from the left until the cursor cell fits beside '…'.
+    let used = toCursor + cursorW;
+    while (start < c && used > avail - 1) used -= cw[start++];
   }
-  const win = raw.slice(start, start + avail);
-  const wc = c - start;
-  const at = win.slice(wc, wc + 1);
+  let end = c + (c < chars.length ? 1 : 0), cols = 0;
+  for (let i = start; i < end; i++) cols += cw[i];
+  const room = avail - (start > 0 ? 1 : 0);
+  while (end < chars.length && cols + cw[end] <= room) cols += cw[end++];
   const pre = start > 0 ? '[dim]…[/]' : '';
-  return `[${t.accent}]›[/] ${pre}${esc(win.slice(0, wc))}[reverse]${at ? esc(at) : ' '}[/]${esc(win.slice(wc + 1))}`;
+  const at = c < chars.length ? chars[c] : '';
+  const before = chars.slice(start, c).join('');
+  const after = chars.slice(c + 1, end).join('');
+  return `[${t.accent}]›[/] ${pre}${esc(before)}[reverse]${at ? esc(at) : ' '}[/]${esc(after)}`;
 }
 
 // Search decoration over the transcript (text-view's _searchDecoration,

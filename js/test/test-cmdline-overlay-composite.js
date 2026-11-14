@@ -25,7 +25,7 @@
 
 process.stdout.columns = 100; process.stdout.rows = 30;
 
-const { describe, it, assert, report } = require('./test-runner');
+const { describe, it, assert, eq, report } = require('./test-runner');
 const term = require('../io/term');
 const draw = require('../leaves/render/draw');
 const { renderCmdline } = require('../overlay/cmdline');
@@ -79,6 +79,27 @@ describe('[cmdline-overlay-composite] composites dropdown into newRows + writes 
   });
   // (The pre-cleanup "stdout fallback still fires" case retired —
   // end-of-Release-2 cleanup; the overlay fn no longer has a stdout path.)
+  it('the prompt cursor sits after the text by WIDTH, not UTF-16 length (CJK, emoji)', () => {
+    // Pre-release review 2026-11-14: `2 + 1 + _text.length` put the cursor left
+    // of the text end for anything wider than one column per UTF-16 unit.
+    const COLS = 100;
+    const sm = require('./smoke/_helpers/smoke');
+    sm.bootFresh();
+    sm.resize(COLS, 30);
+    sm.applyMsg({ type: 'cmdline_enter' });
+    for (const ch of ['o', 'p', 'e', 'n', ' ']) sm.applyMsg({ type: 'cmdline_key', seq: ch });
+    sm.applyMsg({ type: 'cmdline_key', key: 'paste', seq: '日本🚀' });   // wide text arrives by paste
+    const chunks = [];
+    const origWrite = term.stdout.write;
+    term.stdout.write = (s) => { chunks.push(String(s)); return true; };
+    try { renderCmdline(new Array(29).fill(' '.repeat(COLS)), COLS); } finally { term.stdout.write = origWrite; }
+    const moves = [...chunks.join('').matchAll(/\x1b\[30;(\d+)H/g)].map(m => +m[1]);
+    // ' :open 日本🚀' = 1 + 1 + 5 + 2 + 2 + 2 = 13 columns → the cursor at 14.
+    eq(moves[moves.length - 1], 14, `cursor column (moves: ${moves})`);
+    // Backspace takes the emoji whole (it cut its surrogate pair in half).
+    sm.applyMsg({ type: 'cmdline_key', seq: '\x7f' });
+    eq(require('../model/store').getModel().modal.cmdline.text, 'open 日本', 'Backspace drops one codepoint');
+  });
 });
 
 describe('[cmdline-overlay-composite] no FULL_CLEAR on cmdline_enter through the paint pipeline', () => {
