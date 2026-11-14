@@ -6,12 +6,19 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.58] — 2026-11-14
+
 Mouse hit-map, Release 3 — pane bodies, drags and replay on the hit map; the
 legacy mouse cascade deleted ([docs/mouse-hit-map.md](docs/mouse-hit-map.md)
 §Release 3). Every pointer event now resolves on the per-frame hit map:
 `handleMouse` is the router call, precedence is z-order, and modal gating is
 what paint publishes. Drags (text selection, graph zoom, free-config resize /
-move, panel-list pool drag) run on one pointer-capture slot.
+move, panel-list pool drag) run on one pointer-capture slot. 13 commits
+(`e060fea2..4b568250`, beside a CHANGELOG compare-link repair): design plan,
+one commit per migration step, then a 4-track pre-release review
+(architecture / file layout / code / doc parity) and two more adversarial
+review rounds — every reproduced finding is fixed here. This closes the
+three-release mouse hit-map migration.
 
 ### Changed
 - **Pane bodies resolve on the hit map.** A click, double / right / middle
@@ -5557,7 +5564,8 @@ release tarballs. Full pre-squash development history is preserved
 on the internal gitea mirror under the `backup/main-history` branch
 and the `v0.1.0-pre-squash` tag.
 
-[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.57...HEAD
+[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.58...HEAD
+[0.6.58]: https://github.com/Tao-Ma/lazytui/compare/v0.6.57...v0.6.58
 [0.6.57]: https://github.com/Tao-Ma/lazytui/compare/v0.6.56...v0.6.57
 [0.6.56]: https://github.com/Tao-Ma/lazytui/compare/v0.6.55...v0.6.56
 [0.6.55]: https://github.com/Tao-Ma/lazytui/compare/v0.6.54...v0.6.55

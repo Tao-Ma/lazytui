@@ -4,8 +4,10 @@
 > + the release commit), including the 4-track pre-release review's fixes.
 > Release 2 SHIPPED in v0.6.57 (2026-11-14; `c075b2ca..980e40ff` + the release
 > commit), including the fixes from its 4-track review and two further review
-> rounds (§Release 2 — as built). Release 3 BUILT 2026-11-14 (`e060fea2..`;
-> §Release 3 — as built), not yet released. Written 2026-11-13. Trigger: field
+> rounds (§Release 2 — as built). Release 3 SHIPPED in v0.6.58 (2026-11-14;
+> `e060fea2..4b568250` + the release commit), including the fixes from its
+> 4-track review and two further review rounds (§Release 3 — as built) — the
+> three-release migration is complete. Written 2026-11-13. Trigger: field
 > report *"when confirm popup shows, I cannot click mouse"*. Root-caused to
 > a routing gap, then widened (user call: "fix mouse from the ground up,
 > make it a first-class citizen") into this three-release plan.
