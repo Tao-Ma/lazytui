@@ -4,7 +4,8 @@
 > + the release commit), including the 4-track pre-release review's fixes.
 > Release 2 SHIPPED in v0.6.57 (2026-11-14; `c075b2ca..980e40ff` + the release
 > commit), including the fixes from its 4-track review and two further review
-> rounds (§Release 2 — as built). Release 3 not started. Written 2026-11-13. Trigger: field
+> rounds (§Release 2 — as built). Release 3 plan agreed 2026-11-14 (§Release 3);
+> in progress. Written 2026-11-13. Trigger: field
 > report *"when confirm popup shows, I cannot click mouse"*. Root-caused to
 > a routing gap, then widened (user call: "fix mouse from the ground up,
 > make it a first-class citizen") into this three-release plan.
@@ -111,7 +112,9 @@ either way (§Stale-frame rule).
   that key through `handleKey` — mouse can never diverge from keyboard.
 - **Modals block by backdrop, not by gate.** A modal publishes a
   full-screen opaque backdrop below its box carrying an *outside policy*.
-  The `isChainActive` mouse gate and the `suppressChrome` column retire.
+  The `isChainActive` mouse gate retires (R3; pane bodies publish only when no
+  chain mode is active). The `suppressChrome` column stays as the paint-time
+  chrome gate and the backdrop-policy oracle (§Release 3, decision B).
 - **One pointer-capture slot** replaces `_armedSelect` / `_armedZoom` /
   the free-config drag routing.
 - chrome-regions, tree-regions, chrome-hittest.js and every re-derived
@@ -362,7 +365,10 @@ longer exists:
   the pane beneath; Enter+click injected into a port the user never saw);
 - if it drew nothing there, the legacy cascade decides, as before.
 
-R3 (no legacy cascade) makes the second case a drop too.
+R3 (no legacy cascade) replaces the second case with a repaint: the router
+paints the current state at once (`render-queue.paintSync`, which ignores the
+batch) and resolves against that fresh frame — what the legacy cascade did
+against live state (§Release 3, decision A).
 
 **Geometry (R2).** Once pane chrome is on the map, a batched key that moves
 panes (collapse, hide, view mode, half-view swap, resize) must stale the frame
@@ -535,29 +541,84 @@ full suite + smoke green under `env -u TMUX`.
 
 ## Release 3 — pane bodies, drags, cascade deleted (proposed v0.6.58)
 
-1. One pane-body region per visible pane: `press` → focus+select intents,
-   `double`/`right`/`middle` → `mouseBindings.intentFor`, wheel → `scroll`
-   intent, `hover` on stats/composite.
-2. Pointer capture + the four controllers (§Pointer capture); panel-list
-   rows become `pool-drag` capture sources.
-3. Replay scrubber → z 20000 full-screen region with seek-strip handler.
-4. Delete: the remaining cascade, `_modeMouseHandlers`,
-   `_dispatchActiveModeMouse`, `_MOUSE_MODE_PRECEDENCE`, the
-   `isChainActive` mouse gate, `_armedSelect`, `_armedZoom`, every overlay
-   `hitTest` export. `handleMouse` becomes the ~30-line router.
+Plan agreed 2026-11-14 (refines the design-time draft; decisions A and B
+below). One commit per step; a test that a step breaks is re-pointed in that
+step's commit.
+
+0. This section + §Stale-frame rule + §End state.
+1. **Owner namespace.** A pane's regions carry `owner: 'pane:<paneId>'` and a
+   separate `paneId` (read by `tabMoved` and the acts). Overlay owners stay
+   their descriptor id — a fixed registry, whereas pool ids are user config (a
+   pool entry named `menu` owned `pane-menu`, the pane menu's id). Pinned: no
+   descriptor id starts with `pane:`. Lands before pointer capture, which keys
+   on the owner.
+2. **Router plumbing** (the legacy cascade is still the miss path). An `{ act }`
+   receives the event point (`{ mx, my }`) — a pane body is ONE region and its
+   row is resolved at click time through the select-view capture
+   (§Performance). One capture slot + named controllers
+   (`dispatch/control/pointer-capture.js`); an act or a `{ capture }` handler
+   may start one. The router takes `motion` / `release` (→ the capturing
+   controller) and `hover` (resolve + the `_lastHover` coalescing). Stale frame
+   with nothing visible under the pointer → repaint, then resolve against the
+   fresh frame (decision A, §Stale-frame rule).
+3. **Pane bodies (z 10)**, published from `pane-hits.begin` over the pane's
+   painted rect (collapsed bars too): `press` → `[{ act: 'pane-press' },
+   { capture: 'graph-zoom' | 'text-select' }]` (chosen at paint; zoom wins on a
+   graph stats pane — today's rule); `double` / `right` / `middle` →
+   `mouseBindings.intentFor` at click time; wheel → that pane's scroll; `hover`
+   on stats / composite. Published only when `bodyLive` (no chain mode — the T13
+   gate expressed at paint, as R2 did for tabs and fold markers); under
+   agentMode a body publishes wheel only (the transcript scrolls under the
+   input). Body code moves out of input.js into
+   `dispatch/control/pane-mouse.js`; the body press loop, button / wheel arms,
+   the select / zoom motion + release arms, `_armedSelect`, `_armedZoom` and
+   `_handleHover` are deleted.
+4. **Free-config + panel list.** Rows of non-essential items →
+   `{ capture: 'pool-drag', idx }`; header, footer, preview and essential rows
+   are swallowed by the box (adjacent finding 1, fixed by construction). The
+   panel-list descriptor (active for the whole of freeConfigMode) publishes a
+   below-chrome backdrop whose press → `{ act: 'free-config-press' }` (close the
+   list if open, then capture `free-config`). The stamp carries
+   `layout.panelList` while in free-config. `_mouseHandleFreeConfigMode`,
+   panel-list `hitTest` and the `'legacy'` handler form are deleted.
+5. **Replay scrubber** → a full-screen region at z 20000 owning every gesture
+   (hover is a true no-op: nothing may write into the reconstructed model) plus
+   one region per seek-bar cell, `{ act: 'replay-seek', fraction }`. The stamp
+   gains the replay view (replay is module state, injected), so a batched replay
+   start / stop + click can't resolve against the wrong frame. The
+   `_rc.active()` early-route and `hitTestSeek` are deleted.
+6. **Delete** `_modeMouseHandlers`, `_dispatchActiveModeMouse`,
+   `_MOUSE_MODE_PRECEDENCE` and the `isChainActive` mouse gate; `handleMouse`
+   becomes the router call.
+7. Bench vs v0.6.57 (same dir), docs / CHANGELOG / memory, then the 4-track
+   pre-release review.
+
+**Capture** keeps each drag's current behavior: one slot; motion / release go
+to the holder wherever the pointer is; release ends it. A press while a
+capture is held (a lost release) does what it does today per drag — select /
+zoom drop the capture, free-config re-presses (the reducer replaces the drag),
+pool-drag swallows the press.
+
+**Decision A — stale frame, nothing visible under the pointer.** The
+design-time draft dropped these once the cascade is gone. That would undo an
+R2 review fix: Esc closing jobs / pane-menu / which-key (or leaving filter /
+search) batched with a click on a pane reaches the pane today. R3 instead
+repaints at once and resolves against the fresh frame — what the legacy
+cascade did against live state. Cost: one extra mid-batch frame, only on that
+chunk (`render-queue.paintSync`).
+
+**Decision B — `suppressChrome` stays.** The design-time end state retired the
+column. Since R2 it is no click-time gate: it decides at paint whether chrome
+publishes, and it is the oracle `test-overlay-mouse-policy.js` pins backdrop
+placement against. Retiring it would need an above-chrome backdrop for
+free-config title-edit and would lose that oracle.
+
+Intentional behavior change: a key that moves panes (collapse, view mode, …)
+batched with a body click now swallows the click — R2 did the same for chrome.
 
 Exit: `handleMouse` has no per-mode or per-pane-kind branches; the ~25
-mouse-pinning test files green (list in §Test strategy).
-
-Carried from the R2 round-3 review (not bugs today):
-- When panel-list rows get real handlers, the stamp must carry
-  `layout.panelList` (its `'legacy'` box re-checks live state, so R2 needs none).
-- Region owners share one namespace: a pane's owner is its paneId
-  (`pane-<pool id>`), an overlay's its descriptor id — a pool entry named
-  `menu` owns `pane-menu`, the pane menu's id. The press→double continuation
-  compares owners; no collision is reachable now (no shared region ids;
-  backdrops swallow `double`), but pointer capture keys on the owner —
-  namespace pane owners first.
+mouse-pinning test files green (list in §Test strategy); full suite + smoke
+green under `env -u TMUX`.
 
 ## Test strategy
 
@@ -607,15 +668,17 @@ proposals (2026-11-13), and R1 ships them:
 
 Found while mapping the overlays and during R1; none is the reported bug.
 Each needed a repro before it was called a bug
-(`feedback_dont_speculate_commit`). Item 1 is still unverified and folds into
-R3 (the panel-list migration); item 4 was reproduced and fixed in R2.
+(`feedback_dont_speculate_commit`). Item 1 was reproduced before R3 and folds
+into R3 step 4 (the panel-list migration); item 4 was reproduced and fixed in R2.
 
-1. **panel-list header/footer press starts a drag** — *likely bug.* A press
-   on the header, footer or preview area leaves the cursor and, if the
-   highlighted item is not essential, still dispatches `pool_drag_start`
-   for it. The comment in input.js `_mouseHandleFreeConfigMode` says such clicks are swallowed;
-   that only holds when the highlighted item is essential. → R3 (panel-list
-   migration).
+1. **panel-list header/footer press starts a drag** — **REPRODUCED**
+   (2026-11-14, before R3). A press on the header, footer or preview area
+   leaves the cursor and, if the highlighted item is not essential, still
+   dispatches `pool_drag_start` for it: a header press armed `pool-armed` for
+   the highlighted pane and the next motion made it `pool-dragging`. The comment
+   in input.js `_mouseHandleFreeConfigMode` says such clicks are swallowed; that
+   only holds when the highlighted item is essential. → R3 step 4 (only item
+   rows start a drag).
 2. **Hover tooltip lingered under some popups** — **FIXED in R1** (`51804536`,
    then `0d57572d`; reproduced first). The tooltip hid on `isModal` (the
    modes.js `modal` column), which is false for confirm, register-popup,
