@@ -118,6 +118,20 @@ registers a `kind:'pty'` job on spawn and closes it on exit/kill.
 `renderTerminalOverlay` in `js/render/paint.js` reads `getSession()` /
 `sessionScrollInfo()` **live** and does a per-row diff against the session's
 `prevFrame` cache; the footer's terminal line lives in `js/render/footer.js`.
+
+**Colours.** The port reads each row cell by cell into styled runs
+(`readViewport` → `runs: [[{ sgr, text }]]`, `sgr` = the run's SGR parameters,
+'' = all defaults) exactly the interior's width — padded, and cut before a glyph
+that would cross the border. The 16 ANSI colours are emitted in their 16-colour
+form (the host draws them in its own palette); 256-colour and RGB stay exact and
+the write boundary downgrades them to the host's depth. `ansi.sgrRun` starts each
+run: a colour the program left at its default takes the theme's screen colour
+(when `theme_background` is on), the same top-up a reset inside streamed output
+gets. The row cache compares the composed row, so a colour-only change (vim's
+visual selection) repaints; `:theme` forces every surface to repaint. The
+checkpoint snapshot writes the same runs as SGR lines. Not drawn: underline
+styles (curly/dotted) and underline colour, which the emulator keeps internal —
+those cells get a plain underline.
 Render is **read-only** for the PTY (the spawn/resize moved to the finalizer);
 it positions the overlay against the focused viewer's committed (or, mid-drag,
 preview) bounds.

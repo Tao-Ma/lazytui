@@ -16,14 +16,20 @@
  *   scrollScreen / scrollScreenPages / scrollScreenToTop / scrollScreenToBottom → moved?
  *   screenScrollInfo(screen) → {atBottom,linesBelow}   screenMouseMode(screen) → mode
  *   screenMouseReport(screen, ev) → sent?   (encode a mouse event for the program)
- *   readViewport(screen,h,w) → {viewportY, rows:[text]}   (render)
+ *   readViewport(screen,h,w) → {viewportY, rows:[text], runs:[[{sgr,text}]]}   (render)
  *   serializeScreen(screen) → snapshot       restoreScreen(snapshot) → screen
  *
- * Grid snapshot fidelity: lazytui renders the terminal as MONOCHROME TEXT —
- * `render/paint.js` reads each row via `translateToString` (characters only; no
- * attributes). So the snapshot captures the buffer's TEXT (scrollback + visible)
- * + viewport position — faithful to what is actually painted, with no SGR
- * serializer and no extra dependency. The recorded PTY byte stream (the WAL
+ * Styled reads: a row is read cell by cell into RUNS of `{ sgr, text }` — `sgr`
+ * is the run's SGR parameter list ('' = every attribute at its default), the
+ * terminal lingua franca, so callers stay emulator-agnostic. The render resolves
+ * the default colours against the theme (ansi.sgrRun); the snapshot writes the
+ * same runs back as SGR. A read row is EXACTLY the requested width in columns
+ * (charWidth): it pads, and it stops before a glyph that would cross the edge,
+ * so a painted row can never run past its pane's border.
+ *
+ * Grid snapshot fidelity: the snapshot captures the buffer's text AND
+ * attributes (scrollback + visible) as SGR-encoded lines + the viewport
+ * position — faithful to what is painted. The recorded PTY byte stream (the WAL
  * diff log, io/terminal.js) remains the exact source for continued output.
  */
 'use strict';
@@ -150,33 +156,130 @@ function screenCursor(screen) {
   return { x: buf.cursorX, y: buf.cursorY };
 }
 
-/** The visible viewport as plain-text rows (the render read). `rows[i]` is the
- *  i-th visible line via translateToString (caller pads to width). */
-function readViewport(screen, height, width) {
-  const buf = screen.buffer.active;
-  const rows = [];
-  for (let r = 0; r < height; r++) {
-    const line = buf.getLine(r + buf.viewportY);
-    rows.push(line ? line.translateToString(false, 0, width) : '');
+// --- Styled reads -----------------------------------------------------------
+
+// A palette colour 0–15 is one of the 16 ANSI colours whichever way the program
+// set it (`31` or `38;5;1`): emit the 16-colour form, which a 16-colour host
+// draws in ITS palette. 16–255 and RGB keep their exact form; the write boundary
+// downgrades them to the host's depth (render/paint.js → color-depth).
+function _colorParams(palette, rgb, v, base) {
+  if (palette) {
+    if (v < 8) return String(base + v);
+    if (v < 16) return String(base + 60 + v - 8);
+    return `${base + 8};5;${v}`;
   }
-  return { viewportY: buf.viewportY, rows };
+  if (rgb) return `${base + 8};2;${(v >> 16) & 255};${(v >> 8) & 255};${v & 255}`;
+  return '';
 }
 
-/** Snapshot the screen's TEXT (scrollback + visible) + geometry + scroll pos —
- *  the grid snapshot for checkpoints. Faithful to the monochrome-text render. */
+function _cellSgr(c) {
+  const p = [];
+  if (c.isBold()) p.push('1');
+  if (c.isDim()) p.push('2');
+  if (c.isItalic()) p.push('3');
+  if (c.isUnderline()) p.push('4');
+  if (c.isBlink()) p.push('5');
+  if (c.isInverse()) p.push('7');
+  if (c.isInvisible()) p.push('8');
+  if (c.isStrikethrough()) p.push('9');
+  if (c.isOverline()) p.push('53');
+  const fg = _colorParams(c.isFgPalette(), c.isFgRGB(), c.getFgColor(), 30);
+  if (fg) p.push(fg);
+  const bg = _colorParams(c.isBgPalette(), c.isBgRGB(), c.getBgColor(), 40);
+  if (bg) p.push(bg);
+  return p.join(';');
+}
+
+// Attribute bits for run-change detection (numbers, not the SGR string: the
+// string is built only when a run starts).
+function _attrBits(c) {
+  return (c.isBold() ? 1 : 0) | (c.isDim() ? 2 : 0) | (c.isItalic() ? 4 : 0) |
+    (c.isUnderline() ? 8 : 0) | (c.isBlink() ? 16 : 0) | (c.isInverse() ? 32 : 0) |
+    (c.isInvisible() ? 64 : 0) | (c.isStrikethrough() ? 128 : 0) | (c.isOverline() ? 256 : 0);
+}
+
+function _textWidth(s) {
+  if (s.length === 1) return charWidth(s.charCodeAt(0));
+  let w = 0;
+  for (const ch of s) w += charWidth(ch.codePointAt(0));
+  return w;
+}
+
+/** One buffer line → runs `[{ sgr, text }]` exactly `width` columns wide. */
+function _readRow(line, width, cell) {
+  const runs = [];
+  let col = 0, run = null, pf = NaN, pb = NaN, pa = NaN;
+  const n = line ? Math.min(width, line.length) : 0;
+  for (let x = 0; x < n; x++) {
+    line.getCell(x, cell);
+    if (cell.getWidth() === 0) continue;               // right half of a wide glyph
+    let text = cell.getChars();
+    const w = text === '' ? 1 : _textWidth(text);
+    if (text === '') text = ' ';                        // never-written / erased cell
+    if (col + w > width) break;                         // never past the edge
+    const f = cell.getFgColorMode() + cell.getFgColor();
+    const b = cell.getBgColorMode() + cell.getBgColor();
+    const a = _attrBits(cell);
+    if (!run || f !== pf || b !== pb || a !== pa) {
+      run = { sgr: _cellSgr(cell), text: '' };
+      runs.push(run);
+      pf = f; pb = b; pa = a;
+    }
+    run.text += text;
+    col += w;
+  }
+  if (col < width) {
+    const pad = ' '.repeat(width - col);
+    if (run && run.sgr === '') run.text += pad;
+    else runs.push({ sgr: '', text: pad });
+  }
+  return runs;
+}
+
+/** The visible viewport (the render read): `runs[i]` is the i-th visible line as
+ *  styled runs, exactly `width` columns; `rows[i]` is its text. */
+function readViewport(screen, height, width) {
+  const buf = screen.buffer.active;
+  const cell = buf.getNullCell();
+  const rows = [], runs = [];
+  for (let r = 0; r < height; r++) {
+    const rr = _readRow(buf.getLine(r + buf.viewportY), width, cell);
+    runs.push(rr);
+    let text = '';
+    for (const x of rr) text += x.text;
+    rows.push(text);
+  }
+  return { viewportY: buf.viewportY, rows, runs };
+}
+
+/** Snapshot the screen (scrollback + visible) + geometry + scroll pos — the grid
+ *  snapshot for checkpoints. Each line is its styled runs written as SGR, with
+ *  trailing default blanks trimmed; a plain line is just its text. */
 function serializeScreen(screen) {
   const buf = screen.buffer.active;
+  const cell = buf.getNullCell();
   const lines = [];
   for (let y = 0; y < buf.length; y++) {
-    const ln = buf.getLine(y);
-    lines.push(ln ? ln.translateToString(true) : '');
+    const runs = _readRow(buf.getLine(y), screen.cols, cell);
+    const last = runs[runs.length - 1];
+    if (last && last.sgr === '') {
+      last.text = last.text.replace(/ +$/, '');
+      if (!last.text) runs.pop();
+    }
+    let out = '', state = '';
+    for (const r of runs) {
+      if (r.sgr !== state) { out += r.sgr ? `\x1b[0;${r.sgr}m` : '\x1b[0m'; state = r.sgr; }
+      out += r.text;
+    }
+    if (state) out += '\x1b[0m';
+    lines.push(out);
   }
   return { cols: screen.cols, rows: screen.rows, lines, baseY: buf.baseY, viewportY: buf.viewportY };
 }
 
-/** Rebuild a screen from a snapshot: write the captured text back (it fills the
- *  screen then scrolls into scrollback), then restore the scroll position.
- *  Write is async (parsed on a callback); callers flush before reading. */
+/** Rebuild a screen from a snapshot: write the captured lines back (SGR and all;
+ *  it fills the screen then scrolls into scrollback), then restore the scroll
+ *  position. Write is async (parsed on a callback); callers flush before reading. */
 function restoreScreen(snap, cb) {
   const screen = createScreen(snap.cols, snap.rows);
   screen.write((snap.lines || []).join('\r\n'), () => {

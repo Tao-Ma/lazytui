@@ -26,7 +26,7 @@
  */
 'use strict';
 
-const { RESET, richToAnsi, esc, visibleLen, charWidth, wrapColor, sealMarkup } = require('../leaves/text/ansi');
+const { RESET, richToAnsi, sgrRun, esc, visibleLen, wrapColor, sealMarkup } = require('../leaves/text/ansi');
 const { cols, rows, stdout, showCursor, hideCursor } = require('../io/term');
 const { allPanels } = require('../panel/nav-state');
 const geo = require('../leaves/wm/geometry');
@@ -748,10 +748,10 @@ function renderTerminalOverlay(model, arrangeOverride, forceAll) {
     session.prevH = innerH;
     if (!session.prevFrame) session.prevFrame = [];
 
-    // Read the visible viewport (plain-text rows + viewportY) through the
-    // emulator screen port — render never touches the emulator buffer directly
-    // (v0.6.6 replay arc: io/term-screen is the one emulator-aware module).
-    const { viewportY, rows } = sessionViewportRows(id, innerH, innerW);
+    // Read the visible viewport (styled runs + viewportY) through the emulator
+    // screen port — render never touches the emulator buffer directly (v0.6.6
+    // replay arc: io/term-screen is the one emulator-aware module).
+    const { viewportY, runs } = sessionViewportRows(id, innerH, innerW);
     // v0.6.5 §5(a) — scrollback: viewportY (moved by terminal.scrollSession*)
     // shifts every visible row, so the per-row cache is stale — force a full
     // inner repaint for that frame. Also clears the scroll indicator when the
@@ -761,15 +761,14 @@ function renderTerminalOverlay(model, arrangeOverride, forceAll) {
     const force = forceAll || appeared || dimChanged || scrolled;
 
     // Diff-based render: only rewrite rows whose content changed since the
-    // previous overlay write. trimRight=false + pad so shorter lines fully
-    // overwrite prior content within the changed row.
+    // previous overlay write. Each row comes from the port EXACTLY innerW
+    // columns wide (padded, and cut before a glyph that would cross the border),
+    // as runs of the program's own attributes; sgrRun resolves the colours the
+    // program left at default to the theme's screen colours. The cache compares
+    // the composed row, so a colour-only change (a visual selection) repaints.
     for (let row = 0; row < innerH; row++) {
-      let text = rows[row] || '';
-      // PTY rows are PLAIN emulator-flattened text — a literal `[` stays literal,
-      // so visibleLen's markup-strip would miscount. Pad by the true COLUMN width
-      // (charWidth sum) so wide (CJK/emoji) chars don't over-pad past the border.
-      const cols = [...text].reduce((a, ch) => a + charWidth(ch.codePointAt(0)), 0);
-      if (cols < innerW) text += ' '.repeat(innerW - cols);
+      let text = '';
+      for (const r of runs[row]) text += sgrRun(r.sgr) + r.text;
       if (!force && session.prevFrame[row] === text) continue;
       out += `\x1b[${bounds.y + row + 2};${bounds.x + 2}H${text}${RESET}`;
       session.prevFrame[row] = text;

@@ -123,8 +123,8 @@ The terminal implements this (v0.6.6 — see [docs/v0.6.6-replay.md](v0.6.6-repl
   byte stream + resize events, so re-feeding it into a PTY-less screen
   (`ensureReplaySession`/`feedReplay`) reconstructs the grid exactly. The byte stream is
   **emulator-agnostic** — it reconstructs on any emulator.
-- A **checkpoint** materializes each live screen (`snapshotSession` → a text grid; the
-  render is monochrome text, so text is faithful) so resume need not re-feed from spawn.
+- A **checkpoint** materializes each live screen (`snapshotSession` → the grid's text +
+  attributes as SGR lines, faithful to the render) so resume need not re-feed from spawn.
 - The replay harness skips the lifecycle reconcile (no real PTY spawned) and reconstructs
   the region from the side-channel.
 

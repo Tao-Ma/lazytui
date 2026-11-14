@@ -41,10 +41,10 @@
    footer bg (Phase 3) captured most of the perceived value at the time; the
    full-surface version landed later once the erase-ordering was worked out.
 2. **Terminal-pane color — follow-on arc, not this one.** The embedded
-   PTY pane renders monochrome text *by documented design*
-   (`js/io/term-screen.js` header; [foreign-components.md]). Coloring
-   it means reading emulator cells with attributes and revising that
-   contract — cleanly separable.
+   PTY pane rendered monochrome text at the time. It now paints the
+   program's colours and attributes (2026-11-14: `io/term-screen`
+   reads cells as SGR runs, `ansi.sgrRun` resolves default colours to the
+   screen colours; see [TERMINAL.md](TERMINAL.md) §Rendering).
 3. **Selection restyle — attempt, with verification.** Phase 3 tries
    tuned fg/bg selection; the `select-core` contract
    (`js/leaves/text/select-core.js:124` — `theme().selected ===
@@ -353,8 +353,10 @@ exactly what Approach A (OSC 11, setting the terminal default bg) would have
 avoided; Approach B was chosen to keep terminal state un-dirtied (nothing to
 restore on exit/crash).
 
-The embedded terminal pane is NOT overpainted (it renders monochrome by design —
-scope-decision 2). Bench note: the A2 cell-diff "−85% on localized updates"
+The embedded terminal pane is NOT overpainted with the screen colours where the
+program set its own; the cells it leaves at the default colour take them
+(2026-11-14 — `ansi.sgrRun`, the same top-up rule as a reset inside streamed
+content). Bench note: the A2 cell-diff "−85% on localized updates"
 figures are the screen-colours-OFF baseline; with screen colours ON every cell
 carries fg+bg, so localized savings are ~10 pts lower and scroll ~14 pts lower
 (still a clear win), plus a ~0.03 ms/full-frame quantize tax on 256/16 terminals

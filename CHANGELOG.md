@@ -61,6 +61,15 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   using them no longer drifts. Not covered: emoji built from several codepoints
   (❤️ with its emoji selector, skin tones, joined family emoji) still measure
   as the sum of their parts, where terminals draw one 2-wide glyph.
+- **Terminal panes show the program's colours.** A terminal pane drew
+  every program in plain text, so vim's visual selection, syntax colours and
+  status line were invisible. The pane now paints the program's colours (16,
+  256 and RGB, reduced to what your terminal supports) and its bold, dim,
+  italic, underline, inverse and strikethrough. Text the program leaves in the
+  default colour takes the theme's colours when `theme_background` is on, so
+  the pane no longer shows a block of your terminal's own background inside a
+  themed screen. A row can no longer run past the pane's border. Leaving a
+  replay (`:record-load`) restores live terminals with their colours.
 
 ## [0.6.58] — 2026-11-14
 

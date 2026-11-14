@@ -256,15 +256,34 @@ const _CONTENT_SGR_RE = new RegExp('\\x1b(?:\\[|' + _BRACKET_SENTINEL + ')([0-9;
 // guards are behavior-neutral for markup. stripMarkup carries the same
 // guards: it must agree with richToAnsi on what is a tag (visibleLen pads
 // what richToAnsi renders).
-function richToAnsi(text) {
-  // Invalidate the tag cache on a :theme change so semantic theme tokens re-resolve,
-  // and recompute the screen-bg SGR under the new palette — both key off _lastTheme.
+// Invalidate the tag cache on a :theme change so semantic theme tokens re-resolve,
+// and recompute the screen-bg SGR under the new palette — both key off _lastTheme.
+function _syncTheme() {
   const th = theme();
   if (th !== _lastTheme) {
     _TAG_CACHE.clear(); _lastTheme = th;
     const parts = _screenColorsOn ? _computeScreenParts(th) : { seq: '', fg: '', bg: '' };
     _screenSeq = parts.seq; _screenFgSeq = parts.fg; _screenBgSeq = parts.bg;
   }
+}
+
+/**
+ * The SGR that starts a run of a program's styled output (an embedded terminal
+ * pane's cells) — `params` is the run's SGR parameter list, '' = every attribute
+ * at its default. A colour the program left at its default takes the THEME's
+ * screen colour, the same rule richToAnsi applies to a reset inside streamed
+ * content (`_reassertAfter`): the run resets, sets its own attributes, then
+ * tops up whichever screen channel it did not set. Bare `\x1b[0m` (+ params)
+ * when screen colours are off.
+ */
+function sgrRun(params) {
+  _syncTheme();
+  if (!params) return _resetSeq();
+  return `\x1b[0;${params}m` + _reassertAfter(('0;' + params).split(';'));
+}
+
+function richToAnsi(text) {
+  _syncTheme();
   // Protect escaped brackets
   let result = text.replace(/\\\[/g, _BRACKET_SENTINEL);
   // GATED content-reset re-assertion (screen colours on): pure-markup rows — nearly
@@ -503,4 +522,4 @@ function wrapColor(color, content) {
 }
 
 module.exports = {
-  sealMarkup, richToAnsi, stripMarkup, visibleLen, charWidth, esc, wrapColor, stripControls, enableScreenColors, RESET };
+  sealMarkup, richToAnsi, sgrRun, stripMarkup, visibleLen, charWidth, esc, wrapColor, stripControls, enableScreenColors, RESET };

@@ -20,8 +20,8 @@
  *
  * v0.6.6 replay arc: the PTY output byte stream is recorded as a side-channel
  * (the injected `setSessionRecorder` hook → io/session-log `term` entries), and
- * a checkpoint can materialize the screen via `snapshotSession` (text grid —
- * faithful to the monochrome-text render). Replaying re-feeds those bytes (or
+ * a checkpoint can materialize the screen via `snapshotSession` (text +
+ * attributes as SGR lines — faithful to the render). Replaying re-feeds those bytes (or
  * restores a snapshot) into a PTY-less screen (`ensureReplaySession`/`feedReplay`).
  * Render reads the screen via `sessionViewportRows` (frame = read of the screen);
  * see model/store.js §Replayability boundary (#D5/#D14).
@@ -154,10 +154,11 @@ function _onSessionExit(id, exitCode) {
  *  accessors below, not `session.screen` directly.) */
 function getSession(id) { return sessions[id] || null; }
 
-/** The visible viewport as plain-text rows + viewportY (the render read). */
+/** The visible viewport (the render read): `runs` = each row as styled runs
+ *  `[{ sgr, text }]` exactly `width` columns wide, `rows` = their text, + viewportY. */
 function sessionViewportRows(id, height, width) {
   const s = sessions[id];
-  return s ? emu.readViewport(s.screen, height, width) : { viewportY: 0, rows: [] };
+  return s ? emu.readViewport(s.screen, height, width) : { viewportY: 0, rows: [], runs: [] };
 }
 
 /** The session's cursor position within the viewport ({x, y}, 0-based), or null
@@ -202,7 +203,7 @@ function markReplayExit(id, code) {
   if (s) { s.exited = true; s.exitCode = code; }
 }
 
-/** Checkpoint: materialize a session's screen (text grid + geometry + scroll). */
+/** Checkpoint: materialize a session's screen (styled grid as SGR lines + geometry + scroll). */
 function snapshotSession(id) {
   const s = sessions[id];
   return s ? emu.serializeScreen(s.screen) : null;
