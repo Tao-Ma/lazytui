@@ -21,7 +21,9 @@
  *   [3] a focus report batched with a click is lazytui's
  *   [4] keys beside a mouse report are re-encoded
  *   [5] a mouse report or a key split across chunks rejoins
- *   [6] a sequence that never completes reaches the program after the window
+ *   [6] a sequence that never completes reaches the program after the window;
+ *       inside a paste, a piece of the close marker waits however long
+ *   [7] a paste that outlives terminal mode finishes as a paste, not as keys
  *
  * Run: node js/test/test-terminal-input-events.js
  */
@@ -120,11 +122,22 @@ const wait = (ms) => new Promise((res) => setTimeout(res, ms));
   eq(send('\x1b[').join(''), '', 'held for a continuation');
   await wait(120);
   eq(writes.join(''), '\x1b[', 'then flushed to the program as it was (Alt+[)');
-  eq(send('\x1b[200~x\x1b').join(''), 'x', 'a paste ending in what may start its close marker holds those bytes…');
-  await wait(120);
-  eq(writes.join(''), 'x\x1b', '…and pastes them when nothing continues');
-  eq(send(CLOSE).join(''), '', 'the paste still ends at its close marker');
-  eq(send('z').join(''), 'z', 'keys after it are keys');
+  eq(send('\x1b[200~x\x1b[20').join(''), 'x', 'inside a paste, a piece of the close marker is held…');
+  await wait(200);
+  eq(writes.join(''), 'x', '…with no flush timer: the host always sends the rest (it flushed after 50 ms and the paste never ended)');
+  eq(send('1~z').join(''), 'z', 'the close completes however late; keys after it are keys');
+  eq(send('\x1b[200~y\x1b', 'q').join(''), 'y\x1bq', 'a piece that the paste continues past is pasted');
+  eq(send(CLOSE).join(''), '', 'and the paste still ends at its close marker');
+
+  section('[7] a paste that outlives terminal mode finishes as a paste, not as keys');
+  // Its program exited mid-paste (pty-lifecycle leaves terminal mode): the rest
+  // of the pasted text reached the normal-mode key ladder — a pasted
+  // `:theme nord\r` ran the command (round-2 review 2026-11-14).
+  send('\x1b[200~ab');
+  applyMsg({ type: 'terminal_exit' });
+  send(':theme nord\r', `${CLOSE}`);
+  eq([getModel().modes.cmdMode, getModel().theme], [false, 'monokai'], 'no cmdline opened, nothing ran');
+  enter();
 
   terminal.destroyAll();
   fx.cleanup();

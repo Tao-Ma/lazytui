@@ -225,7 +225,9 @@ function _terminalWalk(data, reemit) {
   // exited, or it has no session at all (none spawned yet, or no PTY support).
   if (!id || isSessionDead(id) || !terminal.getSession(id)) {
     _exitTerminalMode();
-    _termPaste = null;
+    // Mid-paste: the rest of the chunk is still pasted text — the normal-mode
+    // pipeline finishes it as a paste (_makeDataHandler), never as keys.
+    if (_termPaste) { reemit(data); return; }
     const { tokens, carry } = tokenizeInput(data);
     const kinds = tokens.map(t => _classifyTerminalToken(t, 'none').kind);
     let i = 0;
@@ -250,9 +252,14 @@ function _terminalWalk(data, reemit) {
     if (_termPaste) {
       const end = data.indexOf(_PASTE_CLOSE);
       if (end < 0) {
+        // A trailing piece of the close marker waits for the next chunk —
+        // with NO flush timer: the host always sends the close, and pasting
+        // the piece after 50 ms left the rest (`1~`) unmatched, the paste
+        // never ending (every later key pasted, Ctrl+\ included) whenever
+        // the two halves arrived further apart (round-2 review 2026-11-14).
         const hold = _markerPrefixAtEnd(data, _PASTE_CLOSE);
         _pasteToChild(id, data.slice(0, data.length - hold));
-        _holdCarry(data.slice(data.length - hold));
+        _holdCarry(data.slice(data.length - hold), { flush: false });
         return;
       }
       _pasteToChild(id, data.slice(0, end) + (_termPaste.marked ? _PASTE_CLOSE : ''));
@@ -316,12 +323,12 @@ function _terminalWalk(data, reemit) {
 }
 
 // The carry's flush in terminal mode: the bytes never completed a sequence,
-// so they are the program's as they are (pasted text, inside a paste).
+// so they are the program's as they are. (Inside a paste nothing flushes: a
+// piece of the close marker waits for the rest — _terminalWalk.)
 function _flushTerminalCarry(bytes) {
   const id = focusedTerminalId();
   if (!id || isSessionDead(id)) return;
-  if (_termPaste) _pasteToChild(id, bytes);
-  else writeToSession(id, bytes);
+  writeToSession(id, bytes);
 }
 
 // --- Stdin setup ---
@@ -434,10 +441,10 @@ function _clearCarryTimer() {
 
 // Hold `c` for the next chunk (it replaces any carry), flushing it after
 // _CARRY_FLUSH_MS if nothing continues it — in whichever mode is current then.
-function _holdCarry(c) {
+function _holdCarry(c, { flush = true } = {}) {
   _clearCarryTimer();
   _carry = c;
-  if (!c) return;
+  if (!c || !flush) return;
   _carryTimer = setTimeout(() => {
     const held = _carry;
     _carry = '';
@@ -475,7 +482,16 @@ function _makeDataHandler(stdin) {
       _handleTerminalChunk(joined, reemit);
       return;
     }
-    _termPaste = null;     // a terminal-mode paste can't continue outside terminal mode
+    // A terminal-mode paste that its mode ended under (the program exited
+    // mid-paste, its session died): the rest of it, up to its close marker, is
+    // still pasted text — finish it in the normal-mode paste accumulator, not
+    // as keys (a pasted `:theme nord\r` ran the command — round-2 review).
+    if (_termPaste) {
+      _termPaste = null;
+      _pasteBuffer = _PASTE_OPEN;
+      data = _carry + data;
+      _holdCarry('');
+    }
 
     // T25 — bracketed paste accumulator (B13). If we're mid-paste OR
     // this chunk starts with the open marker, route to the accumulator

@@ -224,7 +224,11 @@ into input events by the same tokenizer and carry as normal mode — a sequence
 split across chunks (by the host's read or the network) rejoins, and one that
 never completes reaches the child after the 50 ms carry window — and each event is
 classified on its own (`_classifyTerminalToken`, pure, unit-tested), so nothing
-depends on how input was batched. Keys reach the PTY in one write per run, in
+depends on how input was batched — with one deliberate exception, shared with
+normal mode (`leaves/input/tokenize`): a bare trailing ESC is never held, so a
+sequence cut right after its ESC byte does not rejoin. Holding it would delay
+every Esc keypress (vim's most-typed key) by the carry window; a cut exactly
+there is rare. Keys reach the PTY in one write per run, in
 stream order with the mouse reports between them. Outside terminal mode a
 focused terminal pane gets nothing: its keys are lazytui's (`Enter type here`).
 The kitty keyboard protocol is popped on entry (`kkp_suspend`), so the host
@@ -253,9 +257,12 @@ sends legacy key bytes while the child has the keyboard.
   (`CSI ? 1004 h`).
 - **Bracketed paste** — a host paste goes to the child verbatim (no key
   translation, no Ctrl+\ or scrollback matching inside it, across chunks — its
-  markers too may split across chunks: a trailing piece of the close marker is
-  held for the next chunk), wrapped in `CSI 200 ~`/`CSI 201 ~` only if the child turned bracketed paste on
-  (`CSI ? 2004 h`); a child that didn't would read the markers as typed text.
+  markers too may split across chunks: a trailing piece of the close marker
+  waits for the next chunk however long it takes, with no flush window), wrapped
+  in `CSI 200 ~`/`CSI 201 ~` only if the child turned bracketed paste on
+  (`CSI ? 2004 h`); a child that didn't would read the markers as typed text. If
+  terminal mode ends mid-paste (the program exited, its session died), the rest
+  of the paste is finished as a normal-mode paste — never typed as keys.
 - **Smart mouse forwarding** — per event, by `sessionMouseMode(id)`. When the child enabled DEC
   mouse reporting (vim, htop, `less --mouse`), each host mouse event is decoded,
   made relative to the terminal's grid, and re-encoded by the pane's emulator for
