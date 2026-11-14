@@ -667,7 +667,14 @@ function handleNormalKey(key, seq) {
       // A dead `agent` PANE closes on `x` too (the dead-terminal analog):
       // once the session exited, the transcript is a corpse to dismiss —
       // Enter would restart it instead (agent_activate's idempotent start).
-      if (instanceKind(getFocus()) === 'agent') {
+      // Only where `x` CAN close it (mpane.canRemoveTab — remove_tab refuses a
+      // slot's last tab): an agent alone in its slot gets the menu, like a lone
+      // dead terminal (it did nothing — pre-release review 2026-11-14).
+      const focusedPane = () => {
+        const ls = getInstanceSlice('layout');
+        return ls ? require('../../leaves/wm/pool').allPanesInColumns(ls.arrange).find(p => p.paneId === getFocus()) : null;
+      };
+      if (instanceKind(getFocus()) === 'agent' && mpane.canRemoveTab(focusedPane())) {
         const id = route.activeInstanceOf(getFocus());
         const sl = id ? getInstanceSlice(id) : null;
         if (sl && sl.status && sl.status.state === 'exited') {
@@ -679,8 +686,10 @@ function handleNormalKey(key, seq) {
       // `x` from the content slot, via remove_tab (the position-tab analog of the
       // dead-terminal close above; no liveness concept — users just want a close
       // gesture). Info + Transcript are permanent seeded defaults and must NOT
-      // close; the Transcript is a text-view too, so guard on its `hint`.
-      if (instanceKind(getFocus()) === 'text-view') {
+      // close; the Transcript is a text-view too, so guard on its `hint`. A
+      // text-view alone in its slot (a declared `type: text-view` pane) can't
+      // close either — the menu.
+      if (instanceKind(getFocus()) === 'text-view' && mpane.canRemoveTab(focusedPane())) {
         const poolId = mpane.poolIdOf(route.activeInstanceOf(getFocus()));
         const entry = ((getInstanceSlice('layout').arrange || {}).pool || {})[poolId];
         if (entry && entry.hint !== 'transcript') {

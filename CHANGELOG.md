@@ -49,7 +49,8 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   unreachable since terminals became their own pane kind, are gone.
 - **`x` on an exited terminal that is its slot's only tab opens the menu**
   instead of doing nothing (such a tab can't be closed, e.g. a configured
-  `type: terminal` pane). The exit banner and the footer offer `x close` only
+  `type: terminal` pane). So does `x` on an exited agent pane or a text-view
+  pane alone in its slot, which also did nothing. The exit banner and the footer offer `x close` only
   where `x` closes.
 - **Emoji no longer push pane borders out of place.** lazytui measured every
   emoji (⚡ 💤 🚀 ✅ ⭐ …) as 1 column, but terminals draw them 2 wide (glibc's

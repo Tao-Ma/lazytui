@@ -193,10 +193,18 @@ function addTab(pane, tab, entry, opts) {
  * tab), or the new-active entry is missing. Pure: returns
  * `{ pane, activeId, wasActive }`.
  */
+// Can a tab of this slot be removed? removeTab refuses a slot's LAST tab (a slot
+// is never empty), so a pane alone in its slot — a configured `type: terminal`
+// or `type: agent` pane — has no close: `x` is the menu there, and nothing may
+// offer `x close` for it.
+function canRemoveTab(pane) {
+  return ((pane && pane.tabs) || []).length > 1;
+}
+
 function removeTab(pane, tabId, pool) {
   const tabs = pane.tabs || [];
   const idx = tabs.findIndex(t => t.id === tabId);
-  if (idx < 0 || tabs.length <= 1) return null;
+  if (idx < 0 || !canRemoveTab(pane)) return null;
   const nextTabs = tabs.slice(0, idx).concat(tabs.slice(idx + 1));
   const wasActive = pane.activeTabId === tabId;
   const activeId = wasActive ? nextTabs[Math.min(idx, nextTabs.length - 1)].id : pane.activeTabId;
@@ -214,5 +222,6 @@ module.exports = {
   setActiveTab,
   addTab,
   removeTab,
+  canRemoveTab,
   paneMatchesFocus,
 };

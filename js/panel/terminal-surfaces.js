@@ -45,11 +45,11 @@ function terminalInterior(bounds) {
   return (cols >= 1 && rows >= 1) ? { cols, rows } : null;
 }
 
-// Can `x` close this terminal tab? remove_tab (leaves/wm/pane removeTab)
-// refuses a slot's last tab, so a terminal alone in its slot (a configured
-// `type: terminal` pane) stays put — `x` is the menu there, and nothing may
-// offer `x close` for it (field report 2026-11-14: the exit banner did).
-function _closable(pane) { return ((pane && pane.tabs) || []).length > 1; }
+// Can `x` close this terminal tab? leaves/wm/pane canRemoveTab — the rule
+// remove_tab enforces (a terminal alone in its slot stays put; `x` is the menu
+// there, and nothing may offer `x close` for it — field report 2026-11-14: the
+// exit banner did).
+const _closable = (pane) => mpane.canRemoveTab(pane);
 
 function visibleTerminalSurfaces(model, arrangeOverride) {
   const route = require('./route');
