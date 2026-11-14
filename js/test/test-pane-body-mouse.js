@@ -186,6 +186,34 @@ describe('[4] pointer capture (raw SGR)', () => {
   });
 });
 
+describe('[4b] a capture lives only in the scope it started in', () => {
+  for (const [label, open] of [
+    ['confirm', () => sm.applyMsg({ type: 'confirm_enter', message: 'Really?', cmd: null })],
+    ['the command menu', () => sm.applyMsg({ type: 'menu_open' })],
+    ['filter', () => sm.applyMsg({ type: 'mode_set', flag: 'filterMode' })],
+  ]) {
+    it(`a text-select drag interrupted by ${label}: no selection, no copy behind it; the capture is abandoned`, () => {
+      boot();
+      const g = geo.visibleBoundsFor(layout(), 'pane-groups');
+      const d = geo.visibleBoundsFor(layout(), 'pane-detail');
+      const psel = require('../panel/select-view');
+      input._classifyPress(0, 250, 90, Date.now());
+      tok(sgr(0, g.x + 2, g.y + 1));
+      assert(capture.held(), 'drag armed');
+      const reg = JSON.stringify(getModel().register);
+      sm.capture(open);                              // a key opened a modal mid-drag
+      tok(sgr(32, d.x + 4, d.y + 2));
+      eq(capture.held(), null, 'abandoned on the first motion');
+      assert(!psel.selectionFor('pane-groups'), 'no selection began behind it');
+      tok(sgr(0, d.x + 4, d.y + 2, true));
+      eq(JSON.stringify(getModel().register), reg, 'the release copied nothing');
+      sm.capture(() => sm.applyMsg({ type: 'mode_clear', flag: 'filterMode' }));
+      sm.capture(() => sm.applyMsg({ type: 'confirm_exit' }));
+      sm.capture(() => sm.applyMsg({ type: 'menu_close' }));
+    });
+  }
+});
+
 describe('[5] hover', () => {
   it('a live graph hover clears once a popup covers the graph (no hover handler → hover-out)', () => {
     const paneCfg = { id: 'g', type: 'stats', title: 'CPU', config: { topic: 'gh.cpu', row: '_', metrics: ['cpu'], window: 300, y_axis: 'off' } };
@@ -207,6 +235,13 @@ describe('[5] hover', () => {
     sm.capture(() => input.handleMouse('hover', mx + 2, my + 1));
     eq(layout().hover, null, 'cleared under the popup');
     sm.capture(() => sm.applyMsg({ type: 'confirm_exit' }));
+    // A stale frame: a popup opened by a batched key, not yet painted — a hover
+    // over the graph sets nothing (pre-review: it resolved the stale body).
+    hc.paint();
+    sm.capture(() => sm.applyMsg({ type: 'menu_open' }));
+    sm.capture(() => input.handleMouse('hover', mx + 5, my + 1));
+    eq(layout().hover, null, 'no hover resolved against the stale frame');
+    sm.capture(() => sm.applyMsg({ type: 'menu_close' }));
   });
 });
 

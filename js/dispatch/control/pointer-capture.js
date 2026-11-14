@@ -25,6 +25,13 @@
  *                                         dropped without a release
  *   }
  *
+ * SCOPE: a capture lives only within the scope it started in — the router
+ * passes a key of the active chain modes + the replay view. If a popup / an
+ * in-grid mode opens or replay starts / stops mid-drag, the next motion /
+ * release ABANDONS the capture: its `cancel` runs and nothing else, so a drag
+ * can't keep selecting / zooming / copying behind a modal (before R3 the T13
+ * gate dropped those gestures).
+ *
  * Capture state is input-shell (like the router's press→double record), not
  * model: the visible effects ride the Msgs each controller dispatches. A
  * controller that throws loses its capture; the error is recorded and never
@@ -36,7 +43,7 @@
 const eventLog = require('../../io/event-log');
 
 const _controllers = Object.create(null);
-let _slot = null;   // { name, ctl, state, owner } | null
+let _slot = null;   // { name, ctl, state, owner, scope } | null
 
 /** Register a named controller. Names are unique. */
 function register(name, ctl) {
@@ -52,18 +59,28 @@ function _record(name, phase, e) {
   } catch (_) { /* event-log unavailable */ }
 }
 
-/** Start capture `name` for a press at `ev`, on behalf of region `owner`.
- *  Replaces nothing — the router resolved any held capture before the press.
- *  Returns true when the controller took the capture. Unknown name → false. */
-function start(name, args, ev, owner) {
+/** Start capture `name` for a press at `ev`, on behalf of region `owner`,
+ *  within `scope` (see SCOPE). Replaces nothing — the router resolved any held
+ *  capture before the press. Returns true when the controller took the
+ *  capture. Unknown name → false. */
+function start(name, args, ev, owner, scope) {
   const ctl = _controllers[name];
   if (!ctl) return false;
   let state;
   try { state = ctl.start(args || {}, ev || {}); } catch (e) { _record(name, 'start', e); return false; }
   if (state == null) return false;
-  _slot = { name, ctl, state, owner: owner == null ? null : owner };
+  _slot = { name, ctl, state, owner: owner == null ? null : owner, scope: scope == null ? null : scope };
   return true;
 }
+
+// Drop the held capture without a release: `cancel` runs (if any). Returns dirty.
+function _abandon(ev) {
+  const s = _slot;
+  _slot = null;
+  if (!s || typeof s.ctl.cancel !== 'function') return false;
+  try { return !!s.ctl.cancel(s.state, ev || {}); } catch (e) { _record(s.name, 'cancel', e); return true; }
+}
+const _outOfScope = (scope) => !!_slot && _slot.scope != null && scope != null && scope !== _slot.scope;
 
 /** The held capture `{ name, owner }`, or null. */
 function held() { return _slot ? { name: _slot.name, owner: _slot.owner } : null; }
@@ -81,11 +98,13 @@ function _call(phase, ev) {
   }
 }
 
-/** Route a motion to the holder. Returns dirty (false when nothing is held). */
-function motion(ev) { return _call('motion', ev); }
+/** Route a motion to the holder (or abandon it — `scope` changed). Returns
+ *  dirty (false when nothing is held). */
+function motion(ev, scope) { return _outOfScope(scope) ? _abandon(ev) : _call('motion', ev); }
 
-/** Route a release to the holder and end the capture. Returns dirty. */
-function release(ev) { return _call('release', ev); }
+/** Route a release to the holder and end the capture (or abandon it — `scope`
+ *  changed). Returns dirty. */
+function release(ev, scope) { return _outOfScope(scope) ? _abandon(ev) : _call('release', ev); }
 
 /** A press while a capture is held. Returns `{ swallow, dirty }`: swallow →
  *  the press is consumed and the capture stays; otherwise the capture was
@@ -99,12 +118,7 @@ function press(ev) {
     try { policy = policy.call(s.ctl, s.state); } catch (e) { _record(s.name, 'pressWhileHeld', e); policy = 'drop'; }
   }
   if (policy === 'swallow') return { swallow: true, dirty: false };
-  _slot = null;
-  let dirty = false;
-  if (typeof s.ctl.cancel === 'function') {
-    try { dirty = !!s.ctl.cancel(s.state, ev || {}); } catch (e) { _record(s.name, 'cancel', e); dirty = true; }
-  }
-  return { swallow: false, dirty };
+  return { swallow: false, dirty: _abandon(ev) };
 }
 
 /** Test seam — drop any held capture without running a hook. */

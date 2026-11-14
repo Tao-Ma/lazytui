@@ -336,7 +336,13 @@ the slice (a drag the keyboard ended makes the remaining motion a no-op).
 **Lost release** (a press while a capture is held): `pressWhileHeld` decides —
 `'drop'` (text-select, graph-zoom, free-config: the capture ends, the press
 routes normally) or `'swallow'` (pool-drag, while the slice still holds the
-pool drag — as before R3). Mutual exclusion is structural: one slot, the
+pool drag — as before R3). **Scope** (pre-release review): a capture lives
+only within the chain modes + replay view it started under; if a popup or an
+in-grid mode opens, or replay starts / stops, mid-drag, the next motion /
+release abandons it — `cancel` runs and nothing else (the free-config drags
+release what the slice still holds; text-select / graph-zoom dispatch
+nothing), so a drag can't keep selecting or copying behind a modal (the pre-R3
+T13 gate dropped those gestures). Mutual exclusion is structural: one slot, the
 press's winning region picks the controller. Capture state stays input-shell
 (like `_lastClick*`), not model — the visible effects already ride Msgs. A
 throwing controller loses its capture (recorded).
@@ -349,8 +355,10 @@ pane-mouse unchanged). Anything else under the pointer — another pane, a popup
 box or backdrop, nothing — is *hover-out*: the router realizes `pane-hover`
 with no pane, which clears a live value (the pre-R3 "chain mode → clear"). A
 region that declares `hover: 'swallow'` (the replay owner) is a true no-op.
-Hover is never stale-checked (display-only; the next paint republishes) and
-never event-logged (it fires per cell). The hover tooltip overlay never
+On a stale frame hover does nothing at all — it neither resolves (a batched
+key may have opened a popup over the graph) nor clears (replay may have just
+started; nothing may write into the reconstructed model); the next motion after
+the repaint resolves fresh. Never event-logged (it fires per cell). The hover tooltip overlay never
 publishes regions (display-only — it must not steal clicks).
 
 ### Press→double continuation (R1, found during implementation)
@@ -400,6 +408,12 @@ longer exists:
   both wrong (reproduced before the fix: `n`+click in confirm moved focus to
   the pane beneath; Enter+click injected into a port the user never saw);
 - if it drew nothing there, the legacy cascade decides, as before.
+
+**Replay frames** (R3, pre-release review): while the frame showed the replay
+owner, it is current as long as the replay view is unchanged — the owner and
+seek cells depend on the replay view alone, not on the reconstructed model that
+moves under them (playback, seeks and Lock change it while replay repaints are
+debounced or skipped).
 
 R3 (no legacy cascade) replaces the second case with a repaint: the router
 paints the current state at once (`render-queue.paintSync`, which ignores the
@@ -950,6 +964,27 @@ step 7 is the bench, docs and review. Notes and deviations from the plan:
   mouse button held).
 - **The `{ intent }` handler form was removed** (pre-release review) — it had
   no publisher since R1; the pane-body acts realize intents themselves.
+- **Pre-release review (4 tracks) — fixed before release**, each reproduced
+  by a reviewer script first:
+  - replay seek clicks were swallowed as stale frames whenever the
+    reconstructed model moved without a repaint (Lock + playback: every press
+    dead until a keyboard unlock; two quick seeks: the second lost) — replay
+    frames are current while the replay view holds;
+  - a pointer capture survived a modal opening mid-drag (a text selection began
+    behind confirm / the menu / filter and the release overwrote the register;
+    graph-zoom could commit behind a popup) — captures are scoped;
+  - hover resolved against a stale frame (`x` + hover in one chunk set a graph
+    hover behind the menu; a hover in the window after replay started wrote
+    into the reconstructed model) — a stale frame makes hover a no-op;
+  - three tests passed for the wrong reason (stale-frame `+` + click, the
+    replay hover check, test-mouse-wheel [4]) — re-pointed and mutation-checked;
+  - doc parity (DATAFLOW / ONBOARDING / pane-selection / modes.js /
+    compositor comments described the deleted cascade as current), the
+    `{ intent }` form, a per-wheel `require` of io/terminal.
+  Kept (judgment): any stamp change between paint and click — not only a
+  batched key — swallows a body click the stale frame drew (an async tab
+  switch, a resize; the deferred-paint window is ~50 ms and the click really
+  was aimed at moved content).
 - **Test churn**: tests that hovered or clicked before any paint now paint
   first (the hit map holds only what a frame drew); the stale-frame `+` + body
   click case became a swallow (the intentional change); tests that read

@@ -133,6 +133,21 @@ describe('[2] outside the list', () => {
   });
 });
 
+describe('[2b] a mode change mid-drag', () => {
+  it('title-edit entered during a layout drag abandons the capture and ends the drag (nothing left stuck)', () => {
+    boot({ openList: false });
+    const g = require('../leaves/wm/geometry').visibleBoundsFor(layout(), 'pane-detail');
+    tok(sgr(0, g.x + 4, g.y + 4));
+    assert(capture.held() && drag(), 'a layout drag is live');
+    sm.capture(() => sm.applyMsg({ type: 'mode_set', flag: 'freeConfigTitleEditMode' }));
+    mtok(sgr(32, g.x + 8, g.y + 6));
+    eq(capture.held(), null, 'abandoned');
+    eq(drag(), null, 'the drag was released, not left in the slice');
+    sm.capture(() => sm.applyMsg({ type: 'mode_clear', flag: 'freeConfigTitleEditMode' }));
+    done();
+  });
+});
+
 describe('[3] pool drag holds the mouse', () => {
   it('a press while the pool drag is live is swallowed; the drag continues', () => {
     boot();

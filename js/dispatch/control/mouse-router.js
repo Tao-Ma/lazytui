@@ -68,6 +68,7 @@ const api = require('../../panel/api');
 const acts = require('./mouse-acts');
 const capture = require('./pointer-capture');
 const eventLog = require('../../io/event-log');
+const { getModel } = require('../../model/store');
 // The pane-body acts + the text-select / graph-zoom controllers, and the
 // free-config ones, register themselves on load (Release 3) — loaded here so
 // every router has them.
@@ -79,10 +80,28 @@ const DISCRETE = new Set(hitMap.DISCRETE_GESTURES);
 // The last press the hit map handled: { mx, my, owner, id, repeat } | null.
 let _lastPress = null;
 
-// Start a capture requested by a `{ capture }` handler or returned by an act.
+// A capture's scope (pointer-capture SCOPE): the chain modes + the replay view
+// a stamp records. A drag started under one scope is abandoned when it changes.
+const _scopeOf = (stamp) => `${stamp.chain}|${stamp.replay == null ? '' : stamp.replay}`;
+
+// Start a capture requested by a `{ capture }` handler or returned by an act —
+// scoped to the state AFTER the press's other handlers ran (a press may focus /
+// select, never change modes).
 function _startCapture(req, ctx) {
   const { capture: name, ...args } = req;
-  capture.start(name, args, ctx && ctx.ev, ctx && ctx.owner);
+  const scope = _scopeOf(hitMap.stampOf(getModel(), api.getInstanceSlice('layout')));
+  capture.start(name, args, ctx && ctx.ev, ctx && ctx.owner, scope);
+}
+
+// Is the published frame current for a gesture? Its stamp equals the current
+// one — or the frame showed the replay owner and the replay view is unchanged:
+// replay's regions (the owner, the seek cells) depend on the replay view alone,
+// not on the reconstructed model that moves under them (playback, seeks, Lock —
+// replay repaints are debounced or, under Lock, skipped).
+function _fresh(cur) {
+  const fs = hitMap.frameStamp();
+  if (hitMap.stampsEqual(fs, cur)) return true;
+  return !!fs && fs.replay != null && fs.replay === cur.replay;
 }
 
 /** Realize one handler. `ctx` = { ev: { mx, my, x, y }, owner } — the event
@@ -142,13 +161,15 @@ function _realizeAndPaint(hit, kind, mx, my) {
 /** Route one gesture. Returns true when something consumed it, false when
  *  nothing did (the event is dropped). `mx`/`my` are 0-based. */
 function route(kind, mx, my, model) {
+  const layoutSlice = api.getInstanceSlice('layout');
   if (kind === 'motion' || kind === 'release') {
     if (!capture.held()) return false;   // no drag in flight → nothing to do
-    const dirty = kind === 'motion' ? capture.motion(_ev(mx, my)) : capture.release(_ev(mx, my));
+    const scope = _scopeOf(hitMap.stampOf(model, layoutSlice));   // a modal opened mid-drag → abandoned
+    const dirty = kind === 'motion' ? capture.motion(_ev(mx, my), scope) : capture.release(_ev(mx, my), scope);
     if (dirty) render();
     return true;
   }
-  if (kind === 'hover') return _hover(mx, my);
+  if (kind === 'hover') return _hover(mx, my, _fresh(hitMap.stampOf(model, layoutSlice)));
   if (!DISCRETE.has(kind)) return false;
   if (kind === 'press') {
     // A press while a drag is held = a lost release (the terminal never sent
@@ -158,8 +179,7 @@ function route(kind, mx, my, model) {
     if (p.swallow) return true;
     if (p.dirty) render();
   }
-  const layoutSlice = api.getInstanceSlice('layout');
-  const fresh = hitMap.stampsEqual(hitMap.frameStamp(), hitMap.stampOf(model, layoutSlice));
+  const fresh = _fresh(hitMap.stampOf(model, layoutSlice));
   // A tab-scoped region (a border control, a fold marker) whose pane switched
   // tabs since paint is stale on its own — the click is swallowed (hit-map
   // §Tab scope); every other pane's regions stay live.
@@ -214,10 +234,13 @@ function route(kind, mx, my, model) {
 // region without one, a popup box or backdrop — means the pointer is over no
 // hoverable body: clear (HOVER_OUT), so a value box can't linger under an
 // overlay. A region that DECLARES hover 'swallow' (the replay owner) is a true
-// no-op. Never stale-checked: hover is display-only and the next paint
-// republishes; never event-logged (it fires per cell).
+// no-op. On a STALE frame hover does nothing at all — neither resolves (a
+// batched key may have opened a popup over the graph) nor clears (replay may
+// have just started: nothing may write into the reconstructed model); the next
+// motion after the repaint resolves fresh. Never event-logged (it fires per cell).
 const HOVER_OUT = Object.freeze({ act: 'pane-hover', paneId: null });
-function _hover(mx, my) {
+function _hover(mx, my, fresh) {
+  if (!fresh) return true;
   const hit = hitMap.resolve(mx, my, 'hover');
   if (hit && hit.region.on && hit.region.on.hover === 'swallow') return true;
   const h = hit && hit.handler && typeof hit.handler === 'object' && hit.handler.act ? hit.handler : HOVER_OUT;

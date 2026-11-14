@@ -118,6 +118,22 @@ describe('[2] mini view seek cells', () => {
   });
 });
 
+describe('[2b] replay frames are current while the replay view holds', () => {
+  it('the reconstructed model moving under an unchanged replay view (playback, Lock — repaints debounced or skipped) does not stale the seek cells', () => {
+    boot('mini');
+    const cells = hm.all().filter(r => r.owner === 'replay-scrubber' && r.id.startsWith('seek:'));
+    // The reconstructed model moves without a repaint: a popup opens in it.
+    sm.capture(() => sm.applyMsg({ type: 'confirm_enter', message: 'Really?', cmd: null }));
+    tok(sgr(0, cells[0].rect.x, cells[0].rect.y));
+    eq(SEEKS, [0], 'the seek still lands (pre-review: swallowed as a stale frame)');
+    const d = geo.visibleBoundsFor(layout(), 'pane-detail');
+    tok(sgr(0, d.x + 3, d.y + 3));
+    eq(require('../app/runtime').getModel().modes.confirmMode, true, 'everything else is still swallowed (the confirm is untouched)');
+    sm.capture(() => sm.applyMsg({ type: 'confirm_exit' }));
+    restore();
+  });
+});
+
 describe('[3] hidden view', () => {
   it('still owned: no seek cells, every click swallowed', () => {
     boot('hidden');
