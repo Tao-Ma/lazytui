@@ -6,6 +6,43 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+Mouse hit-map, Release 3 — pane bodies, drags and replay on the hit map; the
+legacy mouse cascade deleted ([docs/mouse-hit-map.md](docs/mouse-hit-map.md)
+§Release 3). Every pointer event now resolves on the per-frame hit map:
+`handleMouse` is the router call, precedence is z-order, and modal gating is
+what paint publishes. Drags (text selection, graph zoom, free-config resize /
+move, panel-list pool drag) run on one pointer-capture slot.
+
+### Changed
+- **Pane bodies resolve on the hit map.** A click, double / right / middle
+  click, wheel or hover on a pane resolves against the pane the frame drew
+  there (one region per pane; the row is resolved at click time as before).
+  Under a chain mode (any popup, filter, search, free-config) panes publish
+  no body; under the agent prompt they take the wheel only — the same gating
+  as before, now decided at paint.
+- **A key and a body click batched in one input chunk** (common over SSH)
+  where the key moved panes (collapse, view mode, …) now swallows the click,
+  as Release 2 did for pane chrome — it no longer lands on whatever pane is
+  there now. A key that leaves an in-grid mode (closing jobs / the pane menu /
+  a which-key chord, leaving filter or search) still lets the click reach the
+  pane: the frame is repainted and the click resolved against it.
+- **Drags run on pointer capture.** Motion and release go to the drag that the
+  press started, wherever the pointer moves (over a popup or another pane);
+  behavior is otherwise unchanged, including a press that arrives without a
+  release first.
+- **Replay owns the mouse through the hit map** — a click on the mini bar
+  seeks; everything else is swallowed, in every pane view.
+
+### Fixed
+- **A press on the free-config panel list's header, separator or preview
+  started dragging the highlighted pane.** Only an item row starts a drag now
+  (essential rows still don't).
+
+### For plugin / pane authors
+- Hit regions owned by a pane are now owned by `pane:<paneId>` and carry a
+  `paneId` field (an overlay's owner stays its descriptor id) — read
+  `region.paneId` to find the pane.
+
 ## [0.6.57] — 2026-11-14
 
 Mouse hit-map, Release 2 — pane chrome on the hit map

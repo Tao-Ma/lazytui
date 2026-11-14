@@ -436,7 +436,8 @@ Run via `node js/scripts/run-tests.js -q`.
   idle motion stays bounded.
   - **Follow-ons — SHIPPED.** Hover now covers every graph shape, not just the
     standalone sectioned pane:
-    - **Composite graph widgets.** `_handleHover` treats `composite` panes as hoverable;
+    - **Composite graph widgets.** `composite` panes are hoverable (their body region
+      publishes the `pane-hover` act — `dispatch/control/pane-mouse.js`, mouse hit-map R3);
       `composite.render` routes the cursor to the widget under it (`_widgetBodyRanges`,
       the same stacking render draws) and calls `stats.valueAt` on that widget spec —
       so a graph inside a btop box hovers exactly like a standalone pane. bars/meter

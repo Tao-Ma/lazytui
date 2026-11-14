@@ -147,7 +147,7 @@ to `_handleTerminalModeData`, bypassing normal key parsing.
   `scrollSessionToBottom`s, so typing always leaves scrollback.
 
 Wheel-on-a-terminal-pane while *not* in terminal mode also scrolls the PTY
-scrollback (`_handleWheel` keys on `instanceKind(paneId) === 'terminal'` →
+scrollback (`pane-mouse.handleWheel` keys on `instanceKind(paneId) === 'terminal'` →
 `scrollSession`), not any viewer slice.
 
 `Enter` on a (focused) `terminal` pane calls `dispatch/control/actions.js#

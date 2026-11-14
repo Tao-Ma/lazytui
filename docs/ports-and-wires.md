@@ -472,7 +472,7 @@ These power the pane and the wire list now, and the agent (P2) later.
 
 Grounded in the existing context-menu machinery
 (`js/leaves/input/context-menu.js` `SECTIONS`, `ctx.selectionText` resolved by
-`_resolveContextAt` in `js/dispatch/control/input.js`, handlers in
+`_resolveContextAt` in `js/dispatch/control/pane-mouse.js`, handlers in
 `js/dispatch/control/actions.js`, menu overlay `js/overlay/menu.js`):
 
 ```

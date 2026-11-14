@@ -4,8 +4,8 @@
 > + the release commit), including the 4-track pre-release review's fixes.
 > Release 2 SHIPPED in v0.6.57 (2026-11-14; `c075b2ca..980e40ff` + the release
 > commit), including the fixes from its 4-track review and two further review
-> rounds (§Release 2 — as built). Release 3 plan agreed 2026-11-14 (§Release 3);
-> in progress. Written 2026-11-13. Trigger: field
+> rounds (§Release 2 — as built). Release 3 BUILT 2026-11-14 (`e060fea2..`;
+> §Release 3 — as built), not yet released. Written 2026-11-13. Trigger: field
 > report *"when confirm popup shows, I cannot click mouse"*. Root-caused to
 > a routing gap, then widened (user call: "fix mouse from the ground up,
 > make it a first-class citizen") into this three-release plan.
@@ -149,11 +149,10 @@ Gestures are the existing `handleMouse` kinds: `press`, `double`, `right`,
 |---|---|---|
 | `{ key, seq? }` | `handleKey(key, seq ?? seqForKey(key))` — the keyboard path itself. `seqForKey` (leaves/render/hints) mirrors `input._dispatchToken`: a single character carries itself as `seq`, a named key (`return`, `escape`, `backtab`, `up`, …) carries none — so a handler's "printable seq → typed text" fallback never types a key's NAME | hint chips, wheel-on-list (`up`/`down`), outside policy (`escape`) |
 | `{ msg, owner? }` | `applyMsg(msg)` or `dispatchMsg(wrap(owner, msg))` | row picks (`menu_activate {idx}`), pane chrome (`panel_collapse_toggle`, `pool_hide`, `activate_tab`), tree toggle, `cancel_job` |
-| `{ intent }` | `intent.realize(intent)` | pane body: focus / select / activate / context / scroll |
-| `{ capture: name, ...args }` | start pointer capture with a named drag controller (§Pointer capture) | text-select, graph-zoom, free-config, pool-drag (R3) |
-| `{ act: name, ...args }` | a named input-time action (`dispatch/control/mouse-acts.js`) — the Msg is computed at click time against current state, after re-checking the target is still shown | border controls, `[≡]` open (R2) |
-| `'swallow'` | consume, no-op | backdrops, box borders |
-| `'legacy'` | the region owns its cells, but the legacy cascade realizes the gesture (the router returns false) — a migration shim, retired in R3 | the free-config panel list's box (R2) |
+| `{ intent }` | `intent.realize(intent)` | (no publisher since R3 — pane bodies resolve their row at click time, so they use acts that realize intents) |
+| `{ capture: name, ...args }` | start pointer capture with a named drag controller (§Pointer capture) | panel-list item rows → `pool-drag` (R3) |
+| `{ act: name, ...args }` | a named input-time action (`dispatch/control/mouse-acts.js`; other modules `register` theirs) — computed at click time against current state, after re-checking the target is still shown. It receives the event point `{ mx, my, x, y }` (R3); it may return a capture request `{ capture, ... }`, or `false` = nothing changed (the router skips its paint) | border controls, `[≡]` open (R2); pane bodies, free-config backdrop, replay seek (R3) |
+| `'swallow'` | consume, no-op | backdrops, box borders, the replay owner (hover included — declared, so it is a true no-op) |
 | `[h1, h2, …]` | realize each in order | row double-click = `[{ msg: nav to i }, { key: 'return' }]` |
 
 `{ key }` is the load-bearing choice: a chip, a wheel notch over a list,
@@ -180,7 +179,9 @@ Walk regions top-down by `z` (ties: later-published wins, matching paint
 order). The first region containing `(mx, my)` that has a handler for the
 gesture wins. A containing region with `opaque: true` and no handler stops
 the walk (event consumed). No hit → R1/R2: fall through to the legacy
-cascade; R3: nothing (event dropped).
+cascade; R3: nothing (event dropped). `motion` / `release` never resolve —
+they go to the held pointer capture, if any; `hover` resolves to a body's hover
+act, anything else clears the graph hover (§Hover).
 
 Boxes are opaque; rows and chips inside them are not — so a wheel over a
 chip falls to its row, then to the box's wheel handler.
@@ -189,12 +190,13 @@ chip falls to its row, then to the box's wheel handler.
 
 | Band | z | Publishers |
 |---|---|---|
-| Pane body | 10 | one region per visible pane (R3) |
+| Empty screen | 0 | viewport-sized; double / right / middle → `pane-gesture` with no pane (a right-click on empty space opens the general context menu) — published only when no chain mode is active (R3) |
+| Pane body | 10 | one region per visible pane, published by `render/pane-hits.begin` (R3) — only when no chain mode is active; under agentMode, wheel only |
 | In-pane affordances | 30 | tree fold markers (R2) |
-| Mode backdrop, below chrome | 35 | in-grid overlays that let chrome through (`suppressChrome: false`): jobs, pane-menu, which-key (R2); filter / search / agent backdrops wait for R3 (the T13 gate covers them until then) |
+| Mode backdrop, below chrome | 35 | in-grid overlays that let chrome through (`suppressChrome: false`): jobs, pane-menu, which-key (R2), free-config's panel-list (R3 — press starts the layout drag). Filter / search / agent need none: with no chain-mode bodies published there is nothing under them to hit (R3) |
 | Pane chrome | 40 | `[_]`/`[+]`/`[X]`/`[≡]`, border controls, bottom legend, tab strip, `✗ cancel` chip (R2 — the chip sits with chrome because it is live under in-grid modes today, like the chrome cluster it was hit-tested in) |
 | Overlay *k* | 1000 + 10·zIndex_k + {0 backdrop, 1 box, 2 rows, 3 chips} | compositor-registered overlays (R1) |
-| Replay owner | 20000 | replay scrubber full-screen capture (R3) — above every overlay band (the highest, hover-tooltip's, is 1000 + 10·999) |
+| Replay owner | 20000 (seek cells 20001) | while replay is active, paint publishes a full-screen region swallowing every gesture (any pane view, hidden included); the scrubber's mini bar publishes one region per drawn cell above it (R3) — above every overlay band (the highest, hover-tooltip's, is 1000 + 10·999) |
 
 The pre-R2 tree-marker-vs-dropdown fix (a source-order move in `handleMouse`)
 became a z fact (30 < 35 / 1000+). The `suppressChrome` column decides where an
@@ -210,12 +212,20 @@ read at paint, whether chrome publishes at all.
   + clipped to the pane, tab-scoped unless `paneLevel`; owner
   `paneOwner(paneId)` = `pane:<paneId>` + `paneId`, R3), `tabMoved(region,
   layoutSlice)` (§Stale-frame rule, Tab scope), `retractOwner(owner)`, `resolve(mx, my, gesture)`, `claims(mx, my)`,
-  `stampOf(model, layoutSlice)` / `stampsEqual` / `frameStamp()`, `all()`
-  (tests / diag), `BANDS` (the pane-anchored z bands). Panel layer
+  `stampOf(model, layoutSlice)` / `stampsEqual` / `frameStamp()`,
+  `setReplayView(fn)` (the injected replay state the stamp records, R3), `all()`
+  (tests / diag), `BANDS` (every z band but the per-overlay offsets). Panel layer
   (dispatch→panel and render→panel are legal edges).
+- **Pane-anchored publishers** (`render/pane-hits.js`): `begin` / `end` (the
+  pane bracket, publishing the pane's body — R3), `publishBody` (again after an
+  errored pane's retract), `publishScreen` (the empty-screen region, right after
+  the clear), `publishChrome` (renderPanel's drawn-chrome record → chrome band).
+  The replay owner is published by paint itself, the seek cells by the scrubber.
 - **Cleared** at the top of every main-frame paint in `render()`
   (`render/paint.js`, beside the hover-region clear) and repopulated in the
-  same synchronous pass.
+  same synchronous pass. A click on a stale frame that drew nothing visible
+  under it repaints at once (`render-queue.paintSync`, which ignores an open
+  batch — R3, §Stale-frame rule).
 - **Leaves publish through an injected sink** (`draw.setHitSink`), the
   `setChromeSink` precedent — `leaves/render/draw.js` stays pure and
   import-free of the panel layer (leaves purity wall).
@@ -296,29 +306,43 @@ mode leaves chrome live publishes none, or — `mouse.backdrop: 'below-chrome'`,
 R2: jobs, pane-menu, which-key — publishes it at z 35, under the chrome band,
 so chrome stays clickable while an outside click elsewhere runs the policy.
 
-### Pointer capture (R3)
+### Pointer capture (R3, as built)
 
-A press handler `{ capture: 'text-select', paneId }` starts a capture: the
-router stores `{ controller, args }` in ONE module-local slot. Every
-subsequent `motion` / `release` goes to the capturing controller regardless
-of position; `release` ends it. Controllers are code, registered by name:
+A press starts a capture — a `{ capture: name, ...args }` handler, or an act
+that returns such a request: `dispatch/control/pointer-capture.js` stores
+`{ controller, state, owner }` in ONE module-local slot. Every subsequent
+`motion` / `release` goes to the capturing controller regardless of position;
+`release` ends it. Controllers are code, registered by name — `{ start(args,
+ev) → state | null (decline), motion, release → dirty?, pressWhileHeld, cancel? }`:
 
-| Controller | Replaces | Emits |
-|---|---|---|
-| `text-select` | `_armedSelect` (input.js) | `select_begin` / `select_extend` / `register_push` / `select_cancel` |
-| `graph-zoom` | `_armedZoom` (input.js) | `graph_drag` / `graph_zoom` |
-| `free-config` | `_mouseHandleFreeConfigMode` (input.js) | `free_config_mouse_*` |
-| `pool-drag` | panel-list press → `pool_drag_*` | `pool_drag_start/motion/release` |
+| Controller | Started by | Replaces | Emits |
+|---|---|---|---|
+| `text-select` | `pane-press` act on selectable content | `_armedSelect` (input.js) | `select_begin` / `select_extend` / `register_push` / `select_cancel` |
+| `graph-zoom` | `pane-press` act on a graph stats pane (wins over text-select) | `_armedZoom` (input.js) | `graph_drag` / `graph_zoom` |
+| `free-config` | `free-config-press` act (the panel-list descriptor's below-chrome backdrop) | `_mouseHandleFreeConfigMode` (input.js) | `free_config_mouse_*` |
+| `pool-drag` | a panel-list item row's `{ capture }` | the panel-list press arm | `pool_drag_start/motion/release` |
 
-Mutual exclusion becomes structural: one slot, the press's winning region
-picks the controller. Capture state stays input-shell (like `_lastClick*`),
-not model — the visible effects already ride Msgs.
+The pane-body controllers live in `dispatch/control/pane-mouse.js`, the
+free-config ones in `dispatch/control/free-config-capture.js`; each re-checks
+the slice (a drag the keyboard ended makes the remaining motion a no-op).
+**Lost release** (a press while a capture is held): `pressWhileHeld` decides —
+`'drop'` (text-select, graph-zoom, free-config: the capture ends, the press
+routes normally) or `'swallow'` (pool-drag, while the slice still holds the
+pool drag — as before R3). Mutual exclusion is structural: one slot, the
+press's winning region picks the controller. Capture state stays input-shell
+(like `_lastClick*`), not model — the visible effects already ride Msgs. A
+throwing controller loses its capture (recorded).
 
 ### Hover
 
 `hover` is just another gesture: stats / composite pane bodies publish a
-`hover` handler; the router's coalescing (`_lastHover`, input.js)
-moves into the hover resolution unchanged. The hover tooltip overlay never
+`hover` handler (`pane-hover`, coalesced per body cell — `_lastHover` moved to
+pane-mouse unchanged). Anything else under the pointer — another pane, a popup
+box or backdrop, nothing — is *hover-out*: the router realizes `pane-hover`
+with no pane, which clears a live value (the pre-R3 "chain mode → clear"). A
+region that declares `hover: 'swallow'` (the replay owner) is a true no-op.
+Hover is never stale-checked (display-only; the next paint republishes) and
+never event-logged (it fires per cell). The hover tooltip overlay never
 publishes regions (display-only — it must not steal clicks).
 
 ### Press→double continuation (R1, found during implementation)
@@ -645,7 +669,8 @@ green under `env -u TMUX`.
   `_makeDataHandler`), not by calling `handleMouse` directly.
 - **Stale-frame** — batched key+click chunks (`test-mouse-stale-frame.js`):
   a click aimed at a vanished/replaced popup is swallowed; a point the stale
-  frame drew nothing at still reaches legacy.
+  frame drew nothing visible at repaints and resolves fresh — a pane body or
+  the empty screen only (R3, decision A).
 - **Bench** — `bench-hotpaths.js` + render-construction before/after, same
   directory (`feedback_benchmark_same_dir`).
 
@@ -869,13 +894,79 @@ Each reproduced by a reviewer script first:
   `render/pane-hits.js`. `buildEntryStrip` keeps its pane-local `tabBounds`: the
   tab-click smoke test checks the published regions against them.
 
+## Release 3 — as built
+
+Steps 0–6 of §Release 3 shipped one commit each on main (`e060fea2..9ae07ee5`);
+step 7 is the bench, docs and review. Notes and deviations from the plan:
+
+- **Hover moved from step 2 to step 3** — with no hover regions until bodies
+  publish, routing hover in step 2 would have cleared every graph hover.
+- **Decision A, refined in the build.** After the repaint the router takes only
+  a region at or below the body band (a pane body, the empty screen). Found
+  while building: a stale frame under filter mode, a batched Enter (leaves
+  filter) + `x` (opens the command menu) + a click — resolving freely against
+  the fresh frame ran the menu's outside policy (Esc) on a click aimed at a
+  screen without the menu. Mutation-checked in `test-mouse-stale-frame.js` [5].
+- **Zoom vs select is chosen at click time** by the `pane-press` act (it
+  returns the capture request), not at paint — the pre-R3 body loop's logic
+  unchanged, and no per-frame `getItems` call in the publisher.
+- **The empty-screen region** (z 0, owner `screen`) — the plan had no
+  publisher for clicks outside every pane; without it a right-click on the
+  footer row no longer opened the general context menu (it did before R3).
+- **Bodies for renderer-less and errored panes.** A pane kind with no renderer
+  (an unregistered or failed plugin) paints blank but still publishes its body;
+  an errored pane's retract is followed by `publishBody` — a click focuses it,
+  as the bounds-based press loop did.
+- **Bodies are tab-scoped** (`tabMoved`): a batched tab switch + a click on
+  that pane's body is swallowed (other content is under the pointer).
+- **An act may return `false`** — nothing changed, the router skips its paint
+  (a wheel at a list's end, a hover in the same cell, a replay seek that
+  painted itself) — the pre-R3 paint gating.
+- **The body resolvers are scoped to the region's pane** (`handleWheel`,
+  `_resolveBodyHit`, `_resolveContextAt` take the paneId) so they agree with
+  what paint drew; `intent.scrollAt` carries the paneId.
+- **Free-config** (step 4): `publishBox` gained `rowW` (panel-list rows cover
+  the list column, not the preview); the compositor's `mouse.outsideGestures`
+  keeps free-config's right / middle swallowed (only press starts the layout
+  drag); `pool-drag`'s `pressWhileHeld` is a function (swallow only while the
+  slice still holds a pool drag); `pool-drag` re-checks the row's item id and
+  status at start.
+- **Replay** (step 5): the owner region is published by paint, whatever the
+  pane view — the scrubber's descriptor is inactive in the hidden view, yet
+  replay still owns the mouse there. Accepted edge: a drag held while replay
+  is started from the keyboard keeps its capture (typing a command with a
+  mouse button held).
+- **Test churn**: tests that hovered or clicked before any paint now paint
+  first (the hit map holds only what a frame drew); the stale-frame `+` + body
+  click case became a swallow (the intentional change); tests that read
+  `region.owner` as a paneId read `region.paneId`.
+- Tests: `test-pane-body-mouse.js` (gating, empty screen, errored pane, capture
+  across panes, lost release, hover-out), `test-free-config-mouse.js` (rows,
+  header / preview / essential, outside press, right-click, chrome over the
+  backdrop, pool-drag press swallow), `test-replay-mouse.js` (owner region,
+  seek cells, hidden view, replay-start stale frame), pointer capture in
+  `test-mouse-router.js` [6], decision A in `test-mouse-stale-frame.js` [5],
+  bodies in the `test-hit-map-agreement.js` width sweep.
+- **Bench gate** (2026-11-14, same filesystem — v0.6.57 `1ad122ac` in a
+  worktree beside main; 10 alternating rounds of `bench-render-construction.js`
+  vs `9ae07ee5`; medians): realistic 899.0 → 901.2 µs/frame (+0.3%), 50k
+  stress 931.5 → 918.3 (−1.4%), active search 994.4 → 1019.2 (+2.5%; the base
+  runs are bimodal, 664–1266) — within noise, the ranges overlap fully. A
+  coalesced hover (same cell, mode 1003 — the per-motion hot path) costs
+  0.6 µs vs ~102 µs before: v0.6.57's `handleMouse` ran
+  `require('../runtime/replay-control')` on EVERY mouse event and
+  `_contentCoordsAt` an in-function `require` of select-view (the R2 lesson,
+  again); R3 removed both (the replay check became a region, select-view is
+  cached in pane-mouse).
+
 ## Rollback
 
 R1 keeps the legacy cascade as the miss path, so reverting a single
 overlay's commit restores the old behavior for it alone. R2 does not: each
 step deleted its own legacy `handleMouse` arm, and step 7 deleted the
 registries those arms read — revert R2 as a whole (`c075b2ca..` on main), not
-per element. R3 removes the cascade; its rollback is a release revert.
+per element. R3 removes the cascade; its rollback is a release revert (`e060fea2..` on
+main).
 
 ## Non-goals
 
@@ -887,13 +978,13 @@ per element. R3 removes the cascade; its rollback is a release revert.
 
 ## Session kickstart
 
-Releases 1 and 2 are built (popups; pane chrome). Next is Release 3 (pane
-bodies, pointer capture, replay scrubber, the legacy cascade deleted). Read
-this doc, then `js/panel/hit-map.js`, `js/dispatch/control/mouse-router.js`,
-`js/dispatch/control/mouse-acts.js`, `js/render/paint.js`
-(`_safeRender`'s pane bracket), `js/render/pane-hits.js` (pane-body regions
-publish there too), `js/dispatch/control/input.js` (`handleMouse` — the
-router call, then the legacy cascade R3 replaces: `_modeMouseHandlers`, the
-T13 gate, `_armedSelect` / `_armedZoom`, the body press loop),
-`js/overlay/panel-list.js` and `js/overlay/replay-scrubber.js` (the last
-re-derived `hitTest`s). Start at §Release 3 step 1.
+All three releases are built (popups; pane chrome; pane bodies + drags +
+replay, the legacy cascade deleted). `input.handleMouse` is the router call.
+To work on the mouse, read this doc, then `js/panel/hit-map.js` (regions,
+bands, stamp), `js/dispatch/control/mouse-router.js` (resolve, stale rule,
+press→double, hover, capture routing), `js/dispatch/control/pointer-capture.js`,
+`js/dispatch/control/mouse-acts.js`, `js/dispatch/control/pane-mouse.js` (body
+acts + text-select / graph-zoom), `js/dispatch/control/free-config-capture.js`,
+`js/render/pane-hits.js` (body / screen / chrome publishing) and
+`js/render/paint.js` (`_safeRender`'s pane bracket, the replay owner, the gates
+in `_chromeContext`).

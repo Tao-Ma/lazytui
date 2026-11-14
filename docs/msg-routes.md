@@ -975,9 +975,10 @@ via a `mode_set`/`mode_clear` Cmd.
 | `panel_list_open{cursor}`/`close`/`nav{dir}` | `panelList` | — | ✓ |
 | `panel_list_pick` | closes `panelList` | re-emits `pool_hide`/`pool_show` | ✓ |
 
-⁰ Graph hover-for-value (mouse mode 1003). `input._handleHover` resolves the body
-  cell under a button-less move over a `stats`/`composite` pane and dispatches this
-  ONLY on cell-change (coalesced). The arm just stores the raw position; the VALUE is
+⁰ Graph hover-for-value (mouse mode 1003). The `pane-hover` act
+  (`dispatch/control/pane-mouse`, published on a `stats`/`composite` pane's hit-map
+  body region) resolves the body cell under a button-less move and dispatches this
+  ONLY on cell-change (coalesced); a hover over anything else clears it. The arm just stores the raw position; the VALUE is
   derived at paint by the pane's render (`stats.valueAt` → `panel/hover-region.js`),
   which the footer + cursor tooltip read. See STATS.md §10.
 ⁰ᵃ Drag-to-zoom (STATS.md §10). The input shell arms a start column on press and, on
@@ -1174,7 +1175,7 @@ the right-click menu (`menu`). All three surfaces converge on one execution:
   `bottom`-surface ops (self-suppresses when there are none, keeping paint ↔
   hit-test agreement) and its click dispatches `item_action{action, item}`.
 - **keyboard** — the component's `key` arm maps `msg.key` → an op → `item_action`.
-- **right-click** — `_resolveContextAt` (`dispatch/control/input`) resolves the
+- **right-click** — `_resolveContextAt` (`dispatch/control/pane-mouse`) resolves the
   pointed pane's `menu`-surface ops into `[label,'pane_item_action',{paneId,id,
   item}]` rows; `buildContextItems` inserts them as a section. The
   **`pane_item_action`** verb re-dispatches the SAME `item_action{action,item}` to
@@ -1503,15 +1504,16 @@ is the single intent→dispatch site.
 | `focus{dir|hotkey|paneId}` | `handleAction('focus_left'|'focus_right'|'focus_panel')` (relative) · `msg→focus_set` (absolute/mouse) |
 | `select{delta|idx}` | `handleAction('nav_up'|'nav_down')` (relative) · `dispatch.navSelect(paneId, idx)` → `nav_select` (absolute) |
 | `activate` | `handleAction('run_selected')` |
-| `scroll{mx,my,delta}` | `input._handleWheel` (spatial, per-pane) |
+| `scroll{mx,my,delta,paneId?}` | `pane-mouse.handleWheel` (spatial, per-pane; scoped to `paneId` when the hit map resolved one) |
 | `context{anchor,items,title}` | `applyMsg(menu_open)` |
 
 ### 10.1b The hit-map router (`dispatch/control/mouse-router.js`) — pointer → data handler
 
-Ahead of the legacy mouse cascade, `handleMouse` hands discrete gestures to the
-router (docs/mouse-hit-map.md). It resolves the topmost region the last paint
-published under the pointer (`panel/hit-map`) and realizes its DATA handler —
-the only place these become dispatches:
+`handleMouse` IS the router call (docs/mouse-hit-map.md; the legacy cascade was
+deleted in R3). It resolves the topmost region the last paint published under
+the pointer (`panel/hit-map`) and realizes its DATA handler — the only place
+pointer events become dispatches; motion / release go to the held pointer
+capture (`dispatch/control/pointer-capture.js`):
 
 | Handler | Realizes to |
 |---|---|
@@ -1519,6 +1521,8 @@ the only place these become dispatches:
 | `{ msg, owner? }` | `applyMsg(msg)` · `dispatchMsg(wrap(owner, msg))` (row picks: `menu_activate{idx}`, `*_nav{to}`, `palette_pick`, `fabric_form_focus`, `fabric_form_choices_pick`) |
 | `{ intent }` | `intent.realize(intent)` (§10.1) |
 | `{ act, …args }` | a named input-time action in `dispatch/control/mouse-acts.js`, computed against CURRENT state: `pane-menu-open` → `focus_set` (viewer) + `pane_menu_open{paneId, cursor, scroll}` (layout); `border-control` → the spec's own `dispatch(action, pane)` → `dispatchMsg(wrap(owner, msg))` (`set_refresh_ms`, `set_sort`, `sort_reverse`, `tree_mode_toggle`, `graph_zoom`, `item_action`, the composite cycler) — after re-checking the control is still shown |
+| `{ act }` (R3) | `pane-press` → `select_cancel` (prior selections) + the `focus` / `select` intents (§10.1) + a capture request; `pane-gesture` → the `mouse:` binding's intent (`activate` / `context` → `menu_open`); `pane-wheel` → the `scroll` intent; `pane-hover` → `wrap('layout', graph_hover)` (coalesced); `free-config-press` → `panel_list_close` (if open) + a capture request; `replay-seek` → `replay-control.seekToFraction` |
+| `{ capture, …args }` | start a pointer capture — controllers: `text-select` (`select_begin` / `select_extend` / `register_push` / `select_cancel`, wrapped to the pane), `graph-zoom` (layout `graph_drag` / `graph_zoom`), `free-config` (layout `free_config_mouse_press/motion/release`), `pool-drag` (layout `panel_list_open{cursor}` + `pool_drag_start/motion/release`) |
 | `'swallow'` / `[h…]` | nothing / each in order |
 
 Pane chrome (R2) publishes absolute Msgs: `[_]`/`[+]` → `panel_collapse_toggle{id}`,
@@ -1527,8 +1531,10 @@ Pane chrome (R2) publishes absolute Msgs: `[_]`/`[+]` → `panel_collapse_toggle
 a fold marker → `wrap(paneId, tree_toggle{id})`.
 
 Shell-tier like the rest of §10: it reads `getModel()` + the layout slice to
-check the frame stamp (stale frames swallow what they drew; the stamp includes
-the visible pane geometry).
+check the frame stamp (stale frames swallow what they drew; one that drew
+nothing visible there repaints and resolves fresh, a pane body only; the stamp
+includes the visible pane geometry, free-config's panel list and the replay
+view).
 
 ### 10.2 `handleAction(verb, arg)` (`dispatch/control/actions.js`) — the keyboard/menu/cmdline chokepoint
 

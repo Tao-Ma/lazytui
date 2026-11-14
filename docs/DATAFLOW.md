@@ -210,7 +210,8 @@ the wheel→`scroll`, and a reserved middle on the mouse side — builds an
 `intent.realize` (`js/dispatch/control/intent.js`) turns into the existing dispatch:
 `activate`→`handleAction('run_selected')`, `select`→`navSelect`,
 `focus`→`focus_set`, `context`→`menu_open` (cursor anchor threaded for a
-right-click), `scroll`→`_handleWheel`. The mouse gesture→intent edge is
+right-click), `scroll`→`pane-mouse.handleWheel` (scoped to the pane the hit
+map resolved). The mouse gesture→intent edge is
 *data*: the SGR parser classifies a press into a gesture (`press` /
 `double` / `right` / `middle`, with the same-cell double-click window read
 live from `mouseBindings.doubleClickMs()`), and `mouseBindings.intentFor`
