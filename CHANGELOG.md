@@ -79,6 +79,15 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   the pane is repainted when the popup closes. (Keys on a focused terminal
   pane go to lazytui until you press Enter — so `p` opens the action palette;
   after Enter they go to the program until `Ctrl+\`.)
+- **Leader bindings on named keys fire from the keyboard.** A `keys:` binding
+  on `<tab>`, `<backspace>`, `<home>`, `<end>`, `<insert>`, `<delete>` or
+  `<f1>`–`<f12>` — or on the vim spellings `<cr>`, `<enter>`, `<bs>`, `<del>` —
+  showed in the which-key popup and worked by clicking its row, but never fired
+  when typed. Home, End, Insert, Delete and the F-keys are now recognized in
+  whichever form your terminal sends them (the agent prompt's Home/End/Delete
+  and the text view's Home/End, written for them, now work too). A binding no
+  keystroke can reach (`<esc>` and Space cancel a chord; `<ctrl-a>`, a typo)
+  gets a config warning, also shown by `--lint`.
 - **Home, End and other special keys work in nvim in a terminal pane under
   tmux.** Keys reached the program in whatever form your terminal sent them;
   tmux sends Home/End in a form nvim ignores for the `xterm-256color` terminal

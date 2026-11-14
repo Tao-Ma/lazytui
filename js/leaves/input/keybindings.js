@@ -35,6 +35,46 @@ function rootNode() { return _root; }
 
 function clearBindings() { _root.children = Object.create(null); }
 
+// --- One key-name vocabulary -------------------------------------------------
+// A chord step is matched by NAME. The keyboard side (tokenForEvent) and the
+// sequence side (parseSeq) must land on the same names, or a binding the popup
+// lists can never be typed (it still answers a click on its popup row, which
+// sends the name). Names the input pipeline produces: a printable char, or
+// up down left right pageup pagedown home end insert delete f1…f12 backtab
+// return tab backspace ctrl-r (input._dispatchToken / leaves/input/key-decode).
+
+// Keys that reach handleKey as their raw BYTE (normal-mode handlers test
+// `seq === '\x7f'`, so the byte stays the event) — named for chord matching.
+const _BYTE_NAMES = Object.assign(Object.create(null), { '\t': 'tab', '\x7f': 'backspace', '\b': 'backspace' });
+
+// `<name>` spellings people write (vim's, mostly) → the name the keyboard side
+// produces. Without these, `<cr>` / `<esc>` / `<bs>` / `<del>` parsed fine and
+// matched nothing. (Null prototype, like the tree: `<constructor>` must not
+// resolve to an inherited member.)
+const _ALIASES = Object.assign(Object.create(null), {
+  cr: 'return', enter: 'return', esc: 'escape', bs: 'backspace',
+  del: 'delete', ins: 'insert', 's-tab': 'backtab',
+  pgup: 'pageup', pgdn: 'pagedown', pgdown: 'pagedown',
+});
+
+// Named tokens a keystroke can produce inside a chord. `escape` and the
+// leader (space) are not here: both CANCEL the chord (reducer prefix_key).
+const _PRODUCIBLE = new Set([
+  'up', 'down', 'left', 'right', 'pageup', 'pagedown', 'home', 'end', 'insert', 'delete',
+  'backtab', 'return', 'tab', 'backspace', 'ctrl-r',
+  'f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'f8', 'f9', 'f10', 'f11', 'f12',
+]);
+
+/** The steps of `seq` no keystroke can produce inside a chord (so the binding
+ *  is reachable only by clicking its which-key row): a named token outside the
+ *  vocabulary, `escape`, or a space (both cancel the chord). [] when every step
+ *  is typeable; null when `seq` doesn't parse (parseSeq reports that). */
+function unreachableSteps(seq) {
+  let steps;
+  try { steps = parseSeq(seq); } catch (_) { return null; }
+  return steps.filter(t => (t.length === 1 ? t === ' ' : !_PRODUCIBLE.has(t)));
+}
+
 /**
  * Tokenize a sequence string into an array of key-name tokens.
  * A leading leader token (`<leader>` or `<space>`) is stripped — every
@@ -56,7 +96,7 @@ function parseSeq(str) {
       if (close === -1) throw new Error(`unterminated <…> token in "${str}"`);
       const name = s.slice(i + 1, close).toLowerCase();
       if (!name) throw new Error(`empty <> token in "${str}"`);
-      tokens.push(name);
+      tokens.push(_ALIASES[name] || name);
       i = close + 1;
     } else if (/\s/.test(ch)) {
       i += 1;  // allow spaces as visual separators: "g g" === "gg"
@@ -139,10 +179,12 @@ function resolve(node, token) {
 
 /**
  * The token a key event maps to. Printable single chars come through
- * `seq`; named keys (arrows, escape) arrive only in `key`.
+ * `seq`; named keys (arrows, escape) arrive only in `key`; Tab and
+ * Backspace arrive as their byte and are named here (`_BYTE_NAMES`).
  */
 function tokenForEvent(key, seq) {
-  return (seq != null && seq.length > 0) ? seq : key;
+  const t = (seq != null && seq.length > 0) ? seq : key;
+  return _BYTE_NAMES[t] || t;
 }
 
 /** Walk the leader tree from the root by a token sequence; the node reached, or
@@ -169,5 +211,5 @@ function continuations(node) {
 
 module.exports = {
   rootNode, clearBindings, parseSeq, registerKeyBinding,
-  labelSubtree, resolve, nodeForSeq, tokenForEvent, continuations,
+  labelSubtree, resolve, nodeForSeq, tokenForEvent, continuations, unreachableSteps,
 };

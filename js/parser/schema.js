@@ -14,6 +14,7 @@ const { parseFabricAddr, isValidFabricName, isValidFabricComponentName } = requi
 const { compileParse, compileExtract } = require('../fabric/parse');
 const { compileCommand, commandHoles } = require('../fabric/command');
 const { isShadowedEnvName } = require('../leaves/security/env-shadow');
+const { unreachableSteps } = require('../leaves/input/keybindings');
 
 const VALID_ACTION_TYPES = new Set(['run', 'spawn', 'background']);
 // Per-action re-run behavior for the streamed output buffer: 'replace' (default)
@@ -132,7 +133,7 @@ function validate(data, _sourceFile, warnings) {
   if ('helpers' in data) validateHelpers(data.helpers);
   if ('files' in data)   validateFiles(data.files);
   if ('register' in data) validateRegister(data.register);
-  if ('keys' in data)     validateKeys(data.keys);
+  if ('keys' in data)     validateKeys(data.keys, warnings);
   if ('keymap' in data)   validateKeymap(data.keymap);
   if ('mouse' in data)    validateMouse(data.mouse);
   if ('context-menu' in data) validateContextMenu(data['context-menu']);
@@ -379,7 +380,7 @@ function validateGlobal(data, warnings) {
   if ('keyboard_protocol' in out) validateKeyboardProtocol(out.keyboard_protocol);
   if ('action_status' in out) validateActionStatus(out.action_status);
   if ('quick_keys' in out) validateQuickKeys(out.quick_keys);
-  if ('keys' in out)     validateKeys(out.keys);
+  if ('keys' in out)     validateKeys(out.keys, warnings);
   if ('keymap' in out)   validateKeymap(out.keymap);
   if ('mouse' in out)    validateMouse(out.mouse);
   if ('context-menu' in out) validateContextMenu(out['context-menu']);
@@ -613,10 +614,24 @@ function validateKeymap(block) {
   }
 }
 
-function validateKeys(keysBlock) {
+function validateKeys(keysBlock, warnings) {
   if (!isMapping(keysBlock)) throw new SchemaError("'keys' must be a mapping");
   for (const [seq, spec] of Object.entries(keysBlock)) {
     const ctx = `keys, '${seq}'`;
+    // A step no keystroke produces inside a chord (`<esc>` and space cancel it;
+    // `<ctrl-a>`, `<f13>`, a typo like `<hom>` name no key) makes the binding
+    // reachable only by clicking its which-key row. Warn, don't reject: it
+    // still registers, and still answers that click.
+    const dead = warnings ? unreachableSteps(seq) : null;
+    if (dead && dead.length) {
+      warnings.push({
+        code: 'keys.unreachable_step',
+        message: `keys: '${seq}' can't be typed — ${dead.map(t => `'${t}'`).join(', ')} ` +
+          `${dead.length > 1 ? 'are' : 'is'} not a key a chord step can be (Esc and Space cancel the chord); ` +
+          'it only fires by clicking its which-key row. Typeable named keys: up down left right pageup ' +
+          'pagedown home end insert delete tab backspace return backtab f1–f12 (aliases cr enter esc bs del ins s-tab)',
+      });
+    }
     if (!isMapping(spec)) {
       throw new SchemaError(`binding must be a mapping, got ${typeName(spec)}`, { context: ctx });
     }

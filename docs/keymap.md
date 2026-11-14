@@ -95,6 +95,17 @@ anything (e.g. `C: cmdline`).
 `keymap:` is for **normal-mode single keys**. They don't overlap; a future
 format version may fold leader chords under `keymap.leader`.
 
+A chord step is a printable character or a named key in `<…>`:
+`up down left right pageup pagedown home end insert delete tab backspace return
+backtab f1`…`f12`, case-insensitive, with the vim spellings `<cr>`/`<enter>`
+(return), `<esc>`, `<bs>`, `<del>`, `<ins>`, `<s-tab>`. Each is recognized in
+whichever form your terminal sends it (xterm, tmux/screen, rxvt, the linux
+console — `leaves/input/key-decode`). Esc and Space **cancel** a chord, so
+`<esc>` / a space step can't be typed; neither can a name outside the list
+(`<ctrl-a>`, `<f13>`, a typo). Such a binding still registers — its which-key row
+answers a click — and config load (and `--lint`) warns
+`keys.unreachable_step`.
+
 ## Versioning
 
 `keymap.version` lets the format evolve without breaking your config. The policy

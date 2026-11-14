@@ -27,7 +27,7 @@ const { focusedTerminalId, visibleTerminalSurfaces } = require('../../panel/term
 const { writeToSession, isSessionDead } = require('../../io/terminal');
 const { tokenizeInput } = require('../../leaves/input/tokenize');
 const { kkpToLegacy } = require('../../leaves/input/kkp-decode');
-const { toXtermKey } = require('../../leaves/input/key-decode');
+const { toXtermKey, decodeKey } = require('../../leaves/input/key-decode');
 // v0.6.4 Theme F Phase 4 — the gesture→intent map + tunable double-click
 // window. Dependency-free leaf, so this top-level require is cycle-safe.
 const mouseBindings = require('./mouse-bindings');
@@ -739,6 +739,18 @@ function _dispatchToken(tok) {
     const legacy = kkpToLegacy(tok);
     if (legacy != null) return _dispatchToken(legacy);
   }
+
+  // The other special keys, in whichever form the host terminal sends them
+  // (leaves/input/key-decode — the decoder terminal mode uses): Home / End
+  // (`CSI H`, tmux's `CSI 1 ~`, rxvt's `CSI 7 ~`, SS3 …), Insert / Delete,
+  // F1–F12, and the SS3 / VT220 spellings of the arrows and Page keys. They
+  // were dropped as unknown escapes, so a `<home>` / `<end>` / `<delete>` /
+  // `<f1>` leader binding could never fire, and the handlers already written
+  // for them (the agent prompt's Home/End/Delete, the text view's Home/End)
+  // never ran. Unmodified only: nothing binds a modified one, so those still
+  // drop below. Named keys carry no `seq`, so no text input inserts them.
+  const named = decodeKey(tok);
+  if (named && !named.shift && !named.alt && !named.ctrl) return handleKey(named.key);
 
   // T25 / B14 — never fire Esc for an escape-PREFIXED event: F-keys
   // (\x1bOP), Alt-modified keys (\x1b[1;3A, \x1bj), Home/End (\x1b[H,
