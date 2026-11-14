@@ -153,11 +153,8 @@ function finalizeDispatch() {
     // interior (a minimized pane's 1-row bar) → not a surface → the PTY keeps its
     // last size, and a never-shown one is not spawned until it has room.
     {
-      const pool = (layoutSlice.arrange && layoutSlice.arrange.pool) || {};
       for (const s of visibleTerminalSurfaces(getModel())) {
-        const entry = pool[s.poolId];
-        const cmd = (entry && entry.config && entry.config.cmd) || process.env.SHELL || '/bin/bash';
-        terminal.ensureSession(s.id, cmd, s.cols, s.rows, getModel().projectDir);
+        terminal.ensureSession(s.id, s.cmd, s.cols, s.rows, getModel().projectDir);
         const sz = terminal.sessionSize(s.id);
         if (sz && (sz.cols !== s.cols || sz.rows !== s.rows)) terminal.resizeSession(s.id, s.cols, s.rows);
       }

@@ -125,6 +125,11 @@ function ensureSession(id, cmd, cols, rows, cwd) {
   p.onExit(({ exitCode }) => {
     session.exited = true;
     session.exitCode = exitCode;
+    // A program WE stopped (destroySession: its tab closed, a restart, a replay
+    // replacing the session) didn't exit on its own: no recorded exit, no exit
+    // fan-out. The fan-out (pty-lifecycle) acts on whatever model is current —
+    // a replay frame's, or the restarted session's tab under the same id.
+    if (session.destroyed) return;
     if (_sessionRecorder) _sessionRecorder({ id, ev: 'exit', code: exitCode });
     if (session.jobId && _jobs) {
       _jobs.close(session.jobId, { status: 'exited', exitCode });
@@ -192,7 +197,7 @@ function sessionSize(id) {
 function _replaySession(id, cols, rows) {
   const s = sessions[id];
   if (s && s.replay) return s;
-  const size = s ? emu.screenSize(s.screen) : null;
+  const size = (s && emu.screenSize(s.screen)) || { cols: 80, rows: 24 };   // a sizeless entry: xterm's default
   if (s) destroySession(id);
   sessions[id] = { pty: null, screen: emu.createScreen(cols || size.cols, rows || size.rows), cmd: null, cwd: null,
     exited: false, exitCode: null, _onDataSub: null, replay: true };
@@ -252,18 +257,26 @@ function restoreReplaySession(id, snap, cb) {
   return sessions[id];
 }
 
-/** Replay teardown (`:record-load` exit): restore the sessions that were live
- *  when replay began — `grids` is the `snapshotAllSessions()` map captured then.
- *  Sessions ids deterministically collide with live ones (`group_key`), so the
- *  fold replaced those sessions with replay ones (_replaySession); without this,
- *  exit would leave those panes showing replay output. Sessions present now but NOT in the
- *  snapshot were spawned during replay → destroyed. Each snapshotted screen is
- *  rebuilt PTY-less (a `:record-load` over live terminals freezes them at the
- *  live grid rather than resurrecting the PTY — see docs/v0.6.6-replay.md). */
+/** Replay teardown (`:record-load` exit): put back what was live when replay
+ *  began — `grids` is the `snapshotAllSessions()` map captured then. A live
+ *  session the replay never touched is still the live one: it keeps running.
+ *  One the replay replaced (its id collided with a recorded one — ids are
+ *  deterministic, `pane-<poolId>`) had its program stopped then; it comes back
+ *  PTY-less, frozen at its live grid and marked stopped (exited, code null), so
+ *  Enter restarts it with its pane's command (see docs/v0.6.6-replay.md). A
+ *  replay session with no live counterpart was spawned during replay → gone. */
 function restoreLiveSessions(grids) {
   grids = grids || {};
-  for (const id of Object.keys(sessions)) if (!(id in grids)) destroySession(id);
-  for (const id of Object.keys(grids)) restoreReplaySession(id, grids[id]);
+  for (const id of Object.keys(sessions)) {
+    if (!sessions[id].replay) continue;            // live, untouched: keeps running
+    if (!(id in grids)) destroySession(id);        // spawned during replay
+  }
+  for (const id of Object.keys(grids)) {
+    if (sessions[id] && !sessions[id].replay) continue;
+    const s = restoreReplaySession(id, grids[id]);
+    s.exited = true;                               // its program was stopped
+    s.exitCode = null;
+  }
 }
 
 /** Write data (keystrokes) to a session's PTY. */
@@ -287,6 +300,7 @@ function resizeSession(id, cols, rows) {
 function destroySession(id) {
   const s = sessions[id];
   if (!s) return;
+  s.destroyed = true;   // its exit, when the kill lands, is ours — not the program's (onExit)
   // T17 — dispose the onData listener BEFORE disposing the screen.
   if (s._onDataSub) { try { s._onDataSub.dispose(); } catch {} s._onDataSub = null; }
   if (s._replySub) { try { s._replySub.dispose(); } catch {} s._replySub = null; }
@@ -304,13 +318,17 @@ function destroyAll() {
   for (const id of Object.keys(sessions)) destroySession(id);
 }
 
-/** Restart a session — kill old, spawn fresh with same cmd. */
-function restartSession(id, cols, rows) {
+/** Restart a session — kill old, spawn fresh with the same cmd. A session
+ *  that knows none (one rebuilt PTY-less after a replay) takes `fallback`'s
+ *  `{ cmd, cwd }` — the pane's own (terminal-surfaces: the surface's cmd). */
+function restartSession(id, cols, rows, fallback) {
   const old = sessions[id];
   if (!old) return null;
   if (!_validSize(cols, rows)) return null;   // refuse BEFORE killing the old one
-  const cmd = old.cmd;
-  const cwd = old.cwd;
+  const fb = fallback || {};
+  const cmd = old.cmd || fb.cmd;
+  const cwd = old.cwd || fb.cwd;
+  if (!cmd) return null;                      // nothing to run
   destroySession(id);
   return ensureSession(id, cmd, cols, rows, cwd);
 }

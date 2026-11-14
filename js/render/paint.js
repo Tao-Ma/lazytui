@@ -809,7 +809,9 @@ function renderTerminalOverlay(model, arrangeOverride, forceAll, wrote) {
     // (a slot's last tab stays — remove_tab).
     let banner = null;
     if (session.exited) {
-      const msg = ` Process exited: ${session.exitCode} — Enter restart${closable ? ', x close' : ''} `;
+      // exitCode null = we stopped it (a replay replaced the session).
+      const what = session.exitCode == null ? 'Process stopped' : `Process exited: ${session.exitCode}`;
+      const msg = ` ${what} — Enter restart${closable ? ', x close' : ''} `;
       const text = msg.length > innerW ? msg.slice(0, innerW) : msg;
       banner = { text, col: Math.max(0, Math.floor((innerW - text.length) / 2)) };
     }

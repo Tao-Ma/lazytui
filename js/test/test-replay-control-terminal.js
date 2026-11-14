@@ -4,11 +4,13 @@
  * `enter()` snapshots `{model, slices}` aside (liveSnapshot) and `exit()` restores
  * it — but the embedded terminal is the off-model island (#D14). Reconstruction
  * feeds the recorded byte stream into `io/terminal`'s session map, keyed by the
- * RECORDED session id. Terminal ids are deterministic (`group_key`), so a
+ * RECORDED session id. Terminal ids are deterministic (`pane-<poolId>`), so a
  * `:record-load` of a session recorded from the same config over a live session
- * COLLIDES: replay writes into the live emulator's screen. Pre-fix, `exit()`
- * restored model+slices but NOT the terminal — the live pane kept showing replay
- * output. This test sets up that collision and asserts exit restores the live grid.
+ * COLLIDES: the replay takes that id over (a PTY-less replay session replaces
+ * the live one). Pre-fix, `exit()` restored model+slices but NOT the terminal —
+ * the live pane kept showing replay output. This test sets up that collision
+ * and asserts exit restores the live grid, and that replay never reaches a live
+ * program ([5]).
  *
  * Run: node js/test/test-replay-control-terminal.js
  */
@@ -79,7 +81,7 @@ const SID = 'g1_shell';   // a deterministic group_key id — the colliding case
   const afterText = gridText(SID);
   const replayOnlyExistsAfter = !!terminal.getSession(REPLAY_ONLY);
 
-  describe('[1] collision is real (replay writes into the live session screen)', () => {
+  describe('[1] collision is real (the replay takes the live session\'s id over)', () => {
     it('live terminal shows LIVE content before replay', () => assert(/LIVE-CONTENT/.test(liveText), liveText));
     it('replay output landed in the colliding live session', () => assert(/REPLAY-CONTENT/.test(duringText), duringText));
   });
@@ -92,27 +94,36 @@ const SID = 'g1_shell';   // a deterministic group_key id — the colliding case
     it('destroyed on exit', () => eq(replayOnlyExistsAfter, false));
   });
 
-  // ---- [4] restoring over a colliding LIVE session disposes it (no leak) ----
-  // restoreReplaySession overwrites sessions[id]; without a dispose-before-overwrite
-  // the prior screen (and, for a live id, its PTY + onData listener) would leak.
-  // This is the worst case: a colliding live PTY-backed session.
-  let killed = false, subDisposed = false, screenDisposed = false;
-  terminal._setSessionForTest('g1_pty', {
-    pty: { kill() { killed = true; } },
-    screen: { dispose() { screenDisposed = true; } },
+  // ---- [4] leaving replay: what was live comes back, and nothing leaks ----
+  // A replay session that took a live id over is rebuilt from the live grid
+  // (its screen disposed first — no emulator leak), frozen and marked stopped
+  // (its program was stopped when the replay took the id). A live session the
+  // replay never touched is still the live one: left running (it was killed,
+  // and its tab closed by the exit fan-out — round-2 review 2026-11-14).
+  let screenDisposed = false, liveKilled = false;
+  terminal._setSessionForTest('g1_took', {
+    pty: null, screen: { dispose() { screenDisposed = true; } },
+    cmd: null, cwd: null, exited: false, exitCode: null, replay: true,
+  });
+  const untouched = {
+    pty: { kill() { liveKilled = true; } }, screen: { dispose() {} },
     cmd: 'x', cwd: '.', exited: false, exitCode: null,
-    _onDataSub: { dispose() { subDisposed = true; } },
-  });
-  terminal.restoreLiveSessions({ 'g1_pty': { cols: 80, rows: 24, lines: ['x'], baseY: 0, viewportY: 0 } });
-  const restored = terminal.getSession('g1_pty');
+  };
+  terminal._setSessionForTest('g1_untouched', untouched);
+  const grid = { cols: 80, rows: 24, lines: ['x'], baseY: 0, viewportY: 0 };
+  terminal.restoreLiveSessions({ g1_took: grid, g1_untouched: grid });
+  const took = terminal.getSession('g1_took');
 
-  describe('[4] restoreLiveSessions disposes a colliding live session (no leak)', () => {
-    it('killed the colliding live PTY before overwrite (no process leak)', () => assert(killed, 'pty.kill called'));
-    it('disposed its onData listener and screen (no listener/emulator leak)', () => {
-      assert(subDisposed, 'onData disposed'); assert(screenDisposed, 'screen disposed');
+  describe('[4] restoreLiveSessions: the replaced come back stopped, the untouched keep running', () => {
+    it('a replaced session: its replay screen disposed (no leak), rebuilt PTY-less', () => {
+      assert(screenDisposed, 'screen disposed'); assert(took && took.pty === null, 'frozen');
     });
-    it('the session is now PTY-less (frozen at the live grid)', () => assert(restored && restored.pty === null, 'frozen replay session'));
+    it('… marked stopped, so Enter restarts it and the banner says so', () => eq([took.exited, took.exitCode], [true, null]));
+    it('an untouched live session is left running', () => {
+      assert(!liveKilled, 'not killed'); assert(terminal.getSession('g1_untouched') === untouched, 'the same live session');
+    });
   });
+  terminal.destroyAll();
 
   // ---- [5] a replay never reaches a LIVE program (pre-release review T1-4) ----
   // The live sessions above are PTY-less. With a PTY-backed one, the replayed
@@ -129,7 +140,9 @@ const SID = 'g1_shell';   // a deterministic group_key id — the colliding case
     fs.writeFileSync(child, `process.stdin.setRawMode(true); process.stdout.write('READY\\n');
 process.stdin.on('data', d => require('fs').appendFileSync(process.argv[2], d.toString('latin1')));`);
     const live = {};
-    for (const n of ['a', 'b']) {
+    const exits = [];
+    terminal.setExitHandler((id, code) => exits.push(id));
+    for (const n of ['a', 'b', 'c']) {
       const id = `g1_live_${n}`;
       terminal.ensureSession(id, `${process.execPath} ${child} ${stdinLog(n)}`, 80, 24, dir);
       live[n] = { id, resized: false };
@@ -138,9 +151,11 @@ process.stdin.on('data', d => require('fs').appendFileSync(process.argv[2], d.to
       p.resize = (...args) => { live[n].resized = true; return resize(...args); };
     }
     for (let i = 0; i < 150; i++) {
-      if (['a', 'b'].every(n => gridText(live[n].id).includes('READY'))) break;
+      if (['a', 'b', 'c'].every(n => gridText(live[n].id).includes('READY'))) break;
       await new Promise(res => setTimeout(res, 30));
     }
+    const grids = terminal.snapshotAllSessions();   // what enter() snapshots
+    const liveC = terminal.getSession(live.c.id);
     const queries = 'hello\x1b[c\x1b[>c\x1b[6n\x1b]11;?\x07';
     replay.replayTo([
       { seq: 1, kind: 'term', ev: 'spawn', id: live.a.id, cols: 80, rows: 24 },   // a: spawned, then fed
@@ -160,7 +175,37 @@ process.stdin.on('data', d => require('fs').appendFileSync(process.argv[2], d.to
         it(`${live[n].id}: its live PTY was not resized`, () => eq(live[n].resized, false));
       }
       it('the replay still shows the recorded output', () => assert(/hello/.test(gridText(live.b.id)), gridText(live.b.id)));
+      // The live programs it stopped don't report an exit: the fan-out would act
+      // on the replay frame (closing the recorded tab, …) — round-2 review.
+      it('the replaced programs\' exits reach no exit handler', () => eq(exits.filter(id => id !== live.c.id), []));
     });
+    // A replay frame dropping a pane (its layout lacks it) disposes the pane's
+    // instance; a live session behind it must survive — only replay-built
+    // screens go with their instances under replay.
+    const state = require('../app/state');
+    replay.setReplaying(true);
+    try { state.disposePaneInstance(live.c.id, 'terminal'); } finally { replay.setReplaying(false); }
+    const ownC = terminal.getSession(live.c.id);
+    terminal.restoreLiveSessions(grids);
+    await new Promise(res => setTimeout(res, 200));
+    describe('[6] leaving the replay', () => {
+      it('a live session the replay never touched survived the replay frame dropping its pane', () => assert(ownC === liveC && ownC.pty, 'still live'));
+      it('… and after exit it is still the live one, running', () => {
+        const s = terminal.getSession(live.c.id);
+        assert(s === liveC && s.pty && !s.exited, 'running');
+      });
+      it('a replaced one comes back stopped, and restarts with its pane\'s command', () => {
+        const s = terminal.getSession(live.a.id);
+        eq([s.exited, s.exitCode, s.pty], [true, null, null]);
+        const r = terminal.restartSession(live.a.id, 80, 24, { cmd: `${process.execPath} ${child} ${stdinLog('a2')}`, cwd: dir });
+        assert(r && r.pty, 'a live PTY again');
+      });
+      it('a recorded spawn with no size takes the default (it threw)', () => {
+        const s = terminal.ensureReplaySession('g1_sizeless');
+        eq(require('../io/term-screen').screenSize(s.screen), { cols: 80, rows: 24 });
+      });
+    });
+    terminal.setExitHandler(null);
     terminal.destroyAll();
     fs.rmSync(dir, { recursive: true, force: true });
   }

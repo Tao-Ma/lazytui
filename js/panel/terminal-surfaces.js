@@ -77,6 +77,10 @@ function visibleTerminalSurfaces(model, arrangeOverride) {
     if (!inner) continue;
     out.push({ id: mpane.newPaneId(poolId), poolId, bounds: b,
                cols: inner.cols, rows: inner.rows,
+               // What its PTY runs: the pool entry's `config.cmd`, else the
+               // shell — the one place that says so (the finalizer spawns it,
+               // Enter restarts it).
+               cmd: (entry.config && entry.config.cmd) || process.env.SHELL || '/bin/bash',
                focused: terminalMode && focus === p.paneId,
                closable: _closable(p) });
   }

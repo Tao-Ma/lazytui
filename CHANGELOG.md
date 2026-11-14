@@ -159,9 +159,11 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   terminal is unfocused pause in terminal mode too.
 - **Typing in a terminal pane returns a scrolled-back view to its live
   bottom** also when the program reports the mouse.
-- **A `:record-load` over a running terminal pane stops its program when the
-  replay first reaches that pane** (it was stopped on leaving the replay, or
-  on a seek). The pane comes back showing its last screen, as before.
+- **A `:record-load` stops a running terminal pane's program only if the
+  recording reaches that pane**, when it first does (every live terminal was
+  stopped on leaving the replay, and its tab closed). The stopped pane comes
+  back showing its last screen, says `Process stopped`, and Enter restarts it;
+  a terminal the recording never touches keeps running.
 - **`--lint` exits 1 for two new warnings**, `keys.unreachable_step` and
   `panels.nested_config`, on configs it passed before.
 

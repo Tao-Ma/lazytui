@@ -885,27 +885,40 @@ function reconcilePaneInstances() {
  * bootFresh) runs it for every pane, so a scenario starts like a new process.
  */
 function disposePaneInstance(id, kind) {
-  // C5 — abort a removed pane's in-flight keyed compute (config-status' slow
-  // git status/diff) so it doesn't run/land into a disposed instance. Keys
-  // are tied to the instance id (see config-status' cfgStatusCompute/Diff
-  // emits); cancelEffect no-ops if the key isn't live (the common case).
-  // Docker's fetch is service-owned (never disposed), aborted only at quit.
-  const effects = require('../dispatch/runtime/effects');
-  effects.cancelEffect(`cfgStatus:compute:${id}`);
-  effects.cancelEffect(`cfgStatus:diff:${id}`);
+  // Under replay the instances come and go with the RECORDED layout, but what
+  // they own outside the registry is the LIVE session's — a running program,
+  // an agent backend, an in-flight compute (its id collides with the live
+  // pane's). Replay must not reach it: only a replay-built terminal screen goes
+  // with its instance; the rest is left for the live layout to find again when
+  // replay exits.
+  const replaying = _replay().isReplaying();
+  if (!replaying) {
+    // C5 — abort a removed pane's in-flight keyed compute (config-status' slow
+    // git status/diff) so it doesn't run/land into a disposed instance. Keys
+    // are tied to the instance id (see config-status' cfgStatusCompute/Diff
+    // emits); cancelEffect no-ops if the key isn't live (the common case).
+    // Docker's fetch is service-owned (never disposed), aborted only at quit.
+    const effects = require('../dispatch/runtime/effects');
+    effects.cancelEffect(`cfgStatus:compute:${id}`);
+    effects.cancelEffect(`cfgStatus:diff:${id}`);
+  }
   // U2d — a disposed `terminal` instance owns a live PTY keyed by its
   // instance id (== ptyId). The orphan scan is the ONLY place that learns a
   // terminal pane left the layout (a closed tab, a removed slot), so kill the
   // PTY here. Idempotent: destroySession no-ops on an unknown/dead id, so it
   // races safely with a concurrent clean-exit teardown.
   if (kind === 'terminal') {
-    try { require('../io/terminal').destroySession(id); } catch (_) {}
+    try {
+      const terminal = require('../io/terminal');
+      const s = terminal.getSession(id);
+      if (!replaying || (s && s.replay)) terminal.destroySession(id);
+    } catch (_) {}
   }
   // A disposed `agent` instance owns a live backend session keyed the
   // same way (session id == instance id) — tear it down + forget it.
   // Straggler events, incl. the backend's own final exit, drop via
-  // io/agent's stale-session guard.
-  if (kind === 'agent') {
+  // io/agent's stale-session guard. (A replayed agent never has a backend.)
+  if (kind === 'agent' && !replaying) {
     try { require('../io/agent').destroy(id); } catch (_) {}
   }
   _route().disposeInstance(id);
