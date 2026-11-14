@@ -108,17 +108,14 @@ function renderCmdline(newRows, cols) {
   // spans only availH rows), so it stays as a direct writeOut. Rich-style
   // markup mirrors renderFooter() so the cmdline blends with the chrome
   // it covers.
-  const prompt = ` :${_text}`;
+  // The typed text is TEXT: escaped, so `a[0].txt` shows as typed instead of
+  // being read as a markup tag (it showed `a.txt`, the cursor past its end).
+  const prompt = ` :${esc(_text)}`;
   const padded = prompt + ' '.repeat(Math.max(0, COLS - visibleLen(prompt)));
-  let buf = `\x1b[${ROWS};1H` + richToAnsi(`[${t.footer}]${padded}[/]`) + RESET;
-
-  // Cursor at end of typed text: column = 1 (leading space) + ':' + the text's
-  // WIDTH (columns, not UTF-16 units — a CJK or emoji command argument put it
-  // left of the text end). Visibility is derived in layout.render() — only the
-  // *position* is set here (and only while cmd mode is active). Cursor
-  // positioning is terminal state, not a cell, so it stays direct too.
-  const cursorCol = 2 + 1 + stringWidth(_text);
-  buf += `\x1b[${ROWS};${cursorCol}H`;
+  const buf = `\x1b[${ROWS};1H` + richToAnsi(`[${t.footer}]${padded}[/]`) + RESET;
+  // The cursor's position is cmdlineCursor's — render() places it LAST in the
+  // frame (writing it here, mid-frame, the main frame's diff moved it on: it
+  // ended in the dropdown whenever the dropdown changed).
 
   // Through draw's injected writer → paint's depth funnel (P3) — never raw
   // stdout: this overlay's rows carry theme hex since the truecolor arc.
@@ -147,4 +144,13 @@ function registerSelf(compositor) {
   });
 }
 
-module.exports = { renderCmdline, registerSelf };
+/** Where the hardware cursor goes in cmd mode: the end of the typed text on the
+ *  prompt row — column 1 (leading space) + ':' + the text's WIDTH (columns, not
+ *  UTF-16 units). 1-based { row, col }; null outside cmd mode. render() emits it
+ *  as the frame's last move. */
+function cmdlineCursor(model) {
+  if (!model.modes.cmdMode) return null;
+  return { row: viewportDims().rows, col: 3 + stringWidth(model.modal.cmdline.text || '') };
+}
+
+module.exports = { renderCmdline, registerSelf, cmdlineCursor };

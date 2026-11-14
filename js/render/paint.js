@@ -1119,10 +1119,16 @@ function render(model) {
   // paint.js.
 
   // Cursor visibility — derived from mode state, single emission site.
-  // Cursor *position* is set inline by renderTerminalOverlay (when in
-  // terminal mode) and renderCmdline (cursor at typed-text end); here we
-  // only flip whether it's visible. Eliminates the bug class where a mode
-  // forgets to call hideCursor() / showCursor() on exit.
+  // Cursor *position*: the terminal surfaces end their pass on the focused
+  // program's cursor (terminal mode); the cmdline's goes here, the frame's
+  // last move — written inside the overlay pass, the main frame's diff after
+  // it moved the cursor on (it ended in the dropdown — round-2 review).
+  // Here we also flip whether it's visible. Eliminates the bug class where a
+  // mode forgets to call hideCursor() / showCursor() on exit.
+  if (md.cmdMode && !md.terminalMode) {
+    const c = require('../overlay/cmdline').cmdlineCursor(model);
+    if (c) _emit(`\x1b[${c.row};${c.col}H`);
+  }
   if (md.terminalMode || md.cmdMode) showCursor();
   else hideCursor();
 }

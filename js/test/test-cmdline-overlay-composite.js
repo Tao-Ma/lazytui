@@ -79,26 +79,49 @@ describe('[cmdline-overlay-composite] composites dropdown into newRows + writes 
   });
   // (The pre-cleanup "stdout fallback still fires" case retired —
   // end-of-Release-2 cleanup; the overlay fn no longer has a stdout path.)
-  it('the prompt cursor sits after the text by WIDTH, not UTF-16 length (CJK, emoji)', () => {
+  it('a frame ends with the cursor after the prompt text, by WIDTH (CJK, emoji), whatever the dropdown did', () => {
     // Pre-release review 2026-11-14: `2 + 1 + _text.length` put the cursor left
-    // of the text end for anything wider than one column per UTF-16 unit.
+    // of the text end for anything wider than one column per UTF-16 unit. Round
+    // 2: the cursor was written inside the overlay pass, and the main frame's
+    // diff after it moved it on — it ended in the dropdown whenever that changed.
     const COLS = 100;
     const sm = require('./smoke/_helpers/smoke');
+    const { render } = require('../render/paint');
+    const { getModel } = require('../model/store');
     sm.bootFresh();
     sm.resize(COLS, 30);
+    const lastMove = () => {
+      const chunks = [];
+      const origWrite = term.stdout.write;
+      term.stdout.write = (s) => { chunks.push(String(s)); return true; };
+      try { render(getModel()); } finally { term.stdout.write = origWrite; }
+      const moves = [...chunks.join('').matchAll(/\x1b\[(\d+);(\d+)H/g)].map(m => [+m[1], +m[2]]);
+      return moves[moves.length - 1];
+    };
     sm.applyMsg({ type: 'cmdline_enter' });
+    lastMove();
     for (const ch of ['o', 'p', 'e', 'n', ' ']) sm.applyMsg({ type: 'cmdline_key', seq: ch });
+    eq(lastMove(), [30, 8], 'after `open ` (the dropdown changed): on the prompt, after the text');
     sm.applyMsg({ type: 'cmdline_key', key: 'paste', seq: '日本🚀' });   // wide text arrives by paste
+    // ' :open 日本🚀' = 1 + 1 + 5 + 2 + 2 + 2 = 13 columns → the cursor at 14.
+    eq(lastMove(), [30, 14], 'after the wide text');
+    // Backspace takes the emoji whole (it cut its surrogate pair in half).
+    sm.applyMsg({ type: 'cmdline_key', seq: '\x7f' });
+    eq(getModel().modal.cmdline.text, 'open 日本', 'Backspace drops one codepoint');
+  });
+  it('the typed text is drawn as text, not markup', () => {
+    // `open a[0].txt` showed as ` :open a.txt` (round-2 review 2026-11-14).
+    const sm = require('./smoke/_helpers/smoke');
+    sm.bootFresh();
+    sm.resize(100, 30);
+    sm.applyMsg({ type: 'cmdline_enter' });
+    sm.applyMsg({ type: 'cmdline_key', key: 'paste', seq: 'open a[0].txt' });
     const chunks = [];
     const origWrite = term.stdout.write;
     term.stdout.write = (s) => { chunks.push(String(s)); return true; };
-    try { renderCmdline(new Array(29).fill(' '.repeat(COLS)), COLS); } finally { term.stdout.write = origWrite; }
-    const moves = [...chunks.join('').matchAll(/\x1b\[30;(\d+)H/g)].map(m => +m[1]);
-    // ' :open 日本🚀' = 1 + 1 + 5 + 2 + 2 + 2 = 13 columns → the cursor at 14.
-    eq(moves[moves.length - 1], 14, `cursor column (moves: ${moves})`);
-    // Backspace takes the emoji whole (it cut its surrogate pair in half).
-    sm.applyMsg({ type: 'cmdline_key', seq: '\x7f' });
-    eq(require('../model/store').getModel().modal.cmdline.text, 'open 日本', 'Backspace drops one codepoint');
+    try { renderCmdline(new Array(29).fill(' '.repeat(100)), 100); } finally { term.stdout.write = origWrite; }
+    const plain = chunks.join('').replace(/\x1b\[[0-9;]*[A-Za-z]/g, '');
+    assert(plain.includes(':open a[0].txt'), JSON.stringify(plain.trim().slice(0, 40)));
   });
 });
 
