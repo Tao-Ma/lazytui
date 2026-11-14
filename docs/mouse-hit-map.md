@@ -2,7 +2,9 @@
 
 > **Status**: Release 1 SHIPPED in v0.6.56 (2026-11-13; `f6d152c3..38275d37`
 > + the release commit), including the 4-track pre-release review's fixes.
-> Release 2 code-complete on main (§Release 2 — as built; unreleased); Release 3 not started. Written 2026-11-13. Trigger: field
+> Release 2 SHIPPED in v0.6.57 (2026-11-14; `c075b2ca..980e40ff` + the release
+> commit), including the fixes from its 4-track review and two further review
+> rounds (§Release 2 — as built). Release 3 not started. Written 2026-11-13. Trigger: field
 > report *"when confirm popup shows, I cannot click mouse"*. Root-caused to
 > a routing gap, then widened (user call: "fix mouse from the ground up,
 > make it a first-class citizen") into this three-release plan.

@@ -6,12 +6,18 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.57] — 2026-11-14
+
 Mouse hit-map, Release 2 — pane chrome on the hit map
 ([docs/mouse-hit-map.md](docs/mouse-hit-map.md) §Release 2). Every clickable
 part of a pane's chrome — its border glyphs and controls, the tab strip, the
 `✗ cancel` chip and tree fold markers — now resolves on the per-frame hit map,
 published where paint actually drew it; the click-time hit-tests that
-re-derived geometry are gone.
+re-derived geometry are gone. 12 commits (`c075b2ca..980e40ff`): design plan,
+one commit per migration step, then a 4-track pre-release review
+(architecture / file layout / code / doc parity) and two more adversarial
+review rounds — every reproduced finding is fixed here. Release 3 (pane
+bodies + drags, legacy mouse cascade deleted) follows.
 
 ### Changed
 - **Pane chrome clicks resolve on the hit map.** `[_]`/`[+]`, `[X]`, `[≡]`,
