@@ -217,17 +217,9 @@ function buildPlacedPane(resolved, hotkey, columnIndex, detailHeightSetter, pool
     if (detailHeightPct !== undefined) detailHeightSetter(detailHeightPct);
   }
   const pane = {
-    // Legacy Panel fields populated from the active tab's pool entry.
-    // Phase 10 may retire these in favor of always going through
-    // firstTab(pane) / activePoolId(pane); Phase 9 keeps them so the
-    // wide intermediate form remains valid.
-    id: active.id,
-    type: active.type,
-    title: active.title,
-    hotkey,
-    columnIndex,
-    config: active.config,
-    // Pane fields (v0.6.1 canonical).
+    // The active tab's pane def (mpane.paneDef — the one builder), then the
+    // slot's fields (v0.6.1 canonical).
+    ...mpane.paneDef(active, { hotkey, columnIndex }),
     paneId: mpane.newPaneId(activeTabPoolId),
     tabs,
     activeTabId: activeTabPoolId,
@@ -253,10 +245,7 @@ function defaultLayout(hasContainers, hasFiles, userPool) {
   const addDefault = (id, type, title, columnIndex, hotkey, extra) => {
     const entry = { id, type, title, config: extra || {}, _synthesized: true };
     pool.set(id, entry);
-    return mpane.wrapAsPane(
-      { id, type, title, hotkey, columnIndex, config: entry.config },
-      mpane.newPaneId(id),
-    );
+    return mpane.wrapAsPane(mpane.paneDef(entry, { hotkey, columnIndex }), mpane.newPaneId(id));
   };
   if (hasContainers) {
     firstColPanels.push(addDefault('containers', 'containers', 'Containers', 0, String(hk++)));

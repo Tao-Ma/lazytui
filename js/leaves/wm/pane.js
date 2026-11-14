@@ -74,8 +74,9 @@ function titleOf(entry) {
  * slot sets those, and a `role: content` setting made its pane a second content
  * slot (its tabs replaced by Info / Transcript; it took the viewer).
  *
- * Every place that turns a pool entry into a pane def calls this: boot
- * (arrange.rebuildLayoutFromConfig), a tab switch / add / remove
+ * Every place that turns a pool entry into a pane def calls this: the parser's
+ * layout cells and default layout, boot (arrange.rebuildLayoutFromConfig), a
+ * tab switch / add / remove
  * (_rebuildLegacyFields), `:show` + its drag preview
  * (pool.placementFromPoolEntry), the hidden-panel preview (overlay/panel-list),
  * and each tab's init seed (`seed.paneDef`, app/state.js). They built it by hand
@@ -91,7 +92,7 @@ function titleOf(entry) {
 const SLOT_KEYS = ['paneId', 'tabs', 'activeTabId', 'heightPct', 'collapsed', 'role'];
 
 function paneDef(entry, place) {
-  const config = (entry && entry.config) || {};
+  const config = entry.config || {};   // an entry is required (every caller has one)
   const p = place || {};
   const settings = { ...config };
   for (const k of SLOT_KEYS) delete settings[k];
