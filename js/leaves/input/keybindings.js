@@ -74,7 +74,8 @@ const _PRODUCIBLE = new Set([...KEY_NAMES, 'return', 'tab', 'backspace', 'ctrl-r
 function unreachableSteps(seq) {
   let steps;
   try { steps = _steps(seq); } catch (_) { return null; }
-  return steps.filter(({ name }) => (name.length === 1 ? name === ' ' : !_PRODUCIBLE.has(name)))
+  const oneKey = (n) => [...n].length === 1;           // a typed character (an emoji too)
+  return steps.filter(({ name }) => (oneKey(name) ? name === ' ' : !_PRODUCIBLE.has(name)))
     .map(({ written }) => written);
 }
 
@@ -109,7 +110,9 @@ function _steps(str) {
   const tokens = [];
   let i = 0;
   while (i < s.length) {
-    const ch = s[i];
+    // One CODEPOINT per step: an emoji is two UTF-16 units, and splitting it
+    // made two steps no keystroke produces (the input layer delivers it whole).
+    const ch = String.fromCodePoint(s.codePointAt(i));
     if (ch === '<') {
       const close = s.indexOf('>', i + 1);
       if (close === -1) throw new Error(`unterminated <…> token in "${str}"`);
@@ -121,7 +124,7 @@ function _steps(str) {
       i += 1;  // allow spaces as visual separators: "g g" === "gg"
     } else {
       tokens.push({ name: ch, written: ch });
-      i += 1;
+      i += ch.length;
     }
   }
   if (tokens.length === 0) throw new Error(`empty key sequence "${str}"`);

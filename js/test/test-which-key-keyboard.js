@@ -57,6 +57,18 @@ describe('[1] each named key, typed, fires its binding', () => {
   }
 });
 
+describe('[1b] a character outside the BMP (an emoji) is one step', () => {
+  // Pre-release review 2026-11-14: the sequence was split by UTF-16 unit, so
+  // `g🚀` became three steps (g + two halves) no keystroke produces — it never
+  // fired, and the unreachable-step check missed it.
+  it('g🚀 fires from the keyboard (the tokenizer delivers 🚀 whole)', () => {
+    chord('g🚀');
+    type('g', '🚀');
+    eq(ran, ['g🚀'], 'fired');
+  });
+  it('and is not flagged unreachable', () => eq(kb.unreachableSteps('g🚀'), []));
+});
+
 describe('[2] every common host encoding of the key', () => {
   for (const [seq, forms] of [
     ['<home>', ['\x1b[H', '\x1bOH', '\x1b[1~', '\x1b[7~']],
