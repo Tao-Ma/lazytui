@@ -82,6 +82,7 @@ const BANDS = Object.freeze({
   BELOW_CHROME: 35,     // in-grid overlay backdrops (jobs / pane-menu / which-key)
   CHROME: 40,           // [_]/[+]/[X]/[≡], border controls, tab strip, ✗ cancel
   OVERLAY_BASE: 1000,   // compositor-registered overlays
+  REPLAY: 20000,        // the replay owner — above every overlay band (hover-tooltip's is 1000 + 10·999)
 });
 
 // The discrete pointer gestures the router resolves (R1) — the single list
@@ -97,6 +98,12 @@ let _stamp = null;
 let _sorted = null;      // memoized top-down order; invalidated by publish/clear
 let _owner = null;       // { owner, zBase } while an overlay renders
 let _pane = null;        // { owner: paneOwner(paneId), paneId, rect, tab } while a pane renders
+let _replayView = null;  // injected () → the replay pane view, or null when not replaying
+
+/** Inject the replay state the frame stamp records (app boot wires
+ *  replay-control). Replay is module state, not model: a batched key that starts
+ *  or stops replay (or cycles its view) must stale the frame like a popup does. */
+function setReplayView(fn) { _replayView = typeof fn === 'function' ? fn : null; }
 
 /** Drop every region and stamp the new frame. */
 function clear(stamp) {
@@ -242,6 +249,7 @@ function stampOf(model, layoutSlice) {
     // free-config's panel list (Release 3): its rows are index-targeted pool-drag
     // sources, and the list box changes with the cursor / items.
     panelList: md.freeConfigMode && layoutSlice ? layoutSlice.panelList : null,
+    replay: _replayView ? (_replayView() || null) : null,
     geom: _geomKey(layoutSlice),
   };
 }
@@ -268,5 +276,5 @@ function claims(mx, my) {
 function all() { return _regions.map(({ _seq, ...r }) => r); }
 
 module.exports = { clear, publish, publishOwned, enterOwner, exitOwner,
-  enterPane, exitPane, publishLocal, paneOwner, tabMoved, retractOwner, resolve, claims,
+  enterPane, exitPane, publishLocal, paneOwner, tabMoved, retractOwner, resolve, claims, setReplayView,
   stampOf, stampsEqual, frameStamp, all, DISCRETE_GESTURES, BANDS, PANE_OWNER_PREFIX };

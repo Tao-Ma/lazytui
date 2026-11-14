@@ -84,6 +84,14 @@ const ACTS = {
     if (msgs) for (const m of msgs) loop.dispatchMsg(api.wrap('layout', m));
   },
 
+  /** A click on a cell of the replay scrubber's mini progress bar → seek to
+   *  that fraction. The replay controller paints its own frame (false = the
+   *  router adds no paint). */
+  'replay-seek'({ fraction }) {
+    require('../runtime/replay-control').seekToFraction(fraction);
+    return false;
+  },
+
   /** A border-control part (refresh `-`/`+`, sort `‹`/`›`, an item action …)
    *  → the spec's own Msg, resolved now (resolveBorderControl). */
   'border-control'(h) {

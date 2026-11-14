@@ -120,18 +120,10 @@ function handleMouse(kind, x, y) {
   const mx = x - 1;
   const my = y - 1;
 
-  // v0.6.6 replay arc — while interactive replay is active it OWNS all mouse
-  // input (the reconstructed app underneath is frozen). A press on the mini
-  // bar's progress strip seeks to that position; every other mouse event is
-  // consumed. Mirrors the keyboard early-route in dispatch.handleKey.
-  const _rc = require('../runtime/replay-control');
-  if (_rc.active()) {
-    if (kind === 'press') {
-      const f = require('../../overlay/replay-scrubber').hitTestSeek(mx, my, _rc.renderData());
-      if (f != null) _rc.seekToFraction(f);
-    }
-    return;
-  }
+  // (The replay early-route retired — Release 3: while interactive replay is
+  // active, paint publishes a full-screen owner region at hit-map BANDS.REPLAY
+  // that swallows every gesture, and the scrubber's mini bar publishes its seek
+  // cells above it.)
 
   // Hit map (docs/mouse-hit-map.md) — the topmost region the last frame drew
   // under the pointer, z-ordered, with a DATA handler: popups (R1), pane chrome

@@ -355,6 +355,12 @@ function bootInteractive(opts) {
   // Keeps the overlay pure-of-dispatch at render time; wiring stays in
   // tui.js so overlay/ doesn't import upward into dispatch/.
   require('../overlay/replay-scrubber').setDataSource(require('../dispatch/runtime/replay-control').renderData);
+  // The hit map's frame stamp records the replay view (docs/mouse-hit-map.md
+  // §Stale-frame rule — replay is module state, not model).
+  {
+    const rc = require('../dispatch/runtime/replay-control');
+    require('../panel/hit-map').setReplayView(() => { const d = rc.active() && rc.renderData(); return d ? d.paneView : null; });
+  }
   // v0.6.4 Phase F — redraw (dispatch-then-paint) lives in the dispatch
   // layer now; paint.js is a pure view. tui orchestrates both.
   const { redraw } = require('../dispatch/control/dispatch');

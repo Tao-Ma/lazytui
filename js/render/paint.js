@@ -958,6 +958,17 @@ function render(model) {
     // Viewport-sized like the overlay backdrops (the footer row included).
     const vp = _decor().viewportDims();
     paneHits.publishScreen(vp.cols, vp.rows, !modes.isChainActive(md));
+    // While interactive replay is active it OWNS the mouse (the reconstructed
+    // app underneath is frozen): one full-screen region above every overlay
+    // band swallows every gesture, hover included — whatever the pane view
+    // (mini / full / hidden). The scrubber's mini bar publishes its seek cells
+    // above it (overlay/replay-scrubber).
+    if (replayData) {
+      const on = { hover: 'swallow' };
+      for (const g of hitMap.DISCRETE_GESTURES) on[g] = 'swallow';
+      hitMap.publish({ id: 'owner', owner: 'replay-scrubber', rect: { x: 0, y: 0, w: vp.cols, h: vp.rows },
+        z: hitMap.BANDS.REPLAY, opaque: true, on });
+    }
   }
   const viewMode = layoutSlice.viewMode;
   // Overlay-compositor migration Release 2 (docs/overlay-compositor-migration.md):

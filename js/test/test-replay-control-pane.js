@@ -285,26 +285,36 @@ function boot() {
     it('seekToFraction maps 0 / 0.5 / 1 to the position', () => { eq(fracIdx0, 0); eq(fracIdx1, end); eq(fracIdxMid, Math.round(0.5 * end)); });
   });
 
-  describe('[7] mini-bar click hit-test → seek fraction', () => {
+  describe('[7] mini-bar seek cells on the hit map → seek fraction', () => {
     const draw = require('../leaves/render/draw');
+    const hm = require('../panel/hit-map');
     draw.setDimsProvider(() => ({ cols: 100, rows: 30 }));
     const ov = require('../overlay/replay-scrubber');
     const data = { paneView: 'mini', checkpoints: [{ seq: 1, t: 0, idx: 0 }, { seq: 9, t: 0, idx: 9 }], cursor: 0, idx: 5, pos: 5, total: 20, t: 1000, firstT: 1000, lastT: 2000, playing: null, ratio: 1, mode: 'realtime', idleCap: 1000 };
+    // The fraction a press at (mx, my) seeks to, per the published cells (null = no cell).
+    const seekAt = (mx, my) => {
+      const h = hm.resolve(mx, my, 'press');
+      return h && h.handler && h.handler.act === 'replay-seek' ? h.handler.fraction : null;
+    };
+    const publish = (d) => { hm.clear(null); ov.render(d, null, 100); };
+    publish(data);
     const row = ov._miniGeom(data).box.offY + 1;
     let first = null, last = null;
-    for (let mx = 0; mx < 300; mx++) { const f = ov.hitTestSeek(mx, row, data); if (f != null) { if (first == null) first = mx; last = mx; } }
-    it('the bar is a contiguous strip whose ends map to 0 and 1', () => {
+    for (let mx = 0; mx < 300; mx++) { const f = seekAt(mx, row); if (f != null) { if (first == null) first = mx; last = mx; } }
+    it('the bar is a contiguous strip of cells whose ends map to 0 and 1', () => {
       assert(first != null && last > first, `bar cols ${first}..${last}`);
-      eq(ov.hitTestSeek(first, row, data), 0);
-      eq(ov.hitTestSeek(last, row, data), 1);
+      eq(seekAt(first, row), 0);
+      eq(seekAt(last, row), 1);
+      for (let mx = first; mx <= last; mx++) assert(seekAt(mx, row) != null, `cell ${mx} published`);
     });
     it('a click mid-bar is ~0.5', () => {
-      assert(Math.abs(ov.hitTestSeek(Math.round((first + last) / 2), row, data) - 0.5) <= 0.1, 'mid frac');
+      assert(Math.abs(seekAt(Math.round((first + last) / 2), row) - 0.5) <= 0.1, 'mid frac');
     });
-    it('off-bar / wrong row / non-mini → null', () => {
-      eq(ov.hitTestSeek(first - 1, row, data), null);
-      eq(ov.hitTestSeek(first, row - 1, data), null);
-      eq(ov.hitTestSeek(first, row, { ...data, paneView: 'full' }), null);
+    it('off-bar / wrong row / non-mini → no cell', () => {
+      eq(seekAt(first - 1, row), null);
+      eq(seekAt(first, row - 1), null);
+      publish({ ...data, paneView: 'full' });
+      eq(hm.all().filter(r => r.id.startsWith('seek:')).length, 0, 'the full view publishes no seek cells');
     });
   });
 

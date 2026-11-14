@@ -20,6 +20,7 @@
 
 const { renderOverlay, overlayBox, viewportDims } = require('../leaves/render/draw');
 const { theme } = require('../leaves/infra/themes');
+const hitMap = require('../panel/hit-map');
 
 const MAX_W = 56;       // full pane width cap
 const MINI_BAR = 16;    // mini progress-bar inner width
@@ -59,7 +60,7 @@ function _miniParts(data) {
   const cpN = (data.checkpoints || []).length;
   const cpLabel = cpN ? `  cp ${data.cursor + 1}/${cpN}` : '';
   const diffLabel = data.diffMode && data.diffMode !== 'off' ? `  d:${data.diffMode}` : '';
-  // Plain text only (no markup) — `plain.length` drives the click hit-test, so
+  // Plain text only (no markup) — `plain.length` places the seek cells, so
   // it must equal the rendered width. B6 lock badge follows the same rule.
   const lockLabel = data.locked ? '  LOCK' : '';
   const head = `${_sym(data)} ${data.ratio}×`;            // bolded in render
@@ -77,16 +78,21 @@ function _miniGeom(data) {
   return { box, maxWidth };
 }
 
-// Click hit-test for the mini progress bar → a fraction in [0,1], or null if the
-// click isn't on the bar (or the pane isn't in mini). mx,my are 0-based.
-function hitTestSeek(mx, my, data) {
-  if (!data || data.paneView !== 'mini') return null;
+// Publish the mini progress bar's cells on the hit map (docs/mouse-hit-map.md
+// Release 3): one region per DRAWN bar cell, each carrying its seek fraction,
+// above the full-screen replay owner (render/paint) that swallows everything
+// else. Same box the renderer draws (_miniGeom feeds both); a cell the box
+// clips publishes nothing.
+function _publishSeekCells(data) {
   const { box } = _miniGeom(data);
-  if (my !== box.offY + 1) return null;                    // the single content row
+  const y = box.offY + 1;                                  // the single content row
   const start = box.offX + 1 + _miniParts(data).plain.length;
   const end = Math.min(start + MINI_BAR - 1, box.offX + box.menuW - 2);
-  if (mx < start || mx > end) return null;
-  return Math.max(0, Math.min(1, (mx - start) / (MINI_BAR - 1)));
+  for (let x = start; x <= end; x++) {
+    const fraction = Math.max(0, Math.min(1, (x - start) / (MINI_BAR - 1)));
+    hitMap.publish({ id: `seek:${x - start}`, owner: 'replay-scrubber', rect: { x, y, w: 1, h: 1 },
+      z: hitMap.BANDS.REPLAY + 1, on: { press: { act: 'replay-seek', fraction } } });
+  }
 }
 
 // Compact bottom bar — play state / speed / seq / checkpoint cursor / elapsed /
@@ -107,6 +113,7 @@ function renderMini(data, newRows, cols) {
     anchor: { x: 1, y: ROWS },   // same inputs _miniGeom feeds overlayBox → same box
     targetRows: newRows || null, targetCols: cols || 0,
   });
+  _publishSeekCells(data);
 }
 
 // Full pane — status + checkpoint list + key legend.
@@ -207,4 +214,4 @@ function registerSelf(compositor) {
   });
 }
 
-module.exports = { render, hitTestSeek, _miniGeom, setDataSource, registerSelf };
+module.exports = { render, _miniGeom, setDataSource, registerSelf };
