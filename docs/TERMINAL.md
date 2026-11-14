@@ -134,7 +134,15 @@ When the viewport sits above the live bottom, a reverse-video `[↑N]` indicator
 (N = `linesBelow`) is stamped at the top-right inner cell; any scroll change
 forces an inner repaint so the tag self-clears on return to the bottom. A dead
 session shows a centered `Process exited: <code> — Enter restart, x close`
-prompt on the bottom content row.
+prompt on the bottom content row (`x close` only when the slot keeps another tab:
+`remove_tab` refuses a slot's last tab, so on a terminal alone in its slot `x` is
+the menu).
+
+A focused terminal pane's footer comes from the `terminal` context in
+`leaves/input/bindings.js`, fed by `focusedTerminalState` (`panel/terminal-surfaces`):
+`Enter type here` while it is on screen and alive, `Enter restart` once it exited,
+no Enter hint while it is minimized (Enter does nothing there), and `x close` vs
+`x menu` by the same closable rule as the banner and the `x` key.
 
 ## Input (`js/dispatch/control/input.js`)
 

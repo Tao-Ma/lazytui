@@ -39,6 +39,16 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   encoding the program asked for. Presses outside the pane are not sent; a drag
   that leaves the pane is clamped to its edge, so the program never keeps a
   stuck button.
+- **A focused terminal pane's footer says what its keys do.** It showed the
+  list hints (`↑↓ select | / filter`, neither of which applies) and nothing
+  said that Enter hands the keyboard to the program. It now shows `Enter type
+  here` (or `Enter restart` once the program exited), and no Enter hint while
+  the pane is minimized. The terminal hints left in the viewer footer's table,
+  unreachable since terminals became their own pane kind, are gone.
+- **`x` on an exited terminal that is its slot's only tab opens the menu**
+  instead of doing nothing (such a tab can't be closed, e.g. a configured
+  `type: terminal` pane). The exit banner and the footer offer `x close` only
+  where `x` closes.
 
 ## [0.6.58] — 2026-11-14
 

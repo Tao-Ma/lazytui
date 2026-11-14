@@ -21,7 +21,7 @@ const { RESET, richToAnsi, esc, visibleLen, wrapColor } = require('../leaves/tex
 const { multiSelCount } = require('../panel/nav-state');
 const { theme } = require('../leaves/infra/themes');
 const { truncate, viewportDims } = require('../leaves/render/draw');
-const { focusedTerminalLabel } = require('../panel/terminal-surfaces');
+const { focusedTerminalLabel, focusedTerminalState } = require('../panel/terminal-surfaces');
 const { getPanelDef, getInstanceSlice, getFocus, instanceKind,
         collectViewContributions, filterCurrentText, paneTypeHasBottomBar,
         borderControlsFor } = require('../panel/api');
@@ -121,12 +121,11 @@ function footerKeys(model) {
     // Build the live guard facts the detail context's `when` predicates read;
     // the registry reproduces the old segment list, then the live committed-
     // search count is appended (it carries a live number, not a key hint).
-    // A content focus is never a terminal (terminals are their own `terminal`-kind
-    // pane), so the isTerminal/dead/isEphemeral facts are permanently false; the
-    // position-tab count + committed-search count remain. `total` = the content
-    // slot's tabs (Info + Transcript + opened content tabs) → the `][ tabs` hint.
+    // `total` = the content slot's tabs (Info + Transcript + opened content
+    // tabs) → the `][ tabs` hint. (A content focus is never a terminal —
+    // terminals are their own `terminal`-kind pane, footed below.)
     const total = _route().contentSlotTabCount();
-    let keys = bindings.footerFor('detail', { total, isTerminal: false, dead: false, isEphemeral: false });
+    let keys = bindings.footerFor('detail', { total });
     // P1 — committed-phase count derives from (lines, term).
     const vslice = getInstanceSlice(_route().resolveTarget('viewer'));
     const search = vslice?.search;
@@ -142,6 +141,7 @@ function footerKeys(model) {
     }
     return keys;
   }
+  if (focusKind === 'terminal') return bindings.footerFor('terminal', focusedTerminalState(model) || {});
   if (focusKind === 'actions') return bindings.footerFor('actions');
   if (focusKind === 'groups')  return bindings.footerFor('groups');
   return bindings.footerFor('list');

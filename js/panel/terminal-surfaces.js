@@ -6,7 +6,8 @@
  *
  * A surface = { id (PTY session id == the terminal tab-instance id), poolId,
  * bounds (the pane's rect), cols/rows (its interior — the PTY's size), focused
- * (holds keyboard focus → gets the hardware cursor) }.
+ * (holds keyboard focus → gets the hardware cursor), closable (`x` can close the
+ * tab — not a slot's last) }.
  * Every visible `terminal`-kind pane instance WITH AN INTERIOR (terminalInterior
  * below) is a surface, derived PURELY from the arrange (a pane whose ACTIVE tab's
  * pool entry type === 'terminal'); the ptyId === the tab-instance id
@@ -44,6 +45,12 @@ function terminalInterior(bounds) {
   return (cols >= 1 && rows >= 1) ? { cols, rows } : null;
 }
 
+// Can `x` close this terminal tab? remove_tab (leaves/wm/pane removeTab)
+// refuses a slot's last tab, so a terminal alone in its slot (a configured
+// `type: terminal` pane) stays put — `x` is the menu there, and nothing may
+// offer `x close` for it (field report 2026-11-14: the exit banner did).
+function _closable(pane) { return ((pane && pane.tabs) || []).length > 1; }
+
 function visibleTerminalSurfaces(model, arrangeOverride) {
   const route = require('./route');
   const api = require('./api');
@@ -69,7 +76,8 @@ function visibleTerminalSurfaces(model, arrangeOverride) {
     if (!inner) continue;
     out.push({ id: mpane.newPaneId(poolId), poolId, bounds: b,
                cols: inner.cols, rows: inner.rows,
-               focused: terminalMode && focus === p.paneId });
+               focused: terminalMode && focus === p.paneId,
+               closable: _closable(p) });
   }
   return out;
 }
@@ -97,4 +105,25 @@ function focusedTerminalLabel() {
   return (slice && slice.label) || null;
 }
 
-module.exports = { visibleTerminalSurfaces, focusedTerminalId, focusedTerminalLabel };
+// What the FOCUSED terminal pane's keys do right now, for the footer and `x`:
+// null when the focus isn't a terminal; else { id, dead (the child exited —
+// Enter restarts), closable (`x` closes the tab; else `x` is the menu),
+// onScreen (a surface — has an interior; Enter types into it / restarts it) }.
+function focusedTerminalState(model) {
+  const id = focusedTerminalId();
+  if (!id) return null;
+  const route = require('./route');
+  const api = require('./api');
+  const layoutSlice = api.getInstanceSlice('layout');
+  const focus = route.getFocus();
+  const pane = layoutSlice && layoutSlice.arrange &&
+    mpool.allPanesInColumns(layoutSlice.arrange).find(p => p.paneId === focus);
+  return {
+    id,
+    dead: require('../io/terminal').isSessionDead(id),
+    closable: _closable(pane),
+    onScreen: visibleTerminalSurfaces(model).some(s => s.id === id),
+  };
+}
+
+module.exports = { visibleTerminalSurfaces, focusedTerminalId, focusedTerminalLabel, focusedTerminalState };

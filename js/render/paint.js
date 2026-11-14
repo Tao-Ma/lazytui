@@ -720,7 +720,7 @@ function renderTerminalOverlay(model, arrangeOverride, forceAll) {
     // cols/rows = the surface's interior (terminal-surfaces terminalInterior —
     // ≥ 1×1; a pane without one is not a surface, so its departure takes the
     // vanish reclaim in render()).
-    const { id, bounds, focused, cols: innerW, rows: innerH } = surf;
+    const { id, bounds, focused, closable, cols: innerW, rows: innerH } = surf;
 
     // v0.6.5 §5 — render is READ-ONLY for the PTY overlay. The session's
     // lifecycle (lazy spawn on first activation + resize to the committed pane
@@ -791,7 +791,8 @@ function renderTerminalOverlay(model, arrangeOverride, forceAll) {
     // v0.6.3 P5.1 — the terminal_exit dispatch is event-driven from
     // pty-lifecycle.handleExit (PTY onExit), not a render-side poll.
     if (session.exited) {
-      const msg = ` Process exited: ${session.exitCode} — Enter restart, x close `;
+      // `x close` only where `x` closes it (a slot's last tab stays — remove_tab).
+      const msg = ` Process exited: ${session.exitCode} — Enter restart${closable ? ', x close' : ''} `;
       const text = msg.length > innerW ? msg.slice(0, innerW) : msg;
       const padding = Math.max(0, Math.floor((innerW - text.length) / 2));
       out += `\x1b[${bounds.y + innerH + 1};${bounds.x + 2 + padding}H\x1b[7m${text}\x1b[0m`;

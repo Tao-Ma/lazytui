@@ -3,8 +3,8 @@
  *
  * Characterization: `footerFor` must reproduce the EXACT hint strings the
  * hand-typed footer produced before E9 (the contract that lets footer.js read
- * the registry with zero behavior change), across every focus-kind, the four
- * conditional detail variants, the per-panel extras, and the modal-mode tails.
+ * the registry with zero behavior change), across every focus-kind, the detail
+ * tab-count variants, the terminal context, and the modal-mode tails.
  *
  * Run: node js/test/test-bindings.js
  */
@@ -21,25 +21,35 @@ describe('[E9] focus-kind footers (verbatim parity)', () => {
   });
 });
 
-describe('[E9] detail footer — the four conditional variants', () => {
-  it('non-terminal, single tab, no search', () => {
-    eq(b.footerFor('detail', { total: 1, isTerminal: false }),
+describe('[E9] detail footer — tab count variants', () => {
+  it('single tab, no search', () => {
+    eq(b.footerFor('detail', { total: 1 }),
       ' ←→ panel | +/_ view | x menu | q quit | / search');
   });
-  it('non-terminal, multiple tabs', () => {
-    eq(b.footerFor('detail', { total: 3, isTerminal: false }),
+  it('multiple tabs', () => {
+    eq(b.footerFor('detail', { total: 3 }),
       ' ←→ panel | ]\\[ tabs | +/_ view | x menu | q quit | / search');
   });
-  it('terminal tab, alive', () => {
-    eq(b.footerFor('detail', { total: 2, isTerminal: true, dead: false }),
-      ' ←→ panel | ]\\[ tabs | +/_ view | x menu | q quit | Enter activate');
+});
+
+// A focused `terminal` pane has its own context (field report 2026-11-14: it
+// fell through to the list hints; the terminal variants above it in the viewer
+// table were unreachable since terminals became their own pane kind).
+describe('terminal footer — dead / closable / onScreen', () => {
+  it('alive, on screen → Enter type here', () => {
+    eq(b.footerFor('terminal', { dead: false, closable: false, onScreen: true }),
+      ' ←→ panel | +/_ view | x menu | q quit | Enter type here');
   });
-  it('terminal tab, dead + ephemeral → x close + Enter restart', () => {
-    eq(b.footerFor('detail', { total: 2, isTerminal: true, dead: true, isEphemeral: true }),
-      ' ←→ panel | ]\\[ tabs | +/_ view | x close | q quit | Enter restart');
+  it('alive, minimized (no interior) → no Enter hint', () => {
+    eq(b.footerFor('terminal', { dead: false, closable: true, onScreen: false }),
+      ' ←→ panel | +/_ view | x menu | q quit');
   });
-  it('terminal tab, dead but NOT ephemeral → x menu + Enter restart', () => {
-    eq(b.footerFor('detail', { total: 1, isTerminal: true, dead: true, isEphemeral: false }),
+  it('dead, closable → x close + Enter restart', () => {
+    eq(b.footerFor('terminal', { dead: true, closable: true, onScreen: true }),
+      ' ←→ panel | +/_ view | x close | q quit | Enter restart');
+  });
+  it('dead, the slot\'s last tab → x menu + Enter restart', () => {
+    eq(b.footerFor('terminal', { dead: true, closable: false, onScreen: true }),
       ' ←→ panel | +/_ view | x menu | q quit | Enter restart');
   });
 });

@@ -29,7 +29,7 @@ const { getPanelDef, getItems, idOf, getInstanceSlice,
 const { dispatchMsg, dispatchKeyToFocused } = require('../runtime/loop');
 const copy = require('../../overlay/copy');
 const registerPopup = require('../../overlay/register-popup');
-const { isSessionDead } = require('../../io/terminal');
+const { focusedTerminalState } = require('../../panel/terminal-surfaces');
 const keybindings = require('../../leaves/input/keybindings');
 const keymap = require('../../leaves/input/keymap');
 const modes = require('../../leaves/input/modes');
@@ -653,11 +653,14 @@ function handleNormalKey(key, seq) {
     case 'x': {
       // U2d — a dead `terminal` PANE: `x` closes it via remove_tab (the
       // pane-instance analog of the legacy dead-ephemeral dismiss below). Clean
-      // exits auto-close from handleExit; `x` dismisses a non-zero exit.
+      // exits auto-close from handleExit; `x` dismisses a non-zero exit. Only
+      // when the slot keeps another tab (remove_tab refuses the last one): a
+      // terminal alone in its slot — a configured `type: terminal` pane — gets
+      // the menu, as its footer says (it did nothing; field report 2026-11-14).
       if (instanceKind(getFocus()) === 'terminal') {
-        const id = route.activeInstanceOf(getFocus());
-        if (id && isSessionDead(id)) {
-          dispatchMsg(wrap('layout', { type: 'remove_tab', paneId: getFocus(), tabPoolId: mpane.poolIdOf(id) }));
+        const ts = focusedTerminalState(getModel());
+        if (ts && ts.dead && ts.closable) {
+          dispatchMsg(wrap('layout', { type: 'remove_tab', paneId: getFocus(), tabPoolId: mpane.poolIdOf(ts.id) }));
           break;
         }
       }

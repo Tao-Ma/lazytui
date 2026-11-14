@@ -26,12 +26,13 @@
  *
  * Entry shape:
  *   { context, label, when?, footer?, order }
- *     context — 'list' | 'actions' | 'groups' | 'detail' (focus-kind) |
+ *     context — 'list' | 'actions' | 'groups' | 'detail' | 'terminal' (focus-kind) |
  *               a panelType ('docker'/'files'/'history'/'config-status') |
  *               a modal-mode flag ('copyMode'/'menuOpen'/…) — see CONTEXTS.
  *     label   — the rendered hint, e.g. 'x menu', '↑↓ select', 'Enter run'.
  *     when    — optional pure (ctx) => bool guard (ctx = live facts the footer
- *               passes: { total, isTerminal, dead, isEphemeral, … }). Absent =
+ *               passes: { total } for detail, { dead, closable, onScreen } for
+ *               terminal). Absent =
  *               always shown.
  *     footer  — false to hide from the footer (help-only). Default true.
  *     order   — sort key within a context (footer curates by it; limited width).
@@ -64,12 +65,23 @@ const BINDINGS = {
     { label: '←→ panel',      order: 10 },
     { label: ']\\[ tabs',     order: 20, when: (c) => c.total > 1 },
     { label: '+/_ view',      order: 30 },
-    { label: 'x close',       order: 40, when: (c) => c.isTerminal && c.dead && c.isEphemeral },
-    { label: 'x menu',        order: 41, when: (c) => !(c.isTerminal && c.dead && c.isEphemeral) },
+    { label: 'x menu',        order: 40 },
     { label: 'q quit',        order: 50 },
-    { label: 'Enter restart', order: 60, when: (c) => c.isTerminal && c.dead },
-    { label: 'Enter activate',order: 61, when: (c) => c.isTerminal && !c.dead },
-    { label: '/ search',      order: 70, when: (c) => !c.isTerminal },
+    { label: '/ search',      order: 70 },
+  ],
+  // A focused `terminal` pane (field report 2026-11-14: it showed the list
+  // hints, and nothing said Enter hands the keyboard over). Facts from
+  // panel/terminal-surfaces focusedTerminalState: dead / closable / onScreen.
+  // Enter does nothing on a terminal with no interior (minimized) → no hint;
+  // `x` closes a dead tab only when the slot keeps another (else it's the menu).
+  terminal: [
+    { label: '←→ panel',        order: 10 },
+    { label: '+/_ view',        order: 20 },
+    { label: 'x close',         order: 30, when: (c) => c.dead && c.closable },
+    { label: 'x menu',          order: 31, when: (c) => !(c.dead && c.closable) },
+    { label: 'q quit',          order: 40 },
+    { label: 'Enter type here', order: 50, when: (c) => c.onScreen && !c.dead },
+    { label: 'Enter restart',   order: 51, when: (c) => c.onScreen && c.dead },
   ],
 
   // (Per-panel extras — docker i/L/s, config-status t/s/r, history Enter, files'
