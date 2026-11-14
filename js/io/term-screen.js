@@ -15,6 +15,7 @@
  *   onScreenReply(screen, fn) → disposable  (the emulator's replies to the program)
  *   scrollScreen / scrollScreenPages / scrollScreenToTop / scrollScreenToBottom → moved?
  *   screenScrollInfo(screen) → {atBottom,linesBelow}   screenMouseMode(screen) → mode
+ *   screenMouseReport(screen, ev) → sent?   (encode a mouse event for the program)
  *   readViewport(screen,h,w) → {viewportY, rows:[text]}   (render)
  *   serializeScreen(screen) → snapshot       restoreScreen(snapshot) → screen
  *
@@ -86,6 +87,32 @@ function screenScrollInfo(screen) {
 /** The child's DEC mouse-tracking mode ('none' | x10 | vt200 | drag | any). */
 function screenMouseMode(screen) { return screen.modes.mouseTrackingMode; }
 
+// The emulator's mouse encoder: given a grid cell + button + action it applies
+// the program's DEC protocol (x10 / vt200 / drag / any — e.g. no hover motion
+// for a button-event program, no repeat of an unchanged cell) and its encoding
+// (SGR, or the legacy X10 bytes vim picks for a `> 0;276;0 c` terminal), and
+// emits the report through onScreenReply. `coreMouseService` is xterm's internal
+// service — the public headless API exposes the mode but no way to encode; this
+// port is the one module that knows the emulator, and a test pins the service
+// (test-terminal-mouse-forward), so an upgrade that moves it fails loudly.
+const _MOUSE_BUTTON = { left: 0, middle: 1, right: 2, none: 3, wheel: 4 };
+const _MOUSE_ACTION = { up: 0, down: 1, move: 32,
+  'wheel-up': 0, 'wheel-down': 1, 'wheel-left': 2, 'wheel-right': 3 };
+
+/** Encode one mouse event for the program: `ev` = { col, row (0-based grid
+ *  cell), button: left|middle|right|none|wheel, action: down|up|move|
+ *  wheel-up|wheel-down|wheel-left|wheel-right, shift, alt, ctrl }. Returns
+ *  whether a report was emitted (false: the protocol doesn't take it, or the
+ *  encoder is unavailable). */
+function screenMouseReport(screen, ev) {
+  const ms = screen._core && screen._core.coreMouseService;
+  if (!ms || typeof ms.triggerMouseEvent !== 'function') return false;
+  const button = _MOUSE_BUTTON[ev.button], action = _MOUSE_ACTION[ev.action];
+  if (button === undefined || action === undefined) return false;
+  return !!ms.triggerMouseEvent({ col: ev.col, row: ev.row, x: 0, y: 0, button, action,
+                                  ctrl: !!ev.ctrl, alt: !!ev.alt, shift: !!ev.shift });
+}
+
 /** The cursor position within the viewport ({x, y}, 0-based) — for placing the
  *  real screen cursor over the embedded terminal in terminal mode. */
 function screenCursor(screen) {
@@ -133,6 +160,6 @@ function restoreScreen(snap, cb) {
 module.exports = {
   createScreen, writeScreen, resizeScreen, disposeScreen, screenSize, onScreenReply,
   scrollScreen, scrollScreenPages, scrollScreenToTop, scrollScreenToBottom,
-  screenScrollInfo, screenMouseMode, readViewport, screenCursor,
+  screenScrollInfo, screenMouseMode, screenMouseReport, readViewport, screenCursor,
   serializeScreen, restoreScreen,
 };

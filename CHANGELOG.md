@@ -30,6 +30,15 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   answer, nvim waits on `ESC [ c`, and fzf `--height` reads the cursor
   position. The emulator's replies now reach the program, as a real terminal's
   would.
+- **Mouse clicks in a terminal pane land where you click.** In terminal mode a
+  program that turned mouse reporting on (vim, nvim, htop) got the host
+  terminal's bytes unchanged: whole-screen coordinates (a click in an nvim pane
+  landed ~35 columns off), events from outside the pane, and always SGR even
+  when the program asked for another encoding. Each event is now made relative
+  to the pane and encoded by the pane's emulator for the mouse protocol and
+  encoding the program asked for. Presses outside the pane are not sent; a drag
+  that leaves the pane is clamped to its edge, so the program never keeps a
+  stuck button.
 
 ## [0.6.58] — 2026-11-14
 

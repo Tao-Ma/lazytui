@@ -63,7 +63,16 @@ scrollSessionPages(id, n)                 ± pages
 scrollSessionToTop(id) / ...ToBottom(id)
 sessionScrollInfo(id)                     → { atBottom, linesBelow }
 sessionMouseMode(id)                      → child's DEC mouse mode ('none'|x10|…)
+reportMouse(id, ev)                       encode a mouse event for the child (its
+                                          protocol + encoding) → sent?
 ```
+
+The emulator's **replies** to the child — answers to its terminal queries
+(device attributes `ESC [ c` / `ESC [ > c`, cursor position `ESC [ 6 n`, mode
+reports) and the mouse reports `reportMouse` encodes — go back to the PTY
+(`term-screen.onScreenReply`, wired in `ensureSession`), as a real terminal's
+would. vim chooses its mouse encoding from the `ESC [ > c` answer; nvim and fzf
+wait on theirs.
 
 The scroll fns return whether the viewport actually moved (callers gate their
 repaint on it). Writing PTY output while scrolled up is sticky in xterm (`baseY`
@@ -140,9 +149,15 @@ to `_handleTerminalModeData`, bypassing normal key parsing.
   through to the child (less, vim).
 - **Smart mouse forwarding** — `_classifyTerminalChunk` (pure, unit-tested)
   decides per chunk using `sessionMouseMode(id)`. When the child enabled DEC
-  mouse reporting (vim, htop, `less --mouse`), mouse bytes forward raw. When it
-  hasn't (`'none'`), the wheel is the framework's scrollback control (3 lines /
-  notch); non-wheel mouse is dropped; any non-mouse residue forwards.
+  mouse reporting (vim, htop, `less --mouse`), each host mouse event is decoded,
+  made relative to the terminal's grid, and re-encoded by the pane's emulator for
+  the protocol + encoding the child asked for (`reportMouse`; e.g. no hover for a
+  button-event child, the legacy X10 bytes when it didn't ask for SGR); keys in
+  the same chunk keep their order. A press, wheel or hover outside the grid is not
+  the child's; a drag motion or release outside clamps to the edge (no stuck
+  button). When it hasn't (`'none'`), the wheel is the framework's scrollback
+  control (3 lines / notch); non-wheel mouse is dropped; any non-mouse residue
+  forwards.
 - **Snap to bottom** — an ordinary keystroke at the prompt first
   `scrollSessionToBottom`s, so typing always leaves scrollback.
 

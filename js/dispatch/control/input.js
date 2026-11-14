@@ -14,14 +14,16 @@
  * single-token chunk keeps the synchronous per-key paint.
  *
  * Terminal mode bypasses parsing: bytes go straight to the active PTY,
- * except Ctrl+\ which exits terminal mode.
+ * except Ctrl+\ which exits terminal mode, the Shift+Page/Home/End scrollback
+ * keys, and mouse events (re-encoded for the child, pane-relative — or turned
+ * into scrollback when the child has no mouse reporting).
  */
 'use strict';
 
 const { paintNow: render, beginBatch, endBatch } = require('../../leaves/infra/render-queue');
 const { getModel } = require('../../model/store');
 const { enableMouse, enableFocusEvents, enableBracketedPaste } = require('../../io/term');
-const { focusedTerminalId } = require('../../panel/terminal-surfaces');
+const { focusedTerminalId, visibleTerminalSurfaces } = require('../../panel/terminal-surfaces');
 const { writeToSession, isSessionDead } = require('../../io/terminal');
 const { tokenizeInput } = require('../../leaves/input/tokenize');
 const { kkpToLegacy } = require('../../leaves/input/kkp-decode');
@@ -83,10 +85,35 @@ function handleMouse(kind, x, y) {
 //   { kind:'forward', data, snap? } — forward raw to the PTY. `snap` asks
 //        the caller to return to the live bottom first (a keystroke at the
 //        prompt should leave scrollback).
+//   { kind:'report', parts } — the child enabled mouse reporting and the chunk
+//        carried mouse events: `parts` in stream order, each `{ text }` (keys,
+//        forwarded as-is) or `{ mouse }` (a decoded event — _decodeSgrMouse —
+//        the caller makes pane-relative and has the pane's emulator encode).
 //   { kind:'mouse', lines, residue } — mouseMode is 'none' and the chunk
 //        carried SGR mouse bytes: `lines` is the net scrollback delta from
 //        wheel events, `residue` is the non-mouse remainder to forward.
 //        Non-wheel mouse is dropped (the child never enabled mouse reporting).
+const _SGR_MOUSE_RE = /\x1b\[<(\d+);(\d+);(\d+)([Mm])/g;
+
+// One host SGR mouse report (lazytui runs the host terminal in SGR, 1006) →
+// an emulator-neutral event `{ x, y (host, 1-based), button, action, shift,
+// alt, ctrl }` that io/terminal reportMouse encodes for the child. Field
+// report 2026-11-14: the host bytes were forwarded RAW — whole-screen
+// coordinates, always SGR — so a click in an nvim pane landed ~35 columns off.
+// null = nothing a child can be sent (buttons 8–11; a wheel "release").
+function _decodeSgrMouse(btn, x, y, final) {
+  if (btn & 128) return null;
+  const mods = { shift: !!(btn & 4), alt: !!(btn & 8), ctrl: !!(btn & 16) };
+  const low = btn & 3;
+  if (btn & 64) {
+    if (final === 'm') return null;
+    return { x, y, button: 'wheel', action: ['wheel-up', 'wheel-down', 'wheel-left', 'wheel-right'][low], ...mods };
+  }
+  const button = ['left', 'middle', 'right', 'none'][low];
+  const action = (btn & 32) ? 'move' : (final === 'm' ? 'up' : 'down');
+  return { x, y, button, action, ...mods };
+}
+
 function _classifyTerminalChunk(data, mouseMode) {
   // Framework keyboard scrollback — Shift+Page/Home/End (xterm CSI `;2`
   // modifier form). Plain Page/Home/End (no Shift) fall through to the
@@ -96,9 +123,22 @@ function _classifyTerminalChunk(data, mouseMode) {
   if (data === '\x1b[1;2H') return { kind: 'scroll', toTop: true };    // Shift+Home
   if (data === '\x1b[1;2F') return { kind: 'scroll', toBottom: true }; // Shift+End
 
-  // Child enabled mouse reporting → forward everything raw (incl. mouse).
-  // Zero regression for mouse-aware children (vim, htop, less --mouse).
-  if (mouseMode !== 'none') return { kind: 'forward', data };
+  // Child enabled mouse reporting (vim, htop, less --mouse): keys forward raw;
+  // each mouse event is decoded for re-encoding in the child's own terms.
+  if (mouseMode !== 'none') {
+    if (!data.includes('\x1b[<')) return { kind: 'forward', data };
+    const parts = [];
+    let last = 0, m;
+    _SGR_MOUSE_RE.lastIndex = 0;
+    while ((m = _SGR_MOUSE_RE.exec(data)) !== null) {
+      if (m.index > last) parts.push({ text: data.slice(last, m.index) });
+      last = m.index + m[0].length;
+      const ev = _decodeSgrMouse(parseInt(m[1], 10), parseInt(m[2], 10), parseInt(m[3], 10), m[4]);
+      if (ev) parts.push({ mouse: ev });
+    }
+    if (last < data.length) parts.push({ text: data.slice(last) });
+    return { kind: 'report', parts };
+  }
 
   // mouseMode 'none', no mouse bytes → ordinary keystrokes: forward and
   // snap to the live bottom so the user types at the prompt.
@@ -152,6 +192,10 @@ function _handleTerminalModeData(data) {
     if (moved) render();      // skip the repaint when already at the edge
     return true;
   }
+  if (plan.kind === 'report') {
+    _reportTerminalMouse(id, plan.parts);
+    return true;
+  }
   if (plan.kind === 'mouse') {
     let moved = false;
     if (plan.lines) moved = term.scrollSession(id, plan.lines) || moved;
@@ -171,6 +215,35 @@ function _handleTerminalModeData(data) {
   if (plan.snap && term.scrollSessionToBottom(id)) render();
   writeToSession(id, plan.data);
   return true;
+}
+
+// Deliver a 'report' plan: keys as-is, each mouse event made relative to the
+// terminal's grid (the overlay paints cell (0,0) at host column bounds.x + 2,
+// row bounds.y + 2 — 1-based) and encoded by the pane's emulator for the
+// protocol + encoding the child asked for (io/terminal reportMouse; it also
+// drops what the child's protocol doesn't take, e.g. hover for a button-event
+// child). A press, wheel or hover outside the grid is not the child's (the
+// border, another pane); a drag motion or release outside clamps to the edge,
+// as a terminal does at its window edge, so the child never keeps a stuck
+// button.
+function _reportTerminalMouse(id, parts) {
+  const term = require('../../io/terminal');
+  const surf = visibleTerminalSurfaces(getModel()).find(s => s.id === id);
+  for (const part of parts) {
+    if (part.text != null) { writeToSession(id, part.text); continue; }
+    if (!surf) continue;
+    const ev = part.mouse;
+    let col = ev.x - surf.bounds.x - 2, row = ev.y - surf.bounds.y - 2;
+    const inside = col >= 0 && row >= 0 && col < surf.cols && row < surf.rows;
+    if (!inside) {
+      const dragging = ev.action === 'up' || (ev.action === 'move' && ev.button !== 'none');
+      if (!dragging) continue;
+      col = Math.min(Math.max(col, 0), surf.cols - 1);
+      row = Math.min(Math.max(row, 0), surf.rows - 1);
+    }
+    term.reportMouse(id, { col, row, button: ev.button, action: ev.action,
+                           shift: ev.shift, alt: ev.alt, ctrl: ev.ctrl });
+  }
 }
 
 // Terminal-mode control events the per-chunk exact matches encode: the

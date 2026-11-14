@@ -27,53 +27,16 @@
 
 process.stdout.columns = 160; process.stdout.rows = 40;
 
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
 const { Terminal } = require('@xterm/headless');
 const { section, assert, eq, report } = require('./test-runner');
-const sm = require('./smoke/_helpers/smoke');
+const tl = require('./_helpers/terminal-layout');   // the field layout (dev.sh)
 const terminal = require('../io/terminal');
 const route = require('../panel/route');
-const mpane = require('../leaves/wm/pane');
-const mpool = require('../leaves/wm/pool');
-const { parse } = require('../parser');
 const { visibleTerminalSurfaces } = require('../panel/terminal-surfaces');
 const { render } = require('../render/paint');
 const { getModel } = require('../model/store');
 const { dispatchMsg, applyMsg } = require('../dispatch/runtime/loop');
-
-const api = sm.api;
-if (!api.getComponent('terminal')) api.registerComponent(require('../panel/terminal/terminal'));
-
-// The field layout (pg_spectrum dev.sh): the terminal is the only pane of a
-// flex middle column, so minimizing it leaves a 1-row bar.
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lazytui-term-interior-'));
-const yml = path.join(dir, 'tui.yml');
-fs.writeFileSync(yml, [
-  'project_dir: .',
-  'groups:',
-  '  g1:',
-  '    label: Group 1',
-  '    actions:',
-  '      hello: { label: Hello, script: echo hello }',
-  'panels:',
-  '  groups: { type: groups, title: Groups }',
-  '  dev: { type: terminal, title: Dev, cmd: "sleep 60" }',
-  '  actions: { type: actions, title: Actions }',
-  '  detail: { type: detail, title: Detail }',
-  'layout:',
-  '  columns:',
-  '    - width: 34',
-  '      panels: [groups]',
-  '    - width: flex',
-  '      panels:',
-  '        - { tabs: [dev], hotkey: 4 }',
-  '    - panels:',
-  '        - actions',
-  '        - { tabs: [detail], height: 60% }',
-  '',
-].join('\n'));
+const sm = require('./smoke/_helpers/smoke');
 
 // Every console.error a step logs (the finalizer reports its throw there).
 const errors = [];
@@ -81,14 +44,7 @@ const _origErr = console.error;
 console.error = (...a) => { errors.push(a.join(' ')); _origErr(...a); };
 const clampErrors = () => errors.filter(e => /^\[dispatch\] post-dispatch/.test(e));
 
-function devPane() {
-  const arr = route.getInstanceSlice('layout').arrange;
-  return mpool.allPanesInColumns(arr).find(p => {
-    const e = arr.pool && arr.pool[p.activeTabId];
-    return e && e.type === 'terminal';
-  });
-}
-const ptyIdOf = (p) => mpane.newPaneId(p.activeTabId);
+const devPane = tl.terminalPane;
 const toggleCollapse = (p) => dispatchMsg(route.wrap('layout', { type: 'panel_collapse_toggle', id: p.id }));
 const focusPane = (p) => dispatchMsg(route.wrap('layout', { type: 'focus_set', focus: p.paneId }));
 const pressEnter = () => require('../dispatch/control/input')._dispatchToken('\r');
@@ -131,10 +87,9 @@ function screenText() {
     return;
   }
 
-  sm.bootFresh(parse(yml));
-  sm.resize(160, 40);
-  const pane = devPane();
-  const id = ptyIdOf(pane);
+  const fx = tl.boot({ cmd: 'sleep 60' });
+  const pane = fx.pane();
+  const id = fx.id;
 
   section('[1] minimize: no finalize error, the PTY keeps its last size, no surface');
   assert(terminal.getSession(id), 'precondition: the finalizer spawned the PTY');
@@ -210,7 +165,7 @@ function screenText() {
   assert(terminal.getSession(id) && !terminal.getSession(id).exited, 'without killing the live session');
 
   terminal.destroyAll();
-  fs.rmSync(dir, { recursive: true, force: true });
+  fx.cleanup();
   console.error = _origErr;
   process.stdout.write = _origWrite;
   report();

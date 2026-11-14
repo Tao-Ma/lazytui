@@ -51,10 +51,19 @@ describe('_classifyTerminalChunk — keyboard scrollback gestures', () => {
 });
 
 describe('_classifyTerminalChunk — mouse-mode forward gate', () => {
-  it('child with mouse reporting on → forward raw (incl. mouse bytes)', () => {
+  // Mouse events are decoded for re-encoding in the child's terms, pane-relative
+  // (field report 2026-11-14: raw forwarding put an nvim click ~35 columns off;
+  // the delivery is pinned end-to-end in test-terminal-mouse-forward).
+  it('child with mouse reporting on → a report plan (mouse decoded, keys kept in order)', () => {
     const wheel = '\x1b[<64;5;5M';
-    eq(_classifyTerminalChunk(wheel, 'vt200'), { kind: 'forward', data: wheel });
-    eq(_classifyTerminalChunk(wheel, 'any'),   { kind: 'forward', data: wheel });
+    const wheelUp = { x: 5, y: 5, button: 'wheel', action: 'wheel-up', shift: false, alt: false, ctrl: false };
+    eq(_classifyTerminalChunk(wheel, 'vt200'), { kind: 'report', parts: [{ mouse: wheelUp }] });
+    eq(_classifyTerminalChunk(wheel, 'any'),   { kind: 'report', parts: [{ mouse: wheelUp }] });
+    eq(_classifyTerminalChunk(`a${wheel}b`, 'drag'),
+      { kind: 'report', parts: [{ text: 'a' }, { mouse: wheelUp }, { text: 'b' }] });
+  });
+  it('child with mouse reporting on, no mouse bytes → forward raw (no snap)', () => {
+    eq(_classifyTerminalChunk('ls\r', 'vt200'), { kind: 'forward', data: 'ls\r' });
   });
   it('plain keystroke (no mouse) → forward + snap to bottom', () => {
     eq(_classifyTerminalChunk('ls\r', 'none'), { kind: 'forward', data: 'ls\r', snap: true });
