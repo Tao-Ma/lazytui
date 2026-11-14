@@ -17,6 +17,13 @@
  *   [9] round-2 review: border-control specs without / with duplicate ids and a
  *       spec whose regions() throws (plugin contract); the free-config panel
  *       list owns its box (chrome under it is not clickable through it)
+ *  [10] round-3 review: a tab switch stales only that pane's border controls
+ *       (another pane's [_] and the switched pane's own glyphs stay live in the
+ *       same chunk); regions() returning a malformed value; fresh spec objects
+ *       per read (found by unique id, else a recorded miss); a spec error is
+ *       recorded once, not every frame; no pane region under the footer on a
+ *       ≤ 6-row terminal; an unclosed `[` in a title / hotkey doesn't move the
+ *       glyphs off their regions; a narrow slot's bare-border tab strip clicks
  *
  * Run: node js/test/test-chrome-mouse.js
  */
@@ -245,27 +252,53 @@ describe('[8] pre-release review regressions', () => {
   });
 });
 
-describe('[9] round-2 review regressions', () => {
-  // Plugin-style border controls: the spec contract is { render, regions,
-  // dispatch } — `id` was never required (nor unique).
-  const LOG = [];
-  const spec = (label, id, opts = {}) => {
-    const sp = {
-      render: () => ({ text: label, visibleW: label.length }),
-      regions: opts.throws ? () => { throw new Error('regions boom'); } : (x0, y, w) => [{ x0, x1: x0 + w - 1, y, action: 'go' }],
-      dispatch: (action) => { LOG.push(`${label}:${action}`); return null; },
-    };
-    if (id !== undefined) sp.id = id;
-    return sp;
+// Plugin-style border controls: the spec contract is { render, regions,
+// dispatch } — `id` was never required (nor unique). `borderControls` may be
+// a getter (a plugin building fresh spec objects on every read).
+const LOG = [];
+const spec = (label, id, opts = {}) => {
+  const sp = {
+    render: () => ({ text: label, visibleW: label.length }),
+    regions: opts.regions || (opts.throws ? () => { throw new Error(opts.throws === true ? 'regions boom' : opts.throws); }
+      : (x0, y, w) => [{ x0, x1: x0 + w - 1, y, action: 'go' }]),
+    dispatch: (action) => { LOG.push(`${label}:${action}`); return null; },
   };
-  const mkType = (specs) => ({
-    borderControls: specs,
+  if (id !== undefined) sp.id = id;
+  return sp;
+};
+const mkType = (specs, { strip = false } = {}) => {
+  const def = {
     render(panel, w, h, slice, opts) {
       const ctl = api.borderControlsFor({ paneId: panel.paneId, type: panel.type, focused: !!(opts && opts.focused), innerW: w - 2 }, getModel());
-      return api.renderPanel({ width: w, height: h, lines: ['body'], title: 'RV', focused: !!(opts && opts.focused),
+      // strip: a multi-tab slot's title (its tab strip, clickable), as the
+      // in-tree slot renderers draw it.
+      const title = strip ? require('../panel/slot-strip').slotTitleOpts(panel) : { title: 'RV' };
+      return api.renderPanel({ width: w, height: h, lines: ['body'], ...title, focused: !!(opts && opts.focused),
         chrome: opts && opts.chrome, topControls: ctl });
     },
-  });
+  };
+  if (typeof specs === 'function') Object.defineProperty(def, 'borderControls', { get: specs, enumerable: true });
+  else def.borderControls = specs;
+  return def;
+};
+const bootType = (type) => {
+  const P2 = { rv: { id: 'rv', type }, detail: { id: 'detail', type: 'detail' } };
+  sm.bootFresh({ layout: { pool: P2, columns: [{ width: 50, panels: [P2.rv] }, { panels: [P2.detail] }] } });
+  toLayout({ type: 'view_set', mode: 'normal' });
+  sm.resize(120, 30);
+  return hc.screenRows();
+};
+const cellOf = (rows, text) => {
+  for (let y = 0; y < rows.length; y++) {
+    const line = (rows[y] || []).join('');
+    const x = line.indexOf(text);
+    if (x >= 0) return { x: x + 1, y };
+  }
+  return null;
+};
+const screenOf = (rows) => rows.map(r => (r || []).join('')).join('\n');
+
+describe('[9] round-2 review regressions', () => {
   api.registerComponent({
     name: 'r2plug', init: () => ({}), update: (m, sl) => sl,
     panelTypes: {
@@ -274,21 +307,6 @@ describe('[9] round-2 review regressions', () => {
       rvthrow: mkType([spec('EEE', 'e', { throws: true }), spec('FFF', 'f')]),
     },
   });
-  const bootType = (type) => {
-    const P2 = { rv: { id: 'rv', type }, detail: { id: 'detail', type: 'detail' } };
-    sm.bootFresh({ layout: { pool: P2, columns: [{ width: 50, panels: [P2.rv] }, { panels: [P2.detail] }] } });
-    toLayout({ type: 'view_set', mode: 'normal' });
-    sm.resize(120, 30);
-    return hc.screenRows();
-  };
-  const cellOf = (rows, text) => {
-    for (let y = 0; y < rows.length; y++) {
-      const line = (rows[y] || []).join('');
-      const x = line.indexOf(text);
-      if (x >= 0) return { x: x + 1, y };
-    }
-    return null;
-  };
   for (const [type, a, b] of [['rvnone', 'AAA', 'BBB'], ['rvdup', 'CCC', 'DDD']]) {
     it(`${type}: a click on each control dispatches THAT control (specs found by identity, not id)`, () => {
       const rows = bootType(type);
@@ -333,6 +351,160 @@ describe('[9] round-2 review regressions', () => {
     eq(panes().map(p => p.id).join(), before, 'no pane hidden');
     eq(getModel().modes.freeConfigMode, true, 'still in free-config (the legacy handler took the click)');
     toLayout({ type: 'free_config_exit' });
+  });
+});
+
+describe('[10] round-3 review regressions', () => {
+  const eventLog = require('../io/event-log');
+  api.registerComponent({
+    name: 'r3plug', init: () => ({}), update: (m, sl) => sl,
+    panelTypes: {
+      rvtab: mkType([spec('GGG', 'g')], { strip: true }),
+      rvobj: mkType([spec('OBJ', 'o', { regions: (x0, y, w) => ({ x0, x1: x0 + w - 1, y, action: 'go' }) }), spec('OK1', 'k1')]),
+      rvnull: mkType([spec('NUL', 'n', { regions: (x0, y, w) => [null, { x0, x1: x0 + w - 1, y, action: 'go' }] }), spec('OK2', 'k2')]),
+      rvfreshid: mkType(() => [spec('HHH', 'h'), spec('III', 'i')]),
+      rvfreshnone: mkType(() => [spec('JJJ'), spec('KKK')]),
+      rvthrow3: mkType([spec('TTT', 't', { throws: 'r3 boom' })]),
+    },
+  });
+  const collapsed = (paneId) => !!pane(paneId).collapsed;
+
+  it('a row click that auto-switches the content slot + [_] on another pane, one chunk: it collapses', () => {
+    boot();
+    const det = pane('pane-detail');
+    const trans = det.tabs.find(t => t.id !== det.activeTabId).id;
+    toLayout({ type: 'activate_tab', paneId: 'pane-detail', tabPoolId: trans });
+    toLayout({ type: 'focus_set', focus: 'pane-groups2' });
+    hc.paint();
+    const g = require('../leaves/wm/geometry').visibleBoundsFor(layout(), 'pane-groups');
+    const r = hc.region('pane-groups2', 'collapse');
+    chunk(sgr(g.x + 3, g.y + 2) + sgr(r.rect.x + 1, r.rect.y));
+    assert(pane('pane-detail').activeTabId !== trans, 'precondition: the row click switched the slot\'s tab');
+    assert(collapsed('pane-groups2'), 'the other pane\'s [_] still collapsed it');
+  });
+  it('a tab-strip click + a glyph on another pane / on the same pane, one chunk: both act', () => {
+    for (const [target, glyph, acted] of [
+      ['pane-groups2', 'collapse', () => collapsed('pane-groups2')],
+      ['pane-detail', 'trigger', () => !!layout().paneMenu],
+    ]) {
+      boot();
+      const before = pane('pane-detail').activeTabId;
+      const tab = hm.all().find(x => x.owner === 'pane-detail' && x.id.startsWith('tab:') && x.id !== `tab:${before}`);
+      const r = hc.region(target, glyph);
+      assert(tab && r, `tab + ${target} ${glyph} published`);
+      chunk(sgr(tab.rect.x + 1, tab.rect.y) + sgr(r.rect.x + 1, r.rect.y));
+      assert(pane('pane-detail').activeTabId !== before, 'the tab switched');
+      assert(acted(), `${target} ${glyph}: pane-level — live across the tab switch`);
+    }
+  });
+  it('a tab switch + a click on the OLD tab\'s border control, one chunk: swallowed; live after repaint', () => {
+    const P = { ta: { id: 'ta', type: 'rvtab', title: 'TA' }, tb: { id: 'tb', type: 'rvtab', title: 'TB' },
+                detail: { id: 'detail', type: 'detail', title: 'Detail' } };
+    const slot = { id: 'ta', type: 'rvtab', paneId: 'pane-rv', tabs: [{ id: 'ta', poolId: 'ta' }, { id: 'tb', poolId: 'tb' }] };
+    sm.bootFresh({ layout: { pool: P, columns: [{ width: 50, panels: [slot] }, { panels: [P.detail] }] } });
+    toLayout({ type: 'view_set', mode: 'normal' });
+    toLayout({ type: 'focus_set', focus: 'pane-rv' });
+    sm.resize(120, 30);
+    const c = cellOf(hc.screenRows(), 'GGG');
+    const tb = hc.region('pane-rv', 'tab:tb');
+    assert(c && tb, 'the control and the other tab painted');
+    LOG.length = 0;
+    chunk(sgr(tb.rect.x + 1, tb.rect.y) + sgr(c.x, c.y));
+    eq(pane('pane-rv').activeTabId, 'tb', 'precondition: the tab switched in the same chunk');
+    eq(LOG, [], 'the old tab\'s control did not reach the new tab');
+    hc.paint();
+    hc.click(c.x, c.y);
+    eq(LOG, ['GGG:go'], 'repainted → the new tab\'s control is live');
+  });
+  for (const [type, bad, ok] of [['rvobj', 'OBJ', 'OK1'], ['rvnull', 'NUL', 'OK2']]) {
+    it(`${type}: regions() returning a malformed value loses only that control's bad parts`, () => {
+      const rows = bootType(type);
+      assert(!screenOf(rows).includes('render error'), 'no error block');
+      for (const label of [bad, ok]) assert(cellOf(rows, label), `${label} painted`);
+      LOG.length = 0;
+      const k = cellOf(rows, ok);
+      hc.click(k.x, k.y);
+      eq(LOG, [`${ok}:go`], 'the healthy control still works');
+      LOG.length = 0;
+      const b = cellOf(rows, bad);
+      hc.click(b.x, b.y);
+      eq(LOG, type === 'rvnull' ? [`${bad}:go`] : [], 'a valid part of the same spec still works; no array → no parts');
+    });
+  }
+  it('fresh spec objects per read: found by unique id; without ids the miss is recorded', () => {
+    let rows = bootType('rvfreshid');
+    for (const label of ['HHH', 'III']) {
+      LOG.length = 0;
+      const c = cellOf(rows, label);
+      hc.click(c.x, c.y);
+      eq(LOG, [`${label}:go`], `${label} dispatched`);
+    }
+    eventLog.enable(); eventLog.clear();
+    try {
+      rows = bootType('rvfreshnone');
+      LOG.length = 0;
+      const c = cellOf(rows, 'JJJ');
+      hc.click(c.x, c.y);
+      eq(LOG, [], 'nothing dispatched (no way to tell the controls apart)');
+      assert(eventLog.snapshot().some(e => e.type === 'error' && e.payload && e.payload.where === 'border_control_act'),
+        'the miss is recorded');
+    } finally { eventLog.clear(); eventLog.enable(false); }
+  });
+  it('a spec error is recorded once, not on every frame', () => {
+    eventLog.enable(); eventLog.clear();
+    try {
+      bootType('rvthrow3');
+      for (let i = 0; i < 5; i++) hc.paint();
+      const n = eventLog.snapshot().filter(e => e.type === 'error' && e.payload && e.payload.where === 'border_control_regions').length;
+      eq(n, 1);
+    } finally { eventLog.clear(); eventLog.enable(false); }
+  });
+
+  it('a ≤ 6-row terminal: no pane region claims the footer row', () => {
+    for (const rows of [4, 5, 6, 7]) {
+      boot();
+      sm.resize(120, rows);
+      hc.paint();
+      assert(hm.all().some(r => r.z === hm.BANDS.CHROME), `rows=${rows}: chrome published (non-vacuous)`);
+      const under = hm.all().filter(r => r.z < hm.BANDS.OVERLAY_BASE && r.rect.y + r.rect.h > rows - 1);
+      eq(under.map(r => `${r.owner}/${r.id}`), [], `rows=${rows}: the footer row (${rows - 1}) is not claimed`);
+    }
+  });
+  it('an unclosed [ in a title / hotkey: each glyph paints where its region is', () => {
+    const P = { g1: { id: 'g1', type: 'groups', title: 'logs [beta', hotkey: '[' }, g2: { id: 'g2', type: 'groups', title: 'G2' },
+                detail: { id: 'detail', type: 'detail', title: 'Detail' } };
+    sm.bootFresh({ layout: { pool: P, columns: [{ width: 40, panels: [P.g1, P.g2] }, { panels: [P.detail] }] } });
+    toLayout({ type: 'view_set', mode: 'normal' });
+    toLayout({ type: 'focus_set', focus: 'pane-g1' });
+    sm.resize(100, 20);
+    hc.paint();
+    const rows = hc.screenRows();
+    assert((rows[0] || []).join('').includes('logs [beta'), 'the title paints literally');
+    for (const [id, glyph] of [['collapse', '[_]'], ['trigger', '[≡]']]) {
+      const r = hc.region('pane-g1', id);
+      assert(r, `${id} published`);
+      eq((rows[r.rect.y] || []).slice(r.rect.x, r.rect.x + 3).join(''), glyph, `${id}: its glyph is painted under its region`);
+    }
+  });
+  it('a narrow slot whose chrome cluster does not fit: the tabs its bare border draws click', () => {
+    if (!api.getComponent('text-view')) api.registerComponent(require('../panel/text-view/text-view'));
+    const P = { nav: { id: 'nav', type: 'groups', title: 'Nav' }, nav2: { id: 'nav2', type: 'groups', title: 'Nav2' },
+                detail: { id: 'detail', type: 'detail', title: 'Detail' } };
+    sm.bootFresh({ layout: { pool: P, columns: [{ width: 24, panels: [P.nav, P.nav2] }, { panels: [P.detail] }] } });
+    toLayout({ type: 'view_set', mode: 'normal' });
+    toLayout({ type: 'mint_tab', paneId: 'pane-nav', paneType: 'text-view', poolId: 'notes', title: 'notes' });
+    sm.resize(100, 20);
+    hc.paint();
+    const rows = hc.screenRows();
+    assert(!hc.region('pane-nav', 'collapse'), 'precondition: the chrome cluster did not fit (bare border)');
+    const tabs = hm.all().filter(r => r.owner === 'pane-nav' && r.id.startsWith('tab:'));
+    eq(tabs.length, 2, 'both painted tabs publish');
+    const before = pane('pane-nav').activeTabId;
+    const other = tabs.find(r => r.id !== `tab:${before}`);
+    const label = (rows[other.rect.y] || []).slice(other.rect.x, other.rect.x + other.rect.w).join('');
+    assert(/^[A-Za-z]+$/.test(label), `the region covers a painted label ("${label}")`);
+    hc.click(other.rect.x, other.rect.y);
+    eq(pane('pane-nav').activeTabId, other.id.slice(4), 'the click switched to it');
   });
 });
 

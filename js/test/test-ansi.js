@@ -245,4 +245,26 @@ describe('[trojan-source] stripControls removes Unicode bidi overrides (CVE-2021
   });
 });
 
+describe('[seal] sealMarkup — a fragment renders as measured alone, whatever follows it', () => {
+  const { sealMarkup, visibleLen, stripMarkup } = require('../leaves/text/ansi');
+  // The composed-row property: visibleLen(seal(a) + b) === visibleLen(seal(a)) + visibleLen(b)
+  // for any later fragment b — here the chrome cluster `─\[X] [_]` (escaped
+  // glyphs) and a markup control `[dim]‹ x ›[/]`.
+  const LATER = ['─\\[X]─\\[_]╮', '[dim]‹ x ›[/]─╮', ']'];
+  const cases = ['logs [beta', '[', 'x[a[b]c[', '[warning]ok[/]', 'a\\[b', '\x1b[31mred\x1b[0m [open', '[a\x1bb', 'plain'];
+  for (const c of cases) {
+    it(`${JSON.stringify(c)}`, () => {
+      const s = sealMarkup(c);
+      for (const b of LATER) eq(visibleLen(s + b), visibleLen(s) + visibleLen(b), `+ ${JSON.stringify(b)}`);
+    });
+  }
+  it('closed tags, escapes and SGR are untouched; an unclosed [ prints literally', () => {
+    eq(sealMarkup('[warning]ok[/]'), '[warning]ok[/]');
+    eq(sealMarkup('a\\[b'), 'a\\[b');
+    eq(sealMarkup('plain'), 'plain');
+    eq(stripMarkup(sealMarkup('logs [beta')), 'logs [beta');
+    eq(sealMarkup(undefined), undefined);
+  });
+});
+
 report();

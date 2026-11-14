@@ -41,10 +41,20 @@
  * (a test calling an overlay's render directly publishes nothing).
  *
  * Ambient pane (Release 2): paint brackets each pane's render with
- * `enterPane(paneId, rect)` / `exitPane()`. Pane chrome and in-pane affordances
- * publish PANE-LOCAL rects through `publishLocal(region, z)`, which translates
- * them to the screen, clips them to the pane and stamps `owner = paneId` — a
- * pane renderer never needs its own screen origin.
+ * `enterPane(paneId, rect, activeTabId)` / `exitPane()`. Pane chrome and in-pane
+ * affordances publish PANE-LOCAL rects through `publishLocal(region, z)`, which
+ * translates them to the screen, clips them to the pane and stamps
+ * `owner = paneId` — a pane renderer never needs its own screen origin.
+ *
+ * Tab scope: a region published inside the bracket also records the tab it
+ * was painted under (`tab`) — a slot that switches tabs shows another
+ * renderer's border controls / fold markers at the same rect, and their
+ * handlers resolve the target pane's CURRENT instance at click time. The
+ * router swallows a click on a region whose pane has since switched tabs
+ * (`tabMoved`). Pane-level chrome (the [_]/[+]/[X]/[≡] glyphs, the tab strip)
+ * publishes with `paneLevel: true` and stays live across a tab switch. Scoping
+ * this per region (not in the frame stamp) keeps one pane's tab switch from
+ * staling every other pane's clicks.
  *
  * Panel layer (dispatch → panel and render → panel are legal edges).
  */
@@ -74,7 +84,7 @@ let _seq = 0;
 let _stamp = null;
 let _sorted = null;      // memoized top-down order; invalidated by publish/clear
 let _owner = null;       // { owner, zBase } while an overlay renders
-let _pane = null;        // { owner: paneId, rect } while a pane renders
+let _pane = null;        // { owner: paneId, rect, tab } while a pane renders
 
 /** Drop every region and stamp the new frame. */
 function clear(stamp) {
@@ -111,21 +121,34 @@ function publishOwned(region, zOff) {
 function enterOwner(owner, zBase) { _owner = { owner, zBase: zBase | 0 }; }
 function exitOwner() { _owner = null; }
 
-/** Bracket a pane's render (paint). `rect` is the pane's screen rect. */
-function enterPane(paneId, rect) { _pane = paneId && rect ? { owner: paneId, rect } : null; }
+/** Bracket a pane's render (paint). `rect` is the pane's screen rect; `tab` the
+ *  pane's active tab id (see Tab scope above). */
+function enterPane(paneId, rect, tab) { _pane = paneId && rect ? { owner: paneId, rect, tab: tab || '' } : null; }
 function exitPane() { _pane = null; }
 
 /** Publish a PANE-LOCAL region for the ambient pane at absolute `z`: the rect
  *  is translated by the pane's screen origin and clipped to the pane (a glyph
  *  past the pane edge can't claim a neighbour's cells). No ambient pane →
- *  dropped (an overlay's renderPanel, a direct unit call). */
+ *  dropped (an overlay's renderPanel, a direct unit call). The region is
+ *  tab-scoped unless it says `paneLevel: true`. */
 function publishLocal(region, z) {
   if (!_pane || !region || !region.rect) return;
   const P = _pane.rect, r = region.rect;
   const x0 = Math.max(P.x, P.x + r.x), y0 = Math.max(P.y, P.y + r.y);
   const x1 = Math.min(P.x + P.w, P.x + r.x + r.w), y1 = Math.min(P.y + P.h, P.y + r.y + r.h);
   if (!(x1 > x0) || !(y1 > y0)) return;
-  publish({ ...region, rect: { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, owner: _pane.owner, z });
+  const { paneLevel, ...rest } = region;
+  const out = { ...rest, rect: { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, owner: _pane.owner, z };
+  if (!paneLevel) out.tab = _pane.tab;
+  publish(out);
+}
+
+/** Has the pane that owns a tab-scoped region switched tabs since the frame
+ *  painted it? (false for an unscoped region, or with no layout slice.) */
+function tabMoved(region, layoutSlice) {
+  if (!region || region.tab === undefined || !layoutSlice || !layoutSlice.arrange) return false;
+  const p = mpool.allPanesInColumns(layoutSlice.arrange).find(x => x && x.paneId === region.owner);
+  return ((p && p.activeTabId) || '') !== region.tab;
 }
 
 function _order() {
@@ -171,12 +194,9 @@ function _geomKey(layoutSlice) {
   const d = layoutSlice.dims;
   let s = d ? `${d.cols}x${d.rows}|` : '|';
   if (!m) return s;
-  // Each visible pane's ACTIVE TAB too: a slot that switched tabs shows another
-  // renderer's chrome (border controls, fold markers) at the same rect, so a
-  // click aimed at the old tab's control must not reach the new tab's instance.
-  const tab = {};
-  for (const p of mpool.allPanesInColumns(layoutSlice.arrange)) if (p && p.paneId) tab[p.paneId] = p.activeTabId || '';
-  for (const k of Object.keys(m)) { const r = m[k]; if (r) s += `${k}:${r.x},${r.y},${r.w},${r.h}@${tab[k] || ''};`; }
+  // Not the active tabs: a tab switch moves no rect, and it stales only that
+  // pane's tab-scoped regions (publishLocal / tabMoved) — not every pane's.
+  for (const k of Object.keys(m)) { const r = m[k]; if (r) s += `${k}:${r.x},${r.y},${r.w},${r.h};`; }
   return s;
 }
 
@@ -227,5 +247,5 @@ function claims(mx, my) {
 function all() { return _regions.map(({ _seq, ...r }) => r); }
 
 module.exports = { clear, publish, publishOwned, enterOwner, exitOwner,
-  enterPane, exitPane, publishLocal, retractOwner, resolve, claims,
+  enterPane, exitPane, publishLocal, tabMoved, retractOwner, resolve, claims,
   stampOf, stampsEqual, frameStamp, all, DISCRETE_GESTURES, BANDS };

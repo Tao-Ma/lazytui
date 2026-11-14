@@ -112,7 +112,8 @@ describe('[2b] frame stamp + claims', () => {
     const open = { ...base, modes: { jobsMode: true } };
     assert(!hm.stampsEqual(hm.stampOf(open), hm.stampOf({ ...open, jobs: [2] })), 'open → the list shifted under the rows');
   });
-  it('geom (R2): pane rects + dims stale the frame; hover / focus do not', () => {
+  const ARR = (t) => ({ columns: [{ panels: [{ paneId: 'pane-a', activeTabId: t }, { paneId: 'pane-b' }] }] });
+  it('geom (R2): pane rects + dims stale the frame; hover / focus / a tab switch do not', () => {
     // paneBounds is the geometry test override (visibleBoundsMap honors it), so
     // the stamp sees exactly these rects.
     const m = { modes: {}, modal: null };
@@ -126,11 +127,24 @@ describe('[2b] frame stamp + claims', () => {
     const swapped = { 'pane-a': pb['pane-b'], 'pane-b': pb['pane-a'] };
     assert(!hm.stampsEqual(a, hm.stampOf(m, L({ paneBounds: swapped }))), 'same rects, panes swapped → stale');
     assert(!hm.stampsEqual(a, hm.stampOf(m, L({ dims: { cols: 81, rows: 24 } }))), 'resize → stale');
-    // A slot that switched tabs shows another renderer's chrome at the same rect.
-    const arr = (t) => ({ columns: [{ panels: [{ paneId: 'pane-a', activeTabId: t }, { paneId: 'pane-b' }] }] });
-    const t1 = hm.stampOf(m, L({ arrange: arr('t1') }));
-    assert(hm.stampsEqual(t1, hm.stampOf(m, L({ arrange: arr('t1') }))), 'same active tab → same frame');
-    assert(!hm.stampsEqual(t1, hm.stampOf(m, L({ arrange: arr('t2') }))), 'active tab switched → stale');
+    // The active tab is NOT in the stamp: a tab switch moves no rect, and it
+    // stales only that pane's tab-scoped regions (tabMoved, below).
+    const t1 = hm.stampOf(m, L({ arrange: ARR('t1') }));
+    assert(hm.stampsEqual(t1, hm.stampOf(m, L({ arrange: ARR('t2') }))), 'a tab switch alone → same frame');
+  });
+  it('tab scope: publishLocal records the pane\'s tab; paneLevel opts out; tabMoved', () => {
+    hm.clear('');
+    hm.enterPane('pane-a', R(10, 5, 20, 5), 't1');
+    hm.publishLocal({ id: 'ctl', rect: R(1, 0, 3, 1), on: {} }, 40);
+    hm.publishLocal({ id: 'close', rect: R(15, 0, 3, 1), paneLevel: true, on: {} }, 40);
+    hm.exitPane();
+    const ctl = hm.all().find(r => r.id === 'ctl'), close = hm.all().find(r => r.id === 'close');
+    eq(ctl.tab, 't1', 'a body / control region is tab-scoped');
+    eq(close.tab, undefined, 'a paneLevel region is not');
+    assert(!('paneLevel' in close), 'the opt-out flag is not published');
+    assert(!hm.tabMoved(ctl, { arrange: ARR('t1') }), 'same tab → live');
+    assert(hm.tabMoved(ctl, { arrange: ARR('t2') }), 'its pane switched tabs → stale');
+    assert(!hm.tabMoved(close, { arrange: ARR('t2') }), 'pane-level → live across a tab switch');
   });
   it('claims: any published region containing the point', () => {
     hm.clear('');

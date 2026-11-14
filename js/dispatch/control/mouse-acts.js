@@ -12,7 +12,9 @@
  * Release 3's pointer-capture controllers take.
  *
  * Each act returns nothing; a target that is gone or no longer clickable is a
- * silent no-op (the click is still consumed by the region that drew it).
+ * no-op (the click is still consumed by the region that drew it). A border
+ * control that paint drew but the act cannot find, or whose spec throws, is
+ * recorded in the event log (a plugin contract problem, not a user one).
  */
 'use strict';
 
@@ -23,6 +25,7 @@ const mpool = require('../../leaves/wm/pool');
 const mpane = require('../../leaves/wm/pane');
 const { visibleBoundsFor } = require('../../leaves/wm/geometry');
 const { getModel } = require('../../model/store');
+const eventLog = require('../../io/event-log');
 
 /** What a border-control click dispatches NOW — `{ owner, msg }` or null. The
  *  control must still be shown for this pane (borderControlsFor with the current
@@ -40,12 +43,31 @@ function resolveBorderControl({ paneId, type, spec, specId, action }) {
   if (!b || b.h < 2) return null;
   const pane = { paneId, type, focused: mpane.paneMatchesFocus(p, layout.focus), innerW: b.w - 2 };
   // By spec identity (the region carries the spec object — ids are optional and
-  // not unique across a plugin's specs); `specId` only for a handler built
-  // without one.
-  const c = api.borderControlsFor(pane, getModel()).find(x => (spec ? x.spec === spec : x.spec.id === specId));
-  if (!c) return null;
-  if (!(c.spec.regions(0, 0, c.visibleW, pane) || []).some(r => r.action === action)) return null;
-  return c.spec.dispatch(action, pane) || null;
+  // not unique across a plugin's specs); else by `id` when exactly one control
+  // has it (a plugin whose getter builds fresh spec objects per read).
+  const all = api.borderControlsFor(pane, getModel());
+  let c = spec ? all.find(x => x.spec === spec) : null;
+  if (!c && specId != null) {
+    const byId = all.filter(x => x.spec.id === specId);
+    if (byId.length === 1) c = byId[0];
+  }
+  if (!c) {
+    // Shown for this pane but not found: e.g. fresh specs with no unique id.
+    if (all.length) _record(paneId, specId, 'clicked control not found (fresh spec objects need a unique id)');
+    return null;
+  }
+  try {
+    const parts = c.spec.regions(0, 0, c.visibleW, pane);
+    if (!Array.isArray(parts) || !parts.some(r => r && r.action === action)) return null;
+    return c.spec.dispatch(action, pane) || null;
+  } catch (e) {
+    _record(paneId, specId, e && e.message, e && e.stack);
+    return null;
+  }
+}
+
+function _record(paneId, specId, message, stack) {
+  try { eventLog.record('error', { where: 'border_control_act', paneId, control: specId, message, stack }); } catch (_) { /* event-log unavailable */ }
 }
 
 const ACTS = {

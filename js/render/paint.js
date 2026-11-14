@@ -26,7 +26,7 @@
  */
 'use strict';
 
-const { RESET, richToAnsi, esc, visibleLen, charWidth, wrapColor } = require('../leaves/text/ansi');
+const { RESET, richToAnsi, esc, visibleLen, charWidth, wrapColor, sealMarkup } = require('../leaves/text/ansi');
 const { cols, rows, stdout, showCursor, hideCursor } = require('../io/term');
 const { allPanels } = require('../panel/nav-state');
 const geo = require('../leaves/wm/geometry');
@@ -188,9 +188,9 @@ function _renderCollapsed(p, w, chrome) {
   const focused = !!(layoutSlice && mpane.paneMatchesFocus(p, layoutSlice.focus));
   const fc = focused ? t.focus : t.dim;
   const innerW = Math.max(0, w - 2);
-  let titleText = '';
-  if (p.hotkey) titleText += `(${p.hotkey})`;
-  if (p.title)  titleText += `─${p.title}`;
+  let titleText = '';   // sealed parts (ansi sealMarkup) — see renderPanel
+  if (p.hotkey) titleText += `(${sealMarkup(p.hotkey)})`;
+  if (p.title)  titleText += `─${sealMarkup(p.title)}`;
   titleText = truncate(titleText, innerW - 2);
 
   // v0.6.3 P4.2 — chrome glyphs compose inline. For a collapsed pane,
@@ -455,6 +455,14 @@ function _safeRender(panel, w, h, opts) {
  * below (the old paintColumns path + the LAZYTUI_RECT_PAINTER gate
  * are retired). Module-internal; not exported.
  */
+// The cells pane hit regions may claim: the composed frame (`availH` rows) —
+// but never the terminal's last row, which the footer paints over. availRows
+// floors availH at 6, so on a ≤ 6-row terminal the composed frame reaches it.
+function _hitFrame(cols, availH, dims) {
+  const rows = dims && dims.rows > 0 ? Math.min(availH, dims.rows - 1) : availH;
+  return { cols, rows: Math.max(0, rows) };
+}
+
 function composeRects(layout, model) {
   const layoutSlice = getInstanceSlice('layout');
   if (!layoutSlice || !layout || !layout.rects) return [];
@@ -466,7 +474,7 @@ function composeRects(layout, model) {
   // The composed frame (rows stop above the footer): a pane rect that the
   // min-height floors pushed past it is clipped by composeRows, so its hit
   // regions must be too (pane-hits clips the bracket rect to `frame`).
-  const frame = { cols: layout.cols, rows: layout.availH };
+  const frame = _hitFrame(layout.cols, layout.availH, layoutSlice.dims);
 
   // Index rects for quick lookup by either key. paneId is preferred
   // (multi-instance forward-compat per v0.6.1 Phase 7); type is the
@@ -605,8 +613,8 @@ function renderHalf(model, arrangeOverride) {
   // the viewer on the right.
   const leftFocused = mpane.paneMatchesFocus(leftPanel, layoutSlice.focus);
   const detailFocused = detailPanel ? mpane.paneMatchesFocus(detailPanel, layoutSlice.focus) : false;
-  let leftContent = _safeRender(leftPanel, halfW, availH, { chrome: leftChrome, focused: leftFocused, chromeLive, bodyLive, x: 0, y: 0, frame: { cols: COLS, rows: availH } });
-  let rightContent = detailPanel ? _safeRender(detailPanel, rightW, availH, { chrome: detailChrome, focused: detailFocused, chromeLive, bodyLive, x: halfW, y: 0, frame: { cols: COLS, rows: availH } }) : '';
+  let leftContent = _safeRender(leftPanel, halfW, availH, { chrome: leftChrome, focused: leftFocused, chromeLive, bodyLive, x: 0, y: 0, frame: _hitFrame(COLS, availH, dims) });
+  let rightContent = detailPanel ? _safeRender(detailPanel, rightW, availH, { chrome: detailChrome, focused: detailFocused, chromeLive, bodyLive, x: halfW, y: 0, frame: _hitFrame(COLS, availH, dims) }) : '';
   const rects = [
     { x: 0, y: 0, w: halfW, h: availH,
       lines: leftContent === '' ? [] : leftContent.split('\n') },
@@ -643,7 +651,7 @@ function renderFull(model, arrangeOverride) {
   // v0.6.4 — thread opts.focused (full view always paints the focused
   // pane). Phase-5/Arc-1 moved focus styling onto opts.focused; without it
   // the full-screen pane renders unfocused (no border highlight).
-  let content = _safeRender(focusedPanel, COLS, availH, { chrome: fullChrome, focused: true, chromeLive, bodyLive, x: 0, y: 0, frame: { cols: COLS, rows: availH } });
+  let content = _safeRender(focusedPanel, COLS, availH, { chrome: fullChrome, focused: true, chromeLive, bodyLive, x: 0, y: 0, frame: _hitFrame(COLS, availH, dims) });
   const rects = [
     { x: 0, y: 0, w: COLS, h: availH,
       lines: content === '' ? [] : content.split('\n') },

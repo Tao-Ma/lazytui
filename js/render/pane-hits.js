@@ -34,7 +34,7 @@ let _chromeCur = null;
  *  { chrome, chromeLive, bodyLive, frame } (frame = { cols, rows } composed). */
 function begin(panel, rect, ctx) {
   ctx = ctx || {};
-  hitMap.enterPane(panel.paneId, _hitRect(rect.x, rect.y, rect.w, rect.h, ctx.frame));
+  hitMap.enterPane(panel.paneId, _hitRect(rect.x, rect.y, rect.w, rect.h, ctx.frame), panel.activeTabId);
   _chromeCur = { panel, chrome: ctx.chrome, live: !!ctx.chromeLive, bodyLive: !!ctx.bodyLive };
 }
 
@@ -49,14 +49,17 @@ function end() {
 // (the record already carries renderPanel's `fits` + [≡] truncation decisions),
 // and only while chrome clicks are live (paint's chromeLive — decided at paint
 // rather than at click; the frame stamp's chain field keeps the two equivalent).
-// Glyph handlers are absolute: the Msg names the pane's pool id.
+// Glyph handlers are absolute: the Msg names the pane's pool id. Glyphs and the
+// tab strip are PANE-level (they act on the pane, not its active tab), so they
+// stay live across a batched tab switch; border controls are tab-scoped
+// (hit-map §Tab scope).
 function publishChrome(rec) {
   const cur = _chromeCur;
   if (!cur || !cur.live || !rec) return;
   const { panel, chrome } = cur;
   const Z = hitMap.BANDS.CHROME;
   const glyph = (id, g, handler) => {
-    if (g) hitMap.publishLocal({ id, rect: { x: g.x0, y: 0, w: g.x1 - g.x0 + 1, h: 1 }, on: { press: handler } }, Z);
+    if (g) hitMap.publishLocal({ id, rect: { x: g.x0, y: 0, w: g.x1 - g.x0 + 1, h: 1 }, paneLevel: true, on: { press: handler } }, Z);
   };
   glyph('collapse', rec.collapse, { msg: { type: 'panel_collapse_toggle', id: panel.id }, owner: 'layout' });
   glyph('close', rec.close, { msg: { type: 'pool_hide', id: panel.id }, owner: 'layout' });
@@ -74,25 +77,38 @@ function publishChrome(rec) {
   // undo itself or run an action twice.
   // The handler names the spec OBJECT (static Component config), not just its
   // `id`: the spec contract never required an id, nor a unique one, so the act
-  // finds the control by identity. A spec whose regions() throws loses only its
-  // own clicks — a paint-side bug must not turn the pane into an error block.
-  const ctl = (c, y, idx) => {
+  // finds the control by identity. A spec whose regions() throws or returns a
+  // malformed value loses only its own clicks (a bad part, only that part) — a
+  // paint-side bug must not turn the pane into an error block.
+  // Region ids: `ctl:<spec id>:<action>` when the id names one drawn control;
+  // otherwise (no id, or a duplicate) the spec object's own key, so the
+  // press→double continuation (owner + id) never confuses two controls.
+  const drawn = [...(rec.controls || []), rec.bottomControl].map(c => c && c.ref && c.ref.spec).filter(Boolean);
+  const ctl = (c, y) => {
     const ref = c && c.ref;
     if (!ref || !ref.spec || typeof ref.spec.regions !== 'function') return;
     const pane = ref.pane || { paneId: panel.paneId, type: panel.type };
-    const tag = ref.spec.id != null ? ref.spec.id : `#${idx}`;
+    const sid = ref.spec.id;
+    const tag = sid != null && drawn.filter(s => s.id === sid).length === 1 ? sid : `${sid != null ? sid : ''}#${_specKey(ref.spec)}`;
     let parts;
-    try { parts = ref.spec.regions(c.x0, y, c.visibleW, pane) || []; } catch (e) { _recordError('border_control_regions', panel, tag, e); return; }
-    for (const r of parts) {
+    try {
+      parts = ref.spec.regions(c.x0, y, c.visibleW, pane);
+      if (parts != null && !Array.isArray(parts)) throw new TypeError('regions() must return an array');
+    } catch (e) { _recordError('border_control_regions', panel, tag, e); return; }
+    for (const r of parts || []) {
+      if (!r || !Number.isFinite(r.x0) || !Number.isFinite(r.x1) || r.x1 < r.x0) {
+        _recordError('border_control_regions', panel, tag, new TypeError('malformed region (needs numeric x0 <= x1)'));
+        continue;
+      }
       hitMap.publishLocal({
         id: `ctl:${tag}:${r.action}`,
-        rect: { x: r.x0, y: r.y, w: r.x1 - r.x0 + 1, h: 1 },
+        rect: { x: r.x0, y: Number.isFinite(r.y) ? r.y : y, w: r.x1 - r.x0 + 1, h: 1 },
         repeat: r.repeat === true,
         on: { press: { act: 'border-control', paneId: pane.paneId, type: pane.type, spec: ref.spec, specId: ref.spec.id, action: r.action } },
       }, Z);
     }
   };
-  (rec.controls || []).forEach((c, i) => ctl(c, 0, i));
+  for (const c of rec.controls || []) ctl(c, 0);
   // Slot tab strip — each tab renderPanel drew intact. Normal mode only (the tab
   // click was always gated like a pane-body click: no chain mode active).
   if (cur.bodyLive) {
@@ -101,17 +117,37 @@ function publishChrome(rec) {
       hitMap.publishLocal({
         id: `tab:${t.ref.poolId}`,
         rect: { x: t.x0, y: 0, w: t.x1 - t.x0 + 1, h: 1 },
+        paneLevel: true,
         on: { press: { msg: { type: 'activate_tab', paneId: panel.paneId, tabPoolId: t.ref.poolId }, owner: 'layout' } },
       }, Z);
     }
   }
-  if (rec.bottomControl) ctl(rec.bottomControl, rec.bottomControl.y, 'bottom');
+  if (rec.bottomControl) ctl(rec.bottomControl, rec.bottomControl.y);
 }
 
-// A publish-side failure is recorded, never thrown into the pane's render.
+// A stable per-object key for a spec without a unique id (static config, so
+// the key survives across frames; a fresh object gets a fresh key).
+const _specKeys = new WeakMap();
+let _nextSpecKey = 1;
+function _specKey(spec) {
+  let k = _specKeys.get(spec);
+  if (k === undefined) { k = _nextSpecKey++; _specKeys.set(spec, k); }
+  return k;
+}
+
+// A publish-side failure is recorded, never thrown into the pane's render —
+// ONCE per pane / control / message: paint runs it every frame, and a
+// per-frame record would flood the event-log ring.
+const _recorded = new Set();
 function _recordError(where, panel, tag, e) {
   try {
-    require('../io/event-log').record('error', {
+    const log = require('../io/event-log');
+    if (!log.isEnabled()) return;
+    const key = `${where}|${panel && panel.paneId}|${tag}|${e && e.message}`;
+    if (_recorded.has(key)) return;
+    if (_recorded.size >= 256) _recorded.clear();
+    _recorded.add(key);
+    log.record('error', {
       where, paneId: panel && panel.paneId, control: tag, message: e && e.message, stack: e && e.stack,
     });
   } catch (_) { /* event-log unavailable */ }

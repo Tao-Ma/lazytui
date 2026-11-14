@@ -8,7 +8,7 @@
  */
 'use strict';
 
-const { visibleLen, charWidth, richToAnsi, wrapColor, RESET } = require('../text/ansi');
+const { visibleLen, charWidth, richToAnsi, wrapColor, RESET, sealMarkup } = require('../text/ansi');
 const { scrollbar } = require('./scrollbar');
 const { theme } = require('../infra/themes');
 const bctl = require('./border-controls');
@@ -31,9 +31,10 @@ const CLOSE_GLYPH = '\\[X]';
 // deliberate: the two once computed this independently and drifted — the
 // hit-test hardcoded col 5 (assuming a 1-char hotkey), so on a hotkey-less pane
 // (`╭─[≡]`, col 2) the clickable zone sat 3 cells right of the painted glyph.
-// PURE — a function of the hotkey label only.
+// PURE — a function of the hotkey label only. The label is sealed (ansi
+// sealMarkup): a `[` hotkey must not pair with the [≡] markup that follows.
 function leftBorderPrefix(hotkey) {
-  const prefix = `${BORDER.tl}${BORDER.h}` + (hotkey ? `(${hotkey})` : '');
+  const prefix = `${BORDER.tl}${BORDER.h}` + (hotkey ? `(${sealMarkup(hotkey)})` : '');
   return { prefix, triggerCol: visibleLen(prefix) };
 }
 
@@ -203,7 +204,11 @@ function renderPanel({
   const wantRightCollapse = chrome && chrome.collapse;
   const wantRightClose    = chrome && chrome.close;
   const hasControls = Array.isArray(topControls) && topControls.length > 0;
-  const _ctlText = (c) => (c && typeof c === 'object') ? c.text : c;
+  // Every fragment of the composed top row is SEALED (ansi sealMarkup) — an
+  // unclosed `[` in a title / hotkey / control label would otherwise pair with
+  // a later fragment's `]` and shift everything after it off the x each part
+  // was measured (and published) at.
+  const _ctlText = (c) => sealMarkup((c && typeof c === 'object') ? c.text : c);
   let controlsDrawn = null;   // [{ x0, visibleW, ref }] pane-local, iff the strip drew
   if (chrome && (wantLeftTrigger || wantRightCollapse || wantRightClose)) {
     // Right cluster first. The opt-in border-control strip (e.g. the monitor
@@ -228,7 +233,7 @@ function renderPanel({
     if (wantLeftTrigger) {
       leftPart += _tabTriggerMarkup(chrome.tabTrigger, focused, fc);
     }
-    if (title) leftPart += `${b.h}${title}`;
+    if (title) leftPart += `${b.h}${sealMarkup(title)}`;
     // With a border-control strip, reserve the WHOLE right cluster (+ one
     // separator dash) so the TITLE truncates to fit it — the strip's presence is
     // then title-INDEPENDENT (renders iff `╭─` + a dash + the cluster fit), and
@@ -297,8 +302,10 @@ function renderPanel({
     // Pre-P4 path: bare top border. Used when no chrome is requested,
     // or chrome was requested but didn't fit (fallback).
     let titleText = '';
-    if (hotkey) titleText += `(${hotkey})`;
-    if (title) titleText += `─${title}`;
+    const hk = hotkey ? `(${sealMarkup(hotkey)})` : '';
+    titleText += hk;
+    if (title) titleText += `─${sealMarkup(title)}`;
+    const titleVisFull = visibleLen(titleText);
     // Markup-aware truncation: titles can carry markup (`[dim]`, `\[…\]`,
     // `[/]`) whose JS .length over-counts the visible width. truncate()
     // short-circuits when visibleLen ≤ maxWidth, so the common (fits)
@@ -311,6 +318,20 @@ function renderPanel({
       top = wrapColor(fc, `${b.tl}${titleText}${b.h}${b.tr}`);
     } else {
       top = wrapColor(fc, `${b.tl}${titleText}${b.tr}`);
+    }
+    // The tab strip this bare border draws is clickable too (what painted is
+    // what clicks): the title starts after the lead (`╭─`, or `╭` when the fill
+    // is under 2), the `(hotkey)` and one dash; a tab cut by the truncation (a
+    // truncated titleText ends in a 1-cell `…`) isn't drawn, so isn't reported.
+    if (title && Array.isArray(titleTargets) && titleTargets.length) {
+      const lead = fill >= 2 ? 2 : 1;
+      const tx0 = lead + visibleLen(hk) + 1;
+      const clip = lead + (titleVisFull <= innerW - 2 ? titleVisFull : innerW - 3);
+      tabsDrawn = [];
+      for (const t of titleTargets) {
+        const x0 = tx0 + t.x, x1 = x0 + t.w - 1;
+        if (t.w > 0 && x1 < clip) tabsDrawn.push({ x0, x1, ref: t });
+      }
     }
   }
 

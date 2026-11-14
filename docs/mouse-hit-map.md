@@ -199,9 +199,10 @@ read at paint, whether chrome publishes at all.
 
 - **Registry**: `js/panel/hit-map.js` — `clear(stamp)`, `publish(region)`,
   `publishOwned(region, zOff)` + `enterOwner` / `exitOwner` (the overlay
-  bracket), `enterPane(paneId, rect)` / `exitPane` + `publishLocal(region, z)`
-  (the pane bracket, R2 — pane-local rects translated + clipped to the pane),
-  `retractOwner(owner)`, `resolve(mx, my, gesture)`, `claims(mx, my)`,
+  bracket), `enterPane(paneId, rect, activeTabId)` / `exitPane` +
+  `publishLocal(region, z)` (the pane bracket, R2 — pane-local rects translated
+  + clipped to the pane, tab-scoped unless `paneLevel`), `tabMoved(region,
+  layoutSlice)` (§Stale-frame rule, Tab scope), `retractOwner(owner)`, `resolve(mx, my, gesture)`, `claims(mx, my)`,
   `stampOf(model, layoutSlice)` / `stampsEqual` / `frameStamp()`, `all()`
   (tests / diag), `BANDS` (the pane-anchored z bands). Panel layer
   (dispatch→panel and render→panel are legal edges).
@@ -369,7 +370,20 @@ one stdin chunk over SSH — every such click would be swallowed. So the stamp
 carries `geom`: a string of the VISIBLE pane rects (`paneId:x,y,w,h;…`, the
 same view-mode-aware derivation as `visibleBoundsFor`). It changes exactly when
 a visible pane moves, resizes, collapses, appears or disappears — not on hover,
-normal-view focus, selection or data refresh.
+normal-view focus, selection, data refresh or a tab switch.
+
+**Tab scope (R2, review round 3).** A slot that switches tabs shows another
+renderer's border controls and fold markers at the same rect, and their
+handlers resolve the pane's CURRENT instance at click time — so a click aimed
+at the old tab's control must not reach the new tab. That staleness is per
+pane, not per frame: every region published inside the pane bracket records
+the tab it was painted under (`tab`), and the router swallows a click on one
+whose pane has since switched tabs (`hitMap.tabMoved`). The `[_]`/`[+]`/`[X]`/
+`[≡]` glyphs and the tab strip act on the pane, not its tab, and publish with
+`paneLevel: true` — live across a switch. (Round 2 first put the active tabs
+into `geom`; one pane's switch then staled every pane — a row click that
+auto-switches the content slot back to Info, batched with a `[_]` click on
+another pane, lost the `[_]` click.)
 
 Content drift inside an unmoved pane is handled by the handler form, not the
 stamp: chrome handlers are either **absolute** (`panel_collapse_toggle {id}`,
@@ -470,7 +484,7 @@ intentionally changes behavior; full suite + smoke green under `env -u TMUX`.
 Plan agreed 2026-11-13 (refines the design-time draft). One commit per step.
 
 0. This section + §Stale-frame rule (Geometry) + the z-band table.
-1. **Pane bracket + geometry stamp.** `hitMap.enterPane(paneId, rect)` /
+1. **Pane bracket + geometry stamp.** `hitMap.enterPane(paneId, rect, tab)` /
    `exitPane()` around every pane render (composeRects, renderHalf, renderFull —
    the select-view `enterPane` precedent) and `publishLocal(region, z)`, which
    translates a pane-local rect to the screen, clips it to the pane and stamps
@@ -532,6 +546,16 @@ full suite + smoke green under `env -u TMUX`.
 
 Exit: `handleMouse` has no per-mode or per-pane-kind branches; the ~25
 mouse-pinning test files green (list in §Test strategy).
+
+Carried from the R2 round-3 review (not bugs today):
+- When panel-list rows get real handlers, the stamp must carry
+  `layout.panelList` (its `'legacy'` box re-checks live state, so R2 needs none).
+- Region owners share one namespace: a pane's owner is its paneId
+  (`pane-<pool id>`), an overlay's its descriptor id — a pool entry named
+  `menu` owns `pane-menu`, the pane menu's id. The press→double continuation
+  compares owners; no collision is reachable now (no shared region ids;
+  backdrops swallow `double`), but pointer capture keys on the owner —
+  namespace pane owners first.
 
 ## Test strategy
 
@@ -667,7 +691,7 @@ and adjacent finding 4 together (both touch `overlay/pane-menu.js`). Notes:
 
 - **Pane bracket.** `_safeRender` (and the collapsed-pane path in
   `composeRects`) brackets each pane render with `hitMap.enterPane(paneId,
-  rect)`; the screen origin rides `opts.x/y`. Pane renderers and paint publish
+  rect, activeTabId)`; the screen origin rides `opts.x/y`. Pane renderers and paint publish
   pane-local rects through `publishLocal`, which translates and clips to the
   pane. A pane whose render throws `retractOwner`s what it published.
 - **One chrome publisher.** renderPanel's drawn-chrome record (the old
@@ -741,15 +765,38 @@ Each reproduced by a reviewer script first:
   stress 986.5 → 908.5 (−7.9%), active search 1122.6 → 1001.5 (−10.8%).
 - **Round 2** (two fresh reviewers on the fix commit + angles round 1 missed;
   replay, hover, right / middle / wheel found clean): the composite cycler's
-  label is a stepper and repeats; the stamp's `geom` also records each visible
-  pane's active tab (a batched tab switch + a click on the old tab's control
-  reached the new tab's instance); the `border-control` act finds its spec by
+  label is a stepper and repeats; a batched tab switch + a click on the old
+  tab's control reached the new tab's instance (fixed in `geom`, re-fixed per
+  pane in round 3 — §Stale-frame rule, Tab scope); the `border-control` act finds its spec by
   identity (plugin specs need no / no unique `id`); a spec whose `regions()`
   throws loses only its own clicks instead of turning the pane into an error
   block; and the free-config panel list owns its box (`'legacy'` handler — the
   legacy handler still realizes its clicks until R3), so chrome under it is no
   longer clickable through it (inherited). Kept: a click during the resize
   debounce is dropped (the stamp includes dims — the safe side).
+- **Round 3** (two fresh reviewers: the round-2 fix commit, and angles neither
+  round covered — 26.4k-click every-cell differential sweep vs v0.6.56 across
+  14 scenarios found no R2 behavior change beyond the intended backdrops).
+  Fixed, each reproduced first:
+  - one pane's tab switch staled every pane's clicks (round-2 regression) —
+    the tab check is now per region (Tab scope above);
+  - a `regions()` returning a non-array or a null part still turned the pane
+    into an error block (round-2 guard caught only a throw) — malformed parts
+    are dropped, the error recorded ONCE per pane / control / message (it was
+    every frame);
+  - a plugin whose `borderControls` getter builds fresh spec objects per read
+    never matched by identity (round-2 regression) — the act falls back to a
+    unique `id`, else records the miss; a throwing click-time `regions()` /
+    `dispatch` is recorded, not thrown; region ids use the spec's own key when
+    its `id` is missing or shared (the double-click continuation can't confuse
+    two controls);
+  - on a terminal of ≤ 6 rows (availRows' floor) chrome under the footer row
+    still took clicks (inherited) — the hit frame stops above the footer;
+  - an unclosed `[` in a title or hotkey paired with a later fragment's `]`, so
+    `[_]`/`[X]`/`[≡]` painted off their regions (inherited) — every fragment of
+    the composed top row (and the collapsed bar) is sealed (`ansi.sealMarkup`);
+  - a narrow pane whose glyph cluster doesn't fit draws its tab strip in the
+    bare border, unclickable (inherited) — the fallback reports its tabs too.
 - Plus doc / comment parity, `titleClip` and three dead exports removed, the z
   bands in one table (`BANDS.OVERLAY_BASE`), and the chrome publisher moved to
   `render/pane-hits.js`. `buildEntryStrip` keeps its pane-local `tabBounds`: the

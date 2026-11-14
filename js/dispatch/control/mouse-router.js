@@ -115,7 +115,12 @@ function _realizeAndPaint(hit, kind, mx, my) {
  *  stops), false to fall through to the legacy cascade. `mx`/`my` are 0-based. */
 function route(kind, mx, my, model) {
   if (!DISCRETE.has(kind)) return false;
-  const fresh = hitMap.stampsEqual(hitMap.frameStamp(), hitMap.stampOf(model, api.getInstanceSlice('layout')));
+  const layoutSlice = api.getInstanceSlice('layout');
+  const fresh = hitMap.stampsEqual(hitMap.frameStamp(), hitMap.stampOf(model, layoutSlice));
+  // A tab-scoped region (a border control, a fold marker) whose pane switched
+  // tabs since paint is stale on its own — the click is swallowed (hit-map
+  // §Tab scope); every other pane's regions stay live.
+  const moved = (h) => hitMap.tabMoved(h.region, layoutSlice);
 
   if (kind === 'double' && _lastPress && _lastPress.mx === mx && _lastPress.my === my) {
     const last = _lastPress;
@@ -124,12 +129,12 @@ function route(kind, mx, my, model) {
     if (last.repeat) {
       const again = hitMap.resolve(mx, my, 'press');
       if (again && again.region.repeat && again.region.owner === last.owner && again.region.id === last.id) {
-        _realizeAndPaint(again, 'press', mx, my);           // same chip → the key again
+        if (!moved(again)) _realizeAndPaint(again, 'press', mx, my);   // same chip → the key again
         return true;
       }
     }
     const hit = hitMap.resolve(mx, my, kind);
-    if (!hit || hit.region.owner !== last.owner) return true;   // owner gone → swallow
+    if (!hit || hit.region.owner !== last.owner || moved(hit)) return true;   // owner gone / tab switched → swallow
     _realizeAndPaint(hit, kind, mx, my);
     return true;
   }
@@ -139,6 +144,7 @@ function route(kind, mx, my, model) {
   const hit = hitMap.resolve(mx, my, kind);
   if (!hit) return false;
   if (hit.handler === 'legacy') return false;   // owned here, realized by the legacy cascade
+  if (moved(hit)) return true;                  // its pane switched tabs → swallow
   if (kind === 'press') _lastPress = { mx, my, owner: hit.region.owner, id: hit.region.id, repeat: !!hit.region.repeat };
   _realizeAndPaint(hit, kind, mx, my);
   return true;

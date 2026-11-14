@@ -22,8 +22,10 @@ re-derived geometry are gone.
   still shown for that pane. **For pane authors:** pass the
   `api.borderControlsFor` entries themselves to `renderPanel`'s `topControls` /
   `bottomControls` (not their `.text`); a bare markup string still draws but is
-  not clickable. Specs need no `id` (nor a unique one), and a spec whose
-  `regions()` throws loses only its own clicks.
+  not clickable. Specs need no `id` (nor a unique one) — except that a
+  `borderControls` getter building fresh spec objects on every read needs
+  unique ids. A spec whose `regions()` throws or returns a malformed value
+  loses only its own clicks; the error is recorded once in the event log.
 - **Clicking (left, right or middle) outside the jobs list, the pane menu or
   a pending which-key chord closes it** (Esc). Their backdrop sits below the
   pane-chrome band, so the chrome stays clickable while they are open.
@@ -34,7 +36,9 @@ re-derived geometry are gone.
   a focus change) or changed the mode (opened a popup, started a leader chord)
   now swallows a click on pane chrome the old frame drew, instead of hitting
   whatever is there now. Hover and normal-view focus changes do not count, so
-  ordinary clicks are unaffected.
+  ordinary clicks are unaffected. A tab switch stales only that pane's border
+  controls and fold markers; its `[_]`/`[≡]`, its tabs and every other pane
+  stay live.
 - **A double-click on a tree fold marker folds once.** The second click no
   longer falls through to the row's double-click action (which activated the
   row). The refresh and sort steppers (`- +`, `‹ ›`) take a fast second click
@@ -46,7 +50,14 @@ re-derived geometry are gone.
   now shifts left to stay on screen.
 - **Pane chrome pushed onto the footer row** of a short terminal (stacked panes
   at their minimum heights) was clickable there, collapsing a pane the user
-  could not see. Clicks now resolve only inside the composed frame.
+  could not see. Clicks now resolve only inside the composed frame and never
+  on the footer row (on a terminal of 6 rows or fewer the panes reach it).
+- **A `[` in a pane title or hotkey that no `]` closes** (`title: "logs
+  [beta"`, `hotkey: "["`) swallowed part of the top border, so `[_]`, `[X]`
+  and `[≡]` painted away from where they click. Titles, hotkeys and control
+  labels now print an unclosed `[` literally.
+- **On a pane too narrow for its border glyphs**, the tab strip it still draws
+  is now clickable.
 - **A press on a chip, a tab or a fold marker** no longer leaves a pending
   text-selection arm behind (a later drag could start a stray selection).
 - **In free-config, a click inside the Panels list could hit a pane's `[X]` or

@@ -354,6 +354,34 @@ function charWidth(cp) {
 }
 
 /**
+ * Seal a markup FRAGMENT that will be concatenated with more markup: escape
+ * every `[` that no `]` closes within the fragment, so it cannot pair with a
+ * LATER fragment's `]` and swallow everything between (stripMarkup and
+ * richToAnsi match a tag as `[` … the next `]`, stopping at ESC). A sealed
+ * fragment renders exactly as visibleLen measured it alone — which every row
+ * composed from separately-measured parts relies on (a pane's top border:
+ * hotkey, title, controls, then the right-anchored [X]/[_] whose click
+ * regions sit at fixed offsets). Complete tags (`[warning]`), `\[` escapes and
+ * SGR (`\x1b[`) are untouched; a fragment with no `[` is returned as is.
+ */
+function sealMarkup(s) {
+  if (typeof s !== 'string' || s.indexOf('[') < 0) return s;
+  let out = '';
+  let i = 0;
+  while (i < s.length) {
+    const j = s.indexOf('[', i);
+    if (j < 0) { out += s.slice(i); break; }
+    const prev = j > 0 ? s[j - 1] : '';
+    if (prev === '\\' || prev === '\x1b') { out += s.slice(i, j + 1); i = j + 1; continue; }   // escape / SGR
+    let k = j + 1;
+    while (k < s.length && s[k] !== ']' && s[k] !== '\x1b') k++;
+    if (k < s.length) { out += s.slice(i, s[k] === ']' ? k + 1 : j + 1); i = s[k] === ']' ? k + 1 : j + 1; continue; }   // a tag / an ESC stops it
+    out += s.slice(i, j) + '\\['; i = j + 1;   // unclosed → escaped
+  }
+  return out;
+}
+
+/**
  * Display width of text in terminal columns.
  */
 function visibleLen(text) {
@@ -518,4 +546,5 @@ function wrapColor(color, content) {
   return `[${color}]${rewritten}[/]`;
 }
 
-module.exports = { richToAnsi, stripMarkup, visibleLen, charWidth, esc, wrapColor, stripControls, enableScreenColors, RESET };
+module.exports = {
+  sealMarkup, richToAnsi, stripMarkup, visibleLen, charWidth, esc, wrapColor, stripControls, enableScreenColors, RESET };
