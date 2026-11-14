@@ -264,7 +264,7 @@ identity-preserves on no-op. **All 30 arms are pure** — verified.
 | `escape` | Esc handler | `modes.listSelectMode→false` (if set) | `msg→multisel_clear` (focused nav) when `msg.route` set & had selection | shell¹ |
 | `list_select` | `v` (toggle) / `*` (on) | `modes.listSelectMode` | `msg→multisel_clear` when toggled OFF | shell¹ |
 | `enter_prefix` | leader key | `modes.prefixMode→true`, `prefixSeq=[]` (live node re-derived via `kb.nodeForSeq`, never stored — it holds closures) | — | ✓ |
-| `prefix_key` | key in prefix mode | `prefixSeq` (descend) or clears prefix (leaf/cancel) | `run_binding` (leaf) | ✓² |
+| `prefix_key` | key in prefix mode; a which-key row click (`picked: true` — the step by name, never a cancel) | `prefixSeq` (descend) or clears prefix (leaf/cancel) | `run_binding` (leaf) | ✓² |
 | `next_tab` / `prev_tab` | `]` / `[` | — | `msg→set_active_tab` (layout — cycle the content slot's position-tabs) | shell³ |
 | `nav_select` | row select (kbd/mouse) | — | `msg→set_cursor` + `show_selected_info` (+ `msg→groups_selected` if groups) | shell⁴ |
 | `terminal_enter` | enter-terminal verb | `modes.terminalMode→true` — refused when `caps.pty === false` (no node-pty: nothing to type into) | `kkp_suspend` (child owns the terminal → legacy encoding); refused → `msg→view_drop_full_to_normal` (undo the caller's auto-zoom) | ✓ |

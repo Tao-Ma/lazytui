@@ -83,9 +83,13 @@ wait on theirs.
 The default-colour queries (`OSC 10 ; ?` / `OSC 11 ; ?` — nvim picks
 `background` light/dark from the answer) are answered by the port itself
 (`term-screen` OSC handlers) with the theme's screen colours
-(`ansi.screenColors`), which are what the pane paints default cells with. While
-screen colours are off (`theme_background: false`) default cells show the host's
-own colours, which lazytui doesn't know, so the query stays unanswered.
+(`ansi.screenColors`), which are what the pane paints default cells with — when
+the theme's screen pair is RGB (every built-in theme but `minimal`, whose named
+colours have no exact value to report). While screen colours are off
+(`theme_background: false`), or under `minimal`, default cells show the host's
+own colours, which lazytui doesn't know, so the query stays unanswered. One OSC
+may carry several slots, each the next dynamic colour (xterm): `OSC 10 ; ? ; ?`
+asks for the foreground and the background, and gets both answers.
 
 The scroll fns return whether the viewport actually moved (callers gate their
 repaint on it). Writing PTY output while scrolled up is sticky in xterm (`baseY`
@@ -199,6 +203,7 @@ When the viewport sits above the live bottom, a reverse-video `[↑N]` indicator
 (N = `linesBelow`) is stamped at the top-right inner cell; any scroll change
 forces an inner repaint so the tag self-clears on return to the bottom. A dead
 session shows a centered `Process exited: <code> — Enter restart, x close`
+(`Process stopped` when lazytui stopped it — a replay took its session over)
 prompt on the bottom content row (`x close` only when the slot keeps another tab:
 `remove_tab` refuses a slot's last tab, so on a terminal alone in its slot `x` is
 the menu).
@@ -239,8 +244,9 @@ sends legacy key bytes while the child has the keyboard.
 - **Exit key** — `Ctrl+\` (`0x1c`) dispatches `{type:'terminal_exit'}`; the rest
   of the chunk goes to the normal-mode pipeline. A dead/missing session also
   exits, dropping the keys typed for it. The PTY child keeps running.
-- **Scrollback keys** — `Shift+PageUp`/`PageDown`, `Shift+Home`/`End` (in any
-  form the host sends: `\x1b[5;2~`, `\x1b[1;2H`, tmux's `\x1b[1;2~`, …) — at a
+- **Scrollback keys** — `Shift+PageUp`/`PageDown`, `Shift+Home`/`End` (in the
+  forms `leaves/input/key-decode` names: xterm's `\x1b[5;2~`, `\x1b[1;2H`, the
+  `\x1b[1;2~` tmux / screen send — not rxvt's `\x1b[5$` …) — at a
   prompt (the main screen). On the alternate screen (a full-screen child: vim, less, htop) there
   is no scrollback to show, so they are the child's keys and forward. Plain
   Page/Home/End always go to the child.

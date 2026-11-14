@@ -31,7 +31,7 @@
  *               a modal-mode flag ('copyMode'/'menuOpen'/…) — see CONTEXTS.
  *     label   — the rendered hint, e.g. 'x menu', '↑↓ select', 'Enter run'.
  *     when    — optional pure (ctx) => bool guard (ctx = live facts the footer
- *               passes: { total } for detail, { dead, closable, typeable } for
+ *               passes: { total } for detail, { dead, closable, typeable, total } for
  *               terminal). Absent =
  *               always shown.
  *     footer  — false to hide from the footer (help-only). Default true.

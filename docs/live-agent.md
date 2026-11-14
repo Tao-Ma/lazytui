@@ -395,7 +395,8 @@ deltas worth recording:
   agent mode when idle** — one key, no new chord. Enter on the pane starts
   the session **lazily and idempotently** (a minted-but-never-entered pane
   spawns nothing; Enter after an exit restarts). `x` closes an *exited*
-  agent pane (the dead-terminal analog). PageUp/PageDown scroll the
+  agent pane (the dead-terminal analog) where its slot keeps another tab;
+  alone in its slot it can't close, and `x` opens the menu. PageUp/PageDown scroll the
   transcript while composing; `↑`/`↓` recall previously-sent messages into
   the draft (readline-style history — editing a recalled line edits a
   transient working copy at that position; `↓` past the newest, or sending,

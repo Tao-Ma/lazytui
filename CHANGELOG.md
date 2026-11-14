@@ -105,8 +105,9 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   when typed. Home, End, Insert, Delete and the F-keys are now recognized in
   whichever form your terminal sends them (the agent prompt's Home/End/Delete
   and the text view's Home/End in visual mode, written for them, now work too),
-  and so are arrows and Page keys sent in another form than lazytui expected
-  (`ESC O A` from a terminal in application-cursor mode, `ESC [ 5 ~` …). A binding no
+  and so are the arrows a terminal in application-cursor mode sends
+  (`ESC O A` …), in lists too. A binding on an emoji (`g🚀`) fires from the
+  keyboard (it was split in two). A binding no
   keystroke can reach (`<esc>` and Space cancel a chord; `<ctrl-a>`, a typo)
   gets a config warning, also shown by `--lint`; it still fires by clicking its
   row in the which-key popup.
@@ -124,6 +125,16 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   included) going to the program as pasted text, and a split click no longer
   reaches it with whole-screen coordinates. Keys typed together with a click
   are translated too.
+- **A terminal pane in terminal mode keeps the cursor where the program put
+  it.** After a full repaint the cursor sat on the footer row until the
+  program's next output.
+- **A zero-width character at the start of a terminal row** (a ZWSP, a
+  combining mark or VS16 with nothing to join) no longer shifts the rest of
+  the row one column left.
+- **A mouse button release during a drag reaches a terminal program as a
+  release** (one sent with the motion bit read as a move — the program kept
+  the button held). Extra mouse buttons (back / forward) no longer act as a
+  left click in lists.
 - **Programs in a terminal pane can ask for its colours.** nvim (and other
   programs) ask the terminal for its default background and foreground to pick
   a light or dark colour scheme; nothing answered, so nvim always assumed
@@ -164,7 +175,8 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   (`panels.nested_config`).
 - **Shift+PageUp/PageDown/Home/End go to a full-screen program** (vim, less,
   htop) in a terminal pane instead of scrolling its empty scrollback; at a
-  prompt they still scroll, in whichever form your terminal sends them.
+  prompt they still scroll — in the xterm form and the one tmux / screen send
+  (rxvt's Shift forms are not recognized).
 - **In terminal mode lazytui sees your terminal gaining and losing focus.**
   Those reports used to go to the program; now they are lazytui's (and reach
   the program only if it asked for them), so the polls that pause while the
@@ -190,6 +202,8 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   `config` only.
 - **The `terminal` slice no longer has `cmd` / `label`.** The command is the
   pool entry's `config.cmd`; the terminal's name is the entry's title.
+- **`--spec` includes DATAFLOW.md**, as SPEC.md's read order always listed it
+  (between PLUGINS and PROJECT).
 
 ## [0.6.58] — 2026-11-14
 

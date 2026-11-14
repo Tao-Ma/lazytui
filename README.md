@@ -186,8 +186,8 @@ you more than it should.
 Two flags carry the AI-augmented loop.
 
 **`--spec` is how the agent learns the contract.** It prints the
-consolidated authoring bundle — SPEC, PRINCIPLES, PLUGINS, PROJECT,
-HUB, LAYOUT — to stdout in one shot. Hand it to your
+consolidated authoring bundle — SPEC, PRINCIPLES, PLUGINS, DATAFLOW,
+PROJECT, HUB, LAYOUT — to stdout in one shot. Hand it to your
 agent and every rule it needs to produce a valid project is in a
 single file.
 

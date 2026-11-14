@@ -175,12 +175,15 @@ greppable.
                                    cell-grid.js; LAZYTUI_CELL_DIFF=0 =
                                    whole-row diff; returns `wrote`, the
                                    cells it wrote)
-     5. renderTerminalOverlay     (PTY buffer per-row diff — painted
+     5. renderFooter              (footer row writes direct)
+     6. renderTerminalOverlay     (PTY buffer per-row diff — painted
                                    outside the frame diff, under the
                                    popups' coverage `newRows.covered`;
                                    repaints rows the frame `wrote` over
-                                   — docs/TERMINAL.md §Rendering)
-     6. renderFooter              (footer row writes direct)
+                                   — docs/TERMINAL.md §Rendering; ends
+                                   on the program's cursor)
+     7. cursor                    (cmd mode: after the prompt text —
+                                   the frame's last move; visibility)
         │
         ▼
    stdout (ANSI, diff'd writes only)

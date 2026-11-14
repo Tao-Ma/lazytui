@@ -44,8 +44,9 @@
  * family, a flag pair sum to 4, 6, 2. Cluster widths are a separate concern
  * (queued as their own arc), not this function's.
  *
- * The two regexes use Unicode property escapes, built into every supported
- * runtime (Node ≥ 18, Bun) — no dependency, synchronous, CommonJS. Results are
+ * The two regexes use Unicode property escapes — the runtime's own Unicode
+ * data (Node ≥ 18 with ICU, Bun), no dependency, synchronous, CommonJS; a
+ * runtime without it falls back to the two tables (below). Results are
  * memoised per codepoint (the function is pure), so the hot loops pay a typed-
  * array read after the first sight of each codepoint.
  */

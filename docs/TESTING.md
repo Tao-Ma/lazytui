@@ -48,9 +48,11 @@ to TUI modules use `../<module>`; the harness import is `./test-runner`
 
 `js/test/smoke/` houses end-to-end scenarios that drive the real
 `dispatch` / `render` path. Each scenario boots the full app
-(through the same `bootFresh` helper at `_helpers/smoke.js` — a fresh boot:
-every pane instance is disposed and re-minted from the scenario's config, so
-nothing carries over from the last scenario), feeds
+(through the same `bootFresh` helper at `_helpers/smoke.js` — every pane
+instance is disposed and re-minted from the scenario's config, so no pane's
+state carries over; the layout service (view mode, focus history) and the
+registered leader bindings live for the process, as Components do — reset
+what a scenario changes there), feeds
 input via `handleKey` / `handleMouse` / `applyMsg`, and asserts on
 the model state plus the captured rendered frame.
 

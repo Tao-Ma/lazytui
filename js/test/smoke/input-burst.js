@@ -155,7 +155,7 @@ describe('[9] terminal-mode flip on the FINAL token forwards the carry to the PT
   it('carry takes the PTY path, not the 50ms flush (dead session exits the mode)', () => {
     // Key filter: 'T' flips terminalMode ON, simulating a terminal-entering
     // key (same shim as the review probe). No live session exists here, so
-    // _handleTerminalModeData on the forwarded carry exits the mode — mode
+    // the terminal path (_handleTerminalChunk) on the forwarded carry exits the mode — mode
     // OFF after the feed proves the carry took the PTY path; pre-fix it
     // stayed ON and the carry flush-dropped.
     const dispatch = require('../../dispatch/control/dispatch');
