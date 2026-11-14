@@ -122,6 +122,10 @@ const cases = [
   ['katakana → narrow',     'テスト',                 'abcdef'],
   ['hangul swap',           'X가Y',                   'X나Y'],
   ['hangul → katakana',     '가나다',                 'テスト'],
+  // 2026-11-14 — Emoji_Presentation glyphs are wide (the host draws them 2).
+  ['emoji swap',            'X⚡Y',                   'X💤Y'],
+  ['emoji → narrow',        '✅ ok',                  'abcde'],
+  ['narrow → emoji midrow', 'XabY',                   'X🚀Y'],
   // v0.6.7 round 2 — ZERO-WIDTH codepoints fold into the preceding glyph (the
   // terminal advances 0). charWidth=1 here drifted every absolute MoveTo right
   // (NFD text, ZWJ/VS emoji). Explicit escapes — a bare 'e\u0301' typed as NFC

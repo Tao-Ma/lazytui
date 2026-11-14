@@ -231,7 +231,9 @@ for "the same thing but headless."
 - **Renderer + parser**: Node.js. Runtime npm deps: `node-pty` and
   `@xterm/headless` for embedded PTY tabs, `js-yaml` for config parsing,
   `eastasianwidth` (UAX #11 wide) + `wcwidth` (POSIX zero-width) for the
-  Unicode character-width truth function.
+  Unicode character-width truth function, topped up with the runtime's own
+  Unicode data (Wide emoji, newer combining marks); the embedded terminal
+  measures with the same function.
 - **Tests**: JS unit suites under `js/test/` (202 files), an opt-in
   pre-release smoke harness under `js/test/smoke/` (22 scenarios), and
   a live integration harness under `test/`. See [docs/TESTING.md](docs/TESTING.md).

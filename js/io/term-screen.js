@@ -29,9 +29,39 @@
 'use strict';
 
 const { Terminal } = require('@xterm/headless');
+const { charWidth } = require('../leaves/text/char-width');
+
+// The emulator measures with the frame's width truth. A program's output is laid
+// out by the emulator (where a wide glyph puts the cursor next), then painted by
+// lazytui at the frame's widths and drawn by the host at its own; one function
+// for both ends means a row the emulator fills is exactly the pane's width when
+// painted. The emulator's built-in table is Unicode 6 (every emoji 1 column),
+// which put each ⚡/💤 one column past the pane border on a full row.
+// `charProperties` packs (width << 1 | join) the way @xterm/headless's own
+// provider does: a zero-width codepoint joins the preceding cell and keeps its
+// width; C0/C1 controls are 0, as in the built-in table.
+const _WIDTH_PROVIDER = {
+  version: 'lazytui',
+  wcwidth(cp) {
+    return (cp < 0x20 || (cp >= 0x7f && cp < 0xa0)) ? 0 : charWidth(cp);
+  },
+  charProperties(cp, preceding) {
+    let width = _WIDTH_PROVIDER.wcwidth(cp);
+    let join = width === 0 && preceding !== 0;
+    if (join) {
+      const prev = (preceding >> 1) & 3;
+      if (prev === 0) join = false;
+      else if (prev > width) width = prev;
+    }
+    return ((width & 3) << 1) | (join ? 1 : 0);
+  },
+};
 
 function createScreen(cols, rows) {
-  return new Terminal({ cols, rows, allowProposedApi: true });
+  const screen = new Terminal({ cols, rows, allowProposedApi: true });
+  screen.unicode.register(_WIDTH_PROVIDER);
+  screen.unicode.activeVersion = _WIDTH_PROVIDER.version;
+  return screen;
 }
 
 function writeScreen(screen, data, cb) { screen.write(data, cb); }

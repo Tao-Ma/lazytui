@@ -175,9 +175,10 @@ function render(panel, w, h, slice, opts) {
   const lines = [];
   // Header: component name + readiness badge (right-aligned).
   // Readiness glyphs are TEXT-presentation, width-1 (✓ U+2713 / ✗ U+2717) — NOT
-  // an emoji like ⛔ (U+26D4), which real terminals render 2 columns wide while
-  // charWidth/@xterm score it 1, so the badge overran the right border. Right-
-  // align with visibleLen (the width truth function), never String.length.
+  // an emoji like ⛔ (U+26D4): when charWidth still scored emoji 1, the badge
+  // overran the right border on every real terminal, and chrome stays clear of
+  // emoji so its width never rests on a host's emoji table. Right-align with
+  // visibleLen (the width truth function), never String.length.
   const badge = data.ready
     ? `[${t.accent || t.selected}]✓ ready[/]`
     : `[${t.dim}]✗ not ready: ${esc(data.missing.map((m) => m.port).join(', '))}[/]`;

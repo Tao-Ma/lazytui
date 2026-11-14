@@ -34,10 +34,9 @@
  * convert through here, and the cell-diff path inherits it for free — it folds
  * richToAnsi's SGR per channel, so the re-asserted pair rides into each cell.
  *
- * Two dependencies back `charWidth` (the width truth function — a standard,
- * spec-evolving problem; see charWidth's doc): `eastasianwidth` (UAX #11, the
- * WIDE axis) and `wcwidth` (POSIX, the ZERO-WIDTH axis). Otherwise pure string
- * transforms.
+ * `charWidth` (the width truth function) lives in `./char-width` — it is shared
+ * with the embedded terminal emulator (io/term-screen) — and is re-exported here
+ * for the frame's callers. Otherwise pure string transforms.
  *
  * Lives in `leaves/` (not `io/`): every export here is a pure string
  * transform — it builds ANSI/markup strings but performs no I/O (no
@@ -48,8 +47,7 @@
  */
 'use strict';
 
-const { eastAsianWidth } = require('eastasianwidth');
-const wcwidth = require('wcwidth');
+const { charWidth } = require('./char-width');
 // Semantic theme tokens resolve against the LIVE palette at paint (below). themes
 // is a dependency-free infra leaf, so this is an acyclic leaf→leaf edge.
 const { theme } = require('../infra/themes');
@@ -309,49 +307,7 @@ function stripMarkup(text) {
     .replace(/\x1b\[[0-9;]*m/g, '');
 }
 
-/**
- * Display width of a single codepoint in terminal columns. THE width truth
- * function — the single source everything routes through (visibleLen, viewer
- * truncation/selection/search, chrome draw, the A2 cell-diff in
- * leaves/render/cell-grid, leaves/text/search). The cell-diff emits ABSOLUTE
- * per-cell MoveTo columns, so this MUST agree with the terminal's actual cursor
- * advance, or borders/glyphs land at the wrong column.
- *
- * Partitioned by axis, each axis resolved by a STANDARD LIBRARY — never a
- * hand-maintained range table (a curated in-repo table is the wrong tool for a
- * standard, spec-evolving problem; the v0.6.7 kana bug came from one such table
- * omitting hiragana/katakana/hangul):
- *   1. cp < 0x300            → 1   (everything below the first combining mark is
- *                                   width 1: ASCII / Latin / Latin-Ext. Fast
- *                                   path — the hot loops pay one int compare per
- *                                   ASCII char and never allocate.)
- *   2. zero-width            → 0   `wcwidth` (POSIX): combining marks, ZWJ,
- *                                   variation selectors, format/default-ignorable.
- *                                   A terminal advances the cursor 0 for these;
- *                                   the cell-diff MUST too or it drifts every
- *                                   absolute MoveTo to the right (NFD text,
- *                                   ZWJ/VS emoji). This is the v0.6.7 round-2 fix.
- *   3. East-Asian Wide/Full  → 2   `eastasianwidth` (UAX #11) `eastAsianWidth()`
- *                                   primitive (NOT `characterLength()`, which
- *                                   counts Ambiguous as 2 → double-width borders).
- *   4. else                  → 1   Ambiguous / Narrow / Halfwidth / Neutral, and
- *                                   emoji/pictographs (→ 1, matching the embedded
- *                                   terminal's cursor advance, the cell-diff oracle).
- *
- * Ambiguous→1 keeps box-drawing (│ ╭ ─), arrows, enclosed digits at width 1.
- * Verified codepoint-by-codepoint against the embedded terminal's OWN wcwidth in
- * test-char-width.js (the exhaustive differential oracle); the residual
- * divergences there are archaic ranges (newer-Unicode libs vs @xterm/headless's
- * V6) + a few astral combining marks — all unhittable in real TUI content,
- * enumerated + pinned so any new divergence surfaces as a test failure.
- */
-function charWidth(cp) {
-  if (cp < 0x300) return 1;                          // below the first combining mark — all width 1
-  const ch = String.fromCodePoint(cp);
-  if (wcwidth(ch) === 0) return 0;                   // zero-width axis (POSIX wcwidth)
-  const c = eastAsianWidth(ch);                      // wide axis (UAX #11)
-  return (c === 'W' || c === 'F') ? 2 : 1;
-}
+// charWidth — see ./char-width (re-exported below).
 
 /**
  * Seal a markup FRAGMENT that will be concatenated with more markup: escape

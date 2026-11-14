@@ -49,6 +49,18 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   instead of doing nothing (such a tab can't be closed, e.g. a configured
   `type: terminal` pane). The exit banner and the footer offer `x close` only
   where `x` closes.
+- **Emoji no longer push pane borders out of place.** lazytui measured every
+  emoji (⚡ 💤 🚀 ✅ ⭐ …) as 1 column, but terminals draw them 2 wide (glibc's
+  `wcwidth`, tmux), so each one shifted the rest of its row — border included —
+  one column right. An action labelled `✅ done 🚀 go` pushed the Actions pane's
+  right border off-screen; in a terminal pane, nvim's ⚡/💤 (LazyVim's
+  dashboard) ran rows past the pane border. Emoji now measure 2 columns
+  everywhere, and the embedded terminal lays out a program's output with the
+  same widths lazytui paints with. Combining marks newer than the width table
+  (Arabic, Syriac and other scripts' marks) now measure 0 instead of 1, so text
+  using them no longer drifts. Not covered: emoji built from several codepoints
+  (❤️ with its emoji selector, skin tones, joined family emoji) still measure
+  as the sum of their parts, where terminals draw one 2-wide glyph.
 
 ## [0.6.58] — 2026-11-14
 

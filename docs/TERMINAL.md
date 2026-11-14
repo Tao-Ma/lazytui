@@ -17,8 +17,9 @@ island. Two documents own the contract; this file is the subsystem map:
 ## The split: lifecycle in the model, contents in xterm
 
 `js/io/terminal.js` is a **true leaf** — its only requires are `node-pty` +
-`@xterm/headless`; it reaches nothing upward (no app model, no panel/api, no
-render, no jobs). It owns a `sessions` map of `{ pty, xterm, cmd, cwd, exited,
+the emulator port `js/io/term-screen.js` (the one importer of `@xterm/headless`,
+plus the pure width leaf `leaves/text/char-width`); it reaches nothing upward
+(no app model, no panel/api, no render, no jobs). It owns a `sessions` map of `{ pty, xterm, cmd, cwd, exited,
 exitCode, jobId }`.
 
 - The **model** holds the PTY *lifecycle*: which tab is a terminal, its
@@ -120,6 +121,14 @@ registers a `kind:'pty'` job on spawn and closes it on exit/kill.
 Render is **read-only** for the PTY (the spawn/resize moved to the finalizer);
 it positions the overlay against the focused viewer's committed (or, mid-drag,
 preview) bounds.
+
+**Widths.** The emulator measures with the frame's width function:
+`term-screen.createScreen` registers `charWidth` (`leaves/text/char-width`) as
+the emulator's Unicode provider, replacing its built-in Unicode 6 table (every
+emoji 1 column). A row the program fills is then exactly the pane's width when
+painted — with the built-in table, each ⚡/💤 in a full row (LazyVim's dashboard)
+put the row one column past the pane border. `test-char-width.js` [3] pins the
+two as identical for every codepoint.
 
 Two repaint paths drive the overlay:
 - **primary** — the `_renderHook` (`scheduleOverlay`) fired on each xterm write,
