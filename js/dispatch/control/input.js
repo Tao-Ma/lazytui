@@ -702,11 +702,11 @@ function _dispatchToken(tok) {
   const named = decodeKey(tok);
   if (named && !named.shift && !named.alt && !named.ctrl) return handleKey(named.key);
 
-  // T25 / B14 — never fire Esc for an escape-PREFIXED event: F-keys
-  // (\x1bOP), Alt-modified keys (\x1b[1;3A, \x1bj), Home/End (\x1b[H,
-  // \x1b[F), Shift-Tab (\x1b[Z) etc. would silently cancel any open
-  // modal. Esc fires only for the exact forms caught above; other
-  // escape-initiated tokens log + drop (event-log, so a maintainer
+  // T25 / B14 — never fire Esc for an escape-PREFIXED event: what reaches
+  // here is a sequence nothing above named — an Alt chord (\x1bj), a modified
+  // key (\x1b[1;3A, Ctrl+Home), F13+ — and firing Esc for it would silently
+  // cancel any open modal. Esc fires only for the exact forms caught above;
+  // other escape-initiated tokens log + drop (event-log, so a maintainer
   // reading a recorded session can see what unknown sequences fired).
   if (tok.charCodeAt(0) === 0x1b) {
     require('../../io/event-log').record('input', {

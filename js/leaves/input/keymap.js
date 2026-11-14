@@ -153,9 +153,11 @@ function mergeUserNormal(defaultTable, userNormal, opts = {}) {
     }
     // A normal-mode binding targets a SINGLE pressable key. The input layer
     // delivers one code point per keystroke; the only multi-char tokens it ever
-    // delivers are pre-decoded named keys (escape/return/arrows/page-*) — all
-    // already reserved — plus `paste` (bracketed-paste). So any other multi-char
-    // key (`gg`, `Rx`, …) can NEVER match: it would be a dead binding that the
+    // delivers are pre-decoded named keys (escape, return, the arrows, Page /
+    // Home / End, Insert / Delete, F1–F12, backtab, ctrl-r — the built-in ones
+    // reserved; the others bind as `keys:` chord steps, `<home>`) plus `paste`
+    // (bracketed-paste). So any other multi-char key (`gg`, `Rx`, …) can NEVER
+    // match here: it would be a dead binding that the
     // `--keymap` dump still reports as live (a dump-vs-runtime drift), while
     // `paste` would silently fire on every bracketed paste. Reject both — chords
     // belong in the top-level `keys:` block, not `keymap.normal`.

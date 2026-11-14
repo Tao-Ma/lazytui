@@ -84,8 +84,9 @@ function setSessionRecorder(fn) { _sessionRecorder = (typeof fn === 'function') 
 const _validSize = (cols, rows) => Number.isInteger(cols) && Number.isInteger(rows) && cols >= 1 && rows >= 1;
 
 /**
- * Create or return existing session. Lazy — created on first access
- * (first render of the active terminal tab).
+ * Create or return existing session. Lazy — the dispatch finalizer creates it
+ * the first time the terminal is a visible surface with room (an active tab
+ * with an interior), sized to that interior.
  */
 function ensureSession(id, cmd, cols, rows, cwd) {
   if (sessions[id]) return sessions[id];

@@ -57,9 +57,10 @@ const wcwidth = require('wcwidth');
 // One codepoint per test (anchored), so the alternation reads as set membership.
 // Zero-width beyond the `wcwidth` table: any combining mark (Mn/Me), or a format
 // character (Cf) that is default-ignorable (ZWJ, word joiner, bidi marks, the
-// Egyptian/Tag format controls). Visible format characters — the Arabic number
-// signs and other prepended concatenation marks — are Cf but NOT ignorable: a
-// host draws them, so they keep their width.
+// Tag characters). A Cf that is NOT default-ignorable keeps whatever width the
+// rest of charWidth gives it: 0 where `wcwidth`'s own table says so (the older
+// Arabic number signs U+0600–0603, U+06DD), else 1 (U+0605, the Egyptian
+// hieroglyph format controls) — measured 2026-11-14.
 const _ZERO_RE = /^(?:[\p{Mn}\p{Me}]|(?=\p{Cf})\p{Default_Ignorable_Code_Point})$/u;
 const _EMOJI_WIDE_RE = /^(?!\p{Regional_Indicator})\p{Emoji_Presentation}$/u;
 

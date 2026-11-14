@@ -30,7 +30,7 @@ const modes = require('../leaves/input/modes');
 // E9 — footer key HINTS are declared as data in this leaf (the single source
 // the footer + a future powerline/segment footer project from). The footer
 // interleaves the genuinely-LIVE status (search count, filter text, leader
-// pending, terminal label) computed below; bindings supplies the key labels.
+// pending, the terminal's name) computed below; bindings supplies the key labels.
 const bindings = require('../leaves/input/bindings');
 const { getModel } = require('../model/store');
 const { getFreeConfigFooter } = require('../panel/free-config-view');

@@ -212,7 +212,7 @@ function checkpointNow() {
   const terminal = require('../../io/terminal');
   return sessionLog.recordCheckpoint({
     state: sessionLog.encodeJson(snapshotState()),
-    grids: terminal.snapshotAllSessions(),   // materialized terminal text grids
+    grids: terminal.snapshotAllSessions(),   // each terminal's screen: styled rows (SGR lines) + geometry
   });
 }
 

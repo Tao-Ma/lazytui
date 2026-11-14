@@ -96,22 +96,6 @@ function _splitAt(text, col) {
   return { prefix, suffix: text.slice(i), prefixW: w };
 }
 
-/**
- * Composite one overlay row into `rows[y]` at column `x` for `w` cells.
- *
- * MUTATES `rows[]` in place. Returns `true` on composite, `false` when
- * the overlay is off-screen (y out of range, w <= 0, or x >= cols).
- *
- * `rows[y]` AND `overlayText` are Rich-markup strings; the result is
- * also Rich markup (same format), so this plugs directly into the
- * `painter.composeRows` output that `paintFrame` consumes.
- *
- * The overlay's own visible width is NOT inferred from `w` — the caller
- * passes `w` as the target cell count (menuW from `renderPanel`), and
- * `overlayText` is trusted to measure exactly `w` cells. A short overlay
- * row (shouldn't happen in practice; `renderPanel` right-pads to menuW)
- * is topped up with blanks to keep the splice width exact.
- */
 // Record on the buffer the columns [x0, x1) an overlay now covers on row `y`:
 // `rows.covered` = Map(row → [[x0, x1), …]). Every overlay writes through
 // compositeRow (draw.renderOverlay, the cmdline dropdown, the pane menu), so
@@ -126,6 +110,23 @@ function _cover(rows, y, x0, x1) {
   else rows.covered.set(y, [[x0, x1]]);
 }
 
+/**
+ * Composite one overlay row into `rows[y]` at column `x` for `w` cells.
+ *
+ * MUTATES `rows[]` in place. Returns `true` on composite, `false` when
+ * the overlay is off-screen (y out of range, w <= 0, or x >= cols).
+ *
+ * `rows[y]` AND `overlayText` are Rich-markup strings; the result is
+ * also Rich markup (same format), so this plugs directly into the
+ * `painter.composeRows` output that `paintFrame` consumes.
+ *
+ * The overlay's own visible width is NOT inferred from `w` — the caller
+ * passes `w` as the target cell count (menuW from `renderPanel`), and
+ * `overlayText` is trusted to measure exactly `w` cells. A short overlay
+ * row (shouldn't happen in practice; `renderPanel` right-pads to menuW)
+ * is topped up with blanks to keep the splice width exact. Records what it
+ * covered on `rows.covered` (_cover).
+ */
 function compositeRow(rows, cols, overlayText, x, y, w) {
   if (!rows || y < 0 || y >= rows.length) return false;
   if (w <= 0 || x >= cols) return false;

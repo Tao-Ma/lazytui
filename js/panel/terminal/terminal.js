@@ -8,8 +8,9 @@
  * grid lives in the io/terminal session store, NEVER in this slice, and is
  * painted by the terminal OVERLAY (render/paint.js#renderTerminalOverlay) over
  * this pane's inner bounds — render() here draws only the chrome (border +
- * title), exactly as the viewer's terminal-tab branch did. So the reducer holds
- * only the exit continuation (`onExit`); there are no content arms. The command
+ * title), exactly as the viewer's terminal-tab branch did. So the slice holds
+ * only its column `paneId` and the exit continuation (`onExit`); there are no
+ * content arms. The command
  * lives in the pool entry's `config.cmd` (the dispatch finalizer spawns from
  * it), and the pane's name is its title (mpane.titleOf — the border, the tab
  * strip and the terminal-mode footer all show it). The session's lifecycle

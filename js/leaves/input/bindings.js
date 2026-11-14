@@ -16,7 +16,7 @@
  *
  * Scope (E9 "Focused+"): this registry holds KEY HINTS only. The genuinely
  * LIVE status the footer interleaves — a search match count `[3/12]`, the typed
- * filter text, the leader pending-keys, a terminal's label — is NOT a key hint;
+ * filter text, the leader pending-keys, a terminal's name — is NOT a key hint;
  * it stays computed in `footer.js` and is merged around these hints. Dispatch
  * also stays where it is (the `handleNormalKey` switch + each Component's
  * `update`); an entry's `verb`, when present, is documentation of what key the
