@@ -664,17 +664,9 @@ function _dispatchToken(tok) {
   const mm = _SGR_MOUSE_RE.exec(tok);
   if (mm) return _dispatchMouseEvent(mm);
 
-  if (tok === '\x1b[A') return handleKey('up');
-  if (tok === '\x1b[B') return handleKey('down');
-  if (tok === '\x1b[C') return handleKey('right');
-  if (tok === '\x1b[D') return handleKey('left');
-  if (tok === '\x1b[5~') return handleKey('pageup');
-  if (tok === '\x1b[6~') return handleKey('pagedown');
-  // Shift-Tab arrives as CSI Z. Without this entry the token falls into the
-  // T25/B14 unknown-escape drop below and no handler ever sees it. Added for
-  // the args→ports slice-1 fabric-form (deep-review round 4 Finding 1 —
-  // shipping blocker; the form's Shift-Tab focus-prev relied on this).
-  if (tok === '\x1b[Z') return handleKey('backtab');
+  // Arrows, Page keys, Shift-Tab (CSI Z — the fabric-form's focus-prev,
+  // deep-review round 4 Finding 1) and the other special keys: decodeKey,
+  // below, in whichever form the host sends them.
   if (tok === '\x1b' || tok === '\x1b\x1b') return handleKey('escape');
   if (tok === '\r' || tok === '\n' || tok === '\r\n') return handleKey('return');
   if (tok === '\x03') { cleanup(); process.exit(0); }
@@ -690,15 +682,16 @@ function _dispatchToken(tok) {
     if (legacy != null) return _dispatchToken(legacy);
   }
 
-  // The other special keys, in whichever form the host terminal sends them
-  // (leaves/input/key-decode — the decoder terminal mode uses): Home / End
+  // The special keys, in whichever form the host terminal sends them
+  // (leaves/input/key-decode — the decoder terminal mode uses too): the arrows
+  // and Page keys (`CSI A`, SS3 `O A`, VT220 `CSI 5 ~`), Shift-Tab, Home / End
   // (`CSI H`, tmux's `CSI 1 ~`, rxvt's `CSI 7 ~`, SS3 …), Insert / Delete,
-  // F1–F12, and the SS3 / VT220 spellings of the arrows and Page keys. They
-  // were dropped as unknown escapes, so a `<home>` / `<end>` / `<delete>` /
-  // `<f1>` leader binding could never fire, and the handlers already written
-  // for them (the agent prompt's Home/End/Delete, the text view's Home/End)
-  // never ran. Unmodified only: nothing binds a modified one, so those still
-  // drop below. Named keys carry no `seq`, so no text input inserts them.
+  // F1–F12. Home/End/Insert/Delete/F-keys were dropped as unknown escapes, so
+  // a `<home>` / `<end>` / `<delete>` / `<f1>` leader binding could never
+  // fire, and the handlers already written for them (the agent prompt's
+  // Home/End/Delete, the text view's Home/End) never ran. Unmodified only:
+  // nothing binds a modified one, so those still drop below. Named keys carry
+  // no `seq`, so no text input inserts them.
   const named = decodeKey(tok);
   if (named && !named.shift && !named.alt && !named.ctrl) return handleKey(named.key);
 

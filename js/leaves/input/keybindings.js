@@ -25,6 +25,8 @@
  */
 'use strict';
 
+const { KEY_NAMES } = require('./key-decode');
+
 // children maps use a null prototype so token strings like `constructor`,
 // `toString`, or `__proto__` (reachable via `<…>` tokens or plugin
 // registration) can't resolve to inherited Object.prototype members or
@@ -57,13 +59,12 @@ const _ALIASES = Object.assign(Object.create(null), {
   pgup: 'pageup', pgdn: 'pagedown', pgdown: 'pagedown',
 });
 
-// Named tokens a keystroke can produce inside a chord. `escape` and the
-// leader (space) are not here: both CANCEL the chord (reducer prefix_key).
-const _PRODUCIBLE = new Set([
-  'up', 'down', 'left', 'right', 'pageup', 'pagedown', 'home', 'end', 'insert', 'delete',
-  'backtab', 'return', 'tab', 'backspace', 'ctrl-r',
-  'f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'f8', 'f9', 'f10', 'f11', 'f12',
-]);
+// Named tokens a keystroke can produce inside a chord: every special key the
+// input layer decodes (leaves/input/key-decode — one table, so a key it learns
+// is a chord step at once) plus the ones its ladder names itself (return, the
+// byte-named tab / backspace, ctrl-r). `escape` and the leader (space) are not
+// here: both CANCEL the chord (reducer prefix_key).
+const _PRODUCIBLE = new Set([...KEY_NAMES, 'return', 'tab', 'backspace', 'ctrl-r']);
 
 /** The steps of `seq` no keystroke can produce inside a chord (so the binding
  *  is reachable only by clicking its which-key row): a named token outside the

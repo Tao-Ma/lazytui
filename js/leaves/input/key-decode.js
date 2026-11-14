@@ -98,4 +98,9 @@ function toXtermKey(tok, opts) {
   return enc == null ? tok : enc;
 }
 
-module.exports = { decodeKey, encodeXtermKey, toXtermKey };
+/** Every name decodeKey can return — the special keys this module knows. */
+const KEY_NAMES = Object.freeze(['backtab', ...new Set([
+  ...Object.values(_CURSOR), ...Object.values(_SS3_F), ...Object.values(_TILDE), ...Object.values(_CONSOLE_F),
+])]);
+
+module.exports = { decodeKey, encodeXtermKey, toXtermKey, KEY_NAMES };
