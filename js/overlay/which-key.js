@@ -54,9 +54,12 @@ function renderWhichKey(newRows, cols) {
     ? 'leader ' + getModel().prefixSeq.join(' ')
     : 'leader';
   // Hit map (docs/mouse-hit-map.md): row i is continuation i (whichKeyLines maps
-  // continuations 1:1), so clicking it presses that chord token — prefix_key via
-  // the prefixMode handler, exactly as typed (tokenForEvent reads seq first).
-  const lineTargets = kb.continuations(node).map(([tok]) => ({ press: { key: tok, seq: tok } }));
+  // continuations 1:1), so clicking it takes that step — prefix_key `picked`:
+  // the step by its name, not a keystroke, so it never cancels the chord. A
+  // binding on `<esc>` (or another step no key can produce inside a chord —
+  // keys.unreachable_step) still fires by clicking its row.
+  const lineTargets = kb.continuations(node).map(([tok]) =>
+    ({ press: { msg: { type: 'prefix_key', key: tok, seq: tok, picked: true } } }));
   renderOverlay({ lines: whichKeyLines(node), title: `\\[${seq}]`, count: null,
                   targetRows: newRows || null, targetCols: cols || 0,
                   hit: { lineTargets, box: {} } });

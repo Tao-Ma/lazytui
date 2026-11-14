@@ -6,6 +6,10 @@
  *   [3] click a leaf row → runs the binding, exits prefix mode
  *   [4] box swallows clicks/wheel; outside click = Esc (cancels the chord) via a
  *       backdrop BELOW the chrome band (pane chrome stays clickable)
+ *   [5] a step no keystroke can take inside a chord (`<esc>`, an unknown named
+ *       key) still fires by clicking its row — the keys.unreachable_step warning
+ *       says so (pre-release review 2026-11-14: `<esc>` became `escape`, and the
+ *       row click, sent as that key, cancelled the chord)
  *
  * Run: node js/test/test-which-key-mouse.js
  */
@@ -114,6 +118,33 @@ describe('[4] box / outside', () => {
     assert(r, 'a [_] outside the which-key box');
     hc.click(r.rect.x + 1, r.rect.y);
     eq(collapsedOf(r.paneId), true);
+  });
+});
+
+describe('[5] steps no keystroke can take fire by click', () => {
+  function chord(seq) {
+    sm.bootFresh();
+    sm.resize(120, 30);
+    kb.clearBindings();
+    ran = [];
+    kb.registerKeyBinding(seq, { label: 'THE-BINDING', run: () => ran.push(seq) });
+    sm.capture(() => { sm.applyMsg({ type: 'enter_prefix' }); sm.handleKey('g', 'g'); });
+    hc.paint();
+  }
+  for (const seq of ['g<esc>', 'g<escape>', 'g<f13>']) {
+    it(`${seq}: clicking its row runs it`, () => {
+      chord(seq);
+      eq(getModel().prefixSeq, ['g'], 'precondition: one step in');
+      hc.clickRegion(O, 'row:0');
+      eq(ran, [seq]);
+      eq(getModel().modes.prefixMode, false, 'and the chord is done');
+    });
+  }
+  it('typing Esc there still cancels the chord', () => {
+    chord('g<esc>');
+    sm.capture(() => sm.handleKey('escape'));
+    eq(ran, []);
+    eq(getModel().modes.prefixMode, false);
   });
 });
 

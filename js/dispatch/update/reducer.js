@@ -173,11 +173,13 @@ function update(model, msg) {
       // Walk the leader tree. Esc / a second leader press cancels. An
       // unbound token silently drops out. A subtree descends (stay armed);
       // a leaf exits + emits a run_binding Cmd carrying the thunk. kb.resolve
-      // is a pure read of the leaf registry.
+      // is a pure read of the leaf registry. `picked` = a which-key row click:
+      // it names the step itself, so it never cancels — a binding on `<esc>`
+      // (which a typed Esc cancels) fires by clicking its row.
       const cancelled = () =>
         ({ ..._withModes(model, { prefixMode: false }), prefixSeq: [] });
-      if (msg.key === 'escape' || msg.seq === ' ' || msg.key === ' ') return [cancelled(), []];
-      const tok = kb.tokenForEvent(msg.key, msg.seq);
+      if (!msg.picked && (msg.key === 'escape' || msg.seq === ' ' || msg.key === ' ')) return [cancelled(), []];
+      const tok = msg.picked ? msg.key : kb.tokenForEvent(msg.key, msg.seq);
       const nextNode = kb.resolve(kb.nodeForSeq(model.prefixSeq), tok);
       if (!nextNode) return [cancelled(), []];
       const seq = model.prefixSeq.concat(tok);

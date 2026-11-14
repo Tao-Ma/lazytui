@@ -92,7 +92,8 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   whichever form your terminal sends them (the agent prompt's Home/End/Delete
   and the text view's Home/End, written for them, now work too). A binding no
   keystroke can reach (`<esc>` and Space cancel a chord; `<ctrl-a>`, a typo)
-  gets a config warning, also shown by `--lint`.
+  gets a config warning, also shown by `--lint`; it still fires by clicking its
+  row in the which-key popup.
 - **Home, End and other special keys work in nvim in a terminal pane under
   tmux.** Keys reached the program in whatever form your terminal sent them;
   tmux sends Home/End in a form nvim ignores for the `xterm-256color` terminal
