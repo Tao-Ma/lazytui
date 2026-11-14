@@ -75,6 +75,13 @@ reports) and the mouse reports `reportMouse` encodes — go back to the PTY
 would. vim chooses its mouse encoding from the `ESC [ > c` answer; nvim and fzf
 wait on theirs.
 
+The default-colour queries (`OSC 10 ; ?` / `OSC 11 ; ?` — nvim picks
+`background` light/dark from the answer) are answered by the port itself
+(`term-screen` OSC handlers) with the theme's screen colours
+(`ansi.screenColors`), which are what the pane paints default cells with. While
+screen colours are off (`theme_background: false`) default cells show the host's
+own colours, which lazytui doesn't know, so the query stays unanswered.
+
 The scroll fns return whether the viewport actually moved (callers gate their
 repaint on it). Writing PTY output while scrolled up is sticky in xterm (`baseY`
 grows, `viewportY` holds), so the view stays put until the user returns to the

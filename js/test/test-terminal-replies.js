@@ -12,6 +12,9 @@
  *   [1] a real PTY child gets the device-attributes answer
  *   [2] … and the cursor-position answer
  *   [3] the reply wiring dies with the session (no write after destroy)
+ *   [4] the default-colour queries (OSC 10 / 11 — nvim's light/dark probe) are
+ *       answered with the theme's screen colours, which default cells are
+ *       painted with; unanswered while screen colours are off (unknown)
  *
  * Run: node js/test/test-terminal-replies.js
  */
@@ -19,6 +22,9 @@
 
 const { section, assert, eq, report } = require('./test-runner');
 const terminal = require('../io/terminal');
+const ts = require('../io/term-screen');
+const { enableScreenColors } = require('../leaves/text/ansi');
+const { setTheme } = require('../leaves/infra/themes');
 
 // The child asks one question, reads the answer raw, prints it as hex and
 // idles. `stty min 0 time 20` = read returns what arrived within 2 s.
@@ -70,6 +76,32 @@ const hex = (s) => Buffer.from(s, 'latin1').toString('hex');
   await new Promise(res => setTimeout(res, 50));
   eq(writes, [], 'a query reaching a destroyed session writes nothing to its PTY');
   eq(threw && threw.message, null, 'and does not throw');
+
+  section('[4] default-colour queries (OSC 10 / 11)');
+  {
+    // Screen colours off (the default here): the host's colours show, unknown.
+    const off = ts.createScreen(20, 2);
+    const got = [];
+    ts.onScreenReply(off, (d) => got.push(d));
+    await new Promise(res => ts.writeScreen(off, '\x1b]11;?\x07\x1b]10;?\x07', res));
+    eq(got, [], 'screen colours off: no answer (the colours are the host\'s, unknown)');
+  }
+  enableScreenColors(true);
+  setTheme('dracula');                                   // screen: #f8f8f2 on #282a36
+  terminal.ensureSession('pane-osc11', ask('\\033]11;?\\007'), 80, 10, '.');
+  const bg = await answerOf('pane-osc11');
+  eq(bg, hex('\x1b]11;rgb:2828/2a2a/3636\x1b\\'), 'a real child gets the theme background');
+  terminal.ensureSession('pane-osc10', ask('\\033]10;?\\007'), 80, 10, '.');
+  const fg = await answerOf('pane-osc10');
+  eq(fg, hex('\x1b]10;rgb:f8f8/f8f8/f2f2\x1b\\'), '… and the theme foreground');
+  {
+    const s2 = ts.createScreen(20, 2);
+    const got = [];
+    ts.onScreenReply(s2, (d) => got.push(d));
+    await new Promise(res => ts.writeScreen(s2, '\x1b]11;#000000\x07', res));
+    eq(got, [], 'setting a colour (not a query) gets no answer');
+  }
+  enableScreenColors(false);
 
   terminal.destroyAll();
   report();

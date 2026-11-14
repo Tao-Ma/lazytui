@@ -36,6 +36,7 @@
 
 const { Terminal } = require('@xterm/headless');
 const { charWidth } = require('../leaves/text/char-width');
+const { screenColors } = require('../leaves/text/ansi');
 
 // The emulator measures with the frame's width truth. A program's output is laid
 // out by the emulator (where a wide glyph puts the cursor next), then painted by
@@ -63,10 +64,30 @@ const _WIDTH_PROVIDER = {
   },
 };
 
+// A program asks its terminal for the default foreground / background colour
+// (OSC 10 / OSC 11 with `?`) — nvim picks 'background' light/dark from the
+// answer. The emulator has no colours of its own to report; the cells a
+// program leaves at the default colour are painted with the theme's screen
+// colours (ansi.sgrRun), so those are the answer, in xterm's `rgb:RRRR/GGGG/
+// BBBB` form, sent back like any other reply (onScreenReply). Unknown (screen
+// colours off: the host's own colours show) = unanswered, as before; a SET
+// (`OSC 11 ; <colour>`) is not a query and is left alone.
+function _hex4(n) { const h = n.toString(16).padStart(2, '0'); return h + h; }
+function _answerColorQuery(screen, ident, key, data) {
+  if (data !== '?') return false;
+  const c = screenColors();
+  if (!c) return false;
+  const [r, g, b] = c[key];
+  screen.input(`\x1b]${ident};rgb:${_hex4(r)}/${_hex4(g)}/${_hex4(b)}\x1b\\`, false);
+  return true;
+}
+
 function createScreen(cols, rows) {
   const screen = new Terminal({ cols, rows, allowProposedApi: true });
   screen.unicode.register(_WIDTH_PROVIDER);
   screen.unicode.activeVersion = _WIDTH_PROVIDER.version;
+  screen.parser.registerOscHandler(10, (d) => _answerColorQuery(screen, 10, 'fg', d));
+  screen.parser.registerOscHandler(11, (d) => _answerColorQuery(screen, 11, 'bg', d));
   return screen;
 }
 

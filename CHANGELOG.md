@@ -70,6 +70,13 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   the pane no longer shows a block of your terminal's own background inside a
   themed screen. A row can no longer run past the pane's border. Leaving a
   replay (`:record-load`) restores live terminals with their colours.
+- **Programs in a terminal pane can ask for its colours.** nvim (and other
+  programs) ask the terminal for its default background and foreground to pick
+  a light or dark colour scheme; nothing answered, so nvim always assumed
+  dark. With `theme_background` on, the pane now answers with the theme's
+  colours (nvim under `solarized-light` reports `background=light`). With it
+  off, your terminal's own colours show and the question stays unanswered, as
+  before.
 
 ## [0.6.58] — 2026-11-14
 

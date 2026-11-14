@@ -282,6 +282,22 @@ function sgrRun(params) {
   return `\x1b[0;${params}m` + _reassertAfter(('0;' + params).split(';'));
 }
 
+/**
+ * The screen colours as RGB — `{ fg: [r,g,b], bg: [r,g,b] }` — when screen
+ * colours are on and the theme's `screen` slot is a `#rrggbb on #rrggbb` pair,
+ * else null. This is what a cell left at the default colour is painted with; an
+ * embedded terminal answers a program's default-colour queries with it
+ * (io/term-screen). Null = the terminal's own colours show through (unknown).
+ */
+function screenColors() {
+  if (!_screenColorsOn) return null;
+  const v = theme() && theme().screen;
+  const m = v && /^#([0-9a-fA-F]{6})\s+on\s+#([0-9a-fA-F]{6})$/.exec(v.trim());
+  if (!m) return null;
+  const rgb = (h) => [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16));
+  return { fg: rgb(m[1]), bg: rgb(m[2]) };
+}
+
 function richToAnsi(text) {
   _syncTheme();
   // Protect escaped brackets
@@ -522,4 +538,4 @@ function wrapColor(color, content) {
 }
 
 module.exports = {
-  sealMarkup, richToAnsi, sgrRun, stripMarkup, visibleLen, charWidth, esc, wrapColor, stripControls, enableScreenColors, RESET };
+  sealMarkup, richToAnsi, sgrRun, screenColors, stripMarkup, visibleLen, charWidth, esc, wrapColor, stripControls, enableScreenColors, RESET };
