@@ -18,9 +18,12 @@ island. Two documents own the contract; this file is the subsystem map:
 
 `js/io/terminal.js` is a **true leaf** — its only requires are `node-pty` +
 the emulator port `js/io/term-screen.js` (the one importer of `@xterm/headless`,
-plus the pure width leaf `leaves/text/char-width`); it reaches nothing upward
-(no app model, no panel/api, no render, no jobs). It owns a `sessions` map of `{ pty, xterm, cmd, cwd, exited,
-exitCode, jobId }`.
+plus the pure leaves `leaves/text/char-width` — widths — and `leaves/text/ansi` —
+the theme's screen colours); it reaches nothing upward (no app model, no
+panel/api, no render, no jobs). It owns a `sessions` map of `{ pty, screen, cmd,
+cwd, exited, exitCode, jobId, _onDataSub, _replySub }` (`screen` = the emulator
+behind the port; `_replySub` sends its answers back to the child) — or, during
+replay, PTY-less `{ pty: null, screen, replay: true, … }` sessions.
 
 - The **model** holds the PTY *lifecycle*: which tab is a terminal, its
   `cmd`/`cwd`, whether it's placed/active. Reconstructible by replay.
@@ -93,9 +96,12 @@ bottom.
 
 The PTY's lifecycle is reconciled by the **dispatch finalizer**
 (`js/dispatch/runtime/finalize.js`) — NOT by render. After each outermost
-dispatch, if the active tab is a terminal it `ensureSession`s + `resizeSession`s
-to the viewer pane's **committed** geometry (`geo.visibleBoundsFor`, so a
-free-config drag-preview doesn't churn SIGWINCH per zone crossing). Lazy: only
+dispatch, for every visible terminal surface (`panel/terminal-surfaces`
+`visibleTerminalSurfaces` — a pane whose active tab is a terminal and that has
+an interior) it `ensureSession`s + `resizeSession`s to that surface's
+**committed** interior (the committed arrange, so a free-config drag-preview
+doesn't churn SIGWINCH per zone crossing). A minimized pane (a 1-row bar, no
+interior) is not a surface: its PTY keeps its last size. Lazy: only
 the *active* terminal tab ever spawns; `ensureSession` is idempotent, so
 re-running per dispatch is a no-op once the session exists.
 
@@ -167,7 +173,7 @@ wrote over — a terminal beside the one that vanished, or beside the popup's
 pane, keeps its grid. The scrollback tag and the exit prompt are spliced into the grid rows
 (`spliceRuns`), so they are cached and clipped like the grid.
 Render is **read-only** for the PTY (the spawn/resize moved to the finalizer);
-it positions the overlay against the focused viewer's committed (or, mid-drag,
+it positions each surface's overlay against its pane's committed (or, mid-drag,
 preview) bounds.
 
 **Widths.** The emulator measures with the frame's width function:
@@ -203,7 +209,8 @@ no Enter hint while it is minimized (Enter does nothing there), and `x close` vs
 mode the footer names the terminal by the title its border / tab strip shows
 (`[terminal: Dev]` for a `panels: { dev: { type: terminal, title: Dev } }` pane;
 `focusedTerminalTitle`, via `leaves/wm/pane#titleOf`). A terminal has that one
-name: its slice holds only the exit continuation (`onExit`), and the command it
+name: its slice holds only its column `paneId` and the exit continuation
+(`onExit`), and the command it
 runs is the pool entry's `config.cmd`, which the finalizer spawns.
 
 ## Input (`js/dispatch/control/input.js`)
@@ -263,8 +270,10 @@ scrollback (`pane-mouse.handleWheel` keys on `instanceKind(paneId) === 'terminal
 `scrollSession`), not any viewer slice.
 
 `Enter` on a (focused) `terminal` pane calls `dispatch/control/actions.js#
-activateTerminal`: if the session is dead it `restartSession`s sized to the
-pane's bounds, then dispatches `terminal_enter`.
+activateTerminal`: nothing when the pane has no interior (minimized — Enter
+would hand the keyboard to a child you can't see); else, if the session is dead
+it `restartSession`s sized to the pane's interior, then dispatches
+`terminal_enter`.
 
 ## YAML configuration
 

@@ -14,8 +14,9 @@
  * it), and the pane's name is its title (mpane.titleOf — the border, the tab
  * strip and the terminal-mode footer all show it). The session's lifecycle
  * (lazy spawn + resize to the committed pane geometry) is reconciled in the
- * dispatch finalizer, keyed by this instance's id (== the PTY id), and
- * keystrokes are forwarded straight to the PTY (dispatch/control/input.js).
+ * dispatch finalizer, keyed by this instance's id (== the PTY id); terminal-mode
+ * input reaches the PTY from dispatch/control/input.js (keys re-encoded as xterm
+ * sends them, mouse made pane-relative), never through update.
  */
 'use strict';
 

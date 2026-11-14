@@ -123,8 +123,9 @@ greppable.
                     hosts per-tab minted instances (U2e/U2f):
                       info / text-view  lines, scroll, search, select,
                                         cursor, innerH
-                      terminal          paneId, cmd, label (the PTY buffer
-                                        is the io/terminal island, #D14)
+                      terminal          paneId, onExit (the command is the
+                                        pool entry's config.cmd; the PTY
+                                        buffer is the io/terminal island, #D14)
                       agent             transcript, status, inputDraft, …
      groups         list, expanded:Set, tab
      docker         status, stats, inFlight

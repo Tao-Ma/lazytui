@@ -169,7 +169,7 @@ route topology; runs I/O) by design.
 | Home | Module | Writer | Examples |
 |---|---|---|---|
 | **Root model** (centralized chrome) | `model/store.js` (`_modelRef.current`) | `reducer.update` + `modal/*` + `fabric` sub-reducer ONLY | `modes{}` (modal flags), `modal{}` (editing buffers), `currentGroup`, `now`, `theme`, `history`/`diagLog`/`jobs` (store-mirror'd, FIX-1), `metrics[topic]` (metrics-mirror'd, Finding B), `caps` (kitty-keyboard capability), `nav` (jumplist ring, v0.6.7), `fabric{injects,output,wires}` (dataflow fabric, P1.5), `config`, `register`, `focused`, `prefixSeq` (leader-chord token path; live node re-derived via `kb.nodeForSeq`) |
-| **Component slices** (decentralized) | `panel/route.js` instance store | each Component's own `update` ONLY | `layout` (focus/viewMode/arrange/freeConfig), the content-slot panes `info`/`text-view`/`agent` (lines/scroll/search/select/cursor via `tvu`) + `terminal` (cmd/label; grid is foreign), `groups` (tree/expanded), `docker`, `files`, `config-status`, `component-ports` (pinned target), `fabric-wires` (nav), `nav[panelType]` (cursor/scroll/multiSel/filter) |
+| **Component slices** (decentralized) | `panel/route.js` instance store | each Component's own `update` ONLY | `layout` (focus/viewMode/arrange/freeConfig), the content-slot panes `info`/`text-view`/`agent` (lines/scroll/search/select/cursor via `tvu`) + `terminal` (paneId + onExit; the command is its pool entry's `config.cmd`, the grid is foreign), `groups` (tree/expanded), `docker`, `files`, `config-status`, `component-ports` (pinned target), `fabric-wires` (nav), `nav[panelType]` (cursor/scroll/multiSel/filter) |
 | **Out-of-TEA stores** (global-by-nature) | `feature/*`, `io/*` | module-local mutators | `feature/jobs` (live child procs), `feature/history`, `io/diag-log` (ring buffer), `io/terminal` (xterm buffers) |
 
 ---
@@ -1216,7 +1216,8 @@ select / cursor: `update` handles its OWN content arms, then falls through to
 All three stamp `innerH` via their own `augmentMsg` (the viewer-FIX-2 seam — the
 pane's committed viewport height, so scroll clamps stay pure of geometry). The
 fourth, **terminal**, is a FOREIGN component (its grid lives in `io/terminal`), so
-its `update` is a no-op and it holds only `{cmd,label}`.
+its `update` is a no-op and it holds only `{paneId, onExit}` (the command is
+its pool entry's `config.cmd`; its name is the entry's title).
 
 **Shared `tvu` vocabulary** (`leaves/text/text-view-update`; `ownKind` gates the
 key state machine): `viewer_scroll` · `viewer_search_enter`/`_key`/`_nav`/
@@ -1283,7 +1284,7 @@ lives off-model in `io/agent`; every visible byte is folded here by pure arms so
 
 **(d) terminal (`kind: 'terminal'`)** — the embedded PTY as a pane (U2d). FOREIGN:
 the xterm grid lives in `io/terminal`, painted by the terminal OVERLAY over the
-pane's inner bounds; `render` draws only chrome. `slice.{cmd,label,onExit}`. `update`
+pane's inner bounds; `render` draws only chrome. `slice.{paneId,onExit}`. `update`
 is a **no-op** — no reducer-managed content; the PTY lifecycle (lazy spawn + resize)
 is reconciled in the dispatch finalizer; terminal-mode input goes to the PTY from
 `input.js` (§Terminal-mode input — keys re-encoded as xterm sends them, mouse made

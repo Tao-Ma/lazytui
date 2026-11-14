@@ -212,6 +212,13 @@ order was by **(correctness value × tractability)**.
    panes through the real widening path. Seam + fix verified by an end-to-end
    boot probe (two panes, `config`/`prod` → routed correctly). Suite 92/93
    (xz env-only) + 9/9 smokes.
+   *Update 2026-11-14 (dfa24dbe):* the same latent bug had a twin in every
+   other init that read its settings under `config` (an agent's `backend`, a
+   text-view's `lines`/`cap` — boot's pane def had no `config`, a tab switch's
+   did). One builder now makes every pane def (`leaves/wm/pane#panelDef`:
+   the settings top-level AND under `config`) and each tab's seed comes from
+   its OWN pool entry, so `_branchFromPaneDef` reads `config.branch` like the
+   rest (docs/PLUGINS.md §The pane def).
 
 **5. ✅ DONE 2026-06-15 — `groupActions` purity contract enforced in
    production + opt-in memoization.** Originally framed as enforce-vs-accept

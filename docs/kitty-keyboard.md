@@ -129,7 +129,7 @@ oracle — the same shape used for `charWidth` (NOT "borrowing"):**
    is independent implementation, not a derivative work. Cite the spec
    URL as a REFERENCE (engineering hygiene), not as a license step.
 2. **Reference impl as a differential-test ORACLE** (like `test-char-width.js`
-   pins `charWidth` against @xterm): best case reuse `@xterm/headless`
+   pins `charWidth` against measured host widths — glibc `wcwidth` + tmux): best case reuse `@xterm/headless`
    (already an MIT dep) *if* it round-trips kitty input (needs
    verification); fallback runs `kitty-keyboard` (MIT) as a **dev-only**
    oracle (Node 24 in CI is fine even though runtime targets 18; a
