@@ -101,6 +101,18 @@ const hex = (s) => Buffer.from(s, 'latin1').toString('hex');
     await new Promise(res => ts.writeScreen(s2, '\x1b]11;#000000\x07', res));
     eq(got, [], 'setting a colour (not a query) gets no answer');
   }
+  {
+    // One OSC, several slots — each the next dynamic colour (xterm): `10;?;?`
+    // asks for the foreground AND the background; a slot past 11 (the cursor
+    // colour) has no theme colour. It went unanswered (pre-release review
+    // 2026-11-14: only a bare `?` was a query).
+    const s3 = ts.createScreen(20, 2);
+    const got = [];
+    ts.onScreenReply(s3, (d) => got.push(d));
+    await new Promise(res => ts.writeScreen(s3, '\x1b]10;?;?;?\x07', res));
+    eq(got, ['\x1b]10;rgb:f8f8/f8f8/f2f2\x1b\\', '\x1b]11;rgb:2828/2a2a/3636\x1b\\'],
+      'fg then bg answered; the cursor-colour slot is not');
+  }
   enableScreenColors(false);
 
   terminal.destroyAll();

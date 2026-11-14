@@ -72,23 +72,35 @@ const _WIDTH_PROVIDER = {
 // colours (ansi.sgrRun), so those are the answer, in xterm's `rgb:RRRR/GGGG/
 // BBBB` form, sent back like any other reply (onScreenReply). Unknown (screen
 // colours off: the host's own colours show) = unanswered, as before; a SET
-// (`OSC 11 ; <colour>`) is not a query and is left alone.
+// (`OSC 11 ; <colour>`) is not a query and is left alone. As in xterm, one OSC
+// can carry several slots, each the next dynamic colour: `OSC 10 ; ? ; ?` asks
+// for the foreground AND the background — each `?` gets its own answer (slots
+// past 11 — cursor colour, … — have no theme colour: unanswered). The reply
+// ends in ST: xterm.js's OSC handler doesn't say whether the query ended in
+// BEL, and programs (nvim, vim, fzf) take ST either way.
 function _hex4(n) { const h = n.toString(16).padStart(2, '0'); return h + h; }
-function _answerColorQuery(screen, ident, key, data) {
-  if (data !== '?') return false;
+const _DYNAMIC = { 10: 'fg', 11: 'bg' };
+function _answerColorQuery(screen, ident, data) {
   const c = screenColors();
   if (!c) return false;
-  const [r, g, b] = c[key];
-  screen.input(`\x1b]${ident};rgb:${_hex4(r)}/${_hex4(g)}/${_hex4(b)}\x1b\\`, false);
-  return true;
+  const slots = data.split(';');
+  let answered = false;
+  slots.forEach((v, i) => {
+    const key = _DYNAMIC[ident + i];
+    if (v !== '?' || !key) return;
+    const [r, g, b] = c[key];
+    screen.input(`\x1b]${ident + i};rgb:${_hex4(r)}/${_hex4(g)}/${_hex4(b)}\x1b\\`, false);
+    answered = true;
+  });
+  return answered;
 }
 
 function createScreen(cols, rows) {
   const screen = new Terminal({ cols, rows, allowProposedApi: true });
   screen.unicode.register(_WIDTH_PROVIDER);
   screen.unicode.activeVersion = _WIDTH_PROVIDER.version;
-  screen.parser.registerOscHandler(10, (d) => _answerColorQuery(screen, 10, 'fg', d));
-  screen.parser.registerOscHandler(11, (d) => _answerColorQuery(screen, 11, 'bg', d));
+  screen.parser.registerOscHandler(10, (d) => _answerColorQuery(screen, 10, d));
+  screen.parser.registerOscHandler(11, (d) => _answerColorQuery(screen, 11, d));
   return screen;
 }
 
