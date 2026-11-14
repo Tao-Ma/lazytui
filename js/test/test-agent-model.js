@@ -243,6 +243,20 @@ describe('[agent model] agent_input (A4): draft editing', () => {
     s = inp(s, 'paste', 'two\nlines');
     eq(s.inputDraft.text, 'two lines');
   });
+  it('an emoji is one step: Backspace / Delete / ← / → never split its surrogate pair', () => {
+    // Round-2 review 2026-11-14: they stepped one UTF-16 unit.
+    let s = agent.init('p1', null);
+    s = inp(s, 'paste', 'go 🚀');
+    s = inp(s, 'backspace', '\x7f');
+    eq(s.inputDraft, { text: 'go ', cursor: 3 }, 'Backspace takes the emoji whole');
+    s = inp(s, 'paste', '🚀!');
+    s = inp(s, 'left'); s = inp(s, 'left');
+    eq(s.inputDraft.cursor, 3, '← steps over the emoji (from after it to before it)');
+    s = inp(s, 'right');
+    eq(s.inputDraft.cursor, 5, '→ likewise');
+    s = inp(s, 'left'); s = inp(s, 'delete');
+    eq(s.inputDraft, { text: 'go !', cursor: 3 }, 'Delete takes it whole');
+  });
   it('unhandled keys are identity no-ops', () => {
     const s = agent.init('p1', null);
     assert(inp(s, 'up') === s, 'up reserved');

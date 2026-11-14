@@ -88,6 +88,15 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   gave up. (Keys on a focused terminal
   pane go to lazytui until you press Enter — so `p` opens the action palette;
   after Enter they go to the program until `Ctrl+\`.)
+- **Wide text in the `:` prompt and the agent prompt.** The `:` prompt's
+  cursor sat left of the text's end after a pasted CJK or emoji argument, and
+  after most keystrokes it sat in the dropdown instead of on the prompt;
+  Backspace cut a pasted emoji in half; text with `[…]` drew as markup
+  (`a[0].txt` showed `a.txt`). The agent prompt's draft ran past the pane with
+  CJK text, its cursor could cut an emoji in two, its editing keys split
+  emoji, and in a narrow pane the cursor was cut off. All measured in columns
+  and codepoints now.
+- **`:` with text matching no command, then ↑, no longer crashes lazytui.**
 - **Leader bindings on named keys fire from the keyboard.** A `keys:` binding
   on `<tab>`, `<backspace>`, `<home>`, `<end>`, `<insert>`, `<delete>` or
   `<f1>`–`<f12>` — or on the vim spellings `<cr>`, `<enter>`, `<bs>`, `<del>` —

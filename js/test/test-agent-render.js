@@ -85,6 +85,17 @@ describe('[agent render] input row', () => {
     const out = String(draw({ ...s, inputDraft: { text: emo, cursor: at } }, { typing: true }));
     assert(out.includes('[reverse]🚀[/]'), `the cursor cell holds the whole emoji: ${JSON.stringify(out.slice(out.indexOf('›'), out.indexOf('›') + 40))}`);
   });
+  it('a pane narrower than 13 columns still shows the cursor cell', () => {
+    // An 8-column floor on the window ran the row past a narrow pane, and the
+    // leaf truncation cut the cursor off (round-2 review 2026-11-14).
+    const { visibleLen } = require('../leaves/text/ansi');
+    let s = agent.init('p1', null);
+    for (const w of [8, 10, 12]) {
+      const out = String(draw({ ...s, inputDraft: { text: 'abcdefghijklmnop', cursor: 16 } }, { w, typing: true }));
+      const row = out.split('\n').find(l => l.includes('›'));
+      assert(row.includes('[reverse] [/]') && visibleLen(row) <= w, `w=${w}: ${JSON.stringify(plain(row))}`);
+    }
+  });
   it('not typing: full (leaf-truncated) text, no cursor cell', () => {
     let s = agent.init('p1', null);
     s = { ...s, inputDraft: { text: 'draft here', cursor: 2 } };

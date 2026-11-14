@@ -301,12 +301,17 @@ function _input(slice, msg) {
   }
   let text = d.text || '';
   let cursor = Math.max(0, Math.min(text.length, d.cursor | 0));
+  // Edits and moves step one CODEPOINT: a pasted emoji is two UTF-16 units, and
+  // stepping by one left half a surrogate pair behind (Backspace) or put the
+  // cursor inside it (round-2 review 2026-11-14).
+  const prev = (i) => (i >= 2 && _isLow(text, i - 1) && _isHigh(text, i - 2) ? i - 2 : Math.max(0, i - 1));
+  const next = (i) => (_isHigh(text, i) && _isLow(text, i + 1) ? i + 2 : Math.min(text.length, i + 1));
   if (key === 'backspace' || seq === '\x7f') {
-    if (cursor > 0) { text = text.slice(0, cursor - 1) + text.slice(cursor); cursor--; }
+    if (cursor > 0) { const p = prev(cursor); text = text.slice(0, p) + text.slice(cursor); cursor = p; }
   } else if (key === 'delete') {
-    text = text.slice(0, cursor) + text.slice(cursor + 1);
-  } else if (key === 'left')  { cursor = Math.max(0, cursor - 1); }
-  else if (key === 'right')   { cursor = Math.min(text.length, cursor + 1); }
+    text = text.slice(0, cursor) + text.slice(next(cursor));
+  } else if (key === 'left')  { cursor = prev(cursor); }
+  else if (key === 'right')   { cursor = next(cursor); }
   else if (key === 'home')    { cursor = 0; }
   else if (key === 'end')     { cursor = text.length; }
   else if (seq === '\x15')    { text = ''; cursor = 0; }                 // Ctrl+U (prompt/cmdline parity)
@@ -402,6 +407,9 @@ function _statusLine(slice) {
  *  units — the draft is ASCII-gated; the cmdline-field idiom) so typing a
  *  message longer than the pane never goes blind: the leaf renderer right-
  *  truncates rows, which would otherwise cut the cursor + new chars off. */
+const _isHigh = (s, i) => { const c = s.charCodeAt(i); return c >= 0xd800 && c <= 0xdbff; };
+const _isLow = (s, i) => { const c = s.charCodeAt(i); return c >= 0xdc00 && c <= 0xdfff; };
+
 function _inputLine(slice, typing, w) {
   const t = theme();
   const d = slice.inputDraft || { text: '', cursor: 0 };
@@ -418,7 +426,9 @@ function _inputLine(slice, typing, w) {
   const cw = chars.map(ch => charWidth(ch.codePointAt(0)));
   // Budget: pane interior (w-2) minus the '› ' prefix and one slack column
   // for the left '…' marker; the cursor cell may sit one past the text end.
-  const avail = Math.max(8, (w | 0) - 5);
+  // No floor above what the pane has: an 8-column floor ran the row past a
+  // narrow pane, which cut the cursor off (round-2 review).
+  const avail = Math.max(1, (w | 0) - 5);
   const cursorW = c < chars.length ? cw[c] : 1;
   let toCursor = 0;                                  // columns before the cursor
   for (let i = 0; i < c; i++) toCursor += cw[i];
