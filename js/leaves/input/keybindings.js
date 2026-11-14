@@ -67,12 +67,24 @@ const _PRODUCIBLE = new Set([
 
 /** The steps of `seq` no keystroke can produce inside a chord (so the binding
  *  is reachable only by clicking its which-key row): a named token outside the
- *  vocabulary, `escape`, or a space (both cancel the chord). [] when every step
- *  is typeable; null when `seq` doesn't parse (parseSeq reports that). */
+ *  vocabulary, `escape`, or a space (both cancel the chord) — each AS WRITTEN
+ *  (`<esc>`, not the `escape` it names). [] when every step is typeable; null
+ *  when `seq` doesn't parse (parseSeq reports that). */
 function unreachableSteps(seq) {
   let steps;
-  try { steps = parseSeq(seq); } catch (_) { return null; }
-  return steps.filter(t => (t.length === 1 ? t === ' ' : !_PRODUCIBLE.has(t)));
+  try { steps = _steps(seq); } catch (_) { return null; }
+  return steps.filter(({ name }) => (name.length === 1 ? name === ' ' : !_PRODUCIBLE.has(name)))
+    .map(({ written }) => written);
+}
+
+/** The named keys a chord step can be typed as, and the alias spellings that
+ *  name one of them — the vocabulary the config warning lists (an alias of an
+ *  untypeable key, `<esc>`, is not one). */
+function typeableKeyNames() {
+  return {
+    names: [..._PRODUCIBLE],
+    aliases: Object.keys(_ALIASES).filter(a => _PRODUCIBLE.has(_ALIASES[a])),
+  };
 }
 
 /**
@@ -83,6 +95,12 @@ function unreachableSteps(seq) {
  */
 function parseSeq(str) {
   if (Array.isArray(str)) return str.slice();
+  return _steps(str).map(t => t.name);
+}
+
+// The steps of a sequence string: `{ name, written }` — the key name it matches
+// by, and how the config wrote it (`<esc>` names `escape`).
+function _steps(str) {
   if (typeof str !== 'string') throw new Error('key sequence must be a string or array');
   let s = str.trim();
   // Strip an explicit leader prefix if present (case-insensitive).
@@ -96,12 +114,12 @@ function parseSeq(str) {
       if (close === -1) throw new Error(`unterminated <…> token in "${str}"`);
       const name = s.slice(i + 1, close).toLowerCase();
       if (!name) throw new Error(`empty <> token in "${str}"`);
-      tokens.push(_ALIASES[name] || name);
+      tokens.push({ name: _ALIASES[name] || name, written: s.slice(i, close + 1) });
       i = close + 1;
     } else if (/\s/.test(ch)) {
       i += 1;  // allow spaces as visual separators: "g g" === "gg"
     } else {
-      tokens.push(ch);
+      tokens.push({ name: ch, written: ch });
       i += 1;
     }
   }
@@ -212,4 +230,5 @@ function continuations(node) {
 module.exports = {
   rootNode, clearBindings, parseSeq, registerKeyBinding,
   labelSubtree, resolve, nodeForSeq, tokenForEvent, continuations, unreachableSteps,
+  typeableKeyNames,
 };

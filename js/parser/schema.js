@@ -14,7 +14,7 @@ const { parseFabricAddr, isValidFabricName, isValidFabricComponentName } = requi
 const { compileParse, compileExtract } = require('../fabric/parse');
 const { compileCommand, commandHoles } = require('../fabric/command');
 const { isShadowedEnvName } = require('../leaves/security/env-shadow');
-const { unreachableSteps } = require('../leaves/input/keybindings');
+const { unreachableSteps, typeableKeyNames } = require('../leaves/input/keybindings');
 
 const VALID_ACTION_TYPES = new Set(['run', 'spawn', 'background']);
 // Per-action re-run behavior for the streamed output buffer: 'replace' (default)
@@ -627,6 +627,16 @@ function validateKeymap(block) {
   }
 }
 
+// The chord-step vocabulary for the warning, from the keybindings leaf (the one
+// list the keyboard side matches by) — not a hand copy.
+function _typeableKeysText() {
+  const { names, aliases } = typeableKeyNames();
+  const fkeys = names.filter(n => /^f\d+$/.test(n));
+  const rest = names.filter(n => !/^f\d+$/.test(n));
+  return `Typeable named keys: ${rest.join(' ')} f1–f${fkeys.length}` +
+    (aliases.length ? ` (aliases ${aliases.join(' ')})` : '');
+}
+
 function validateKeys(keysBlock, warnings) {
   if (!isMapping(keysBlock)) throw new SchemaError("'keys' must be a mapping");
   for (const [seq, spec] of Object.entries(keysBlock)) {
@@ -641,8 +651,7 @@ function validateKeys(keysBlock, warnings) {
         code: 'keys.unreachable_step',
         message: `keys: '${seq}' can't be typed — ${dead.map(t => `'${t}'`).join(', ')} ` +
           `${dead.length > 1 ? 'are' : 'is'} not a key a chord step can be (Esc and Space cancel the chord); ` +
-          'it only fires by clicking its which-key row. Typeable named keys: up down left right pageup ' +
-          'pagedown home end insert delete tab backspace return backtab f1–f12 (aliases cr enter esc bs del ins s-tab)',
+          `it only fires by clicking its which-key row. ${_typeableKeysText()}`,
       });
     }
     if (!isMapping(spec)) {

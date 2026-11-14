@@ -118,7 +118,15 @@ describe('[5] keys: warns for a step no keystroke can produce', () => {
   it('<esc> (cancels the chord), <ctrl-a> and a typo are flagged', () => {
     const w = lint({ 'g<esc>': { builtin: 'refresh' }, '<ctrl-a>': { builtin: 'refresh' }, 'g<hom>': { builtin: 'refresh' } });
     eq(w.length, 3);
-    assert(/'escape'/.test(w[0]) && /'ctrl-a'/.test(w[1]) && /'hom'/.test(w[2]), 'each names its step');
+    assert(/'<esc>'/.test(w[0]) && /'<ctrl-a>'/.test(w[1]) && /'<hom>'/.test(w[2]), 'each names its step as written');
+  });
+  it('the message lists the vocabulary the keyboard side matches (not a hand copy)', () => {
+    const [msg] = lint({ 'g<esc>': { builtin: 'refresh' } });
+    const listed = msg.slice(msg.indexOf('Typeable named keys:'));
+    for (const n of ['home', 'pageup', 'ctrl-r', 'f1–f12']) assert(listed.includes(n), `lists ${n}`);
+    const aliases = (/\(aliases ([^)]*)\)/.exec(listed) || [])[1] || '';
+    for (const a of ['cr', 'pgup', 'pgdn', 'pgdown']) assert(aliases.split(' ').includes(a), `alias ${a} listed`);
+    assert(!aliases.split(' ').includes('esc'), 'esc is not offered as typeable');
   });
   it('typeable sequences are not', () => {
     eq(lint({ 'g<home>': { builtin: 'refresh' }, '<tab>x': { builtin: 'refresh' }, 'g<cr>': { builtin: 'refresh' }, gg: { builtin: 'refresh' } }), []);
