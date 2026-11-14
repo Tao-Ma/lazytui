@@ -59,7 +59,7 @@
 'use strict';
 
 const hitMap = require('../../panel/hit-map');
-const { paintNow: render } = require('../../leaves/infra/render-queue');
+const { paintNow: render, paintSync } = require('../../leaves/infra/render-queue');
 const { seqForKey } = require('../../leaves/render/hints');
 // Module objects (not destructured): the dispatch seams are read at call time,
 // which is also what lets tests spy on dispatch.handleKey / applyMsg.
@@ -70,6 +70,9 @@ const intent = require('./intent');
 const acts = require('./mouse-acts');
 const capture = require('./pointer-capture');
 const eventLog = require('../../io/event-log');
+// The pane-body acts + the text-select / graph-zoom controllers register
+// themselves on load (Release 3) — loaded here so every router has them.
+require('./pane-mouse');
 
 const DISCRETE = new Set(hitMap.DISCRETE_GESTURES);
 
@@ -99,6 +102,7 @@ function realizeHandler(h, ctx) {
   if (h.capture) { _startCapture(h, ctx); return; }
   if (h.act) {
     const req = acts.realize(h, ctx && ctx.ev);
+    if (req === false) { if (ctx) ctx.clean = true; return; }   // nothing changed → no paint
     if (req && typeof req === 'object' && req.capture) _startCapture(req, ctx);
   }
 }
@@ -118,8 +122,9 @@ function _realizeAndPaint(hit, kind, mx, my) {
   // like phantom keystrokes.
   eventLog.record('input', { kind: 'mouse', gesture: kind, owner: hit.region.owner, id: hit.region.id });
   try {
-    realizeHandler(hit.handler, { ev: _ev(mx, my), owner: hit.region.owner });
-    if (!_endsWithKey(hit.handler)) render();
+    const ctx = { ev: _ev(mx, my), owner: hit.region.owner };
+    realizeHandler(hit.handler, ctx);
+    if (!_endsWithKey(hit.handler) && !ctx.clean) render();
     return;
   } catch (e) {
     // A throwing handler must not escape into the stdin pipeline. The event is
@@ -144,6 +149,7 @@ function route(kind, mx, my, model) {
     if (dirty) render();
     return true;
   }
+  if (kind === 'hover') return _hover(mx, my);
   if (!DISCRETE.has(kind)) return false;
   if (kind === 'press') {
     // A press while a drag is held = a lost release (the terminal never sent
@@ -178,13 +184,51 @@ function route(kind, mx, my, model) {
   }
   if (kind === 'press' || kind === 'double') _lastPress = null;
 
-  if (!fresh) return hitMap.claims(mx, my);   // stale: swallow what the old frame drew; else legacy
-  const hit = hitMap.resolve(mx, my, kind);
+  let hit;
+  if (!fresh) {
+    // Stale frame (a batched chunk — the screen still shows the pre-key frame).
+    // It drew something visible here → the click was aimed at it → swallow.
+    if (hitMap.claims(mx, my)) return true;
+    // It drew nothing visible here (an in-grid mode with no regions over the
+    // panes — filter / search / agent, or an invisible below-chrome backdrop):
+    // repaint now and resolve against the fresh frame, taking only what the
+    // legacy cascade would have taken against live state — a pane body or the
+    // empty screen. A popup the batched key opened must not run its outside
+    // policy on a click aimed at a screen without it (Release 3, decision A).
+    paintSync();
+    if (!hitMap.stampsEqual(hitMap.frameStamp(), hitMap.stampOf(model, layoutSlice))) return false;   // no renderer (unit tests)
+    hit = hitMap.resolve(mx, my, kind);
+    if (!hit || hit.region.z > hitMap.BANDS.BODY) return false;
+  } else {
+    hit = hitMap.resolve(mx, my, kind);
+  }
   if (!hit) return false;
   if (hit.handler === 'legacy') return false;   // owned here, realized by the legacy cascade
   if (moved(hit)) return true;                  // its pane switched tabs → swallow
   if (kind === 'press') _lastPress = { mx, my, owner: hit.region.owner, id: hit.region.id, repeat: !!hit.region.repeat };
   _realizeAndPaint(hit, kind, mx, my);
+  return true;
+}
+
+// The hover gesture (mode 1003 button-less motion): the topmost region with a
+// hover handler realizes it (a pane body's `pane-hover` act — coalesced per
+// cell, it reports whether anything changed). Anything else — no region, a
+// region without one, a popup box or backdrop — means the pointer is over no
+// hoverable body: clear (HOVER_OUT), so a value box can't linger under an
+// overlay. A region that DECLARES hover 'swallow' (the replay owner) is a true
+// no-op. Never stale-checked: hover is display-only and the next paint
+// republishes; never event-logged (it fires per cell).
+const HOVER_OUT = Object.freeze({ act: 'pane-hover', paneId: null });
+function _hover(mx, my) {
+  const hit = hitMap.resolve(mx, my, 'hover');
+  if (hit && hit.region.on && hit.region.on.hover === 'swallow') return true;
+  const h = hit && hit.handler && typeof hit.handler === 'object' && hit.handler.act ? hit.handler : HOVER_OUT;
+  try {
+    if (acts.realize(h, _ev(mx, my))) render();
+  } catch (e) {
+    console.error('[mouse-router] hover', e && e.message);
+    try { eventLog.record('error', { where: 'mouse_router', kind: 'hover', mx, my, message: e && e.message, stack: e && e.stack }); } catch (_) {}
+  }
   return true;
 }
 

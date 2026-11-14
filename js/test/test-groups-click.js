@@ -8,7 +8,7 @@
  * (never firing nav_select), so clicking a leaf group never activated it. The
  * real click path already routes press → intent.selectAt → dispatch.navSelect →
  * `nav_select` → (groups branch) `groups_selected` → set_current_group
- * (input.js body arm + reducer.js nav_select arm). This pins that wiring
+ * (the pane-press act in dispatch/control/pane-mouse.js + reducer.js nav_select arm). This pins that wiring
  * end-to-end through the real render + hit-test geometry — the groups-click path
  * had NO test before.
  *

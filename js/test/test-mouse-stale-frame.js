@@ -113,22 +113,52 @@ describe('[4] stale frame drew nothing there → legacy decides', () => {
     eq(getModel().modes.paneMenuMode, false, '`T` closed the dropdown');
     eq(api.getInstanceSlice('layout').focus, 'pane-detail', 'the click focused the pane the user saw');
   });
-  it('`+` (view expand) + a click on a pane body → no region there, legacy focuses what is under it now', () => {
+});
+
+describe('[5] Release 3 — pane bodies on the map', () => {
+  const geo = require('../leaves/wm/geometry');
+  const layout = () => api.getInstanceSlice('layout');
+  it('`+` (view expand) + a click on a pane body → the stale frame drew that body → swallowed', () => {
     sm.bootFresh();
     sm.resize(120, 30);
     sm.capture(() => api.dispatchMsg(api.wrap('layout', { type: 'view_set', mode: 'normal' })));
+    sm.capture(() => api.dispatchMsg(api.wrap('layout', { type: 'focus_set', focus: 'pane-groups' })));
     hc.paint();
-    const geo = require('../leaves/wm/geometry');
-    const b = geo.visibleBoundsFor(api.getInstanceSlice('layout'), 'pane-detail');
+    const b = geo.visibleBoundsFor(layout(), 'pane-detail');
     const mx = b.x + 3, my = b.y + b.h - 3;
-    assert(!require('../panel/hit-map').claims(mx, my), 'precondition: no region drawn there');
+    assert(require('../panel/hit-map').claims(mx, my), 'precondition: the body region is drawn there');
     chunk('+' + sgr(mx, my));
-    eq(api.getInstanceSlice('layout').viewMode, 'half', 'the key ran (geometry changed → stale)');
-    const now = geo.visibleBoundsFor(api.getInstanceSlice('layout'), 'pane-detail');
-    if (now && mx >= now.x && mx < now.x + now.w && my >= now.y && my < now.y + now.h) {
-      eq(api.getInstanceSlice('layout').focus, 'pane-detail', 'legacy focused the pane now under the pointer');
-    }
+    eq(layout().viewMode, 'half', 'the key ran (geometry changed → stale)');
+    eq(layout().focus, 'pane-groups', 'the click aimed at the old layout did not focus anything');
     sm.capture(() => api.dispatchMsg(api.wrap('layout', { type: 'view_set', mode: 'normal' })));
+  });
+  it('decision A: leaving an in-grid mode (no regions over the panes) + a body click → repaint, the click reaches the pane', () => {
+    sm.bootFresh();
+    sm.resize(120, 30);
+    sm.capture(() => api.dispatchMsg(api.wrap('layout', { type: 'view_set', mode: 'normal' })));
+    sm.capture(() => api.dispatchMsg(api.wrap('layout', { type: 'focus_set', focus: 'pane-groups' })));
+    sm.capture(() => sm.applyMsg({ type: 'mode_set', flag: 'filterMode' }));
+    hc.paint();
+    const b = geo.visibleBoundsFor(layout(), 'pane-detail');
+    const mx = b.x + 3, my = b.y + b.h - 3;
+    assert(!require('../panel/hit-map').claims(mx, my), 'precondition: under filterMode nothing is drawn over the body');
+    chunk('\r' + sgr(mx, my));
+    eq(getModel().modes.filterMode, false, 'Enter left filter mode');
+    eq(layout().focus, 'pane-detail', 'the click focused the pane the user saw');
+  });
+  it('decision A: only a body / the empty screen is taken after the repaint — a popup the batched key opened keeps its outside policy dormant', () => {
+    sm.bootFresh();
+    sm.resize(120, 30);
+    sm.capture(() => api.dispatchMsg(api.wrap('layout', { type: 'view_set', mode: 'normal' })));
+    sm.capture(() => sm.applyMsg({ type: 'mode_set', flag: 'filterMode' }));
+    hc.paint();
+    const b = geo.visibleBoundsFor(layout(), 'pane-detail');
+    const mx = b.x + 3, my = b.y + b.h - 3;
+    // Enter leaves filter, `x` opens the command menu, then the click — aimed at
+    // a screen without the menu. Its backdrop (outside = Esc) must not fire.
+    chunk('\r' + 'x' + sgr(mx, my));
+    eq(getModel().modes.menuOpen, true, 'the menu the key opened is still open');
+    sm.capture(() => sm.applyMsg({ type: 'menu_close' }));
   });
 });
 

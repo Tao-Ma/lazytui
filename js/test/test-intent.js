@@ -99,16 +99,20 @@ describe('[Theme F P2] mouse intents realize to the prior dispatch', () => {
     eq(calls, [['pane-d2', 7]], 'navSelect(pane-d2, 7)');
   });
 
-  it('scrollAt(mx,my,delta) → _handleWheel passthrough, returns its result', () => {
+  it('scrollAt(mx,my,delta[,paneId]) → pane-mouse.handleWheel passthrough, returns its result', () => {
+    const paneMouse = require('../dispatch/control/pane-mouse');
     let ret;
-    const calls = spy(input, '_handleWheel', () => { ret = intent.realize(intent.scrollAt(5, 9, +1)); });
+    const calls = spy(paneMouse, 'handleWheel', () => {
+      ret = intent.realize(intent.scrollAt(5, 9, +1));
+      intent.realize(intent.scrollAt(5, 9, -1, 'pane-a'));   // the body region names its pane (R3)
+    });
     // spy() swaps in a recorder returning undefined; assert the delegate
     // call shape. A separate check pins the return-value passthrough.
-    eq(calls, [[5, 9, 1]], '_handleWheel(5, 9, +1)');
-    const real = input._handleWheel;
-    input._handleWheel = () => true;
-    assert(intent.realize(intent.scrollAt(0, 0, -1)) === true, 'returns _handleWheel result for paint gating');
-    input._handleWheel = real;
+    eq(calls, [[5, 9, 1, null], [5, 9, -1, 'pane-a']], 'handleWheel(mx, my, delta, paneId)');
+    const real = paneMouse.handleWheel;
+    paneMouse.handleWheel = () => true;
+    assert(intent.realize(intent.scrollAt(0, 0, -1)) === true, 'returns handleWheel result for paint gating');
+    paneMouse.handleWheel = real;
   });
 });
 

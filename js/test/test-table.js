@@ -120,7 +120,7 @@ describe('[table] render — sorted, columnar (real paint)', () => {
 // clamped to innerH) also diverged from the painted scroll (innerH-1) — the two
 // errors CANCELLED while scrolled but not at the top, so the bug only showed at
 // scroll 0. The fix maps clicks through the painted geometry (headerRows +
-// captured scroll); this pins both regimes. See input.js:_rowIndexAt.
+// captured scroll); this pins both regimes. See dispatch/control/pane-mouse.js:_rowIndexAt.
 describe('[table] click selects the row under the cursor (header-aware)', () => {
   const nav = require('../panel/nav-state');
   const rq = require('../leaves/infra/render-queue');

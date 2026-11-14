@@ -30,8 +30,8 @@ const { esc } = require('../leaves/text/ansi');
 
 function _hv(model) {
   const md = (model && model.modes) || {};
-  // Hidden under ANY chain mode (the predicate input._handleHover gates new
-  // hovers on) OR any footer-modal mode. Chain alone missed terminalMode
+  // Hidden under ANY chain mode (pane bodies publish their hover handler only
+  // when none is active — no new hovers then) OR any footer-modal mode. Chain alone missed terminalMode
   // (modal, non-chain): every mouse byte goes to the PTY there, so graph_hover
   // can never clear and the tooltip froze over the pane (review C6). Modal
   // alone missed confirm / register-popup / cmdline / pane-menu / jobs /

@@ -5,7 +5,8 @@
  * Repro (pre-fix): hover a stats graph → tooltip active; open confirm with no
  * further mouse motion → the tooltip stayed active at z 999, ABOVE confirm
  * (z 10), because its gate was modes.isModal (false for confirm & co.) rather
- * than the chain-mode predicate _handleHover itself uses.
+ * than the chain-mode predicate the hover gesture itself uses (pane bodies
+ * publish their hover handler only when no chain mode is active).
  *
  * Run: node js/test/test-hover-tooltip-chain-gate.js
  */
@@ -35,6 +36,7 @@ function hoverGraph() {
   const ls = api.getInstanceSlice('layout');
   const paneId = mpool.allPanesInColumns(ls.arrange).find((p) => p.type === 'stats').paneId;
   const b = geo.visibleBoundsFor(ls, paneId, route.resolveViewerPaneId());
+  sm.capture(sm.render);   // hover resolves on the painted hit map (Release 3)
   sm.capture(() => sm.handleMouse('hover', b.x + 58, b.y + 15));   // park over the graph centre
   sm.capture(sm.render);
 }

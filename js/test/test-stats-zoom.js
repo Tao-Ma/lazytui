@@ -148,7 +148,7 @@ describe('[stats-zoom] live drag band — highlight the range mid-drag, clear on
     const { paneId, b } = pane();
     const psel = require('../panel/select-view');
     const before = ((getModel().register || {}).history || []).length;
-    // A full drag: press → motion (would begin a text selection if _armedSelect stayed armed).
+    // A full drag: press → motion (would begin a text selection if the text-select capture also started).
     sm.capture(() => sm.handleMouse('press', b.x + 30 + 2, b.y + 2 + 2));
     sm.capture(() => sm.handleMouse('motion', b.x + 50 + 2, b.y + 2 + 2));
     assert(!psel.selectionFor(paneId), 'no text selection armed on the graph (zoom won the press)');

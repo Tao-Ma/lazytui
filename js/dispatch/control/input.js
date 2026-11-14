@@ -18,151 +18,29 @@
  */
 'use strict';
 
-const { allPanels, setSel, getSel, getScroll } = require('../../panel/nav-state');
-const { visibleBoundsFor, getPanelViewportH } = require('../../leaves/wm/geometry');
 const { paintNow: render, beginBatch, endBatch } = require('../../leaves/infra/render-queue');
 const { getModel } = require('../../model/store');
 const { enableMouse, enableFocusEvents, enableBracketedPaste, cols } = require('../../io/term');
 const { focusedTerminalId } = require('../../panel/terminal-surfaces');
 const { writeToSession, isSessionDead } = require('../../io/terminal');
-const {getPanelDef, getItems, getInstanceSlice, wrap, getFocus, instanceKind } = require('../../panel/api');
+const { getInstanceSlice, wrap } = require('../../panel/api');
 const { dispatchMsg } = require('../runtime/loop');
-const route = require('../../panel/route');
-const mpane = require('../../leaves/wm/pane');
 const { isChainActive, CHAIN_MODES } = require('../../leaves/input/modes');
 const { tokenizeInput } = require('../../leaves/input/tokenize');
 const { kkpToLegacy } = require('../../leaves/input/kkp-decode');
-// v0.6.4 Theme F Phase 2 — mouse gestures route through the shared intent
-// layer (the keyboard side joined in Phase 1). intent.js executes no
-// requires at load time, so this top-level require is load-order-safe
-// despite the intent↔input cycle (its `scroll` arm lazy-calls _handleWheel).
-const intent = require('./intent');
 // v0.6.4 Theme F Phase 4 — the gesture→intent map + tunable double-click
 // window. Dependency-free leaf, so this top-level require is cycle-safe.
 const mouseBindings = require('./mouse-bindings');
 
-const { handleKey, applyMsg, showSelectedInfo, navSelect } = require('./dispatch');
+const { handleKey, applyMsg } = require('./dispatch');
 // Hit-map router (docs/mouse-hit-map.md).
 const mouseRouter = require('./mouse-router');
 const { cleanup } = require('../runtime/cleanup');
 
 // --- Mouse handling ---
 
-/**
- * Wheel-on-panel: hit-test (mx, my) against every panel's bounds and
- * scroll the one under the cursor. Returns true if any state mutated
- * (so the caller knows to repaint). Focus is intentionally NOT
- * changed — users can wheel through a side panel while keeping the
- * keyboard focused elsewhere, which is the friendlier-than-click
- * behavior most TUIs converge on.
- *
- * Per-panel behavior:
- *   detail        viewer_scroll ±1 (clamped — detail slice's `scroll`)
- *   list panels   moveSel-style ±1 on that panel's own selection
- *   anything else no-op
- *
- * In visual-mode the detail wheel still adjusts only the view; the
- * cursor's logical position stays where it is and may drift off
- * screen. Wheel back to bring it back. j/k is the way to extend the
- * selection.
- */
-function _handleWheel(mx, my, delta) {
-  // Use visibleBoundsFor — in half/full view, off-screen panes are
-  // absent from the derived visible-bounds map; boundsFor would fall back to
-  // their normal-view rects in _currentLayout and we'd scroll a phantom
-  // pane whose coords overlap with the visible half-view rect.
-  const layoutSlice = getInstanceSlice('layout');
-  for (const p of allPanels()) {
-    const b = visibleBoundsFor(layoutSlice, p.paneId, route.resolveViewerPaneId());  // v0.6.4 Phase 2 — paneId, not type (two same-kind panes share a type key)
-    if (!b) continue;
-    if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
-
-    if (instanceKind(p.paneId) === 'terminal') {
-      // U2d P2b / v0.6.5 §5(a) — the wheel over a `terminal` pane scrolls the
-      // PTY scrollback (xterm's own viewport), not any viewer slice. delta is
-      // -1 (wheel-up = back into history) / +1 (wheel-down = toward live
-      // bottom), which maps straight onto scrollSession's sign. A 3-line step
-      // matches the typical wheel notch. Returns whether the viewport moved so
-      // the caller's paint gating is unchanged.
-      const termId = route.activeInstanceOf(p.paneId);
-      if (termId) return require('../../io/terminal').scrollSession(termId, delta * 3);
-      continue;
-    }
-    if (instanceKind(p.paneId) === 'agent') {
-      // Wheel over an agent pane scrolls the transcript through the shared
-      // reducer (clamped against the stamped innerH, which already reserves
-      // the 2 bottom rows). Pre-check against the pane's own slice so a
-      // no-move wheel skips the repaint (the viewer-branch posture).
-      const inst = route.getInstance(route.activeInstanceOf(p.paneId));
-      const a = inst && inst.slice;
-      const lines = (a && Array.isArray(a.transcript)) ? a.transcript : [];
-      const innerH = (a && a.innerH > 0) ? a.innerH : 1;
-      const cur = (a && a.scroll) || 0;
-      const next = Math.max(0, Math.min(Math.max(0, lines.length - innerH), cur + delta));
-      if (next === cur) return false;
-      dispatchMsg(wrap(p.paneId, { type: 'viewer_scroll', delta }));
-      return true;
-    }
-    if (route.isViewerKind(p.paneId)) {   // U2e P1b — content-viewer kinds (detail/info/text-view)
-      // v0.6.4 multi-viewer — clamp against the wheeled pane's OWN slice
-      // (not the focused viewer's), so wheeling an unfocused second
-      // viewer scrolls itself. sliceForPane resolves the pane's active instance.
-      const d = route.sliceForPane(p.paneId, 'detail');
-      // U2e P1b — the active instance (info / text-view) stores its buffer on
-      // slice.lines directly; fall back to the viewer's derived lines for the
-      // content instance's slice.lines. Used only for the scroll-clamp pre-check;
-      // the viewer_scroll dispatch below re-clamps in the instance's own reducer.
-      const lines = (d && Array.isArray(d.lines)) ? d.lines : [];
-      const curScroll = d?.scroll || 0;
-      // Single source of truth for the view-mode-aware viewport (P5
-      // arc fix follow-up — panelHeights[type] would have given the
-      // small normal-view share even in half/full view).
-      const innerH = getPanelViewportH(
-        layoutSlice, p.paneId, layoutSlice.dims, null, route.resolveViewerPaneId());  // v0.6.4 Phase 3b — paneId; resize-as-Msg P1 — model dims
-      const maxScroll = Math.max(0, lines.length - innerH);
-      const next = Math.max(0, Math.min(maxScroll, curScroll + delta));
-      if (next === curScroll) return false;
-      // v0.6.1 Phase 8 — scroll the specific viewer the wheel landed on.
-      // v0.6.4 multi-viewer — address by paneId (was p.type, which collapsed
-      // two same-kind viewers onto the kind primary).
-      dispatchMsg(wrap(p.paneId, { type: 'viewer_scroll', delta }));
-      return true;
-    }
-
-    const def = getPanelDef(p.type);
-    if (def && typeof def.getItems === 'function') {
-      // v0.6.4 Theme A Phase 5 — items + cursor for THIS pane (p.paneId),
-      // so wheel-over a same-kind pane reads/moves its own selection.
-      const items = getItems(p.paneId);
-      if (!items.length) return false;
-      const sel = getSel(p.paneId);
-      const next = Math.max(0, Math.min(items.length - 1, sel + delta));
-      if (next === sel) return false;
-      // Focused-panel wheel: full nav cascade (cursor + auto-yank-or-
-      // refresh — same path keyboard j/k uses). Unfocused (side-panel)
-      // wheel: cursor only, no detail clobber. Groups still need the
-      // resetGroupContext cascade even unfocused — wheel-over a side
-      // groups panel should still switch the active group.
-      // v0.6.2 — used to split setSel/selectGroup unconditionally and
-      // call showSelectedInfo() if focused; folded into navSelect for
-      // the focused case so auto-yank parity with keyboard is automatic.
-      // v0.6.3 B3 — getFocus() is a paneId; tolerant compare via paneMatchesFocus
-      // so wheel-over-focused-pane still hits the full-cascade navSelect path.
-      if (mpane.paneMatchesFocus(p, getFocus())) {
-        navSelect(p.paneId, next);
-      } else if (p.type === 'groups') {
-        // selectGroup(next) inlined — it was just navSelect('groups', …)
-        // (v0.6.5 §1 Phase 2; navSelect already imported above).
-        navSelect('groups', next);
-      } else {
-        setSel(p.paneId, next);
-      }
-      return true;
-    }
-    return false;
-  }
-  return false;
-}
+// The wheel-over-pane handler moved to ./pane-mouse (handleWheel) in Release 3;
+// re-exported below as _handleWheel for the tests that drive it.
 
 // v0.6.3 Phase C1 — mouse-routing registry mirroring keyboard's
 // `_modeHandlers` in dispatch.js. Each handler takes
@@ -240,19 +118,10 @@ function _mouseHandleFreeConfigMode(kind, mx, my, model) {
 
 // (menuOpen's handler retired — the menu resolves on the hit map now,
 // docs/mouse-hit-map.md Release 1; the router runs before this registry.)
+// (agentMode's wheel pass-through retired too — Release 3: under agentMode the
+// pane bodies publish their wheel handlers (paint's wheelLive), clicks none.)
 const _modeMouseHandlers = {
   freeConfigMode:  _mouseHandleFreeConfigMode,
-  // agentMode is an in-grid typing mode, not an overlay: the transcript stays
-  // fully visible, so the WHEEL passes through to the normal per-pane scroll
-  // (the agent arm in _handleWheel). Clicks/drags still fall through to the
-  // T13 chain gate below — a modal claims pointer gestures like keystrokes.
-  agentMode: (kind, mx, my) => {
-    if (kind === 'wheel-up' || kind === 'wheel-down') {
-      if (_handleWheel(mx, my, kind === 'wheel-down' ? +1 : -1)) render();
-      return true;
-    }
-    return false;
-  },
 };
 
 // Mouse mode precedence — DERIVED from the keyboard chain (CHAIN_MODES,
@@ -295,250 +164,9 @@ function _dispatchActiveModeMouse(kind, mx, my, model) {
   return false;
 }
 
-// Map a click's screen-y to a list pane's getItems INDEX, through the geometry
-// the pane actually PAINTED (recorded in select-view). `my - b.y - 1` drops the
-// top border; a pane that drew leading chrome outside its item list (the table
-// panel's sticky header at inner row 0) records `headerRows`, dropped here too.
-// The scroll offset comes from the paint for a WINDOWED pane — it self-slices +
-// re-clamps its own scroll at render (the model's getScroll is NOT re-clamped to
-// the list bounds, so it diverges on a resize / row-shrink while scrolled); the
-// captured scrollOffset is exactly what was drawn (table AND gauge). Non-windowed
-// panes keep getScroll — identical to what they painted (every navigator passes
-// scrollOffset: getScroll). Returns the row index (>= 0) or -1 when the click
-// lands above the first item (border/header).
-function _rowIndexAt(paneId, b, my) {
-  const cap = require('../../panel/select-view').contentFor(paneId);
-  const header = (cap && cap.headerRows) || 0;
-  const itemRow = my - b.y - 1 - header;
-  if (itemRow < 0) return -1;
-  const scroll = (cap && cap.windowed) ? cap.scroll : getScroll(paneId);
-  return itemRow + scroll;
-}
+// (The pane-body resolvers — row index, context, button gestures — moved to
+// ./pane-mouse in Release 3, with the body acts that use them.)
 
-// v0.6.4 Theme F Phase 4 — side-effect-free hit resolution for a discrete
-// button gesture: which pane + which row sits under the cursor. Mirrors the
-// click body arm's geometry but WITHOUT its chrome/tab/detail/text-select
-// pre-resolution — a button gesture on chrome / a tab / the border lands
-// off-row (navIdx < 0) and is therefore inert for an `activate` mapping.
-// Returns { paneId, navIdx } (navIdx >= 0 iff on a selectable row), or null
-// when the cursor is outside every visible pane.
-function _resolveBodyHit(mx, my) {
-  const layoutSlice = getInstanceSlice('layout');
-  for (const p of allPanels()) {
-    const b = visibleBoundsFor(layoutSlice, p.paneId, route.resolveViewerPaneId());
-    if (!b) continue;
-    if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
-    let navIdx = -1;
-    const def = getPanelDef(p.type);
-    if (def && typeof def.getItems === 'function') {
-      const idx = _rowIndexAt(p.paneId, b, my);
-      if (idx >= 0 && idx < getItems(p.paneId).length) navIdx = idx;
-    }
-    return { paneId: p.paneId, navIdx };
-  }
-  return null;
-}
-
-// v0.6.4 Theme F follow-on — resolve the CONTEXT under a right-click for the
-// context menu: which pane, and the text the "Copy …" entry would yank. For a
-// viewer/detail pane that's the plain text of the line under the cursor; for a
-// list pane it's the row label; plus the active text selection (if any). Side-
-// effect-free (no focus/select change — a right-click only opens the menu).
-// Returns { paneKind, lineText, itemLabel, selectionText } or null (outside
-// every visible pane).
-function _itemText(def, item) {
-  if (item == null) return null;
-  if (typeof item === 'string') return item;
-  // Most navigators expose a filterText selector — the canonical "searchable
-  // label" of a row, exactly the display text we want to copy.
-  if (def && typeof def.filterText === 'function') {
-    try { const t = def.filterText(item); if (t) return String(t); } catch (_) { /* fall through */ }
-  }
-  return item.label || item.name || item.title || item.text || null;
-}
-
-function _resolveContextAt(mx, my) {
-  const { stripMarkup } = require('../../leaves/text/ansi');
-  const layoutSlice = getInstanceSlice('layout');
-  for (const p of allPanels()) {
-    const b = visibleBoundsFor(layoutSlice, p.paneId, route.resolveViewerPaneId());
-    if (!b) continue;
-    if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
-    // Active text selection (docs/pane-selection.md) — POINTER-scoped: the
-    // pane under the cursor's own selection wins, so right-clicking a visible
-    // highlight always copies THAT text (more than one pane can hold an active
-    // selection; the focused-first global scan would pick the wrong one).
-    // Falls back to the app-wide selection when the pointer pane owns none.
-    // Feeds the context menu's "Copy selection" / "Send selection to port".
-    const psel = require('../../panel/select-view');
-    const selectionText = psel.selectedTextFor(p.paneId) || psel.selectedText() || null;
-    if (route.isViewerKind(p.paneId)) {   // U2f — content-viewer kinds (info / text-view)
-      const itemRow = my - b.y - 1;  // -1 for top border
-      const d = getInstanceSlice(p.paneId);
-      // The active content instance holds its displayed buffer on slice.lines.
-      const lines = (d && Array.isArray(d.lines)) ? d.lines : [];
-      const li = itemRow + ((d && d.scroll) || 0);
-      const lineText = (itemRow >= 0 && li < lines.length) ? stripMarkup(lines[li]) : null;
-      return { paneKind: 'detail', lineText, itemLabel: null, selectionText };
-    }
-    const def = getPanelDef(p.type);
-    let itemLabel = null, paneOpRows = [];
-    if (def && typeof def.getItems === 'function') {
-      const idx = _rowIndexAt(p.paneId, b, my);   // header-aware, painted-scroll
-      const items = getItems(p.paneId);
-      if (idx >= 0 && idx < items.length) {
-        const rawItem = items[idx];
-        itemLabel = _itemText(def, rawItem);
-        // Item-operations (leaves/render/item-ops): the pointed pane's declared
-        // per-row ops that opt into the right-click surface, as ready menu rows
-        // (the impure resolver reads the pane's slice; buildContextItems is pure).
-        // Guarded like the sibling `filterText` call above — a component's itemOps
-        // must never crash the stdin handler; a throw just yields no ops.
-        if (typeof def.itemOps === 'function') {
-          try {
-            const ops = def.itemOps(getInstanceSlice(p.paneId)) || [];
-            paneOpRows = require('../../leaves/render/item-ops').contextOpRows(p.paneId, rawItem, ops);
-          } catch (_) { /* offer no pane ops rather than crash the right-click */ }
-        }
-      }
-    }
-    return { paneKind: p.type, lineText: null, itemLabel, selectionText, paneOpRows };
-  }
-  return null;
-}
-
-// Realize the intent a discrete button gesture is bound to (the gesture →
-// intent map's right-hand side). The supported vocabulary mirrors
-// parser/schema.js VALID_MOUSE_INTENTS. Each branch owns its render().
-function _realizeButtonGesture(intentName, x, y, mx, my) {
-  switch (intentName) {
-    case 'noop':
-      return;  // reserved-but-inert (the middle-click default)
-    case 'context': {
-      // Open the context menu anchored AT the cursor (1-based SGR {x,y}).
-      // Resolve what's under the pointer → build the rows: contextual copy
-      // entries when on a target, plus the always-present general section, so
-      // a right-click on EMPTY space (null ctx) still opens a populated menu.
-      const ctx = _resolveContextAt(mx, my) || {};
-      const items = require('../../leaves/input/context-menu').buildContextItems(ctx);
-      if (!items.length) return;  // safety — the general section keeps this non-empty
-      intent.realize(intent.context({ x, y }, { items, title: 'Actions' }));
-      render();
-      return;
-    }
-    case 'activate': {
-      // Focus + select + activate the row under the cursor — the click body
-      // arm's path, gated on landing ON a row.
-      const hit = _resolveBodyHit(mx, my);
-      if (hit && hit.navIdx >= 0) {
-        intent.realize(intent.focusPane(hit.paneId, { skipInfo: true }));
-        intent.realize(intent.selectAt(hit.paneId, hit.navIdx));
-        intent.realize(intent.activate());
-        render();
-      }
-      return;
-    }
-    default:
-      // Unknown intent — schema validation should make this unreachable;
-      // be inert rather than throw on a hot input path.
-      return;
-  }
-}
-
-// ── Per-pane text selection (docs/pane-selection.md) ───────────────────────
-// ONE mouse path for every pane — content panes (info / text-view / agent)
-// included; their Components claim the wrapped select_* Msgs themselves, every
-// other pane gets the loop's generic fallback. A left press ARMS a potential
-// selection (records the anchor); the FIRST motion begins it — so a plain
-// click still selects a row / focuses, and only a drag starts text selection.
-// Module-local, transient (like the free-config drag).
-let _armedSelect = null;   // { paneId, line, col } | null
-
-// Drag-to-zoom arm (docs/STATS.md §10): a press on a GRAPH stats pane (not a mode:multi
-// list) stores the start column; a real drag (release at a different column) freezes
-// that time-range. Module-local, transient, and mutually exclusive with _armedSelect —
-// ENFORCED, not incidental: a stats pane is text-selectable by default, so the zoom arm
-// explicitly clears any _armedSelect the same press set (zoom wins the gesture).
-let _armedZoom = null;   // { paneId, startCol } | null
-
-// Is this pane a selection target? Not opted out via config (per-panel
-// `select:` / global default — panel/select-config).
-function _selectablePane(paneId) {
-  if (!paneId) return false;
-  const p = allPanels().find((x) => x.paneId === paneId);
-  if (!p) return false;
-  return require('../../panel/select-config').selectionEnabledFor(paneId);
-}
-
-// Map screen (mx,my) → { line (absolute content index), col (display) } inside a
-// pane's content region. Absolute line folds in the pane's scroll (0 for the
-// non-scrolling list panes) so the selection stays anchored to content, matching
-// how the highlight decorates. `clamp` (the motion path) pins an out-of-bounds
-// row to the nearest content row so a drag past the pane's edge extends to the
-// first/last visible line; without it (the press path) border/outside rows
-// return null — a press on the frame must not arm.
-function _contentCoordsAt(paneId, mx, my, clamp) {
-  const b = visibleBoundsFor(getInstanceSlice('layout'), paneId, route.resolveViewerPaneId());
-  if (!b) return null;
-  let row = my - b.y - 1;
-  if (row < 0 || row > b.h - 3) {              // top/bottom border rows or beyond
-    if (!clamp) return null;
-    row = Math.max(0, Math.min(b.h - 3, row));
-  }
-  const cap = require('../../panel/select-view').contentFor(paneId);
-  const scroll = cap ? cap.scroll : 0;
-  // Selectable extent (docs/pane-selection.md §Interaction) — not every
-  // interior row is selectable content. A windowed capture may carry
-  // non-content rows after the real content (the agent pane's status/input
-  // chrome + its provisional streaming preview — it declares
-  // `selectableRows`); a full-content capture simply ends. A press beyond the
-  // extent must not arm (the pointer isn't on selectable text); a drag pins to
-  // the last selectable row, same as any past-the-edge motion.
-  if (cap) {
-    const rows = cap.windowed
-      ? (cap.selectableRows != null ? cap.selectableRows : cap.lines.length)
-      : cap.lines.length - scroll;
-    if (rows <= 0) return null;                // nothing selectable this frame
-    if (row > rows - 1) {
-      if (!clamp) return null;
-      row = rows - 1;
-    }
-  }
-  return { line: scroll + row, col: Math.max(0, mx - b.x - 1) };
-}
-
-// Coalesce key for the last dispatched graph-hover — {paneId,col,row} of the body
-// cell (or null). A no-button move that resolves to the SAME cell dispatches nothing
-// (mode 1003 fires per cursor cell; this bounds it to one Msg + repaint per cell
-// change). See js/io/term.js's enableMouse comment.
-let _lastHover = null;
-
-// Resolve the body cell under a hover and fold it into the layout slice (or clear).
-// Hoverable panes are `stats` graphs AND `composite` boxes (whose graph widgets are
-// hoverable too); the value is derived at paint by the pane's render (stats.valueAt
-// resolves sectioned/overlay/multi; composite routes to the widget under the cursor,
-// and a non-graph cell resolves to nothing). Chain-mode active → no hover (clears any
-// live one so a box doesn't linger under an overlay).
-function _handleHover(mx, my, model) {
-  let target = null;
-  if (!isChainActive(model.modes)) {
-    const layoutSlice = getInstanceSlice('layout');
-    for (const p of allPanels()) {
-      if (p.type !== 'stats' && p.type !== 'composite') continue;
-      const b = visibleBoundsFor(layoutSlice, p.paneId, route.resolveViewerPaneId());
-      if (!b || mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
-      const cc = _contentCoordsAt(p.paneId, mx, my);   // {line,col} body coords; null on border/outside
-      if (cc) target = { paneId: p.paneId, col: cc.col, row: cc.line, x: mx + 1, y: my + 1 };
-      break;
-    }
-  }
-  const key = target ? `${target.paneId}:${target.col}:${target.row}` : null;
-  const lastKey = _lastHover ? `${_lastHover.paneId}:${_lastHover.col}:${_lastHover.row}` : null;
-  if (key === lastKey) return;                          // same cell (or still none) → no churn
-  _lastHover = target;
-  dispatchMsg(wrap('layout', { type: 'graph_hover', hover: target }));
-  render();
-}
 
 function handleMouse(kind, x, y) {
   // Phase 4 — runtime.update returns NEW model objects; read getModel()
@@ -561,249 +189,26 @@ function handleMouse(kind, x, y) {
     return;
   }
 
-  // Graph hover (Phase 2, mode 1003 all-motion) — resolve the body cell under a
-  // button-less move and fold it into the layout slice, COALESCED so only a real
-  // cell change dispatches + repaints. Runs early + returns: hover never enters the
-  // chrome / drag / focus machinery below.
-  if (kind === 'hover') { _handleHover(mx, my, model); return; }
-
   // Hit map (docs/mouse-hit-map.md) — the topmost region the last frame drew
   // under the pointer, z-ordered, with a DATA handler: popups (R1), pane chrome
   // + border controls + tab strip + ✗ cancel + tree markers, in-grid overlay
-  // backdrops (R2). Precedence is z-order. A miss (nothing published there, a
-  // stale frame that drew nothing there, a non-discrete gesture) falls through
-  // to the legacy cascade below — pane bodies, drags, free-config (R3).
-  // A new press starts a fresh gesture: disarm any prior selection / zoom arm
-  // FIRST — before the hit map (or a mode handler) can consume the press — so a
-  // press on a NON-selectable target (a chip, a tab, a tree marker, chrome, a
-  // viewer body) can't leave a stale arm that a later motion would begin. The
-  // body loop re-arms when the press lands on a selectable pane / a graph.
-  if (kind === 'press') { _armedSelect = null; _armedZoom = null; }
+  // backdrops (R2), pane bodies + the empty screen + hover, and the drag in
+  // flight (pointer capture — motion / release go to it wherever the pointer
+  // is) (R3). Precedence is z-order. A miss falls through to what is left of
+  // the legacy cascade below — free-config (R3 step 4).
   if (mouseRouter.route(kind, mx, my, model)) return;
 
-  // v0.6.3 Phase C1 — modal mouse routing through the
-  // `_modeMouseHandlers` registry (mirrors keyboard's `_modeHandlers`
-  // in dispatch.js). Walks CHAIN_MODES in precedence order; the first
-  // active claiming handler wins. Handlers own their render() call so
-  // consume-no-render paths (panel-list header click, motion without
-  // drag) can skip paint as a perf optimization. Handlers that don't
-  // claim (e.g. agentMode on a click) return false and fall through to the
-  // `isChainActive` guard below. Popups and pane chrome resolve on the hit
-  // map BEFORE this point (the router call at the top of handleMouse).
+  // v0.6.3 Phase C1 — modal mouse routing through the `_modeMouseHandlers`
+  // registry (mirrors keyboard's `_modeHandlers` in dispatch.js). Handlers own
+  // their render() call so consume-no-render paths (panel-list header click,
+  // motion without drag) can skip paint as a perf optimization.
   if (_dispatchActiveModeMouse(kind, mx, my, model)) return;
 
-  // T13 — mirror keyboard modal gating: while any chain mode claims
-  // keystrokes via the modeChain, mouse events must not cascade into
-  // focus changes / selection / scroll that the user can't see through
-  // the overlay (or that would silently mutate state behind a modal —
-  // notably the wheel-over-groups path, which fires reset_group_context
-  // and leaves modal sub-models bound to the OLD group). The free-
-  // config mode special-case above runs first because free-config owns
-  // the mouse pipeline. terminalMode is non-chain by design.
+  // T13 — mirror keyboard modal gating: while any chain mode claims keystrokes,
+  // nothing below may react. (Since Release 3 pane bodies publish only when no
+  // chain mode is active — the gate is expressed at paint; nothing reacts below
+  // this line any more. It retires with the registry above, R3 step 6.)
   if (isChainActive(model.modes)) return;
-
-  // v0.6.4 Theme F Phase 3+4 — the discrete button gestures (double / right
-  // / middle) resolve their intent from the YAML-overridable mouse map
-  // (defaults: double→activate, right→context, middle→noop). Realization is
-  // uniform (`_realizeButtonGesture`), so a config may remap any of the three
-  // onto any supported intent. Chrome (press-only) resolved on the hit map
-  // above; these are gated by the same isChainActive guard, so nothing fires behind an
-  // overlay. For a real double, the preceding single press already focused +
-  // selected the row via the click body arm below; the `activate` path
-  // re-runs focus+select idempotently (and makes a remapped button work too).
-  if (kind === 'double' || kind === 'right' || kind === 'middle') {
-    const gesture = kind === 'double' ? 'double-click'
-                  : kind === 'right'  ? 'right-click'
-                  : 'middle-click';
-    _realizeButtonGesture(mouseBindings.intentFor(gesture), x, y, mx, my);
-    return;
-  }
-
-  // Mouse wheel — scrolls the panel under the cursor without changing
-  // focus. Detail adjusts the detail scroll; list panels move their own
-  // selection. No-op when the wheel landed outside any panel bounds.
-  if (kind === 'wheel-up' || kind === 'wheel-down') {
-    // v0.6.4 Theme F Phase 2 — pointer scroll routes through the intent
-    // layer; realize delegates to _handleWheel (the spatial + per-pane
-    // resolution stays there) and returns whether anything changed, so the
-    // paint gating is unchanged.
-    if (intent.realize(intent.scrollAt(mx, my, kind === 'wheel-down' ? +1 : -1))) render();
-    return;
-  }
-
-  // Text selection (docs/pane-selection.md) — ONE path for every pane. press
-  // (body loop below) arms; the first motion begins; further motion extends;
-  // release settles (auto-copy a real drag + keep it highlighted; cancel a
-  // no-drag press so a plain click leaves no stray one-char selection). The
-  // select_* Msgs ride wrapped to the pane's active instance — content panes
-  // claim them in their own update (clamped against their buffer), every other
-  // pane gets the loop's generic fallback. Runs ahead of the focus+select loop
-  // so a drag extends rather than losing the selection to a focus change.
-  // The gesture is scoped to the ARMED pane throughout — never resolved by an
-  // ownership scan. More than one pane can hold an active selection by design
-  // (a persisted mouse selection + a keyboard visual-mode one, or a hidden tab
-  // re-owning on switch-back), and a scan-first pick would extend/settle the
-  // WRONG pane's selection (copying stale text on release).
-  const psel = require('../../panel/select-view');
-  if (kind === 'motion') {
-    if (_armedSelect) {
-      const paneId = _armedSelect.paneId;
-      // First motion after the press: begin at the armed anchor (the armed
-      // pane's own selection isn't active yet — the press cancelled priors).
-      if (!psel.selectionFor(paneId)) {
-        dispatchMsg(wrap(paneId,
-          { type: 'select_begin', line: _armedSelect.line, col: _armedSelect.col, kind: 'char' }));
-      }
-      const cc = _contentCoordsAt(paneId, mx, my, true);   // clamp: drag past the edge pins to the nearest row
-      if (cc) dispatchMsg(wrap(paneId, { type: 'select_extend', line: cc.line, col: cc.col }));
-      render();
-    }
-    // Live drag-band (docs/STATS.md §10): while a zoom drag is in flight, fold the
-    // pending [start,current] column range into the layout slice so the pane highlights
-    // the range being selected. `graph_drag` is identity-preserving, so idle motion that
-    // stays in the same body cell dispatches nothing. The zoom arm cleared any _armedSelect
-    // (zoom wins on a stats graph), so this and the text-select block above never co-fire.
-    if (_armedZoom) {
-      const cc = _contentCoordsAt(_armedZoom.paneId, mx, my, true);   // clamp past-edge to the nearest col
-      if (cc) {
-        const lo = Math.min(_armedZoom.startCol, cc.col);
-        const hi = Math.max(_armedZoom.startCol, cc.col);
-        dispatchMsg(wrap('layout', { type: 'graph_drag', band: { paneId: _armedZoom.paneId, lo, hi } }));
-        render();
-      }
-    }
-    return;
-  }
-  if (kind === 'release') {
-    if (_armedSelect) {
-      const own = psel.selectionFor(_armedSelect.paneId);
-      if (own) {
-        const s = own.sel;
-        const dragged = !(s.anchor.line === s.cursor.line && s.anchor.col === s.cursor.col);
-        const text = dragged ? psel.selectedTextFor(_armedSelect.paneId) : '';
-        if (text) applyMsg({ type: 'register_push', text });
-        else dispatchMsg(wrap(_armedSelect.paneId, { type: 'select_cancel' }));
-        render();
-      }
-      _armedSelect = null;
-    }
-    // Drag-to-zoom commit: a real drag across a graph freezes that column range
-    // (docs/STATS.md §10). The frozen snapshot is computed by stats.freezeRange (an
-    // impure read of the live series) and handed to the `graph_zoom` reducer as DATA;
-    // a click / too-small drag yields null → no zoom.
-    if (_armedZoom) {
-      const az = _armedZoom; _armedZoom = null;
-      let dirty = false;
-      // Clear the live drag band (if one was painted): the pending range is now either
-      // committed to a `zoom` snapshot or discarded (a click / too-small drag). Either
-      // way the highlight must go, so we repaint even when nothing zooms.
-      if (getInstanceSlice('layout').dragBand) {
-        dispatchMsg(wrap('layout', { type: 'graph_drag', band: null }));
-        dirty = true;
-      }
-      const cc = _contentCoordsAt(az.paneId, mx, my, true);   // clamp past-edge to the nearest col
-      if (cc) {
-        const ls = getInstanceSlice('layout');
-        const panel = allPanels().find((p) => p.paneId === az.paneId);
-        const b = panel && visibleBoundsFor(ls, az.paneId, route.resolveViewerPaneId());
-        if (panel && b) {
-          const frozen = require('../../panel/monitor/stats').freezeRange(panel, b.w - 2, b.h - 2, az.startCol, cc.col);
-          if (frozen) { dispatchMsg(wrap('layout', { type: 'graph_zoom', paneId: az.paneId, frozen })); dirty = true; }
-        }
-      }
-      if (dirty) render();
-    }
-    return;
-  }
-
-  // From here on: press only. The discrete button gestures (double / right /
-  // middle) are resolved above through the mouse-bindings map; only a plain
-  // left press reaches focus+select (chrome, tabs and fold markers resolved
-  // on the hit map before the cascade).
-  if (kind !== 'press') return;
-
-  let mutated = false;
-
-  // Same reason as _handleWheel above: hit-test against ACTUALLY-
-  // VISIBLE pane bounds. In half view, the visible-bounds map carries only
-  // halfLeftPanel + detail; boundsFor's _currentLayout fallback
-  // would return phantom normal-view coords for off-screen panes
-  // (containers/groups/files would all "exist" at their normal-
-  // view positions, and a click on the visible left half would
-  // dispatch focus_set to the first non-detail pane instead of to
-  // the actually-visible halfLeftPanel — silently reverting the
-  // user's right-arrow selection).
-  const layoutSlice = getInstanceSlice('layout');
-  for (const p of allPanels()) {
-    const b = visibleBoundsFor(layoutSlice, p.paneId, route.resolveViewerPaneId());  // v0.6.4 Phase 2 — paneId, not type (two same-kind panes share a type key)
-    if (!b) continue;
-    if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
-
-    // Focus + select clicked item. A fresh press clears EVERY prior visible
-    // selection (more than one pane can hold one — see the gesture note above)
-    // and ARMS a new one at the click's content coords; the first motion
-    // begins it (so a plain click still selects the row / focuses, only a drag
-    // selects text). Content panes (info / text-view / agent) ride the same
-    // arm: their instances claim the wrapped select_* Msgs with buffer-clamped
-    // coords.
-    for (const _prior of psel.activeSelections()) {
-      dispatchMsg(wrap(_prior.paneId, { type: 'select_cancel' }));
-    }
-    if (_selectablePane(p.paneId)) {
-      const cc = _contentCoordsAt(p.paneId, mx, my);
-      if (cc) _armedSelect = { paneId: p.paneId, line: cc.line, col: cc.col };  // else stays null (cleared above)
-    }
-    // Resolve whether this click lands on a selectable row BEFORE the
-    // focus_set: if it does, navSelect (below) sets the cursor and fires
-    // show_selected_info against the NEW selection, so focus_set skips
-    // its own cascade (skipInfo) to avoid a double-fire — the first
-    // against the pre-cursor-write (stale) item. Off-row clicks keep
-    // focus_set's show_selected_info so Info still refreshes on focus.
-    // v0.6.4 Theme A Phase 5 — scroll + items for THIS pane (p.paneId); the
-    // mapping is header-aware + reads the painted scroll (see _rowIndexAt).
-    let navIdx = -1;
-    const def = getPanelDef(p.type);
-    if (def && typeof def.getItems === 'function') {
-      const idx = _rowIndexAt(p.paneId, b, my);
-      if (idx >= 0 && idx < getItems(p.paneId).length) navIdx = idx;
-    }
-    // Drag-to-zoom arm: a press on a GRAPH stats pane (sectioned/overlay — getItems
-    // empty, so NOT a mode:multi list) stores the start column; the release freezes the
-    // dragged range (docs/STATS.md §10). A mode:multi pane is a row list → it selects.
-    // Zoom WINS the gesture PANE-WIDE: a stats pane is text-selectable by default, so the
-    // block above already armed _armedSelect — clear it, or the same drag would ALSO run a
-    // text selection (a competing mid-drag highlight + the selected glyphs pushed to the
-    // yank register on release). We treat a press-drag ANYWHERE on a graph stats pane as a
-    // zoom, so you can start the drag on any row (the column→range map is row-independent).
-    // Trade-off: the header line's numbers (`CPU 45% peak … avg …`) are no longer
-    // drag-selectable on a graph pane — a deliberate call; they stay visible, and copying a
-    // stat isn't the pane's job. (mode:multi is a row list → getItems non-empty → selects.)
-    if (p.type === 'stats' && getItems(p.paneId).length === 0) {
-      const cc = _contentCoordsAt(p.paneId, mx, my);
-      if (cc) { _armedZoom = { paneId: p.paneId, startCol: cc.col }; _armedSelect = null; }
-    }
-    // v0.6.4 Theme F Phase 2 — the spatial resolution above stays here
-    // (which pane, which row); the focus + select now route through the
-    // shared intent layer instead of inline dispatch, mirroring keyboard.
-    // focusPane carries skipInfo so, when a row is also selected, focus_set
-    // skips its show_selected_info and navSelect's (against the new cursor)
-    // wins — byte-identical to the prior inline focus_set.
-    // (Theme A Phase 5 — focus THIS pane by paneId, so clicking a same-kind
-    //  pane focuses the one clicked, not the kind's primary.)
-    intent.realize(intent.focusPane(p.paneId, { skipInfo: navIdx >= 0 }));
-    if (navIdx >= 0) {
-      // v0.6.2 — single navSelect path (the `select` intent's absolute
-      // form). Sets cursor + fires the auto-yank-or-show_info cascade +
-      // the groups_selected cascade for groups.
-      intent.realize(intent.selectAt(p.paneId, navIdx));
-    }
-    mutated = true;
-    break;
-  }
-
-  // Single paint at end — same contract as dispatch.handleKey. Diff
-  // render makes a no-op paint cheap when click missed every panel.
-  if (mutated) render();
 }
 
 // --- Terminal-mode keystroke handling ---
@@ -1403,7 +808,7 @@ module.exports = {
   beginKeyboardDetection,   // exported for tests (in-process handshake driving)
   _handleTerminalModeData,  // exported for tests
   _classifyTerminalChunk,   // exported for tests (v0.6.5 PTY scrollback classifier)
-  _handleWheel,             // exported for tests
+  _handleWheel: (...a) => require('./pane-mouse').handleWheel(...a),   // exported for tests (moved to pane-mouse, R3)
   handleMouse,              // exported for tests (T13 modal-gate regression)
   _classifyPress,           // exported for tests (Theme F Phase 3 double-click derivation)
   _makeDataHandler,         // exported for tests (input-burst smoke drives the real handler)

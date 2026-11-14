@@ -187,7 +187,7 @@ const CHROME_SCENARIOS = {
   },
 };
 
-const seen = { collapse: 0, expand: 0, close: 0, trigger: 0, tab: 0, ctl: 0, cancel: 0, tree: 0 };
+const seen = { collapse: 0, expand: 0, close: 0, trigger: 0, tab: 0, ctl: 0, cancel: 0, tree: 0, body: 0 };
 let chromeDropped = 0;
 
 function checkChromeFrame(cols, label) {
@@ -224,6 +224,28 @@ function checkChromeFrame(cols, label) {
       assert(g === '▾' || g === '▸', `${where}: a fold marker at x0, got ${JSON.stringify(g)}`);
       seen.tree++;
     } else assert(false, `${where}: unexpected pane-band region id`);
+  }
+  // Pane bodies (Release 3): exactly one per VISIBLE pane, anchored at its
+  // painted origin, as wide as the pane (clipped to the screen) and never
+  // taller — clipped at the composed frame, so never on the footer row; none for
+  // a pane off screen. Under a chain mode (free-config) bodies publish nothing —
+  // the T13 gate at paint.
+  const bodies = hm.all().filter(r => r.z === hm.BANDS.BODY);
+  const availH = geo.availRows(layout.dims);
+  const bodyLive = !require('../leaves/input/modes').isChainActive(getModel().modes);
+  if (!bodyLive) assert(bodies.length === 0, `${label} cols=${cols}: no bodies under a chain mode`);
+  for (const p of bodyLive ? panes : []) {
+    const b = geo.visibleBoundsFor(layout, p.paneId, viewer);
+    const mine = bodies.filter(r => r.paneId === p.paneId);
+    const where = `${label} cols=${cols} ${p.paneId}/body`;
+    if (!b) { assert(mine.length === 0, `${where}: an off-screen pane publishes no body`); continue; }
+    assert(mine.length === 1, `${where}: one body region (got ${mine.length})`);
+    const r = mine[0];
+    if (!r) continue;
+    assert(r.rect.x === b.x && r.rect.y === b.y && r.rect.w === Math.min(b.w, cols - b.x), `${where}: anchored at the pane, full width — ${JSON.stringify(r.rect)} vs ${JSON.stringify(b)}`);
+    assert(r.rect.h >= 1 && r.rect.h <= b.h && r.rect.y + r.rect.h <= availH, `${where}: within the pane and above the footer`);
+    assert(r.owner === hm.paneOwner(p.paneId), `${where}: owned by its pane`);
+    seen.body++;
   }
   // Drop path: a visible, non-content, expanded pane that published no [_].
   for (const p of panes) {

@@ -21,12 +21,12 @@
  */
 'use strict';
 
-let _api = null, _dispatch = null, _actions = null, _menu = null, _input = null;
+let _api = null, _dispatch = null, _actions = null, _menu = null, _paneMouse = null;
 const api      = () => _api      || (_api      = require('../../panel/api'));
 const dispatch = () => _dispatch || (_dispatch = require('./dispatch'));
 const actions  = () => _actions  || (_actions  = require('./actions'));
 const menu     = () => _menu     || (_menu     = require('../../leaves/input/menu'));
-const input    = () => _input    || (_input    = require('./input'));
+const paneMouse = () => _paneMouse || (_paneMouse = require('./pane-mouse'));
 
 // --- Intent constructors (the vocabulary) ---
 // Tagged plain objects. Kept as factory functions (not bare literals at
@@ -48,7 +48,9 @@ const activate    = ()            => ({ kind: 'activate' });
 // overlay title (e.g. 'Actions' for the context menu).
 const context     = (anchor = null, opts = {}) =>
   ({ kind: 'context', anchor, items: opts.items || null, title: opts.title || null });
-const scrollAt    = (mx, my, delta) => ({ kind: 'scroll', mx, my, delta }); // pointer (spatial)
+// pointer (spatial); paneId = the pane the hit map resolved (Release 3 body
+// region) — the scroll is scoped to it, so it agrees with what paint drew.
+const scrollAt    = (mx, my, delta, paneId = null) => ({ kind: 'scroll', mx, my, delta, paneId });
 
 // --- Realizer (the single intent → Msg site) ---
 function realize(intent) {
@@ -80,12 +82,12 @@ function realize(intent) {
       // Pointer scroll — spatial + per-pane heterogeneous: the resolution
       // (which pane is under the cursor) and the behavior (detail scrolls
       // its content; a list pane moves its own cursor, with focused / side /
-      // groups variants) live in input._handleWheel. Routing it through the
+      // groups variants) live in pane-mouse.handleWheel. Routing it through the
       // realizer keeps handleMouse uniformly intent-driven; unifying the
       // list arm into `select` and the detail arm into a content-scroll Msg
       // is a later semantic pass (Theme F follow-on), not this no-op lift.
       // Returns whether anything changed (the caller gates its paint on it).
-      return input()._handleWheel(intent.mx, intent.my, intent.delta);
+      return paneMouse().handleWheel(intent.mx, intent.my, intent.delta, intent.paneId);
 
     case 'context':
       // Build the menu items from the layout slice — identical to the `x`

@@ -169,7 +169,7 @@ describe('[gauge] click selects the bar under the cursor (no header → no off-b
 // re-clamps its own scroll at render but the model getScroll isn't re-clamped to
 // the list bounds, so getScroll diverges on a resize / row-shrink while scrolled.
 // The click→row mapping must read the PAINTED scroll (the capture), not getScroll,
-// or every click lands on the wrong bar. See input.js `_rowIndexAt` (cap.windowed).
+// or every click lands on the wrong bar. See dispatch/control/pane-mouse.js `_rowIndexAt` (cap.windowed).
 describe('[gauge] click uses the painted scroll after a row-shrink (divergence regression)', () => {
   // Fresh divergent setup per click (a prior click repaints + re-clamps scroll,
   // collapsing the divergence — so each assertion rebuilds it), then ONE click.

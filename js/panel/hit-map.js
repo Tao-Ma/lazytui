@@ -76,6 +76,8 @@ const mpool = require('../leaves/wm/pool');
 // k sits at OVERLAY_BASE + 10·zIndex_k + draw.HIT_Z offsets (the compositor),
 // so every popup covers every pane-anchored band.
 const BANDS = Object.freeze({
+  SCREEN: 0,            // empty-screen button gestures (right-click → context menu)
+  BODY: 10,             // one region per visible pane body (Release 3)
   IN_PANE: 30,          // tree fold markers
   BELOW_CHROME: 35,     // in-grid overlay backdrops (jobs / pane-menu / which-key)
   CHROME: 40,           // [_]/[+]/[X]/[≡], border controls, tab strip, ✗ cancel

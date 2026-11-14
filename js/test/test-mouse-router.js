@@ -76,7 +76,8 @@ describe('[2] route', () => {
     router._reset();
     hm.clear(STAMP(MODEL));
     hm.publish({ id: 'b', rect: R(0, 0, 10, 10), z: 1, opaque: true, on: {} });
-    for (const k of ['motion', 'release', 'hover']) eq(router.route(k, 1, 1, MODEL), false, k);
+    for (const k of ['motion', 'release']) eq(router.route(k, 1, 1, MODEL), false, k);
+    eq(router.route('hover', 1, 1, MODEL), true, 'hover is always the router\'s (a miss clears the graph hover)');
   });
   it('a hit is realized and consumed', () => {
     router._reset();

@@ -1,7 +1,7 @@
 /**
  * Graph hover-for-value (Phase 2 of the stats interactivity arc, docs/STATS.md).
  * Exercises the real path: a `hover` mouse event (mode 1003, button-less motion) →
- * input._handleHover resolves the body cell → `graph_hover` Msg → layout slice →
+ * the pane-hover act (dispatch/control/pane-mouse) resolves the body cell → `graph_hover` Msg → layout slice →
  * stats.render resolves the value via valueAt + publishes it to the per-frame
  * hover-region → the footer shows it. Also the layout.update arm in isolation.
  *
@@ -56,6 +56,9 @@ describe('[graph-hover] real hover path → footer value + hover-region', () => 
     // column carries data — else the short-data left of the graph is NaN-padded and a
     // hover there correctly resolves to nothing.
     setMetric('gh.cpu', { _: Array.from({ length: 300 }, (_x, i) => ({ cpu: i % 100 })) }, { cpu: { type: 'percent' } });
+    // The hit map + the content capture hold only what a frame painted (R3 hover
+    // regions) — paint the data, as the live app does before a pointer can hover.
+    sm.capture(() => sm.render());
   }
 
   function paneBounds() {
@@ -145,6 +148,7 @@ describe('[graph-hover] composite graph widget → footer value', () => {
       layout: { pool: { nb: cfg }, columns: [{ panels: [cfg] }] },
     });
     sm.resize(120, 30);
+    sm.capture(() => sm.render());   // the hit map holds only what a frame painted (R3 hover regions)
     setMetric('gh.cpu', { _: Array.from({ length: 300 }, (_x, i) => ({ cpu: i % 100 })) }, { cpu: { type: 'percent' } });
   }
 
@@ -184,6 +188,7 @@ describe('[graph-hover] composite header:bottom mirror SEAM (the net-box case)',
       layout: { pool: { net: cfg }, columns: [{ panels: [cfg] }] },
     });
     sm.resize(120, 30);
+    sm.capture(() => sm.render());   // the hit map holds only what a frame painted (R3 hover regions)
     setMetric('gh.net', { _: Array.from({ length: 300 }, (_x, i) => ({ tx: 1000 + i, rx: 5000 + i })) },
       { tx: { type: 'bytes' }, rx: { type: 'bytes' } });
   }
@@ -225,6 +230,7 @@ describe('[graph-hover] overlay graph → all series in the footer', () => {
       layout: { pool: { ov: cfg }, columns: [{ panels: [cfg] }] },
     });
     sm.resize(120, 30);
+    sm.capture(() => sm.render());   // the hit map holds only what a frame painted (R3 hover regions)
     setMetric('gh.net', { _: Array.from({ length: 300 }, (_x, i) => ({ rx: i, tx: 1000 + i })) },
       { rx: { type: 'bytes' }, tx: { type: 'bytes' } });
   }
@@ -257,6 +263,7 @@ describe('[graph-hover] mode:multi → the hovered row value in the footer', () 
       layout: { pool: { mu: cfg }, columns: [{ panels: [cfg] }] },
     });
     sm.resize(120, 30);
+    sm.capture(() => sm.render());   // the hit map holds only what a frame painted (R3 hover regions)
     setMetric('gh.multi',
       { a: Array.from({ length: 300 }, (_x, i) => ({ cpu: i % 50 })), b: Array.from({ length: 300 }, (_x, i) => ({ cpu: i % 90 })) },
       { cpu: { type: 'percent' } });

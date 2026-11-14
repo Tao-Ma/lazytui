@@ -156,11 +156,16 @@ function _chromeContext(model, layoutSlice) {
     //     publishing; and it MUST not: terminalMode is non-chain (not in the frame
     //     stamp), so a chunk that leaves it (Ctrl+\) and clicks resolves against
     //     this frame. No regions during a free-config drag (it owns the screen).
-    //   bodyLive — clicks that were gated like a pane-body click (the T13 chain
-    //     gate): the slot tab strip and tree fold markers.
+    //   bodyLive — pane-body clicks / hover and everything gated like them (the
+    //     T13 chain gate, expressed at paint since Release 3): pane bodies, the
+    //     empty-screen right-click, the slot tab strip and tree fold markers.
+    //   wheelLive — the pane-body wheel: bodyLive, or agentMode (an in-grid
+    //     typing mode whose transcript stays visible — the wheel scrolls panes
+    //     under it while clicks stay blocked).
     chromeLive: !modes.suppressesChromeClicks({ ...md, terminalMode: false })
       && !(layoutSlice.freeConfig && layoutSlice.freeConfig.drag),
     bodyLive: !modes.isChainActive(md),
+    wheelLive: !modes.isChainActive(md) || !!md.agentMode,
     freeConfigMode: !!md.freeConfigMode,
     dragging: !!(layoutSlice.freeConfig && layoutSlice.freeConfig.drag),
     paneMenuTriggerStateFor,
@@ -376,10 +381,16 @@ function _safeRender(panel, w, h, opts) {
   // arrange/type when no instance is minted yet — the pre-reconcile boot frame).
   const renderType = (panel.paneId ? _route().instanceKind(panel.paneId) : null) || panel.type;
   const compName = getComponentOwningPanel(renderType);
-  if (!compName) return '';
-  const comp = getComponent(compName);
+  const comp = compName ? getComponent(compName) : null;
   const def = comp && comp.panelTypes && comp.panelTypes[renderType];
-  if (!def || typeof def.render !== 'function') return '';
+  if (!def || typeof def.render !== 'function') {
+    // No renderer (an unregistered / failed plugin kind): the slot paints blank,
+    // but the pane is still there — publish its body so a click focuses it, as
+    // the pre-R3 bounds-based press loop did.
+    paneHits.begin(panel, { x: (opts && opts.x) | 0, y: (opts && opts.y) | 0, w, h }, opts || {});
+    paneHits.end();
+    return '';
+  }
   let raw;
   // Selection capture/highlight seam (docs/pane-selection.md): announce which
   // pane is rendering so api.renderPanel can attribute its content lines to this
@@ -426,6 +437,7 @@ function _safeRender(panel, w, h, opts) {
     // the sink before it threw, wipe it so a click can't land on a glyph the error
     // block overwrote (same-frame; next frame's clear() handles the steady state).
     hitMap.retractOwner(hitMap.paneOwner(panel.paneId));
+    paneHits.publishBody();   // the pane itself is still there — a click focuses it
     return rows.join('\n');
   } finally {
     selectView.exitPane();
@@ -470,7 +482,7 @@ function composeRects(layout, model) {
   // and threaded into the panel renderer via opts. v0.6.4 Theme B —
   // shared scalars from _chromeContext (deduped across the 3 render
   // modes).
-  const { chromeFor, chromeLive, bodyLive, freeConfigMode, dragging, paneMenuTriggerStateFor } = _chromeContext(model, layoutSlice);
+  const { chromeFor, chromeLive, bodyLive, wheelLive, freeConfigMode, dragging, paneMenuTriggerStateFor } = _chromeContext(model, layoutSlice);
   // The composed frame (rows stop above the footer): a pane rect that the
   // min-height floors pushed past it is clipped by composeRows, so its hit
   // regions must be too (pane-hits clips the bracket rect to `frame`).
@@ -496,10 +508,10 @@ function composeRects(layout, model) {
     });
     let raw;
     if (panel.collapsed) {
-      paneHits.begin(panel, rect, { chrome, chromeLive, bodyLive, frame });
+      paneHits.begin(panel, rect, { chrome, chromeLive, bodyLive, wheelLive, frame });
       try { raw = _renderCollapsed(panel, rect.w, chrome); } finally { paneHits.end(); }
     } else {
-      raw = _safeRender(panel, rect.w, rect.h, { chrome, focused, chromeLive, bodyLive, x: rect.x, y: rect.y, frame });
+      raw = _safeRender(panel, rect.w, rect.h, { chrome, focused, chromeLive, bodyLive, wheelLive, x: rect.x, y: rect.y, frame });
     }
     const lines = raw === '' ? [] : raw.split('\n');
     out.push({
@@ -596,7 +608,7 @@ function renderHalf(model, arrangeOverride) {
   // Half view shows one non-detail pane (left) + detail (right); only
   // the left is a pane-select candidate. Single trigger → no peer-
   // disable check (plain 'available').
-  const { chromeFor, chromeLive, bodyLive, freeConfigMode, dragging, paneMenuTriggerStateFor } = _chromeContext(model, layoutSlice);
+  const { chromeFor, chromeLive, bodyLive, wheelLive, freeConfigMode, dragging, paneMenuTriggerStateFor } = _chromeContext(model, layoutSlice);
   const leftChrome = chromeFor(leftPanel, {
     freeConfigMode, dragging,
     focused: mpane.paneMatchesFocus(leftPanel, layoutSlice.focus),
@@ -613,8 +625,8 @@ function renderHalf(model, arrangeOverride) {
   // the viewer on the right.
   const leftFocused = mpane.paneMatchesFocus(leftPanel, layoutSlice.focus);
   const detailFocused = detailPanel ? mpane.paneMatchesFocus(detailPanel, layoutSlice.focus) : false;
-  let leftContent = _safeRender(leftPanel, halfW, availH, { chrome: leftChrome, focused: leftFocused, chromeLive, bodyLive, x: 0, y: 0, frame: _hitFrame(COLS, availH, dims) });
-  let rightContent = detailPanel ? _safeRender(detailPanel, rightW, availH, { chrome: detailChrome, focused: detailFocused, chromeLive, bodyLive, x: halfW, y: 0, frame: _hitFrame(COLS, availH, dims) }) : '';
+  let leftContent = _safeRender(leftPanel, halfW, availH, { chrome: leftChrome, focused: leftFocused, chromeLive, bodyLive, wheelLive, x: 0, y: 0, frame: _hitFrame(COLS, availH, dims) });
+  let rightContent = detailPanel ? _safeRender(detailPanel, rightW, availH, { chrome: detailChrome, focused: detailFocused, chromeLive, bodyLive, wheelLive, x: halfW, y: 0, frame: _hitFrame(COLS, availH, dims) }) : '';
   const rects = [
     { x: 0, y: 0, w: halfW, h: availH,
       lines: leftContent === '' ? [] : leftContent.split('\n') },
@@ -642,7 +654,7 @@ function renderFull(model, arrangeOverride) {
   // v0.6.3 P4.2 — chrome via chromeFor. v0.6.4 Theme B — shared scalars
   // from _chromeContext. Full view paints ONE pane (the focused one):
   // single trigger, no peer-disable.
-  const { chromeFor, chromeLive, bodyLive, freeConfigMode, dragging, paneMenuTriggerStateFor } = _chromeContext(model, layoutSlice);
+  const { chromeFor, chromeLive, bodyLive, wheelLive, freeConfigMode, dragging, paneMenuTriggerStateFor } = _chromeContext(model, layoutSlice);
   const fullChrome = chromeFor(focusedPanel, {
     freeConfigMode, dragging,
     focused: true,
@@ -651,7 +663,7 @@ function renderFull(model, arrangeOverride) {
   // v0.6.4 — thread opts.focused (full view always paints the focused
   // pane). Phase-5/Arc-1 moved focus styling onto opts.focused; without it
   // the full-screen pane renders unfocused (no border highlight).
-  let content = _safeRender(focusedPanel, COLS, availH, { chrome: fullChrome, focused: true, chromeLive, bodyLive, x: 0, y: 0, frame: _hitFrame(COLS, availH, dims) });
+  let content = _safeRender(focusedPanel, COLS, availH, { chrome: fullChrome, focused: true, chromeLive, bodyLive, wheelLive, x: 0, y: 0, frame: _hitFrame(COLS, availH, dims) });
   const rects = [
     { x: 0, y: 0, w: COLS, h: availH,
       lines: content === '' ? [] : content.split('\n') },
@@ -942,6 +954,11 @@ function render(model) {
   // what this frame shows, so the router can tell a click aimed at a frame whose
   // state has since changed (§Stale-frame rule).
   hitMap.clear(hitMap.stampOf(model, layoutSlice));
+  {
+    // Viewport-sized like the overlay backdrops (the footer row included).
+    const vp = _decor().viewportDims();
+    paneHits.publishScreen(vp.cols, vp.rows, !modes.isChainActive(md));
+  }
   const viewMode = layoutSlice.viewMode;
   // Overlay-compositor migration Release 2 (docs/overlay-compositor-migration.md):
   // the view-mode dispatchers RETURN `{ newRows, COLS }` instead of running

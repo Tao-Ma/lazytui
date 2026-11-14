@@ -14,7 +14,7 @@
  *                    null row is dropped — applicability, distinct from the
  *                    `show` awareness gate.
  *
- * `ctx` is resolved from the click location by `dispatch/input._resolveContextAt`:
+ * `ctx` is resolved from the click location by `dispatch/control/pane-mouse._resolveContextAt`:
  *   { paneKind, lineText, itemLabel, selectionText }
  *
  * The `action` strings are `handleAction` verbs (here: `copy_text`, whose

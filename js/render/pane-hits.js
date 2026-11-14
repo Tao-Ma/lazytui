@@ -9,9 +9,17 @@
  *     becomes chrome-band regions: [_]/[+]/[X]/[≡], border controls, slot tabs.
  * Outside a bracket nothing publishes (an overlay's renderPanel, a unit call).
  *
+ *   - the pane BODY (Release 3): one region over the whole pane at the body
+ *     band, published at `begin`. Its handlers are acts that resolve the row /
+ *     content cell under the pointer at click time (dispatch/control/pane-mouse);
+ *     chrome, fold markers and popups sit above it in z.
+ * Outside every pane, `publishScreen` covers the viewport at the screen band so
+ * a right-click on empty space still opens the general context menu.
+ *
  * The click gates arrive from paint's _chromeContext (one place): `chromeLive`
  * for chrome-band clicks, `bodyLive` for clicks gated like a pane-body click
- * (tabs, fold markers). Release 3's pane-body regions publish here too.
+ * (bodies, tabs, fold markers — the T13 chain gate at paint), `wheelLive` for
+ * the body wheel (bodyLive, or agentMode).
  */
 'use strict';
 
@@ -26,16 +34,60 @@ function _hitRect(x, y, w, h, frame) {
   return { x, y, w: Math.min(w, frame.cols - x), h: Math.min(h, frame.rows - y) };
 }
 
-// The pane being rendered: { panel, chrome, live, bodyLive } between begin and
-// end; null otherwise, so an overlay's renderPanel publishes no pane chrome.
+// The pane being rendered: { panel, chrome, live, bodyLive, wheelLive, w, h }
+// between begin and end; null otherwise, so an overlay's renderPanel publishes
+// no pane chrome.
 let _chromeCur = null;
 
+// Hoverable pane kinds — a graph's value under the pointer (stats; composite
+// routes to the widget under it). The hover tooltip reads hover-region.
+const _HOVER_TYPES = new Set(['stats', 'composite']);
+
 /** Open the bracket for one pane render. `rect` = its paint rect; `ctx` =
- *  { chrome, chromeLive, bodyLive, frame } (frame = { cols, rows } composed). */
+ *  { chrome, chromeLive, bodyLive, wheelLive, frame } (frame = { cols, rows }
+ *  composed). Publishes the pane's body region. */
 function begin(panel, rect, ctx) {
   ctx = ctx || {};
   hitMap.enterPane(panel.paneId, _hitRect(rect.x, rect.y, rect.w, rect.h, ctx.frame), panel.activeTabId);
-  _chromeCur = { panel, chrome: ctx.chrome, live: !!ctx.chromeLive, bodyLive: !!ctx.bodyLive };
+  _chromeCur = { panel, chrome: ctx.chrome, live: !!ctx.chromeLive, bodyLive: !!ctx.bodyLive,
+    wheelLive: !!(ctx.wheelLive || ctx.bodyLive), w: rect.w, h: rect.h };
+  publishBody();
+}
+
+/** Publish the bracketed pane's BODY region (begin does; paint calls it again
+ *  after retracting an errored pane's regions — the pane is still there). The
+ *  acts carry only the paneId; the row / content cell is resolved at click
+ *  time against the select-view capture this same paint records. Tab-scoped
+ *  (a batched tab switch shows other content under the pointer). */
+function publishBody() {
+  const cur = _chromeCur;
+  if (!cur) return;
+  const paneId = cur.panel.paneId;
+  const on = {};
+  if (cur.bodyLive) {
+    on.press = { act: 'pane-press', paneId };
+    on.double = { act: 'pane-gesture', paneId, gesture: 'double-click' };
+    on.right = { act: 'pane-gesture', paneId, gesture: 'right-click' };
+    on.middle = { act: 'pane-gesture', paneId, gesture: 'middle-click' };
+    if (_HOVER_TYPES.has(cur.panel.type)) on.hover = { act: 'pane-hover', paneId };
+  }
+  if (cur.wheelLive) {
+    on['wheel-up'] = { act: 'pane-wheel', paneId, delta: -1 };
+    on['wheel-down'] = { act: 'pane-wheel', paneId, delta: +1 };
+  }
+  if (!Object.keys(on).length) return;
+  hitMap.publishLocal({ id: 'body', rect: { x: 0, y: 0, w: cur.w, h: cur.h }, on }, hitMap.BANDS.BODY);
+}
+
+/** The empty-screen region (paint, right after the hit map's clear): the
+ *  button gestures outside every pane body — a right-click on empty space
+ *  opens the general context menu (`pane-gesture` with no pane). Gated like a
+ *  body (bodyLive). */
+function publishScreen(cols, rows, bodyLive) {
+  if (!bodyLive || !(cols > 0) || !(rows > 0)) return;
+  const g = (gesture) => ({ act: 'pane-gesture', paneId: null, gesture });
+  hitMap.publish({ id: 'screen', owner: 'screen', rect: { x: 0, y: 0, w: cols, h: rows }, z: hitMap.BANDS.SCREEN,
+    on: { double: g('double-click'), right: g('right-click'), middle: g('middle-click') } });
 }
 
 /** Close the bracket (paint calls it in a finally). */
@@ -153,4 +205,4 @@ function _recordError(where, panel, tag, e) {
   } catch (_) { /* event-log unavailable */ }
 }
 
-module.exports = { begin, end, publishChrome };
+module.exports = { begin, end, publishChrome, publishBody, publishScreen };

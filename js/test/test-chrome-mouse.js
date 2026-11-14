@@ -233,7 +233,9 @@ describe('[8] pre-release review regressions', () => {
     sm.resize(60, 10);
     hc.paint();
     const availH = require('../leaves/wm/geometry').availRows(layout().dims);
-    const below = hm.all().filter(r => r.rect.y + r.rect.h > availH && r.z < 1000);
+    // (the empty-screen region is viewport-sized by design — R3: a right-click on
+    // the footer opens the general context menu, as before; it is no pane's)
+    const below = hm.all().filter(r => r.rect.y + r.rect.h > availH && r.z < 1000 && r.owner !== 'screen');
     eq(below.map(r => `${r.owner}/${r.id}`), [], 'no pane region on or past the footer row');
     const before = panes().map(p => !!p.collapsed).join();
     hc.click(56, 9);
@@ -466,7 +468,7 @@ describe('[10] round-3 review regressions', () => {
       sm.resize(120, rows);
       hc.paint();
       assert(hm.all().some(r => r.z === hm.BANDS.CHROME), `rows=${rows}: chrome published (non-vacuous)`);
-      const under = hm.all().filter(r => r.z < hm.BANDS.OVERLAY_BASE && r.rect.y + r.rect.h > rows - 1);
+      const under = hm.all().filter(r => r.z < hm.BANDS.OVERLAY_BASE && r.rect.y + r.rect.h > rows - 1 && r.owner !== 'screen');
       eq(under.map(r => `${r.owner}/${r.id}`), [], `rows=${rows}: the footer row (${rows - 1}) is not claimed`);
     }
   });

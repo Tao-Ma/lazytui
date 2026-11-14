@@ -74,6 +74,18 @@ function paintNow() {
   if (_renderFn) _renderFn();
 }
 
+/** Synchronous repaint that IGNORES an open batch — for a caller that needs
+ *  the frame (and its side outputs, e.g. the hit map) to match current state
+ *  NOW, mid-chunk: the mouse router resolving a click batched behind a key that
+ *  changed what the screen shows (docs/mouse-hit-map.md §Stale-frame rule).
+ *  The batch's pending trailing paint is satisfied by this one; a later
+ *  paintNow in the same batch marks it dirty again. */
+function paintSync() {
+  if (!_renderFn) return;
+  _batchDirty = false;
+  _renderFn();
+}
+
 /**
  * Paint batching — coalesce a multi-event input chunk's paints into one
  * trailing paint (network-lag fix, 2026-08-05). Over a slow link,
@@ -112,5 +124,5 @@ function invalidateRows(startY, endY) { if (_invalidateFn) _invalidateFn(startY,
 
 module.exports = {
   setRenderers, scheduleRender, scheduleOverlay,
-  paintNow, beginBatch, endBatch, forceFullRepaint, invalidateRows,
+  paintNow, paintSync, beginBatch, endBatch, forceFullRepaint, invalidateRows,
 };
