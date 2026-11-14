@@ -214,6 +214,57 @@ describe('[4b] a capture lives only in the scope it started in', () => {
   }
 });
 
+describe('[4c] pre-release review — code track', () => {
+  const mb = require('../dispatch/control/mouse-bindings');
+  const dbl = (mx, my) => { input._classifyPress(0, 250, 90, Date.now()); tok(sgr(0, mx, my)); tok(sgr(0, mx, my)); };
+  it('a fast double-click on pane chrome is ONE toggle — the body beneath does not take the 2nd click (default + double-click: context)', () => {
+    for (const remap of [null, 'context']) {
+      boot();
+      if (remap) mb.configure({ 'double-click': remap });
+      try {
+        toLayout({ type: 'focus_set', focus: 'pane-detail' });
+        hc.paint();
+        const c = hm.all().find(r => r.id === 'collapse' && r.paneId === 'pane-groups');
+        assert(c, 'groups [_] published');
+        dbl(c.rect.x + 1, c.rect.y);
+        const p = require('../leaves/wm/pool').allPanesInColumns(layout().arrange).find(x => x.paneId === 'pane-groups');
+        eq(!!p.collapsed, true, `${remap || 'default'}: collapsed once`);
+        eq(layout().focus, 'pane-detail', `${remap || 'default'}: the body's double-click did not fire (no focus move)`);
+        eq(getModel().modes.menuOpen, false, `${remap || 'default'}: no context menu`);
+      } finally { mb.reset(); }
+    }
+  });
+  it('a press on a list pane\'s bottom border selects no row (it mapped to the row after the last visible one)', () => {
+    const groups = {};
+    for (let i = 0; i < 40; i++) {
+      const id = `g${String(i).padStart(2, '0')}`;
+      groups[id] = { label: id, containers: [], actions: { a: { cmd: 'echo', label: 'A' } } };
+    }
+    sm.bootFresh({ groups });
+    toLayout({ type: 'view_set', mode: 'normal' });
+    sm.resize(120, 30);
+    hc.paint();
+    const g = geo.visibleBoundsFor(layout(), 'pane-groups');
+    assert(api.getInstanceSlice('pane-groups').list.length > g.h, 'precondition: the list overflows the pane');
+    const before = api.getInstanceSlice('pane-groups').nav.cursor;
+    tok(sgr(0, g.x + 3, g.y + g.h - 1));
+    eq(api.getInstanceSlice('pane-groups').nav.cursor, before, 'cursor unchanged');
+  });
+  it('an inert gesture paints nothing (middle-click noop, an off-row double-click)', () => {
+    boot();
+    const rq = require('../leaves/infra/render-queue');
+    const paint = require('../render/paint');
+    let n = 0;
+    rq.setRenderers({ render: () => { n++; } });
+    try {
+      const d = geo.visibleBoundsFor(layout(), 'pane-detail');
+      tok(sgr(1, d.x + 3, d.y + 3));                // middle → noop
+      dbl(60, 29);                                  // footer row: activate on no row
+      eq(n, 0, 'no paint');
+    } finally { rq.setRenderers({ render: () => paint.render(getModel()) }); }   // paint.js's own registration
+  });
+});
+
 describe('[5] hover', () => {
   it('a live graph hover clears once a popup covers the graph (no hover handler → hover-out)', () => {
     const paneCfg = { id: 'g', type: 'stats', title: 'CPU', config: { topic: 'gh.cpu', row: '_', metrics: ['cpu'], window: 300, y_axis: 'off' } };

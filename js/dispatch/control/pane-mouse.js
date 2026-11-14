@@ -53,6 +53,8 @@ let _selViewRef, _selConfigRef, _terminalRef;
 const selView = () => (_selViewRef || (_selViewRef = require('../../panel/select-view')));
 const selConfig = () => (_selConfigRef || (_selConfigRef = require('../../panel/select-config')));
 const terminal = () => (_terminalRef || (_terminalRef = require('../../io/terminal')));
+let _replayRef;
+const replayControl = () => (_replayRef || (_replayRef = require('../runtime/replay-control')));
 
 /**
  * Wheel-on-panel: scroll the pane under the cursor — the one the hit map
@@ -183,6 +185,10 @@ function handleWheel(mx, my, delta, paneId) {
 // scrollOffset: getScroll). Returns the row index (>= 0) or -1 when the click
 // lands above the first item (border/header).
 function _rowIndexAt(paneId, b, my) {
+  // The bottom border (and anything below it) is no row: without this bound a
+  // press there mapped to the row AFTER the last visible one — a double-click
+  // ran an action that was never on screen (pre-release review, inherited).
+  if (my >= b.y + b.h - 1) return -1;
   const cap = selView().contentFor(paneId);
   const header = (cap && cap.headerRows) || 0;
   const itemRow = my - b.y - 1 - header;
@@ -199,9 +205,10 @@ function _rowIndexAt(paneId, b, my) {
 // Returns { paneId, navIdx } (navIdx >= 0 iff on a selectable row), or null
 // when the cursor is outside every visible pane.
 function _resolveBodyHit(mx, my, paneId) {
+  if (paneId == null) return null;   // the empty-screen region names no pane
   const layoutSlice = getInstanceSlice('layout');
   for (const p of allPanels()) {
-    if (paneId != null && p.paneId !== paneId) continue;   // the hit map named the pane
+    if (p.paneId !== paneId) continue;   // the hit map named the pane
     const b = visibleBoundsFor(layoutSlice, p.paneId, route.resolveViewerPaneId());
     if (!b) continue;
     if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
@@ -235,10 +242,14 @@ function _itemText(def, item) {
 }
 
 function _resolveContextAt(mx, my, paneId) {
+  // The empty-screen region names no pane: the general section only (a pane's
+  // unclipped bounds can reach the footer row of a short terminal — scanning
+  // them offered "Copy item" for a row that was never drawn).
+  if (paneId == null) return null;
   const { stripMarkup } = require('../../leaves/text/ansi');
   const layoutSlice = getInstanceSlice('layout');
   for (const p of allPanels()) {
-    if (paneId != null && p.paneId !== paneId) continue;   // the hit map named the pane
+    if (p.paneId !== paneId) continue;   // the hit map named the pane
     const b = visibleBoundsFor(layoutSlice, p.paneId, route.resolveViewerPaneId());
     if (!b) continue;
     if (mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) continue;
@@ -256,7 +267,8 @@ function _resolveContextAt(mx, my, paneId) {
       // The active content instance holds its displayed buffer on slice.lines.
       const lines = (d && Array.isArray(d.lines)) ? d.lines : [];
       const li = itemRow + ((d && d.scroll) || 0);
-      const lineText = (itemRow >= 0 && li < lines.length) ? stripMarkup(lines[li]) : null;
+      const onContent = itemRow >= 0 && itemRow <= b.h - 3;   // not a border row
+      const lineText = (onContent && li < lines.length) ? stripMarkup(lines[li]) : null;
       return { paneKind: 'detail', lineText, itemLabel: null, selectionText };
     }
     const def = getPanelDef(p.type);
@@ -287,11 +299,13 @@ function _resolveContextAt(mx, my, paneId) {
 
 // Realize the intent a discrete button gesture is bound to (the gesture →
 // intent map's right-hand side). The supported vocabulary mirrors
-// parser/schema.js VALID_MOUSE_INTENTS. The router paints after the act.
+// parser/schema.js VALID_MOUSE_INTENTS. Returns whether anything happened —
+// the act reports `false` otherwise, so the router skips its paint (pre-R3
+// gating: an inert middle-click / an off-row activate painted nothing).
 function _realizeButtonGesture(intentName, x, y, mx, my, paneId) {
   switch (intentName) {
     case 'noop':
-      return;  // reserved-but-inert (the middle-click default)
+      return false;  // reserved-but-inert (the middle-click default)
     case 'context': {
       // Open the context menu anchored AT the cursor (1-based SGR {x,y}).
       // Resolve what's under the pointer → build the rows: contextual copy
@@ -299,25 +313,24 @@ function _realizeButtonGesture(intentName, x, y, mx, my, paneId) {
       // a right-click on EMPTY space (null ctx) still opens a populated menu.
       const ctx = _resolveContextAt(mx, my, paneId) || {};
       const items = require('../../leaves/input/context-menu').buildContextItems(ctx);
-      if (!items.length) return;  // safety — the general section keeps this non-empty
+      if (!items.length) return false;  // safety — the general section keeps this non-empty
       intent.realize(intent.context({ x, y }, { items, title: 'Actions' }));
-      return;
+      return true;
     }
     case 'activate': {
       // Focus + select + activate the row under the cursor — the `pane-press`
       // act's path, gated on landing ON a row.
       const hit = _resolveBodyHit(mx, my, paneId);
-      if (hit && hit.navIdx >= 0) {
-        intent.realize(intent.focusPane(hit.paneId, { skipInfo: true }));
-        intent.realize(intent.selectAt(hit.paneId, hit.navIdx));
-        intent.realize(intent.activate());
-        }
-      return;
+      if (!hit || hit.navIdx < 0) return false;
+      intent.realize(intent.focusPane(hit.paneId, { skipInfo: true }));
+      intent.realize(intent.selectAt(hit.paneId, hit.navIdx));
+      intent.realize(intent.activate());
+      return true;
     }
     default:
       // Unknown intent — schema validation should make this unreachable;
       // be inert rather than throw on a hot input path.
-      return;
+      return false;
   }
 }
 
@@ -462,9 +475,8 @@ function _hover(h, ev) {
 }
 
 acts.register('pane-press', _press);
-acts.register('pane-gesture', (h, ev) => {
-  _realizeButtonGesture(mouseBindings.intentFor(h.gesture), ev.x, ev.y, ev.mx, ev.my, h.paneId);
-});
+acts.register('pane-gesture', (h, ev) =>
+  (_realizeButtonGesture(mouseBindings.intentFor(h.gesture), ev.x, ev.y, ev.mx, ev.my, h.paneId) ? undefined : false));
 // Pointer scroll routes through the intent layer (the v0.6.4 keyboard↔mouse
 // seam); false = nothing moved (the router skips the paint).
 acts.register('pane-wheel', (h, ev) => !!intent.realize(intent.scrollAt(ev.mx, ev.my, h.delta, h.paneId)));
@@ -547,6 +559,16 @@ capture.register('graph-zoom', {
     return dirty;
   },
   pressWhileHeld: 'drop',
+  // Abandoned (a lost release, a modal opened mid-drag): take the live band
+  // down — it would otherwise stay painted until the next zoom drag. Not while
+  // replaying (a scope change can be replay starting: nothing may write into
+  // the reconstructed model).
+  cancel(st) {
+    const band = getInstanceSlice('layout').dragBand;
+    if (!band || band.paneId !== st.paneId || replayControl().active()) return false;
+    dispatchMsg(wrap('layout', { type: 'graph_drag', band: null }));
+    return true;
+  },
 });
 
 /** Test seam — forget the hover coalescing record. */

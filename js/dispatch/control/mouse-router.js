@@ -46,7 +46,7 @@
  *   - PRESS→DOUBLE CONTINUATION: the parser emits a same-cell second click as
  *     `double`. When the FIRST click was a hit-map press (picking a popup item,
  *     which usually closes the popup), the double belongs to that press's owner:
- *     if the owner no longer holds the cell, the double is swallowed — without
+ *     if that region (owner + id) no longer holds the cell, the double is swallowed — without
  *     this it falls through to the pane beneath and fires the pane's
  *     double-click intent (`activate` → run the selected item). A REPEAT region
  *     (a hint chip) still under the pointer takes the second click as another
@@ -196,8 +196,11 @@ function route(kind, mx, my, model) {
         return true;
       }
     }
+    // The SAME region (owner + id): a pane's chrome, fold markers, tabs and body
+    // share one owner, so owner alone let a fast 2nd click on `[_]` / a marker
+    // fall through to the body's double-click (pre-release review).
     const hit = hitMap.resolve(mx, my, kind);
-    if (!hit || hit.region.owner !== last.owner || moved(hit)) return true;   // owner gone / tab switched → swallow
+    if (!hit || hit.region.owner !== last.owner || hit.region.id !== last.id || moved(hit)) return true;   // region gone / tab switched → swallow
     _realizeAndPaint(hit, kind, mx, my);
     return true;
   }

@@ -976,13 +976,28 @@ step 7 is the bench, docs and review. Notes and deviations from the plan:
   - hover resolved against a stale frame (`x` + hover in one chunk set a graph
     hover behind the menu; a hover in the window after replay started wrote
     into the reconstructed model) — a stale frame makes hover a no-op;
+  - code track (differential sweep vs v0.6.57: 26 scenarios × every cell ×
+    8 gestures = 184.6k trials; 14.6k differed — 13.8k the paint-gating case
+    below, 425 the intended panel-list fix, 330 better on a ≤ 6-row terminal):
+    a fast double-click on pane chrome or a fold marker also fired the body's
+    double-click (chrome and body share the `pane:` owner since step 1 — the
+    continuation now matches owner AND id); an inert button gesture (middle
+    = noop, an off-row double / activate) painted a frame (`pane-gesture`
+    returns false); graph-zoom gained a `cancel` (an abandoned drag took its
+    band down — not while replaying). Inherited, fixed: a press on a list
+    pane's bottom border selected the row after the last visible one (a
+    double-click ran an action never shown); a right-click on a short
+    terminal's footer offered "Copy item" for a row never drawn (the empty
+    screen names no pane);
   - three tests passed for the wrong reason (stale-frame `+` + click, the
     replay hover check, test-mouse-wheel [4]) — re-pointed and mutation-checked;
   - doc parity (DATAFLOW / ONBOARDING / pane-selection / modes.js /
     compositor comments described the deleted cascade as current), the
     `{ intent }` form, a per-wheel `require` of io/terminal.
-  Kept (judgment): any stamp change between paint and click — not only a
-  batched key — swallows a body click the stale frame drew (an async tab
+  Kept (judgment): `j` + a click on a panel-list row in one chunk is swallowed
+  (the stamp carries the panel list — the general stale-frame rule); any stamp
+  change between paint and click — not only a batched key — swallows a body
+  click the stale frame drew (an async tab
   switch, a resize; the deferred-paint window is ~50 ms and the click really
   was aimed at moved content).
 - **Test churn**: tests that hovered or clicked before any paint now paint

@@ -41,6 +41,11 @@ move, panel-list pool drag) run on one pointer-capture slot.
 - **A press on the free-config panel list's header, separator or preview
   started dragging the highlighted pane.** Only an item row starts a drag now
   (essential rows still don't).
+- **A click on a list pane's bottom border selected the row below the last
+  visible one** — a double-click there ran an action that was never on screen.
+  The border selects nothing now.
+- **On a short terminal, a right-click on the footer row offered "Copy item"
+  for a row that was never drawn.** The footer row opens the general menu only.
 
 ### For plugin / pane authors
 - Hit regions owned by a pane are now owned by `pane:<paneId>` and carry a
