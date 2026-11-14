@@ -425,7 +425,7 @@ function _safeRender(panel, w, h, opts) {
     // The error block paints NO chrome. If render() published a chrome region via
     // the sink before it threw, wipe it so a click can't land on a glyph the error
     // block overwrote (same-frame; next frame's clear() handles the steady state).
-    hitMap.retractOwner(panel.paneId);
+    hitMap.retractOwner(hitMap.paneOwner(panel.paneId));
     return rows.join('\n');
   } finally {
     selectView.exitPane();

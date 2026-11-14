@@ -40,7 +40,10 @@ function dblclick(mx, my) {
 }
 function wheel(mx, my, dir) { sm.capture(() => input._dispatchToken(sgr(dir === 'up' ? 64 : 65, mx, my))); }
 
-function regions(owner) { return hm.all().filter(r => r.owner === owner); }
+// `owner` is a region owner — an overlay's descriptor id — or a paneId: a pane's
+// regions are owned by `pane:<paneId>` (hit-map §Owner namespace) and carry
+// `paneId`, so tests name a pane by its paneId.
+function regions(owner) { return hm.all().filter(r => r.owner === owner || (r.paneId !== undefined && r.paneId === owner)); }
 function region(owner, id) { return regions(owner).find(r => r.id === id) || null; }
 function at(r) { return { mx: r.rect.x + Math.floor(r.rect.w / 2), my: r.rect.y + Math.floor(r.rect.h / 2) }; }
 
@@ -119,7 +122,7 @@ function chromeAt(id, mx, my) {
   return h && h.region.id === id && h.region.z === hm.BANDS.CHROME ? h : null;
 }
 /** paneId whose `[≡]` a press at (mx, my) hits, or null. */
-function triggerAt(mx, my) { const h = chromeAt('trigger', mx, my); return h ? h.region.owner : null; }
+function triggerAt(mx, my) { const h = chromeAt('trigger', mx, my); return h ? h.region.paneId : null; }
 /** Pool id a press on a `[_]`/`[+]` at (mx, my) toggles, or null. */
 function collapseAt(mx, my) { const h = chromeAt('collapse', mx, my); return h ? h.handler.msg.id : null; }
 /** Pool id a press on an `[X]` at (mx, my) hides, or null. */

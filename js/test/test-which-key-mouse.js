@@ -113,7 +113,7 @@ describe('[4] box / outside', () => {
     const r = uncoveredCollapse();
     assert(r, 'a [_] outside the which-key box');
     hc.click(r.rect.x + 1, r.rect.y);
-    eq(collapsedOf(r.owner), true);
+    eq(collapsedOf(r.paneId), true);
   });
 });
 

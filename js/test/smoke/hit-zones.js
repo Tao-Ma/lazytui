@@ -285,7 +285,7 @@ describe('[5] a truncated slot strip does not report its clipped tail tabs click
     assert(b, 'content pane bounds present');
     const hm = require('../../panel/hit-map');
     const published = new Set(hm.all()
-      .filter(r => r.owner === cp.paneId && r.id.startsWith('tab:'))
+      .filter(r => r.paneId === cp.paneId && r.id.startsWith('tab:'))
       .map(r => r.id.slice(4)));
     const bounds = slotTabBounds();
     assert(published.size > 0 && published.size < bounds.length,

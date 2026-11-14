@@ -78,11 +78,11 @@ describe('[1] [_] / [+]', () => {
     assert(r, 'some pane published a collapse glyph');
     eq(hc.screenText(r.owner, 'collapse'), '[_]');
     hc.clickRegion(r.owner, 'collapse');
-    eq(pane(r.owner).collapsed, true);
+    eq(pane(r.paneId).collapsed, true);
     hc.paint();
     eq(hc.screenText(r.owner, 'collapse'), '[+]', 'collapsed bar publishes [+]');
     hc.clickRegion(r.owner, 'collapse');
-    eq(!!pane(r.owner).collapsed, false, 'expanded again');
+    eq(!!pane(r.paneId).collapsed, false, 'expanded again');
   });
   it('the content slot (detail) carries no collapse glyph', () => {
     boot();
@@ -98,10 +98,10 @@ describe('[2] [X] in free-config', () => {
     eq(chrome('close').length, 0, 'normal mode: no [X]');
     sm.capture(() => sm.applyMsg({ type: 'mode_set', flag: 'freeConfigMode' }));
     hc.paint();
-    const r = chrome('close').find(x => x.owner === 'pane-groups2');
+    const r = chrome('close').find(x => x.paneId === 'pane-groups2');
     assert(r, 'free-config publishes [X] on groups2');
     eq(hc.screenText(r.owner, 'close'), '[X]');
-    const id = pane(r.owner).id;
+    const id = pane(r.paneId).id;
     hc.clickRegion(r.owner, 'close');
     assert(!panes().some(p => p.id === id), 'pane hidden from the arrange');
   });
@@ -115,7 +115,7 @@ describe('[3] [≡] trigger', () => {
     eq(hc.screenText(r.owner, 'trigger'), '[≡]');
     hc.clickRegion(r.owner, 'trigger');
     eq(getModel().modes.paneMenuMode, true);
-    eq(layout().paneMenu.targetPaneId, r.owner);
+    eq(layout().paneMenu.targetPaneId, r.paneId);
     hc.paint();
     assert(hc.region(r.owner, 'trigger'), 'the open target keeps its glyph');
     const others = chrome('trigger').filter(x => x.owner !== r.owner);
@@ -161,12 +161,12 @@ describe('[6] double-click', () => {
     boot();
     const r = chrome('collapse')[0];
     hc.dblclickRegion(r.owner, 'collapse');
-    eq(pane(r.owner).collapsed, true, 'one toggle, not two');
+    eq(pane(r.paneId).collapsed, true, 'one toggle, not two');
   });
 });
 
 describe('[7] slot tab strip', () => {
-  const tabs = () => hm.all().filter(r => r.owner === 'pane-detail' && r.id.startsWith('tab:'));
+  const tabs = () => hm.all().filter(r => r.paneId === 'pane-detail' && r.id.startsWith('tab:'));
   it('each drawn tab publishes over its label; a click activates that tab', () => {
     boot();
     const ts = tabs();
@@ -389,7 +389,7 @@ describe('[10] round-3 review regressions', () => {
     ]) {
       boot();
       const before = pane('pane-detail').activeTabId;
-      const tab = hm.all().find(x => x.owner === 'pane-detail' && x.id.startsWith('tab:') && x.id !== `tab:${before}`);
+      const tab = hm.all().find(x => x.paneId === 'pane-detail' && x.id.startsWith('tab:') && x.id !== `tab:${before}`);
       const r = hc.region(target, glyph);
       assert(tab && r, `tab + ${target} ${glyph} published`);
       chunk(sgr(tab.rect.x + 1, tab.rect.y) + sgr(r.rect.x + 1, r.rect.y));
@@ -497,7 +497,7 @@ describe('[10] round-3 review regressions', () => {
     hc.paint();
     const rows = hc.screenRows();
     assert(!hc.region('pane-nav', 'collapse'), 'precondition: the chrome cluster did not fit (bare border)');
-    const tabs = hm.all().filter(r => r.owner === 'pane-nav' && r.id.startsWith('tab:'));
+    const tabs = hm.all().filter(r => r.paneId === 'pane-nav' && r.id.startsWith('tab:'));
     eq(tabs.length, 2, 'both painted tabs publish');
     const before = pane('pane-nav').activeTabId;
     const other = tabs.find(r => r.id !== `tab:${before}`);

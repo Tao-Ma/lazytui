@@ -10,7 +10,7 @@
  * and realizes its handler; precedence is z-order, not source order.
  *
  * Region shape:
- *   { id, rect: {x, y, w, h}, z, owner, opaque?, on: { [gesture]: handler } }
+ *   { id, rect: {x, y, w, h}, z, owner, paneId?, opaque?, on: { [gesture]: handler } }
  *   - rect: screen cells, 0-based, [x, x+w) × [y, y+h).
  *   - on: gesture → handler, where gesture is a handleMouse kind (press, double,
  *     right, middle, wheel-up, wheel-down, …) and handler is DATA — `{ key }`,
@@ -44,7 +44,15 @@
  * `enterPane(paneId, rect, activeTabId)` / `exitPane()`. Pane chrome and in-pane
  * affordances publish PANE-LOCAL rects through `publishLocal(region, z)`, which
  * translates them to the screen, clips them to the pane and stamps
- * `owner = paneId` — a pane renderer never needs its own screen origin.
+ * `owner = paneOwner(paneId)` + `paneId` — a pane renderer never needs its own
+ * screen origin.
+ *
+ * Owner namespace (Release 3): an overlay's owner is its compositor descriptor
+ * id (a fixed registry); a pane's is `pane:<paneId>` (pool ids are user config —
+ * a pool entry named `menu` has the paneId `pane-menu`, the pane menu's
+ * descriptor id). The router's press→double continuation and pointer capture
+ * key on the owner, so the two kinds must never compare equal. Code that needs
+ * the pane reads the region's `paneId`.
  *
  * Tab scope: a region published inside the bracket also records the tab it
  * was painted under (`tab`) — a slot that switches tabs shows another
@@ -79,12 +87,14 @@ const BANDS = Object.freeze({
 // own) read, so a new gesture can't be routed yet unhandled by a backdrop.
 const DISCRETE_GESTURES = Object.freeze(['press', 'double', 'right', 'middle', 'wheel-up', 'wheel-down']);
 
+const PANE_OWNER_PREFIX = 'pane:';
+
 const _regions = [];
 let _seq = 0;
 let _stamp = null;
 let _sorted = null;      // memoized top-down order; invalidated by publish/clear
 let _owner = null;       // { owner, zBase } while an overlay renders
-let _pane = null;        // { owner: paneId, rect, tab } while a pane renders
+let _pane = null;        // { owner: paneOwner(paneId), paneId, rect, tab } while a pane renders
 
 /** Drop every region and stamp the new frame. */
 function clear(stamp) {
@@ -123,7 +133,12 @@ function exitOwner() { _owner = null; }
 
 /** Bracket a pane's render (paint). `rect` is the pane's screen rect; `tab` the
  *  pane's active tab id (see Tab scope above). */
-function enterPane(paneId, rect, tab) { _pane = paneId && rect ? { owner: paneId, rect, tab: tab || '' } : null; }
+function enterPane(paneId, rect, tab) {
+  _pane = paneId && rect ? { owner: paneOwner(paneId), paneId, rect, tab: tab || '' } : null;
+}
+
+/** The region owner of a pane's regions (§Owner namespace). */
+function paneOwner(paneId) { return `${PANE_OWNER_PREFIX}${paneId}`; }
 function exitPane() { _pane = null; }
 
 /** Publish a PANE-LOCAL region for the ambient pane at absolute `z`: the rect
@@ -138,7 +153,7 @@ function publishLocal(region, z) {
   const x1 = Math.min(P.x + P.w, P.x + r.x + r.w), y1 = Math.min(P.y + P.h, P.y + r.y + r.h);
   if (!(x1 > x0) || !(y1 > y0)) return;
   const { paneLevel, ...rest } = region;
-  const out = { ...rest, rect: { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, owner: _pane.owner, z };
+  const out = { ...rest, rect: { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, owner: _pane.owner, paneId: _pane.paneId, z };
   if (!paneLevel) out.tab = _pane.tab;
   publish(out);
 }
@@ -147,7 +162,7 @@ function publishLocal(region, z) {
  *  painted it? (false for an unscoped region, or with no layout slice.) */
 function tabMoved(region, layoutSlice) {
   if (!region || region.tab === undefined || !layoutSlice || !layoutSlice.arrange) return false;
-  const p = mpool.allPanesInColumns(layoutSlice.arrange).find(x => x && x.paneId === region.owner);
+  const p = mpool.allPanesInColumns(layoutSlice.arrange).find(x => x && x.paneId === region.paneId);
   return ((p && p.activeTabId) || '') !== region.tab;
 }
 
@@ -247,5 +262,5 @@ function claims(mx, my) {
 function all() { return _regions.map(({ _seq, ...r }) => r); }
 
 module.exports = { clear, publish, publishOwned, enterOwner, exitOwner,
-  enterPane, exitPane, publishLocal, tabMoved, retractOwner, resolve, claims,
-  stampOf, stampsEqual, frameStamp, all, DISCRETE_GESTURES, BANDS };
+  enterPane, exitPane, publishLocal, paneOwner, tabMoved, retractOwner, resolve, claims,
+  stampOf, stampsEqual, frameStamp, all, DISCRETE_GESTURES, BANDS, PANE_OWNER_PREFIX };

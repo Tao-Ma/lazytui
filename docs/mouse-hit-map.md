@@ -130,7 +130,8 @@ either way (§Stale-frame rule).
   id:    'chip:y',                  // 'backdrop' | 'box' | 'row:<lineIdx>' | 'chip:<key>'
   rect:  { x, y, w, h },            // screen cells, 0-based, inclusive-exclusive
   z:     1013,                      // see §Z bands
-  owner: 'confirm',                 // overlay id (R1) | paneId (R2+)
+  owner: 'confirm',                 // overlay id (R1) | 'pane:<paneId>' (R2+; namespaced in R3)
+  paneId: undefined,                // pane regions only — the pane a pane-anchored region belongs to
   opaque: false,                    // stops the walk even with no handler (boxes, backdrops)
   repeat: true,                     // hint chips + top-strip steppers: a fast 2nd click re-presses (§Press→double)
   on: {                             // gesture → handler; absent gesture = not handled here
@@ -206,7 +207,8 @@ read at paint, whether chrome publishes at all.
   `publishOwned(region, zOff)` + `enterOwner` / `exitOwner` (the overlay
   bracket), `enterPane(paneId, rect, activeTabId)` / `exitPane` +
   `publishLocal(region, z)` (the pane bracket, R2 — pane-local rects translated
-  + clipped to the pane, tab-scoped unless `paneLevel`), `tabMoved(region,
+  + clipped to the pane, tab-scoped unless `paneLevel`; owner
+  `paneOwner(paneId)` = `pane:<paneId>` + `paneId`, R3), `tabMoved(region,
   layoutSlice)` (§Stale-frame rule, Tab scope), `retractOwner(owner)`, `resolve(mx, my, gesture)`, `claims(mx, my)`,
   `stampOf(model, layoutSlice)` / `stampsEqual` / `frameStamp()`, `all()`
   (tests / diag), `BANDS` (the pane-anchored z bands). Panel layer

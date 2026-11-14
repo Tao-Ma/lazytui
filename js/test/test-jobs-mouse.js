@@ -112,7 +112,7 @@ describe('[4] chips / wheel / outside', () => {
     const r = uncoveredCollapse();
     assert(r, 'a [_] outside the jobs box');
     hc.click(r.rect.x + 1, r.rect.y);
-    eq(collapsedOf(r.owner), true, 'the [_] collapsed its pane');
+    eq(collapsedOf(r.paneId), true, 'the [_] collapsed its pane');
     eq(getModel().modes.jobsMode, true, 'jobs stays open');
   });
 });

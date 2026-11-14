@@ -201,11 +201,11 @@ function checkChromeFrame(cols, label) {
   for (const r of regions) {
     const where = `${label} cols=${cols} ${r.owner}/${r.id}`;
     assert(r.rect.x >= 0 && r.rect.y >= 0 && r.rect.x + r.rect.w <= cols && r.rect.y + r.rect.h <= ROWS, `${where}: inside the screen`);
-    const b = geo.visibleBoundsFor(layout, r.owner, viewer);
+    const b = geo.visibleBoundsFor(layout, r.paneId, viewer);
     assert(b, `${where}: owner pane is visible`);
     if (b) assert(r.rect.x >= b.x && r.rect.y >= b.y && r.rect.x + r.rect.w <= b.x + b.w && r.rect.y + r.rect.h <= b.y + b.h, `${where}: inside its pane`);
     const t = text(r);
-    const pane = panes.find(p => p.paneId === r.owner);
+    const pane = panes.find(p => p.paneId === r.paneId);
     if (r.id === 'collapse') {
       const want = pane && pane.collapsed ? '[+]' : '[_]';
       assert(t === want, `${where}: painted ${JSON.stringify(t)}, want ${want}`);
@@ -229,7 +229,7 @@ function checkChromeFrame(cols, label) {
   for (const p of panes) {
     if (p.collapsed || p.role === 'content' || p.type === 'detail') continue;
     if (!geo.visibleBoundsFor(layout, p.paneId, viewer)) continue;
-    if (!regions.some(r => r.owner === p.paneId && r.id === 'collapse')) chromeDropped++;
+    if (!regions.some(r => r.paneId === p.paneId && r.id === 'collapse')) chromeDropped++;
   }
 }
 

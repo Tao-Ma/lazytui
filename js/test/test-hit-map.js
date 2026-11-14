@@ -155,7 +155,7 @@ describe('[2b] frame stamp + claims', () => {
 });
 
 describe('[2c] ambient pane — publishLocal', () => {
-  it('translates by the pane origin, clips to the pane, stamps owner = paneId', () => {
+  it('translates by the pane origin, clips to the pane, stamps owner = pane:<paneId> + paneId', () => {
     hm.clear('');
     hm.publishLocal({ id: 'x', rect: R(0, 0, 3, 1), on: {} }, 40);   // no ambient pane → dropped
     eq(hm.all().length, 0, 'outside a bracket nothing publishes');
@@ -168,8 +168,26 @@ describe('[2c] ambient pane — publishLocal', () => {
     const rs = hm.all();
     eq(rs.map(r => r.id).join(), 'glyph,wide');
     eq(JSON.stringify(rs[0].rect), JSON.stringify(R(26, 5, 3, 1)), 'pane-local → screen');
-    eq(rs[0].owner, 'pane-a'); eq(rs[0].z, 40);
+    eq(rs[0].owner, 'pane:pane-a'); eq(rs[0].paneId, 'pane-a'); eq(rs[0].z, 40);
     eq(JSON.stringify(rs[1].rect), JSON.stringify(R(28, 7, 2, 1)), 'clipped at the pane edge');
+  });
+  it('owner namespace: a pool entry named like an overlay never shares its owner', () => {
+    // A pool entry `menu` has the paneId `pane-menu` — the pane menu overlay's
+    // descriptor id. The press→double continuation and pointer capture compare
+    // owners, so a pane's owner is namespaced.
+    hm.clear('');
+    hm.enterPane('pane-menu', R(0, 0, 20, 8));
+    hm.publishLocal({ id: 'collapse', rect: R(1, 0, 3, 1), on: { press: 'swallow' } }, 40);
+    hm.exitPane();
+    hm.enterOwner('pane-menu', 1500);
+    hm.publishOwned({ id: 'row:0', rect: R(1, 1, 5, 1), on: { press: 'swallow' } }, 2);
+    hm.exitOwner();
+    const [pane, overlay] = hm.all();
+    assert(pane.owner !== overlay.owner, 'distinct owners');
+    eq(pane.owner, hm.paneOwner('pane-menu'));
+    eq(overlay.paneId, undefined, 'overlay regions carry no paneId');
+    hm.retractOwner(hm.paneOwner('pane-menu'));
+    eq(hm.all().map(r => r.owner), ['pane-menu'], 'retracting the pane leaves the overlay');
   });
 });
 

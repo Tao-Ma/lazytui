@@ -40,7 +40,7 @@ function treeSlice(over) {
 // PANE-LOCAL (pane origin subtracted) as `{ y, x0, x1, id }`, or null when none.
 function markersOf(paneId) {
   const b = visibleBoundsFor(route.getInstanceSlice('layout'), paneId);
-  const rs = hitMap.all().filter(r => r.owner === paneId && r.id.startsWith('tree:'));
+  const rs = hitMap.all().filter(r => r.paneId === paneId && r.id.startsWith('tree:'));
   if (!b || !rs.length) return null;
   return rs.map(r => ({ y: r.rect.y - b.y, x0: r.rect.x - b.x, x1: r.rect.x - b.x + r.rect.w - 1, id: r.id.slice(5) }));
 }

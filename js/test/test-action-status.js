@@ -546,7 +546,7 @@ describe('[action-status] ✗ cancel — the painted chip is exactly where the h
     eq(hc.cancelAt(at.x + 7, at.y), job.id);             // the last 'l' of "cancel"
     eq(hc.cancelAt(at.x - 2, at.y), null);               // left of the filled block (neutral fill) — not clickable
     eq(hc.cancelAt(at.x, at.y - 1), null);               // one row up (log output) — no hit
-    eq(hitMap.all().filter((r) => r.id === 'cancel').map((r) => r.owner), [slot], 'one cancel region, owned by the slot');
+    eq(hitMap.all().filter((r) => r.id === 'cancel').map((r) => r.paneId), [slot], 'one cancel region, owned by the slot');
     killAll();
   });
 

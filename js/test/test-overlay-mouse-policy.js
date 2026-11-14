@@ -55,4 +55,15 @@ describe('[policy] backdrop placement follows suppressChrome', () => {
   }
 });
 
+describe('[owner] namespace', () => {
+  it('no descriptor id can collide with a pane owner', () => {
+    // Pane regions are owned by `pane:<paneId>` (hit-map §Owner namespace);
+    // an overlay owner is its descriptor id.
+    const hm = require('../panel/hit-map');
+    for (const d of compositor._all()) {
+      assert(!String(d.id).startsWith(hm.PANE_OWNER_PREFIX), `${d.id} is not in the pane namespace`);
+    }
+  });
+});
+
 report();

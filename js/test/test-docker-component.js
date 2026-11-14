@@ -497,7 +497,7 @@ function paintPanes(columns, dims, modes = {}) {
   api.dispatchMsg(api.wrap('docker', { type: 'set_refresh_ms', ms: 2000 }));
   hc.screenRows();   // full production paint → repopulates the hit map
 }
-const ctlRegions = (owner) => hm.all().filter(r => r.owner === owner && r.id.startsWith('ctl:'));
+const ctlRegions = (paneId) => hm.all().filter(r => r.paneId === paneId && r.id.startsWith('ctl:'));
 
 describe('[13] border-control clicks resolve refresh + sort on a placed containers pane (hit map)', () => {
   // Two controls share the strip — refresh (host-global, leftmost) then the sort
@@ -610,7 +610,7 @@ describe('[15] item-action bar: reducer Cmds, confirm on destructive, focused bo
   it('the legend act re-checks focus at CLICK time (focus moved after the paint → no-op)', () => {
     setup(['c1', 'c2']);
     paintPanes(TWO, { cols: 100, rows: 9 });
-    assert(hm.all().some(r => r.owner === 'containers' && r.id === 'ctl:actions:kill'), 'painted with the kill region');
+    assert(hm.all().some(r => r.paneId === 'containers' && r.id === 'ctl:actions:kill'), 'painted with the kill region');
     getInstanceSlice('layout').focus = 'c-other';   // no repaint: the frame still shows the legend
     eq(hc.borderControlAt(34, 7), null, 'the act resolves to nothing for an unfocused pane');
     const loop = require('../dispatch/runtime/loop');
