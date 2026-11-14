@@ -22,6 +22,14 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   terminal mode with the terminal hidden (keys went to an editor you couldn't
   see), and a dead session is no longer restarted at the bar's negative size.
   Restore the pane, then press Enter.
+- **Programs in a terminal pane get answers to their terminal queries.** A
+  program asks its terminal for device attributes (`ESC [ c`, `ESC [ > c`), the
+  cursor position (`ESC [ 6 n`) and mode reports, and reads the answer on stdin.
+  The embedded emulator computed every answer but nothing sent it back, so each
+  query went unanswered: vim picks its mouse encoding from the `ESC [ > c`
+  answer, nvim waits on `ESC [ c`, and fzf `--height` reads the cursor
+  position. The emulator's replies now reach the program, as a real terminal's
+  would.
 
 ## [0.6.58] — 2026-11-14
 

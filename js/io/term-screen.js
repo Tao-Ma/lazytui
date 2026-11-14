@@ -12,6 +12,7 @@
  * A `screen` handle is opaque to callers (here it is an xterm Terminal). The API:
  *   createScreen(cols,rows) → screen        writeScreen(screen,data,cb)
  *   resizeScreen / disposeScreen            screenSize(screen) → {cols,rows}
+ *   onScreenReply(screen, fn) → disposable  (the emulator's replies to the program)
  *   scrollScreen / scrollScreenPages / scrollScreenToTop / scrollScreenToBottom → moved?
  *   screenScrollInfo(screen) → {atBottom,linesBelow}   screenMouseMode(screen) → mode
  *   readViewport(screen,h,w) → {viewportY, rows:[text]}   (render)
@@ -37,6 +38,18 @@ function writeScreen(screen, data, cb) { screen.write(data, cb); }
 function resizeScreen(screen, cols, rows) { screen.resize(cols, rows); }
 
 function disposeScreen(screen) { screen.dispose(); }
+
+/** Subscribe to what the emulator sends BACK to the program: its answers to the
+ *  program's terminal queries (device attributes `ESC [ c` / `ESC [ > c`, cursor
+ *  position `ESC [ 6 n`, mode reports) and the mouse reports it encodes. A real
+ *  terminal writes these to the program's stdin; `fn(data, binary)` is that
+ *  write. `binary` marks a byte string (the legacy X10 mouse encoding) that must
+ *  reach the PTY as raw bytes, not UTF-8. Returns a disposable. */
+function onScreenReply(screen, fn) {
+  const a = screen.onData((d) => fn(d, false));
+  const b = screen.onBinary((d) => fn(d, true));
+  return { dispose() { a.dispose(); b.dispose(); } };
+}
 
 function screenSize(screen) { return { cols: screen.cols, rows: screen.rows }; }
 
@@ -118,7 +131,7 @@ function restoreScreen(snap, cb) {
 }
 
 module.exports = {
-  createScreen, writeScreen, resizeScreen, disposeScreen, screenSize,
+  createScreen, writeScreen, resizeScreen, disposeScreen, screenSize, onScreenReply,
   scrollScreen, scrollScreenPages, scrollScreenToTop, scrollScreenToBottom,
   screenScrollInfo, screenMouseMode, readViewport, screenCursor,
   serializeScreen, restoreScreen,

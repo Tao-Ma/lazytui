@@ -101,9 +101,18 @@ function ensureSession(id, cmd, cols, rows, cwd) {
   });
   // Declare `session` BEFORE registering `p.onData` so the closure's
   // `session.exited` read can't TDZ-throw on a synchronous data chunk.
-  const session = { pty: p, screen, cmd, cwd: spawnCwd, exited: false, exitCode: null, _onDataSub: null };
+  const session = { pty: p, screen, cmd, cwd: spawnCwd, exited: false, exitCode: null, _onDataSub: null, _replySub: null };
   // T17 — node-pty's onData returns a disposable; hold it on the session so
   // destroySession can dispose the listener BEFORE the screen is disposed.
+  // The emulator's answers to the child's terminal queries (DA, cursor position,
+  // mode reports) and the mouse reports it encodes go back to the child's stdin,
+  // as a real terminal's would. Unwired, every query went unanswered (field
+  // report 2026-11-14: vim chooses its mouse encoding from the `ESC [ > c`
+  // answer; nvim waits on `ESC [ c`).
+  session._replySub = emu.onScreenReply(screen, (d, binary) => {
+    if (session.exited) return;
+    try { p.write(binary ? Buffer.from(d, 'latin1') : d); } catch {}
+  });
   session._onDataSub = p.onData(data => {
     if (session.exited) return;  // belt-and-braces: also drop if exited
     // Replay WAL: record the PTY output chunk (the foreign-component "diff")
@@ -256,6 +265,7 @@ function destroySession(id) {
   if (!s) return;
   // T17 — dispose the onData listener BEFORE disposing the screen.
   if (s._onDataSub) { try { s._onDataSub.dispose(); } catch {} s._onDataSub = null; }
+  if (s._replySub) { try { s._replySub.dispose(); } catch {} s._replySub = null; }
   if (!s.exited && s.pty) try { s.pty.kill(); } catch {}
   if (s.jobId && _jobs) {
     _jobs.close(s.jobId, { status: 'killed' });
