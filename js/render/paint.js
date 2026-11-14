@@ -1076,16 +1076,19 @@ function render(model) {
   // state main paint is diff-based and leaves the PTY region untouched, so
   // each surface's own per-session diff cache is enough. The debounced
   // fast-path (PTY onData → scheduleOverlay) omits forceAll → targeted diff.
+  // 3b — footer returns its ansi (undefined in cmdline mode); paint emits it
+  // through the depth funnel like every other frame byte. BEFORE the terminal
+  // surfaces: their pass ends by putting the hardware cursor on the focused
+  // program's cursor (terminal mode), and a footer written after it left the
+  // cursor on the footer row until the next PTY repaint.
+  const footerAnsi = renderFooter(model);
+  if (footerAnsi) _emit(footerAnsi);
   renderTerminalOverlay(model, previewArrange, mainDidFull, wrote);
   // blessed-exceptions Phase A — render produces NO slice writes: `innerH`
   // is computed in the post-dispatch finalizer (A.1), `paneBounds` is a pure
   // derived selector (A.2), and the former `tabBounds` render-write is gone
   // (`tabBoundsFor` is a pure projection; input.js recomputes on demand).
   // render() is now a pure `model -> output` view.
-  // 3b — footer returns its ansi (undefined in cmdline mode); paint emits it
-  // through the depth funnel like every other frame byte.
-  const footerAnsi = renderFooter(model);
-  if (footerAnsi) _emit(footerAnsi);
   // Panel-chrome glyphs (`[_]`/`[+]` collapse, `[X]` close in free-config,
   // `[≡]` tab trigger) are composed INLINE in the panel's top border
   // by renderPanel({chrome}) — v0.6.3 P4.2 retired the post-render

@@ -135,6 +135,16 @@ const collapse = (p) => dispatchMsg(route.wrap('layout', { type: 'panel_collapse
   assert(getModel().modes.terminalMode, 'precondition: Enter entered terminal mode');
   const f6 = await footer();
   assert(f6.includes('[terminal: Dev]'), `the footer names it as its border does: "${f6.trim()}"`);
+  // A full frame ends with the hardware cursor on the PROGRAM's cursor — the
+  // footer is written before the terminal surfaces (pre-release review
+  // 2026-11-14: written after them, it left the cursor on the footer row until
+  // the next PTY repaint).
+  {
+    const surf = require('../panel/terminal-surfaces').visibleTerminalSurfaces(getModel()).find(s => s.id === fx.id);
+    const cur = terminal.sessionCursor(fx.id);
+    const c = vt.buffer.active;
+    eq([c.cursorY, c.cursorX], [surf.bounds.y + 1 + cur.y, surf.bounds.x + 1 + cur.x], 'the cursor is where the program\'s is, not on the footer');
+  }
   assert(!f6.includes('[terminal: terminal]'), 'not the generic name');
   assert((await screen()).some(r => r.includes('Dev')), 'precondition: the border shows Dev');
   stdin.emit('data', '\x1c');
