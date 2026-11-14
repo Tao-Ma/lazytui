@@ -1,7 +1,8 @@
 /**
  * `:` cmdline dropdown — mouse (docs/mouse-hit-map.md Release 1).
  *
- *   [1] cmdline_nav { to } — absolute, clamped; empty list is a no-op
+ *   [1] cmdline_nav { to } — absolute, clamped; empty list is a no-op (↑/↓ too:
+ *       ↑ with no matches selected -1 and the render threw — the session died)
  *   [2] rows are reversed: each row covers ITS match; a click selects it
  *   [3] wheel ≡ ↑/↓ keys; outside click (incl. the prompt row) swallowed
  *
@@ -40,6 +41,27 @@ describe('[1] cmdline_nav { to }', () => {
     eq(m.modal.cmdline.sel, 2);
     [m] = runtime.update(m, { type: 'cmdline_nav', to: 9 });
     eq(m.modal.cmdline.sel, 2, 'clamped');
+  });
+  it('↑ / ↓ with no matches → no-op', () => {
+    let m = runtime.init();
+    [m] = runtime.update(m, { type: 'cmdline_enter' });
+    const before = m;
+    for (const dir of [+1, -1]) {
+      [m] = runtime.update(m, { type: 'cmdline_nav', dir });
+      assert(m === before, `dir ${dir}: unchanged`);
+    }
+  });
+  it('the keys: `:` + text matching nothing + ↑ (CSI and SS3) paints, the cmdline stays', () => {
+    for (const up of ['\x1b[A', '\x1bOA']) {
+      sm.bootFresh();
+      sm.resize(120, 30);
+      const key = require('../dispatch/control/input')._dispatchToken;
+      sm.capture(() => { for (const t of [':', 'z', 'q', 'x']) key(t); });
+      eq(c().matches.length, 0, 'precondition: nothing matches');
+      sm.capture(() => key(up));
+      sm.capture(sm.render);
+      eq([getModel().modes.cmdMode, c().text, c().sel], [true, 'zqx', 0], JSON.stringify(up));
+    }
   });
 });
 

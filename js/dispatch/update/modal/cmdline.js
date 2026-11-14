@@ -56,8 +56,12 @@ function update(model, msg) {
       // back toward the best match at idx 0 — the dropdown paints best-nearest-
       // the-prompt, so the visual "up" is a higher index.
       // `to: <idx>` — absolute (a click on a dropdown row, docs/mouse-hit-map.md),
-      // clamped to the match list; otherwise relative `dir`.
-      if (Number.isInteger(msg.to) && !c.matches.length) return [model, []];
+      // clamped to the match list; otherwise relative `dir`. Nothing to select
+      // in an empty list, either way: ↑ with no matches walked `sel` to -1
+      // (min(sel + 1, length - 1)) and the dropdown's render threw — an
+      // uncaught exception that ended the session (pre-release review
+      // 2026-11-14; `:` + text matching nothing + ↑).
+      if (!c.matches.length) return [model, []];
       const sel = Number.isInteger(msg.to)
         ? Math.max(0, Math.min(c.matches.length - 1, msg.to))
         : msg.dir > 0
