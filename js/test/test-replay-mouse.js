@@ -129,8 +129,40 @@ describe('[2b] replay frames are current while the replay view holds', () => {
     const d = geo.visibleBoundsFor(layout(), 'pane-detail');
     tok(sgr(0, d.x + 3, d.y + 3));
     eq(require('../app/runtime').getModel().modes.confirmMode, true, 'everything else is still swallowed (the confirm is untouched)');
-    sm.capture(() => sm.applyMsg({ type: 'confirm_exit' }));
+    sm.capture(() => sm.applyMsg({ type: 'confirm_reject' }));
     restore();
+  });
+});
+
+describe('[2c] a drag left over when replay starts (round-2 review)', () => {
+  it('is dropped WITHOUT its cancel (nothing written into the replayed model); the first press seeks', () => {
+    // A free-config layout drag whose release was lost, then replay starts:
+    // its cancel would dispatch free_config_mouse_release into the model now
+    // present. (The injected replay leaves the live model in place, so "the
+    // replayed model" here is the one whose drag must stay untouched.)
+    const capture = require('../dispatch/control/pointer-capture');
+    sm.bootFresh();
+    toLayout({ type: 'view_set', mode: 'normal' });
+    sm.resize(120, 30);
+    toLayout({ type: 'free_config_enter' });
+    if (layout().panelList && layout().panelList.open) toLayout({ type: 'panel_list_close' });
+    inject();
+    DATA = null;
+    SEEKS.length = 0;
+    hc.paint();
+    const d = geo.visibleBoundsFor(layout(), 'pane-detail');
+    tok(sgr(0, d.x + 5, d.y + 5));                  // starts the free-config capture
+    assert(capture.held() && capture.held().name === 'free-config', 'free-config capture held');
+    const dragBefore = JSON.stringify(layout().freeConfig.drag);
+    DATA = replaying('mini');                        // replay starts; the release never came
+    hc.paint();
+    const cell = hm.all().find(r => r.owner === 'replay-scrubber' && r.id === 'seek:0');
+    tok(sgr(0, cell.rect.x, cell.rect.y));
+    eq(capture.held(), null, 'the leftover capture is gone');
+    eq(JSON.stringify(layout().freeConfig.drag), dragBefore, 'its cancel did not run (no release dispatched)');
+    eq(SEEKS, [0], 'the press seeked (not swallowed by the leftover drag)');
+    restore();
+    toLayout({ type: 'free_config_exit' });
   });
 });
 

@@ -194,6 +194,7 @@ function render(panel, w, h, _slice, opts) {
   // interactive widget — a click on a graph widget ABOVE it resolves to itemRow < 0
   // (no select), fixing "clicking the TX graph switches the interface".
   let interactiveStart = 0;
+  let interactiveRows = null;   // its body height — rows below it (a graph widget) are no item
   if (!widgets.length) {
     lines = [`[${t.dim}](composite needs a widgets: list)[/]`];
   } else if (innerW < 1 || innerH < 1) {
@@ -215,7 +216,7 @@ function render(panel, w, h, _slice, opts) {
       : null;
     if (iw) {
       const rg = _widgetBodyRanges(widgets, heights).find((r) => widgets[r.i] === iw);
-      if (rg) interactiveStart = rg.start;
+      if (rg) { interactiveStart = rg.start; interactiveRows = rg.end - rg.start; }
     }
     // Hover-for-value (Phase 2): resolve which graph widget the cursor is over ONCE, so
     // that widget's body draws the highlighted column + we publish its value below.
@@ -257,6 +258,9 @@ function render(panel, w, h, _slice, opts) {
     // Click hit-test: the interactive widget's rows start here, so a click above them
     // (a graph widget) resolves to no row (see interactiveStart above).
     headerRows: interactiveStart,
+    // …and END after its own body: a click on a widget BELOW it resolves to no
+    // row either (it selected a bar row drawn nowhere — pre-release review).
+    itemRows: interactiveRows,
   });
 }
 

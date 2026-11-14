@@ -26,6 +26,7 @@ const geo = require('../leaves/wm/geometry');
 const loop = require('../dispatch/runtime/loop');
 const { getModel } = require('../app/runtime');
 const api = sm.api;
+const route = () => require('../panel/route');
 
 const toLayout = (msg) => sm.capture(() => loop.dispatchMsg(api.wrap('layout', msg)));
 const layout = () => api.getInstanceSlice('layout');
@@ -100,7 +101,7 @@ describe('[1] gating at paint', () => {
     sm.capture(() => sm.applyMsg({ type: 'confirm_enter', message: 'Really?', cmd: null }));
     hc.paint();
     eq(bodies().length, 0);
-    sm.capture(() => sm.applyMsg({ type: 'confirm_exit' }));
+    sm.capture(() => sm.applyMsg({ type: 'confirm_reject' }));
   });
 });
 
@@ -208,7 +209,7 @@ describe('[4b] a capture lives only in the scope it started in', () => {
       tok(sgr(0, d.x + 4, d.y + 2, true));
       eq(JSON.stringify(getModel().register), reg, 'the release copied nothing');
       sm.capture(() => sm.applyMsg({ type: 'mode_clear', flag: 'filterMode' }));
-      sm.capture(() => sm.applyMsg({ type: 'confirm_exit' }));
+      sm.capture(() => sm.applyMsg({ type: 'confirm_reject' }));
       sm.capture(() => sm.applyMsg({ type: 'menu_close' }));
     });
   }
@@ -265,6 +266,59 @@ describe('[4c] pre-release review — code track', () => {
   });
 });
 
+describe('[4d] pre-release review round 2', () => {
+  it('a composite: a press on a widget BELOW the interactive bars selects no row', () => {
+    for (const p of ['monitor/stats', 'monitor/gauge', 'monitor/composite']) {
+      const c = require(`../panel/${p}`);
+      if (!api.getComponent(c.name)) { try { api.registerComponent(c); } catch (_) { /* registered */ } }
+    }
+    const paneCfg = { id: 'cbox', type: 'composite', title: 'CPU', config: { widgets: [
+      { type: 'bars', topic: 'ci.core', column: 'busy', label: 'core', interactive: true, height: 4 },
+      { type: 'graph', topic: 'ci.cpu', row: '_', metrics: ['cpu'] },
+    ] } };
+    sm.bootFresh({ groups: { g: { label: 'G', containers: [], actions: { a: { cmd: 'echo', label: 'A' } } } },
+      layout: { pool: { cbox: paneCfg }, columns: [{ panels: [paneCfg] }] } });
+    toLayout({ type: 'view_set', mode: 'normal' });
+    sm.resize(120, 30);
+    const series = {};
+    for (let i = 0; i < 40; i++) series['c' + String(i).padStart(2, '0')] = [{ busy: 100 - i, core: 'cpu' + i }];
+    getModel().metrics = { 'ci.core': { series, schema: { columns: { busy: { type: 'percent' }, core: { type: 'string' } } } },
+      'ci.cpu': { series: { _: [{ cpu: 20 }, { cpu: 40 }, { cpu: 60 }] }, schema: { columns: { cpu: { type: 'percent' } } } } };
+    hc.paint();
+    const paneId = bodies()[0].paneId;
+    const b = geo.visibleBoundsFor(layout(), paneId);
+    const nav = require('../panel/nav-state');
+    const before = nav.getSel(paneId);
+    tok(sgr(0, b.x + 5, b.y + b.h - 4));          // a row of the graph widget near the bottom
+    tok(sgr(0, b.x + 5, b.y + b.h - 4, true));
+    eq(nav.getSel(paneId), before, 'cursor unchanged (it jumped to a bar row drawn nowhere)');
+  });
+  it('a text-select drag whose pane switches tabs mid-drag goes inert — nothing from the other tab is copied', () => {
+    boot();
+    route().eachInstance((inst) => {
+      if (inst.kind === 'info') inst.slice.lines = Array.from({ length: 60 }, (_, i) => `info line ${i} alpha beta gamma`);
+      if (inst.kind === 'text-view') inst.slice.lines = Array.from({ length: 60 }, (_, i) => `tv line ${i} one two three`);
+    });
+    const p = require('../leaves/wm/pool').allPanesInColumns(layout().arrange).find(x => x.paneId === 'pane-detail');
+    const tabs = (p && p.tabs) || [];
+    const other = tabs.map(t => t.poolId || t.id).find(id => id !== p.activeTabId);
+    assert(other, 'the content slot has a second tab');
+    toLayout({ type: 'focus_set', focus: 'pane-detail' });
+    hc.paint();
+    const d = geo.visibleBoundsFor(layout(), 'pane-detail');
+    const reg = JSON.stringify(getModel().register);
+    input._classifyPress(0, 250, 90, Date.now());
+    tok(sgr(0, d.x + 3, d.y + 2));
+    assert(capture.held() && capture.held().name === 'text-select', 'a text-select drag');
+    tok(sgr(32, d.x + 10, d.y + 4));
+    toLayout({ type: 'set_active_tab', paneId: 'pane-detail', tabPoolId: other });
+    tok(sgr(32, d.x + 15, d.y + 6));
+    tok(sgr(0, d.x + 15, d.y + 6, true));
+    eq(JSON.stringify(getModel().register), reg, 'the register is unchanged');
+    eq(capture.held(), null, 'the release ended the capture');
+  });
+});
+
 describe('[5] hover', () => {
   it('a live graph hover clears once a popup covers the graph (no hover handler → hover-out)', () => {
     const paneCfg = { id: 'g', type: 'stats', title: 'CPU', config: { topic: 'gh.cpu', row: '_', metrics: ['cpu'], window: 300, y_axis: 'off' } };
@@ -285,7 +339,7 @@ describe('[5] hover', () => {
     hc.paint();
     sm.capture(() => input.handleMouse('hover', mx + 2, my + 1));
     eq(layout().hover, null, 'cleared under the popup');
-    sm.capture(() => sm.applyMsg({ type: 'confirm_exit' }));
+    sm.capture(() => sm.applyMsg({ type: 'confirm_reject' }));
     // A stale frame: a popup opened by a batched key, not yet painted — a hover
     // over the graph sets nothing (pre-review: it resolved the stale body).
     hc.paint();
@@ -293,6 +347,15 @@ describe('[5] hover', () => {
     sm.capture(() => input.handleMouse('hover', mx + 5, my + 1));
     eq(layout().hover, null, 'no hover resolved against the stale frame');
     sm.capture(() => sm.applyMsg({ type: 'menu_close' }));
+    // A hover-OUT on a stale frame still clears (round-2 review: the value
+    // stayed on screen when the pointer left the graph in a chunk with a key).
+    hc.paint();
+    sm.capture(() => input.handleMouse('hover', mx + 1, my + 1));
+    assert(layout().hover, `hover live again (modes: ${require('../leaves/input/modes').chainStamp(getModel().modes)})`);
+    sm.capture(() => sm.applyMsg({ type: 'mode_set', flag: 'prefixMode' }));   // a batched key — not painted
+    sm.capture(() => input.handleMouse('hover', 1, 1));                         // the pointer left the graph
+    eq(layout().hover, null, 'cleared on the stale frame');
+    sm.capture(() => sm.applyMsg({ type: 'mode_clear', flag: 'prefixMode' }));
   });
 });
 

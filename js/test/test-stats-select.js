@@ -39,6 +39,9 @@ function boot() {
   setMetric('sm.proc',
     { p1: [{ cpu: 30, comm: 'alpha' }], p2: [{ cpu: 90, comm: 'beta' }], p3: [{ cpu: 50, comm: 'gamma' }] },
     { cpu: { type: 'percent' }, comm: { type: 'string' } });
+  // Mouse events resolve on the hit map the LAST paint published (docs/mouse-hit-map.md)
+  // — paint this boot's frame, or a press resolves against the previous test's.
+  sm.capture(() => sm.render());
 }
 
 function muPane() {

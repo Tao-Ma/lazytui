@@ -338,11 +338,16 @@ the slice (a drag the keyboard ended makes the remaining motion a no-op).
 routes normally) or `'swallow'` (pool-drag, while the slice still holds the
 pool drag — as before R3). **Scope** (pre-release review): a capture lives
 only within the chain modes + replay view it started under; if a popup or an
-in-grid mode opens, or replay starts / stops, mid-drag, the next motion /
-release abandons it — `cancel` runs and nothing else (the free-config drags
-release what the slice still holds; text-select / graph-zoom dispatch
+in-grid mode opens mid-drag, the next motion / release / press abandons it —
+`cancel(…, 'scope')` runs and nothing else (the free-config drags release what
+the slice still holds; graph-zoom takes its band down; text-select dispatches
 nothing), so a drag can't keep selecting or copying behind a modal (the pre-R3
-T13 gate dropped those gestures). Mutual exclusion is structural: one slot, the
+T13 gate dropped those gestures). If replay started or stopped, the model was
+swapped: the capture is dropped with NO cancel. A lost release runs
+`cancel(…, 'press')` — the free-config drag then does nothing (the reducer's
+press discards the unreleased drag). Body drags are also TAB-scoped: after the
+pane switches tabs mid-drag, text-select / graph-zoom go inert (their Msgs ride
+`wrap(paneId)` to the pane's current instance). Mutual exclusion is structural: one slot, the
 press's winning region picks the controller. Capture state stays input-shell
 (like `_lastClick*`), not model — the visible effects already ride Msgs. A
 throwing controller loses its capture (recorded).
@@ -355,10 +360,11 @@ pane-mouse unchanged). Anything else under the pointer — another pane, a popup
 box or backdrop, nothing — is *hover-out*: the router realizes `pane-hover`
 with no pane, which clears a live value (the pre-R3 "chain mode → clear"). A
 region that declares `hover: 'swallow'` (the replay owner) is a true no-op.
-On a stale frame hover does nothing at all — it neither resolves (a batched
-key may have opened a popup over the graph) nor clears (replay may have just
-started; nothing may write into the reconstructed model); the next motion after
-the repaint resolves fresh. Never event-logged (it fires per cell). The hover tooltip overlay never
+On a stale frame hover never resolves (a batched key may have opened a popup
+over the graph) but still clears — clearing can't put a value behind a popup,
+and a hover-out sharing a chunk with a key must not leave the value on screen —
+except while replay is active (nothing may write into the reconstructed
+model). Never event-logged (it fires per cell). The hover tooltip overlay never
 publishes regions (display-only — it must not steal clicks).
 
 ### Press→double continuation (R1, found during implementation)
@@ -471,7 +477,9 @@ that lost focus does nothing).
 Regions per frame: panes (~10–30) + visible overlay rows (≤ terminal
 height) + chips + chrome glyphs — O(100). Pane rows are **not** published
 per row: the pane-body region resolves its row at realize time through the
-existing select-view capture (`_rowIndexAt`, dispatch/control/pane-mouse.js). Resolve is a
+existing select-view capture (`_rowIndexAt`, dispatch/control/pane-mouse.js) —
+bounded above by the bottom border and, when the pane declares it, by
+`itemRows` (a composite's interactive widget above a graph widget). Resolve is a
 linear top-down scan — microseconds, even under mode 1003 hover. Gate:
 `bench-hotpaths.js` and the Release-2 render-construction baseline
 (`reference_release_2_bench_baseline`) within noise, same-directory runs.
@@ -989,6 +997,25 @@ step 7 is the bench, docs and review. Notes and deviations from the plan:
     double-click ran an action never shown); a right-click on a short
     terminal's footer offered "Copy item" for a row never drawn (the empty
     screen names no pane);
+  - round 2 (two fresh reviewers: the fix commits, and angles round 1 missed —
+    real replay with a recorded WAL, terminal panes, 27 state changes mid-drag,
+    the sweep re-run: 0 non-intentional diffs). Fixed, each reproduced first: a
+    lost release followed by a press COMMITTED the unreleased free-config move
+    (round-1 cancel regression — cancel now gets a reason); a hover-out on a
+    stale frame left the graph value on screen (round-1 regression — stale
+    hover clears, except while replaying); a drag left over when replay started
+    wrote into the replayed model through its cancel / lost-release policy
+    (scope is now checked first on a press; a replay swap drops the capture
+    without a cancel). Inherited, fixed: a press on a composite's graph widget
+    below its interactive bars selected a bar row drawn nowhere
+    (`renderPanel({ itemRows })` → the capture); a text-select drag whose pane
+    switched tabs mid-drag copied the other tab's text (body drags are
+    tab-scoped). Test infra: smoke `bootFresh` now resets `model.modal`,
+    `prefixSeq` and every list instance's positional `nav` fields (cursor,
+    scroll, multiSel) BEFORE `initState` (a scenario's open menu or cursor
+    leaked into the next — output depended on test order); two stats test
+    files that clicked before painting (resolving against the previous test's
+    frame, which only matched because of the leaked `modal`) now paint first;
   - three tests passed for the wrong reason (stale-frame `+` + click, the
     replay hover check, test-mouse-wheel [4]) — re-pointed and mutation-checked;
   - doc parity (DATAFLOW / ONBOARDING / pane-selection / modes.js /

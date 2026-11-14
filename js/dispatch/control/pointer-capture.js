@@ -21,16 +21,22 @@
  *                        release): 'drop' ends the capture (cancel runs) and the
  *                        press routes normally; 'swallow' consumes the press and
  *                        keeps the capture. Default 'drop'.
- *     cancel(state)      → dirty?         optional — run when the capture is
- *                                         dropped without a release
+ *     cancel(state, ev, reason) → dirty?  optional — run when the capture is
+ *                                         dropped without a release; reason:
+ *                                         'press' — a lost release (the next
+ *                                         press arrived first); 'scope' — the
+ *                                         modes changed mid-drag (SCOPE)
  *   }
  *
  * SCOPE: a capture lives only within the scope it started in — the router
- * passes a key of the active chain modes + the replay view. If a popup / an
- * in-grid mode opens or replay starts / stops mid-drag, the next motion /
- * release ABANDONS the capture: its `cancel` runs and nothing else, so a drag
- * can't keep selecting / zooming / copying behind a modal (before R3 the T13
- * gate dropped those gestures).
+ * passes `{ chain, replay }` (the active chain modes + the replay view). If a
+ * popup / an in-grid mode opens mid-drag, the next motion / release / press
+ * ABANDONS the capture: its `cancel(…, 'scope')` runs and nothing else, so a
+ * drag can't keep selecting / zooming / copying behind a modal (before R3 the
+ * T13 gate dropped those gestures). If replay started or stopped, the model
+ * itself was swapped (the reconstructed one / the restored live snapshot): the
+ * capture is dropped and NO cancel runs — nothing the drag knew applies to the
+ * model now present, and nothing may write into a replayed one.
  *
  * Capture state is input-shell (like the router's press→double record), not
  * model: the visible effects ride the Msgs each controller dispatches. A
@@ -73,14 +79,21 @@ function start(name, args, ev, owner, scope) {
   return true;
 }
 
-// Drop the held capture without a release: `cancel` runs (if any). Returns dirty.
-function _abandon(ev) {
+// Drop the held capture without a release. `reason` 'press' / 'scope' runs the
+// controller's cancel; 'swap' (replay started / stopped) runs none. Returns dirty.
+function _abandon(ev, reason) {
   const s = _slot;
   _slot = null;
-  if (!s || typeof s.ctl.cancel !== 'function') return false;
-  try { return !!s.ctl.cancel(s.state, ev || {}); } catch (e) { _record(s.name, 'cancel', e); return true; }
+  if (!s || reason === 'swap' || typeof s.ctl.cancel !== 'function') return false;
+  try { return !!s.ctl.cancel(s.state, ev || {}, reason); } catch (e) { _record(s.name, 'cancel', e); return true; }
 }
-const _outOfScope = (scope) => !!_slot && _slot.scope != null && scope != null && scope !== _slot.scope;
+// Has the scope changed since the capture started? → 'swap' | 'scope' | null.
+function _scopeChange(scope) {
+  const s = _slot;
+  if (!s || !s.scope || !scope) return null;
+  if ((s.scope.replay || null) !== (scope.replay || null)) return 'swap';
+  return s.scope.chain !== scope.chain ? 'scope' : null;
+}
 
 /** The held capture `{ name, owner }`, or null. */
 function held() { return _slot ? { name: _slot.name, owner: _slot.owner } : null; }
@@ -100,25 +113,28 @@ function _call(phase, ev) {
 
 /** Route a motion to the holder (or abandon it — `scope` changed). Returns
  *  dirty (false when nothing is held). */
-function motion(ev, scope) { return _outOfScope(scope) ? _abandon(ev) : _call('motion', ev); }
+function motion(ev, scope) { const c = _scopeChange(scope); return c ? _abandon(ev, c) : _call('motion', ev); }
 
 /** Route a release to the holder and end the capture (or abandon it — `scope`
  *  changed). Returns dirty. */
-function release(ev, scope) { return _outOfScope(scope) ? _abandon(ev) : _call('release', ev); }
+function release(ev, scope) { const c = _scopeChange(scope); return c ? _abandon(ev, c) : _call('release', ev); }
 
 /** A press while a capture is held. Returns `{ swallow, dirty }`: swallow →
  *  the press is consumed and the capture stays; otherwise the capture was
- *  dropped (cancel ran) and the press routes normally. Nothing held →
- *  `{ swallow: false, dirty: false }`. */
-function press(ev) {
+ *  dropped and the press routes normally. A scope change wins over the
+ *  controller's lost-release policy (the policy may read a model that was
+ *  swapped since). Nothing held → `{ swallow: false, dirty: false }`. */
+function press(ev, scope) {
   const s = _slot;
   if (!s) return { swallow: false, dirty: false };
+  const c = _scopeChange(scope);
+  if (c) return { swallow: false, dirty: _abandon(ev, c) };
   let policy = s.ctl.pressWhileHeld;
   if (typeof policy === 'function') {
     try { policy = policy.call(s.ctl, s.state); } catch (e) { _record(s.name, 'pressWhileHeld', e); policy = 'drop'; }
   }
   if (policy === 'swallow') return { swallow: true, dirty: false };
-  return { swallow: false, dirty: _abandon(ev) };
+  return { swallow: false, dirty: _abandon(ev, 'press') };
 }
 
 /** Test seam — drop any held capture without running a hook. */

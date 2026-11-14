@@ -46,6 +46,11 @@ move, panel-list pool drag) run on one pointer-capture slot.
   The border selects nothing now.
 - **On a short terminal, a right-click on the footer row offered "Copy item"
   for a row that was never drawn.** The footer row opens the general menu only.
+- **A click on a composite pane's graph widget below its interactive bars**
+  selected a bar row that is drawn nowhere. It selects nothing now.
+- **A text selection dragged while its pane switched tabs** copied text from
+  the other tab that was never selected on screen. The drag stops at the
+  switch.
 
 ### For plugin / pane authors
 - Hit regions owned by a pane are now owned by `pane:<paneId>` and carry a

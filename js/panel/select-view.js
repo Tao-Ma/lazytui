@@ -55,12 +55,17 @@ function currentPaneId() { return _current; }
  *  region but OUTSIDE its getItems list (e.g. the table panel's sticky column
  *  header at inner row 0). The click→row mapping subtracts it so a click on a
  *  data row selects THAT row, not the one below it. 0 for panes without such a
- *  header. */
-function recordContent(paneId, lines, scroll, windowed, selectableRows, fullLines, headerRows) {
+ *  header.
+ *  `itemRows` = how many rows AFTER the header are the item list, when the pane
+ *  paints non-item rows below it too (a composite's interactive bars widget
+ *  above a graph widget) — a click past them maps to no row. null = the list
+ *  runs to the pane's bottom border. */
+function recordContent(paneId, lines, scroll, windowed, selectableRows, fullLines, headerRows, itemRows) {
   if (!paneId) return;
   _content.set(paneId, { lines: lines || [], scroll: scroll || 0, windowed: !!windowed,
     selectableRows: selectableRows == null ? null : selectableRows,
     headerRows: headerRows | 0,
+    itemRows: itemRows == null ? null : itemRows | 0,
     // The full display-space buffer for extraction on windowed panes that apply
     // a per-line display transform (text-view right-aligns status rows), so a
     // yank reads the text at the columns the click captured — not the stored

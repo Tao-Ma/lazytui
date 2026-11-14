@@ -82,7 +82,7 @@ let _lastPress = null;
 
 // A capture's scope (pointer-capture SCOPE): the chain modes + the replay view
 // a stamp records. A drag started under one scope is abandoned when it changes.
-const _scopeOf = (stamp) => `${stamp.chain}|${stamp.replay == null ? '' : stamp.replay}`;
+const _scopeOf = (stamp) => ({ chain: stamp.chain, replay: stamp.replay == null ? null : stamp.replay });
 
 // Start a capture requested by a `{ capture }` handler or returned by an act —
 // scoped to the state AFTER the press's other handlers ran (a press may focus /
@@ -169,13 +169,13 @@ function route(kind, mx, my, model) {
     if (dirty) render();
     return true;
   }
-  if (kind === 'hover') return _hover(mx, my, _fresh(hitMap.stampOf(model, layoutSlice)));
+  if (kind === 'hover') return _hover(mx, my, hitMap.stampOf(model, layoutSlice));
   if (!DISCRETE.has(kind)) return false;
   if (kind === 'press') {
     // A press while a drag is held = a lost release (the terminal never sent
     // it). The controller decides: keep the drag and eat the press, or drop
     // the drag and let the press route normally.
-    const p = capture.press(_ev(mx, my));
+    const p = capture.press(_ev(mx, my), _scopeOf(hitMap.stampOf(model, api.getInstanceSlice('layout'))));
     if (p.swallow) return true;
     if (p.dirty) render();
   }
@@ -237,14 +237,16 @@ function route(kind, mx, my, model) {
 // region without one, a popup box or backdrop — means the pointer is over no
 // hoverable body: clear (HOVER_OUT), so a value box can't linger under an
 // overlay. A region that DECLARES hover 'swallow' (the replay owner) is a true
-// no-op. On a STALE frame hover does nothing at all — neither resolves (a
-// batched key may have opened a popup over the graph) nor clears (replay may
-// have just started: nothing may write into the reconstructed model); the next
-// motion after the repaint resolves fresh. Never event-logged (it fires per cell).
+// no-op. On a STALE frame hover never RESOLVES (a batched key may have opened
+// a popup over the graph) but still CLEARS (hover-out): clearing can't put a
+// value behind a popup, and a hover-out sharing a chunk with a key must not
+// leave the value on screen — except while replay is active, when nothing may
+// write into the reconstructed model. Never event-logged (it fires per cell).
 const HOVER_OUT = Object.freeze({ act: 'pane-hover', paneId: null });
-function _hover(mx, my, fresh) {
-  if (!fresh) return true;
-  const hit = hitMap.resolve(mx, my, 'hover');
+function _hover(mx, my, cur) {
+  const fresh = _fresh(cur);
+  if (!fresh && cur.replay != null) return true;
+  const hit = fresh ? hitMap.resolve(mx, my, 'hover') : null;
   if (hit && hit.region.on && hit.region.on.hover === 'swallow') return true;
   const h = hit && hit.handler && typeof hit.handler === 'object' && hit.handler.act ? hit.handler : HOVER_OUT;
   try {

@@ -41,6 +41,9 @@ function boot() {
   // with an empty zoom map).
   const p = mpool.allPanesInColumns(api.getInstanceSlice('layout').arrange).find((x) => x.type === 'stats');
   api.dispatchMsg(api.wrap('layout', { type: 'graph_zoom', paneId: p.paneId, frozen: null }));
+  // Mouse events resolve on the hit map the LAST paint published (docs/mouse-hit-map.md)
+  // — paint this boot's frame, or a press resolves against the previous test's.
+  sm.capture(() => sm.render());
 }
 
 function pane() {

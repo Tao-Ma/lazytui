@@ -111,6 +111,26 @@ function bootFresh(opts) {
     ...extras,
     groups,
   };
+  // Popup sub-models + a pending chord: a scenario's open menu / palette /
+  // jobs window kept its items and cursor on model.modal, and a stale
+  // prefixSeq — the next scenario inherited them (output depended on test
+  // order). Fresh from the store's initial model, BEFORE initState seeds its
+  // own parts.
+  getModel().modal = require('../../../model/store').init().modal;
+  getModel().prefixSeq = [];
+  // List cursors: persistent instances (pane-groups, pane-actions, …) keep their
+  // slice across boots, so a scenario's cursor / scroll / multi-selection leaked
+  // into the next one. Reset those POSITIONAL fields only — the rest of `nav`
+  // (a table's default sort, …) comes from the pane's config — and BEFORE
+  // initState, which seeds the cursors it owns.
+  const mnav = require('../../../leaves/wm/nav');
+  route.eachInstance((inst) => {
+    const n = inst.slice && inst.slice.nav;
+    if (n && typeof n === 'object' && 'cursor' in n) {
+      const fresh = mnav.init();   // multiSel is a Set — a fresh one per pane
+      inst.slice.nav = { ...n, cursor: fresh.cursor, scroll: fresh.scroll, multiSel: fresh.multiSel };
+    }
+  });
   initState();
   getModel().projectDir = '.';
   // Clear modal flags that may have been set by an earlier scenario.

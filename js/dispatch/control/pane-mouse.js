@@ -41,6 +41,7 @@ const { getPanelDef, getItems, getInstanceSlice, wrap, getFocus, instanceKind } 
 const { dispatchMsg } = require('../runtime/loop');
 const route = require('../../panel/route');
 const mpane = require('../../leaves/wm/pane');
+const mpool = require('../../leaves/wm/pool');
 const intent = require('./intent');
 const mouseBindings = require('./mouse-bindings');
 const { applyMsg, navSelect } = require('./dispatch');
@@ -53,8 +54,6 @@ let _selViewRef, _selConfigRef, _terminalRef;
 const selView = () => (_selViewRef || (_selViewRef = require('../../panel/select-view')));
 const selConfig = () => (_selConfigRef || (_selConfigRef = require('../../panel/select-config')));
 const terminal = () => (_terminalRef || (_terminalRef = require('../../io/terminal')));
-let _replayRef;
-const replayControl = () => (_replayRef || (_replayRef = require('../runtime/replay-control')));
 
 /**
  * Wheel-on-panel: scroll the pane under the cursor — the one the hit map
@@ -193,6 +192,7 @@ function _rowIndexAt(paneId, b, my) {
   const header = (cap && cap.headerRows) || 0;
   const itemRow = my - b.y - 1 - header;
   if (itemRow < 0) return -1;
+  if (cap && cap.itemRows != null && itemRow >= cap.itemRows) return -1;   // below the item list (a composite's lower widgets)
   const scroll = (cap && cap.windowed) ? cap.scroll : getScroll(paneId);
   return itemRow + scroll;
 }
@@ -484,6 +484,17 @@ acts.register('pane-hover', _hover);
 
 // ── Pointer-capture controllers ────────────────────────────────────────────
 
+// The pane's active tab now ('' when none). A body drag is TAB-scoped, like the
+// body region it started on: the select_* / graph Msgs ride wrap(paneId) to the
+// pane's CURRENT instance, so after a tab switch mid-drag they would select —
+// and the release copy — another tab's text the user never selected on screen
+// (pre-release review; inherited). After a switch the drag goes inert.
+function _tabOf(paneId) {
+  const ls = getInstanceSlice('layout');
+  const p = ls && ls.arrange ? mpool.allPanesInColumns(ls.arrange).find((x) => x && x.paneId === paneId) : null;
+  return (p && p.activeTabId) || '';
+}
+
 // Text selection (docs/pane-selection.md) — ONE path for every pane. The select_*
 // Msgs ride wrapped to the pane's active instance — content panes claim them in
 // their own update (clamped against their buffer), every other pane gets the
@@ -492,8 +503,9 @@ acts.register('pane-hover', _hover);
 // an active selection by design, and a scan-first pick would extend / settle the
 // WRONG pane's selection (copying stale text on release).
 capture.register('text-select', {
-  start: (args) => (args.paneId ? { paneId: args.paneId, line: args.line, col: args.col } : null),
+  start: (args) => (args.paneId ? { paneId: args.paneId, line: args.line, col: args.col, tab: _tabOf(args.paneId) } : null),
   motion(st, ev) {
+    if (_tabOf(st.paneId) !== st.tab) return false;   // its pane switched tabs → inert
     const psel = selView();
     // First motion after the press: begin at the armed anchor (the pane's own
     // selection isn't active yet — the press cancelled priors).
@@ -507,6 +519,7 @@ capture.register('text-select', {
   // Settle: auto-copy a real drag (and keep it highlighted); cancel a no-drag
   // press so a plain click leaves no stray one-char selection.
   release(st) {
+    if (_tabOf(st.paneId) !== st.tab) return false;
     const psel = selView();
     const own = psel.selectionFor(st.paneId);
     if (!own) return false;
@@ -522,11 +535,12 @@ capture.register('text-select', {
 
 // Drag-to-zoom (docs/STATS.md §10).
 capture.register('graph-zoom', {
-  start: (args) => (args.paneId ? { paneId: args.paneId, startCol: args.startCol } : null),
+  start: (args) => (args.paneId ? { paneId: args.paneId, startCol: args.startCol, tab: _tabOf(args.paneId) } : null),
   // Live drag-band: fold the pending [start,current] column range into the layout
   // slice so the pane highlights the range being selected. `graph_drag` is
   // identity-preserving, so motion within the same column dispatches nothing new.
   motion(st, ev) {
+    if (_tabOf(st.paneId) !== st.tab) return false;   // its pane switched tabs → inert
     const cc = _contentCoordsAt(st.paneId, ev.mx, ev.my, true);   // clamp past-edge to the nearest col
     if (!cc) return false;
     const lo = Math.min(st.startCol, cc.col);
@@ -546,7 +560,7 @@ capture.register('graph-zoom', {
       dispatchMsg(wrap('layout', { type: 'graph_drag', band: null }));
       dirty = true;
     }
-    const cc = _contentCoordsAt(st.paneId, ev.mx, ev.my, true);
+    const cc = _tabOf(st.paneId) === st.tab ? _contentCoordsAt(st.paneId, ev.mx, ev.my, true) : null;   // switched tabs → no zoom (the band still comes down)
     if (cc) {
       const ls = getInstanceSlice('layout');
       const panel = allPanels().find((p) => p.paneId === st.paneId);
@@ -560,12 +574,11 @@ capture.register('graph-zoom', {
   },
   pressWhileHeld: 'drop',
   // Abandoned (a lost release, a modal opened mid-drag): take the live band
-  // down — it would otherwise stay painted until the next zoom drag. Not while
-  // replaying (a scope change can be replay starting: nothing may write into
-  // the reconstructed model).
+  // down — it would otherwise stay painted until the next zoom drag. (Replay
+  // starting / stopping drops the capture without a cancel — pointer-capture.)
   cancel(st) {
     const band = getInstanceSlice('layout').dragBand;
-    if (!band || band.paneId !== st.paneId || replayControl().active()) return false;
+    if (!band || band.paneId !== st.paneId) return false;
     dispatchMsg(wrap('layout', { type: 'graph_drag', band: null }));
     return true;
   },

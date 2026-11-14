@@ -148,6 +148,24 @@ describe('[2b] a mode change mid-drag', () => {
   });
 });
 
+describe('[2c] a lost release discards the unreleased drag (round-2 review)', () => {
+  it('drag a pane over a valid swap target, the release never comes, press elsewhere → nothing committed', () => {
+    boot({ openList: false });
+    const geo = require('../leaves/wm/geometry');
+    const order = () => require('../leaves/wm/pool').allPanesInColumns(layout().arrange).map(p => p.paneId).join();
+    const before = order();
+    const g1 = geo.visibleBoundsFor(layout(), 'pane-g1');
+    const g3 = geo.visibleBoundsFor(layout(), 'pane-g3');
+    tok(sgr(0, g1.x + 5, g1.y + Math.floor(g1.h / 2)));
+    mtok(sgr(32, g3.x + 5, g3.y + Math.floor(g3.h / 2)));
+    assert(drag(), 'a move drag is live over g3');
+    const d = geo.visibleBoundsFor(layout(), 'pane-detail');
+    tok(sgr(0, d.x + 5, d.y + 5));                     // the next press — no release came
+    eq(order(), before, 'no swap was committed (the reducer\'s press discards the unreleased drag)');
+    done();
+  });
+});
+
 describe('[3] pool drag holds the mouse', () => {
   it('a press while the pool drag is live is swallowed; the drag continues', () => {
     boot();
