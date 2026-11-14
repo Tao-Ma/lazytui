@@ -27,6 +27,7 @@
 'use strict';
 
 const { RESET, richToAnsi, sgrRun, esc, visibleLen, wrapColor, sealMarkup } = require('../leaves/text/ansi');
+const { uncovered, sliceRuns, spliceRuns } = require('../leaves/render/occlusion');
 const { cols, rows, stdout, showCursor, hideCursor } = require('../io/term');
 const { allPanels } = require('../panel/nav-state');
 const geo = require('../leaves/wm/geometry');
@@ -701,6 +702,17 @@ let _paintedOverlayIds = new Set();
 // stops painting). Kept here, not on the session, because a closed tab's
 // session is already destroyed by the time the reclaiming frame renders.
 const _overlayLastRows = new Map();
+// The overlay coverage of the frame ON SCREEN — `newRows.covered` from the last
+// render() (row → [[x0, x1), …], recorded by row-compositor.compositeRow for
+// every popup composited into the frame), or null. The terminal surfaces paint
+// after the frame, outside its cell-diff, so they read it to stay UNDER the
+// popups: on render()'s pass and on the PTY fast path between renders (the popup
+// from the last frame is still on screen).
+let _covered = null;
+function _spanSig(cov, y) {
+  const spans = cov && cov.get(y);
+  return spans ? spans.join(';') : '';
+}
 
 // #D6 — model is threaded in (no `= getModel()` default), same as render():
 // pure-by-construction signature. The overlay seam thunk (render-queue setup
@@ -760,41 +772,56 @@ function renderTerminalOverlay(model, arrangeOverride, forceAll) {
     session.prevViewportY = viewportY;
     const force = forceAll || appeared || dimChanged || scrolled;
 
+    // v0.6.5 §5(a) Phase 4 — scrollback position indicator: while the viewport
+    // sits above the live bottom, a reverse-video `[↑N]` tag at the top-right
+    // inner cells. Spliced INTO the first row, so the row cache sees it come and
+    // go and overlay clipping treats it like the grid.
+    const scrollInfo = sessionScrollInfo(id);
+    const tag = (!scrollInfo.atBottom && innerW > 6) ? `[↑${scrollInfo.linesBelow}]` : null;
+    // Exit prompt on the bottom inner row once the process died. v0.6.3 P5.1 —
+    // the terminal_exit dispatch is event-driven from pty-lifecycle.handleExit
+    // (PTY onExit), not a render-side poll. `x close` only where `x` closes it
+    // (a slot's last tab stays — remove_tab).
+    let banner = null;
+    if (session.exited) {
+      const msg = ` Process exited: ${session.exitCode} — Enter restart${closable ? ', x close' : ''} `;
+      const text = msg.length > innerW ? msg.slice(0, innerW) : msg;
+      banner = { text, col: Math.max(0, Math.floor((innerW - text.length) / 2)) };
+    }
+
     // Diff-based render: only rewrite rows whose content changed since the
     // previous overlay write. Each row comes from the port EXACTLY innerW
     // columns wide (padded, and cut before a glyph that would cross the border),
     // as runs of the program's own attributes; sgrRun resolves the colours the
     // program left at default to the theme's screen colours. The cache compares
     // the composed row, so a colour-only change (a visual selection) repaints.
+    //
+    // Popups stay ON TOP: a row an overlay covers part of is drawn only in the
+    // uncovered spans, and the cache key carries those spans — when the popup
+    // opens, moves or closes, the frame's diff repaints the cells it vacated
+    // with the pane's blank body, and the changed key brings the grid back over
+    // them (regressed in v0.6.51, when closing a popup stopped forcing a
+    // whole-screen repaint).
+    const x0 = bounds.x + 1;                 // screen column of the first inner cell
     for (let row = 0; row < innerH; row++) {
+      let rr = runs[row];
+      if (row === 0 && tag) rr = spliceRuns(rr, innerW, innerW - tag.length, [{ sgr: '7', text: tag }]);
+      if (row === innerH - 1 && banner) rr = spliceRuns(rr, innerW, banner.col, [{ sgr: '7', text: banner.text }]);
+      const y = bounds.y + 1 + row;
+      const over = _covered && _covered.get(y);
+      let spans = over ? uncovered(0, innerW, over.map(([a, b]) => [a - x0, b - x0])) : null;
+      if (spans && spans.length === 1 && spans[0][0] === 0 && spans[0][1] === innerW) spans = null;
       let text = '';
-      for (const r of runs[row]) text += sgrRun(r.sgr) + r.text;
-      if (!force && session.prevFrame[row] === text) continue;
-      out += `\x1b[${bounds.y + row + 2};${bounds.x + 2}H${text}${RESET}`;
-      session.prevFrame[row] = text;
-    }
-
-    // v0.6.5 §5(a) Phase 4 — scrollback position indicator. When the viewport
-    // sits above the live bottom, stamp a reverse-video `[↑N]` tag at the
-    // top-right inner cell. It overlays one cell of content while scrolled;
-    // any scroll change forces the inner rows to repaint (above), so the tag
-    // is self-clearing the frame the user returns to the bottom.
-    const scrollInfo = sessionScrollInfo(id);
-    if (!scrollInfo.atBottom && innerW > 6) {
-      const tag = `[↑${scrollInfo.linesBelow}]`;
-      const tx = bounds.x + 2 + innerW - tag.length;
-      out += `\x1b[${bounds.y + 2};${tx}H\x1b[7m${tag}\x1b[0m`;
-    }
-
-    // Show exit prompt if process died (overlay on bottom content row).
-    // v0.6.3 P5.1 — the terminal_exit dispatch is event-driven from
-    // pty-lifecycle.handleExit (PTY onExit), not a render-side poll.
-    if (session.exited) {
-      // `x close` only where `x` closes it (a slot's last tab stays — remove_tab).
-      const msg = ` Process exited: ${session.exitCode} — Enter restart${closable ? ', x close' : ''} `;
-      const text = msg.length > innerW ? msg.slice(0, innerW) : msg;
-      const padding = Math.max(0, Math.floor((innerW - text.length) / 2));
-      out += `\x1b[${bounds.y + innerH + 1};${bounds.x + 2 + padding}H\x1b[7m${text}\x1b[0m`;
+      for (const r of rr) text += sgrRun(r.sgr) + r.text;
+      const key = spans ? `${text}\0${spans.join(';')}` : text;
+      if (!force && session.prevFrame[row] === key) continue;
+      session.prevFrame[row] = key;
+      if (!spans) { out += `\x1b[${y + 1};${x0 + 1}H${text}${RESET}`; continue; }
+      for (const [a, b] of spans) {
+        let seg = '';
+        for (const r of sliceRuns(rr, a, b)) seg += sgrRun(r.sgr) + r.text;
+        out += `\x1b[${y + 1};${x0 + a + 1}H${seg}${RESET}`;
+      }
     }
 
     // Position the hardware cursor at the PTY cursor for the FOCUSED terminal
@@ -997,6 +1024,24 @@ function render(model) {
   // calls each one at module load. paintActive walks the registry in
   // zIndex order with the flat-modal invariant enforced structurally.
   require('./overlay-compositor').paintActive(model, newRows, COLS);
+  // What the terminal surfaces must stay under (renderTerminalOverlay). Where a
+  // popup's coverage of a grid row CHANGES (it opens, moves, resizes, closes),
+  // the frame's diff can't be trusted on that row: the grid was written there
+  // outside it, so prevRows still holds the blank interior — a popup cell that
+  // is blank in the same style (padding, an empty row) would be skipped and the
+  // grid would show through the popup. Same reconciliation as the vanish reclaim
+  // above: invalidate exactly those rows, so this frame's diff rewrites them;
+  // the overlay pass then redraws the grid in their uncovered spans (its row
+  // key carries the spans, so it changed too).
+  const covered = newRows.covered || null;
+  if ((covered || _covered) && _overlayLastRows.size) {
+    for (const { top, bottom } of _overlayLastRows.values()) {
+      for (let y = top; y < bottom; y++) {
+        if (_spanSig(covered, y) !== _spanSig(_covered, y)) invalidateRows(y, y + 1);
+      }
+    }
+  }
+  _covered = covered;
   const mainDidFull = _paintMainFrame(newRows, COLS);
   // Only force the terminal-overlay repaint when main paint actually
   // cleared the screen (resize, overlay-close, first frame). In the steady

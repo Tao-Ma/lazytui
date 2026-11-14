@@ -139,6 +139,19 @@ visual selection) repaints; `:theme` forces every surface to repaint. The
 checkpoint snapshot writes the same runs as SGR lines. Not drawn: underline
 styles (curly/dotted) and underline colour, which the emulator keeps internal —
 those cells get a plain underline.
+
+**Popups stay on top.** The grid is painted after the main frame, outside its
+cell-diff, while every popup (palette, menus, which-key, confirm, tooltip, …)
+composites into the frame through `row-compositor.compositeRow`, which records
+the columns each one covers (`newRows.covered`). render() keeps that coverage
+(`_covered`, also used by the PTY fast path between frames), and the grid is
+drawn only in each row's uncovered spans (`leaves/render/occlusion`), with the
+spans in the row-cache key. Where a row's coverage changes (a popup opens,
+moves, closes) render() also invalidates that frame row before the diff: the
+diff's record of the interior is the blank pane body, not the grid on screen,
+so a blank popup cell would otherwise be skipped and the grid would show
+through. The scrollback tag and the exit prompt are spliced into the grid rows
+(`spliceRuns`), so they are cached and clipped like the grid.
 Render is **read-only** for the PTY (the spawn/resize moved to the finalizer);
 it positions the overlay against the focused viewer's committed (or, mid-drag,
 preview) bounds.

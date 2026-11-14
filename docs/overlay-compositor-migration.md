@@ -264,6 +264,18 @@ module.exports = {
 4. Sort active descriptors by `zIndex`.
 5. For each: compute rect from anchor + size, call `render(model, rect, newRows)`.
 
+**Coverage (2026-11-14).** Every overlay writes through
+`row-compositor.compositeRow`, which records the columns it covered on the
+buffer (`newRows.covered`: row → `[[x0, x1), …]`, non-enumerable). The
+terminal surfaces paint AFTER the frame and outside its cell-diff, so they read
+it to stay under the popups, and render() invalidates the frame rows whose
+coverage changed over a grid (the diff's record of those cells is the blank
+interior, not the grid on screen). Closing a popup over a terminal pane had left
+the rows it covered blank since end-of-Release-2 cleanup `6d1e7f53` (v0.6.51)
+removed the overlay-close whole-screen repaint — the one consumer outside the
+diff that the cleanup's "cell-diff clears the residue" argument did not cover.
+See [TERMINAL.md](TERMINAL.md) §Rendering.
+
 ### paint.js change
 
 Before:

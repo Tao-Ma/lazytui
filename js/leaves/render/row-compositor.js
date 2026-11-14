@@ -112,6 +112,20 @@ function _splitAt(text, col) {
  * row (shouldn't happen in practice; `renderPanel` right-pads to menuW)
  * is topped up with blanks to keep the splice width exact.
  */
+// Record on the buffer the columns [x0, x1) an overlay now covers on row `y`:
+// `rows.covered` = Map(row → [[x0, x1), …]). Every overlay writes through
+// compositeRow (draw.renderOverlay, the cmdline dropdown, the pane menu), so
+// after the compositor pass the frame buffer says exactly which cells are on top
+// of the panes. render/paint.js reads it for the terminal surfaces, which paint
+// after the frame and outside its diff (leaves/render/occlusion). Non-enumerable:
+// the buffer still compares and serializes as a plain row array.
+function _cover(rows, y, x0, x1) {
+  if (!rows.covered) Object.defineProperty(rows, 'covered', { value: new Map(), writable: true });
+  const spans = rows.covered.get(y);
+  if (spans) spans.push([x0, x1]);
+  else rows.covered.set(y, [[x0, x1]]);
+}
+
 function compositeRow(rows, cols, overlayText, x, y, w) {
   if (!rows || y < 0 || y >= rows.length) return false;
   if (w <= 0 || x >= cols) return false;
@@ -161,6 +175,9 @@ function compositeRow(rows, cols, overlayText, x, y, w) {
     '[/]' + otext + (bodyPad > 0 ? ' '.repeat(bodyPad) : '') + '[/]' +
     (rightPad > 0 ? ' '.repeat(rightPad) : '') +
     right.suffix;
+  // The overlay body is [ox, ox + ow); leftPad/rightPad are blanks standing in
+  // for a main-row wide glyph the edge cut, not overlay — what's beneath shows.
+  _cover(rows, y, ox, ox + ow);
   return true;
 }
 
