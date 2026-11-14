@@ -122,8 +122,8 @@ function footerKeys(model) {
     // the registry reproduces the old segment list, then the live committed-
     // search count is appended (it carries a live number, not a key hint).
     // `total` = the content slot's tabs (Info + Transcript + opened content
-    // tabs) → the `][ tabs` hint. (A content focus is never a terminal —
-    // terminals are their own `terminal`-kind pane, footed below.)
+    // tabs) → the `][ tabs` hint. (A terminal tab of the content slot is footed
+    // below, with the same hint.)
     const total = _route().contentSlotTabCount();
     let keys = bindings.footerFor('detail', { total });
     // P1 — committed-phase count derives from (lines, term).
@@ -141,7 +141,13 @@ function footerKeys(model) {
     }
     return keys;
   }
-  if (focusKind === 'terminal') return bindings.footerFor('terminal', focusedTerminalState(model) || {});
+  if (focusKind === 'terminal') {
+    // `]` / `[` cycle the content slot's strip — a terminal opened as one of
+    // its tabs (an action's `type: spawn`, `docker exec`) gets the hint too;
+    // a terminal in any other slot doesn't (they don't cycle its tabs).
+    const total = _route().resolveViewerPaneId() === getFocus() ? _route().contentSlotTabCount() : 0;
+    return bindings.footerFor('terminal', { ...(focusedTerminalState(model) || {}), total });
+  }
   if (focusKind === 'actions') return bindings.footerFor('actions');
   if (focusKind === 'groups')  return bindings.footerFor('groups');
   return bindings.footerFor('list');

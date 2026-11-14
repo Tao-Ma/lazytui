@@ -77,6 +77,7 @@ const BINDINGS = {
   // `x` closes a dead tab only when the slot keeps another (else it's the menu).
   terminal: [
     { label: '←→ panel',        order: 10 },
+    { label: ']\\[ tabs',        order: 15, when: (c) => c.total > 1 },   // a tab of the content slot
     { label: '+/_ view',        order: 20 },
     { label: 'x close',         order: 30, when: (c) => c.dead && c.closable },
     { label: 'x menu',          order: 31, when: (c) => !(c.dead && c.closable) },

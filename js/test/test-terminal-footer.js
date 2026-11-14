@@ -164,6 +164,23 @@ const collapse = (p) => dispatchMsg(route.wrap('layout', { type: 'panel_collapse
   assert(rows7.some(r => r.includes('Dev') && r.includes('Two')), 'precondition: the tab strip shows both names');
   stdin.emit('data', '\x1c');
   assert(!getModel().modes.terminalMode, 'Ctrl+\\ left terminal mode');
+  assert(!(await footer()).includes('tabs'), 'no `][ tabs` here: `]` / `[` cycle the content slot, not this one');
+
+  section('[8] a terminal tab of the content slot: `][ tabs`, as its siblings show');
+  {
+    const mpool = require('../leaves/wm/pool');
+    const slot = () => mpool.allPanesInColumns(route.getInstanceSlice('layout').arrange).find(p => p.role === 'content');
+    dispatchMsg(route.wrap('layout', {
+      type: 'mint_tab', paneId: slot().paneId, paneType: 'terminal', poolId: 'term-in-viewer',
+      title: 'Shell', config: { cmd: 'sleep 60' },
+    }));
+    focus(slot().paneId);
+    eq(slot().activeTabId, 'term-in-viewer', 'precondition: the terminal is the content slot\'s active tab');
+    const f8 = await footer();
+    assert(f8.includes('][ tabs'), `the hint: "${f8.trim()}"`);
+    _dispatchToken(']');
+    assert(slot().activeTabId !== 'term-in-viewer', '`]` cycles the slot — the hint is true');
+  }
 
   terminal.destroyAll();
   fx.cleanup();
