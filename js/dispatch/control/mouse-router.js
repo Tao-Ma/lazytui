@@ -161,7 +161,7 @@ function _realizeAndPaint(hit, kind, mx, my) {
 /** Route one gesture. Returns true when something consumed it, false when
  *  nothing did (the event is dropped). `mx`/`my` are 0-based. */
 function route(kind, mx, my, model) {
-  const layoutSlice = api.getInstanceSlice('layout');
+  let layoutSlice = api.getInstanceSlice('layout');
   if (kind === 'motion' || kind === 'release') {
     if (!capture.held()) return false;   // no drag in flight → nothing to do
     const scope = _scopeOf(hitMap.stampOf(model, layoutSlice));   // a modal opened mid-drag → abandoned
@@ -175,9 +175,19 @@ function route(kind, mx, my, model) {
     // A press while a drag is held = a lost release (the terminal never sent
     // it). The controller decides: keep the drag and eat the press, or drop
     // the drag and let the press route normally.
-    const p = capture.press(_ev(mx, my), _scopeOf(hitMap.stampOf(model, api.getInstanceSlice('layout'))));
-    if (p.swallow) return true;
-    if (p.dirty) render();
+    if (capture.held()) {
+      const storeBefore = getModel();
+      const p = capture.press(_ev(mx, my), _scopeOf(hitMap.stampOf(model, layoutSlice)));
+      if (p.swallow) return true;
+      // The drag's cancel may have changed state (a discarded pool drag reopens
+      // the panel list — a stamp field): the press resolves against what is
+      // current, not what the cancel replaced. Only what the cancel replaced is
+      // re-read (updates make new objects) — the caller's model stands otherwise.
+      if (getModel() !== storeBefore) model = getModel();
+      const ls = api.getInstanceSlice('layout');
+      if (ls !== layoutSlice) layoutSlice = ls;
+      if (p.dirty) render();
+    }
   }
   const fresh = _fresh(hitMap.stampOf(model, layoutSlice));
   // A tab-scoped region (a border control, a fold marker) whose pane switched

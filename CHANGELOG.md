@@ -48,9 +48,16 @@ move, panel-list pool drag) run on one pointer-capture slot.
   for a row that was never drawn.** The footer row opens the general menu only.
 - **A click on a composite pane's graph widget below its interactive bars**
   selected a bar row that is drawn nowhere. It selects nothing now.
+- **A click on a composite pane's bars after they scrolled** (the cursor moved
+  past the bars' own height) selected a different bar than the one under the
+  pointer. It selects the bar drawn there now.
+- **A graph-zoom band whose mouse release was lost stayed on screen after a
+  `:record-load` round trip** — the live session saved for replay held the
+  half-finished drag, and nothing took it down after exit. Starting replay
+  now ends a drag in flight first.
 - **A text selection dragged while its pane switched tabs** copied text from
-  the other tab that was never selected on screen. The drag stops at the
-  switch.
+  the other tab that was never selected on screen. The drag does nothing
+  while the pane shows another tab.
 
 ### For plugin / pane authors
 - Hit regions owned by a pane are now owned by `pane:<paneId>` and carry a

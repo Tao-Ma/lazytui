@@ -193,7 +193,11 @@ function _rowIndexAt(paneId, b, my) {
   const itemRow = my - b.y - 1 - header;
   if (itemRow < 0) return -1;
   if (cap && cap.itemRows != null && itemRow >= cap.itemRows) return -1;   // below the item list (a composite's lower widgets)
-  const scroll = (cap && cap.windowed) ? cap.scroll : getScroll(paneId);
+  // A composite's bars widget re-windows its rows inside its own short body —
+  // neither the capture's scroll (the composite isn't windowed) nor getScroll
+  // (whose nav is sized to the whole pane): it declares what it drew.
+  const scroll = (cap && cap.itemScroll != null) ? cap.itemScroll
+    : (cap && cap.windowed) ? cap.scroll : getScroll(paneId);
   return itemRow + scroll;
 }
 
@@ -573,9 +577,9 @@ capture.register('graph-zoom', {
     return dirty;
   },
   pressWhileHeld: 'drop',
-  // Abandoned (a lost release, a modal opened mid-drag): take the live band
-  // down — it would otherwise stay painted until the next zoom drag. (Replay
-  // starting / stopping drops the capture without a cancel — pointer-capture.)
+  // Abandoned (a lost release — a press, or replay starting — or a modal opened
+  // mid-drag): take the live band down — it would otherwise stay painted until
+  // the next zoom drag (and, from replay's live snapshot, after replay exits).
   cancel(st) {
     const band = getInstanceSlice('layout').dragBand;
     if (!band || band.paneId !== st.paneId) return false;

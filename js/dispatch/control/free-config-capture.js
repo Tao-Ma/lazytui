@@ -56,17 +56,19 @@ capture.register('free-config', {
     toLayout({ type: 'free_config_mouse_release' });
     return true;
   },
-  pressWhileHeld: 'drop',   // a lost release: the next press replaces the drag (the reducer's press)
-  // Abandoned by a mode change mid-drag (free-config's title-edit): end the
-  // drag the slice still holds, as its release would — never leave a layout
-  // drag stuck in the slice. A lost release ('press') does nothing: the
-  // reducer's press DISCARDS the unreleased drag, as before R3 (releasing here
-  // committed a move the user never released).
+  pressWhileHeld: 'drop',   // a lost release: the capture ends (cancel 'lost'), the press routes
+  // Never leave a layout drag stuck in the slice. A lost release ('lost') —
+  // a press arrived, in ANY scope, or replay is starting — DISCARDS the
+  // unreleased drag (releasing it would commit a move the user never
+  // released). The discard is explicit: it must not depend on where the next
+  // press lands (today the backdrop's own reducer press would replace the
+  // drag), and replay enter's abandon has no press at all. Abandoned by a mode
+  // change while the button is still held ('scope' — motion / release under
+  // title-edit): end it as its release would.
   cancel(st, ev, reason) {
-    if (reason !== 'scope') return false;
     const d = dragOf(layout());
     if (!d || isPoolDrag(d)) return false;
-    toLayout({ type: 'free_config_mouse_release' });
+    toLayout({ type: reason === 'scope' ? 'free_config_mouse_release' : 'free_config_drag_discard' });
     return true;
   },
 });
@@ -97,12 +99,13 @@ capture.register('pool-drag', {
   // While the pool drag is live a press is swallowed (as before Release 3);
   // once the slice no longer holds it, the capture lets the press through.
   pressWhileHeld: () => (isPoolDrag(dragOf(layout())) ? 'swallow' : 'drop'),
-  // Abandoned by a mode change mid-drag: end the pool drag the slice still
-  // holds, as its release would. (A press while it is live is swallowed, so a
-  // 'press' abandon only happens once the slice no longer holds it.)
+  // Abandoned by a mode change while the button is still held ('scope'): end
+  // the pool drag the slice still holds, as its release would. A lost release
+  // ('lost' — a press in a changed scope, or replay starting; in the same scope
+  // a press is swallowed while the drag is live) discards it, dropping nothing.
   cancel(st, ev, reason) {
-    if (reason !== 'scope' || !isPoolDrag(dragOf(layout()))) return false;
-    toLayout({ type: 'pool_drag_release' });
+    if (!isPoolDrag(dragOf(layout()))) return false;
+    toLayout({ type: reason === 'scope' ? 'pool_drag_release' : 'free_config_drag_discard' });
     return true;
   },
 });

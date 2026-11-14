@@ -319,6 +319,48 @@ describe('[4d] pre-release review round 2', () => {
   });
 });
 
+describe('[4e] pre-release review round 3', () => {
+  it('a composite whose bars scrolled inside their own body: a click selects the bar painted there', () => {
+    for (const p of ['monitor/stats', 'monitor/gauge', 'monitor/composite']) {
+      const c = require(`../panel/${p}`);
+      if (!api.getComponent(c.name)) { try { api.registerComponent(c); } catch (_) { /* registered */ } }
+    }
+    // The bars sit BELOW a graph, in a quarter of the box: the pane's nav (sized
+    // to the whole box) never scrolls, while the bars body windows itself to keep
+    // the cursor visible.
+    const paneCfg = { id: 'cbox', type: 'composite', title: 'CPU', config: { widgets: [
+      { type: 'graph', topic: 'ci.cpu', row: '_', metrics: ['cpu'] },
+      { type: 'bars', topic: 'ci.core', column: 'busy', label: 'core', interactive: true, height: '25%' },
+    ] } };
+    sm.bootFresh({ groups: { g: { label: 'G', containers: [], actions: { a: { cmd: 'echo', label: 'A' } } } },
+      layout: { pool: { cbox: paneCfg }, columns: [{ panels: [paneCfg] }] } });
+    toLayout({ type: 'view_set', mode: 'normal' });
+    sm.resize(120, 30);
+    const series = {};
+    for (let i = 0; i < 40; i++) series['c' + String(i).padStart(2, '0')] = [{ busy: 100 - i, core: 'cpu' + i }];
+    getModel().metrics = { 'ci.core': { series, schema: { columns: { busy: { type: 'percent' }, core: { type: 'string' } } } },
+      'ci.cpu': { series: { _: [{ cpu: 20 }, { cpu: 40 }, { cpu: 60 }] }, schema: { columns: { cpu: { type: 'percent' } } } } };
+    hc.paint();
+    const paneId = bodies()[0].paneId;
+    toLayout({ type: 'focus_set', focus: paneId });
+    for (let i = 0; i < 12; i++) tok('j');
+    hc.paint();
+    const nav = require('../panel/nav-state');
+    const items = api.getItems(paneId);
+    eq(items[nav.getSel(paneId)], 'c12', 'the cursor moved down the bars');
+    const cap = require('../panel/select-view').contentFor(paneId);
+    const b = geo.visibleBoundsFor(layout(), paneId);
+    const y = b.y + 1 + cap.headerRows;                       // the bars body's first screen row
+    const shown = (hc.screenRows()[y] || []).map(c => (c == null ? ' ' : c)).join('').slice(b.x, b.x + 40);
+    const m = /cpu(\d+)/.exec(shown);
+    assert(m && m[1] !== '0', `the bars scrolled (first row shows ${JSON.stringify(shown.trim())})`);
+    input._classifyPress(0, 250, 90, Date.now());
+    tok(sgr(0, b.x + 5, y));
+    tok(sgr(0, b.x + 5, y, true));
+    eq(items[nav.getSel(paneId)], 'c' + m[1].padStart(2, '0'), 'the click selected the row painted there');
+  });
+});
+
 describe('[5] hover', () => {
   it('a live graph hover clears once a popup covers the graph (no hover handler → hover-out)', () => {
     const paneCfg = { id: 'g', type: 'stats', title: 'CPU', config: { topic: 'gh.cpu', row: '_', metrics: ['cpu'], window: 300, y_axis: 'off' } };

@@ -222,6 +222,11 @@ function enter(file, opts = {}) {
   const idleCap = tl.DEFAULT_IDLE_CAP;
   const timeline = tl.buildTimeline(log, { idleCap });
   const idx = log.length - 1;
+  // A drag in flight (its release lost — the user typed `:record-load`) ends
+  // HERE, against the live model, before the snapshot: exit restores that
+  // snapshot, and a zoom band / layout drag frozen into it would come back
+  // with no capture left to take it down (pointer-capture REPLAY).
+  require('../control/pointer-capture').abandon('lost');
   S = {
     file, log, checkpoints, timeline,
     idx,

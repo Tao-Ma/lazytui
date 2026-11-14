@@ -178,6 +178,22 @@ function poolDragMotion(slice, mx, my, COLS) {
   return { ...slice, freeConfig: { ...d, drag: { ...ds, kind: nextKind, curX: mx, curY: my, target } } };
 }
 
+/** Discard the pool drag WITHOUT dropping it: returns [next slice, cmds]. The
+ *  overlay reopens if it was open at drag-start (drag.resumeOnCancel), so the
+ *  user can try again without re-pressing `w`. Release's no-valid-target case,
+ *  and a lost release (`free_config_drag_discard`). Not a pool drag → no-op. */
+function poolDragDiscard(slice) {
+  const d = slice.freeConfig;
+  const ds = d && d.drag;
+  if (!ds || (ds.kind !== 'pool-armed' && ds.kind !== 'pool-dragging')) return [slice, []];
+  const cleared = {
+    ...slice,
+    panelList: { ...slice.panelList, open: !!ds.resumeOnCancel },
+    freeConfig: { ...d, drag: null },
+  };
+  return [cleared, [{ type: 'force_full_repaint' }]];
+}
+
 /** Release: returns [next slice, cmds]. Cmds re-emit pool_hide/show Msgs
  *  back into layout.update so the existing handlers do the work (single
  *  source of truth for the mutation). On a valid drop the overlay stays
@@ -189,17 +205,9 @@ function poolDragRelease(slice) {
   const d = slice.freeConfig;
   const ds = d && d.drag;
   if (!ds || (ds.kind !== 'pool-armed' && ds.kind !== 'pool-dragging')) return [slice, []];
-  const resumeOnCancel = !!ds.resumeOnCancel;
   const repaint = { type: 'force_full_repaint' };
   const isValid = ds.kind === 'pool-dragging' && ds.target && ds.target.valid;
-  if (!isValid) {
-    const cleared = {
-      ...slice,
-      panelList: { ...slice.panelList, open: resumeOnCancel },
-      freeConfig: { ...d, drag: null },
-    };
-    return [cleared, [repaint]];
-  }
+  if (!isValid) return poolDragDiscard(slice);
   const sourceId = ds.sourceId;
   const t = ds.target;
   const closeOverlay = {
@@ -284,7 +292,7 @@ function spawnNewColumnArrange(arrange, position, placement) {
 }
 
 module.exports = {
-  poolDragStart, poolDragMotion, poolDragRelease,
+  poolDragStart, poolDragMotion, poolDragRelease, poolDragDiscard,
   computePoolDragPreviewArrange,
   spawnNewColumnArrange,
   validatePoolNewColumn,

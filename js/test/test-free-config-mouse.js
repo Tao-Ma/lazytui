@@ -166,6 +166,87 @@ describe('[2c] a lost release discards the unreleased drag (round-2 review)', ()
   });
 });
 
+describe('[2d] a lost release, then a mode change, then a press (round-3 review)', () => {
+  const order = () => mpool.allPanesInColumns(layout().arrange).map(p => p.paneId).join();
+  it('layout drag: `t` (title-edit) before the press → nothing committed, the unreleased drag discarded', () => {
+    boot({ openList: false });
+    const geo = require('../leaves/wm/geometry');
+    const before = order();
+    const g1 = geo.visibleBoundsFor(layout(), 'pane-g1');
+    const g3 = geo.visibleBoundsFor(layout(), 'pane-g3');
+    tok(sgr(0, g1.x + 5, g1.y + Math.floor(g1.h / 2)));
+    mtok(sgr(32, g3.x + 5, g3.y + Math.floor(g3.h / 2)));
+    assert(drag() && drag().target && drag().target.valid, 'a move drag is live over a valid target');
+    sm.capture(() => input._dispatchToken('t'));        // the release never came; the user renames
+    assert(getModel().modes.freeConfigTitleEditMode, 'title-edit is open');
+    hc.paint();
+    const d = geo.visibleBoundsFor(layout(), 'pane-detail');
+    tok(sgr(0, d.x + 5, d.y + 5));
+    eq(order(), before, 'no swap was committed');
+    // The press itself is a free-config press (the backdrop still takes it under
+    // title-edit) — it arms its own drag on the detail pane; g1's is gone.
+    assert(!drag() || drag().sourcePaneId !== 'pane-g1', 'the unreleased g1 drag was discarded');
+    mtok(sgr(0, d.x + 5, d.y + 5, true));
+    eq(order(), before, 'releasing the new press moves nothing');
+    eq(capture.held(), null);
+    sm.capture(() => sm.applyMsg({ type: 'mode_clear', flag: 'freeConfigTitleEditMode' }));
+    done();
+  });
+  it('layout drag ended with no press at all (abandon \'lost\' — replay enter\'s call) → discarded, nothing committed', () => {
+    boot({ openList: false });
+    const geo = require('../leaves/wm/geometry');
+    const before = order();
+    const g1 = geo.visibleBoundsFor(layout(), 'pane-g1');
+    const g3 = geo.visibleBoundsFor(layout(), 'pane-g3');
+    tok(sgr(0, g1.x + 5, g1.y + Math.floor(g1.h / 2)));
+    mtok(sgr(32, g3.x + 5, g3.y + Math.floor(g3.h / 2)));
+    assert(drag() && drag().target && drag().target.valid, 'a move drag is live over a valid target');
+    sm.capture(() => capture.abandon('lost'));
+    eq(capture.held(), null);
+    eq(drag(), null, 'the drag is gone from the slice (no reducer press will replace it)');
+    eq(order(), before, 'no swap was committed');
+    done();
+  });
+  it('pool drag: a mode change before the press → nothing dropped, the list reopens', () => {
+    boot();
+    const before = order();
+    const r = rowsOf()[0];
+    tok(sgr(0, r.rect.x + 3, r.rect.y));
+    for (const [x, y] of [[60, 3], [100, 4], [110, 5]]) mtok(sgr(32, x, y));
+    assert(drag() && drag().kind === 'pool-dragging' && drag().target && drag().target.valid, 'a pool drag is live over a valid target');
+    sm.capture(() => sm.applyMsg({ type: 'mode_set', flag: 'freeConfigTitleEditMode' }));
+    hc.paint();
+    tok(sgr(0, 100, 10));                                // the release never came
+    eq(order(), before, 'nothing was dropped');
+    eq(drag(), null, 'the pool drag was discarded');
+    eq(!!(layout().panelList && layout().panelList.open), true, 'the list it came from reopened (as a drop on no target)');
+    eq(capture.held(), null);
+    sm.capture(() => sm.applyMsg({ type: 'mode_clear', flag: 'freeConfigTitleEditMode' }));
+    done();
+  });
+  it('pool drag: that press, outside the reopened list, still lands (resolved against the state after the discard)', () => {
+    boot();
+    const before = order();
+    const lb = box().rect;
+    const r = rowsOf()[0];
+    tok(sgr(0, r.rect.x + 3, r.rect.y));
+    for (const [x, y] of [[60, 3], [100, 4], [110, 5]]) mtok(sgr(32, x, y));
+    sm.capture(() => sm.applyMsg({ type: 'mode_set', flag: 'freeConfigTitleEditMode' }));
+    hc.paint();
+    const px = lb.x + 1, py = lb.y + lb.h + 3;           // below the list box, over pane g3
+    assert(py < 29, 'the point is on screen, outside the list box');
+    tok(sgr(0, px, py));
+    eq(order(), before, 'nothing was dropped');
+    // The discard reopened the list (a stamp field): resolving the press against
+    // the pre-discard stamp read the fresh frame as stale and DROPPED the press.
+    eq(capture.held() && capture.held().name, 'free-config', 'the press took the free-config backdrop (not dropped)');
+    eq(layout().focus, 'pane-g3', 'it pressed the pane under it');
+    mtok(sgr(0, px, py, true));
+    sm.capture(() => sm.applyMsg({ type: 'mode_clear', flag: 'freeConfigTitleEditMode' }));
+    done();
+  });
+});
+
 describe('[3] pool drag holds the mouse', () => {
   it('a press while the pool drag is live is swallowed; the drag continues', () => {
     boot();

@@ -18,25 +18,34 @@
  *     release(state, ev) → dirty?         the slot is already empty
  *     pressWhileHeld:    'drop' | 'swallow' | (state) → 'drop' | 'swallow'
  *                        a press arriving while the capture is held (a lost
- *                        release): 'drop' ends the capture (cancel runs) and the
- *                        press routes normally; 'swallow' consumes the press and
- *                        keeps the capture. Default 'drop'.
+ *                        release): 'drop' ends the capture (cancel 'lost' runs)
+ *                        and the press routes normally; 'swallow' consumes the
+ *                        press and keeps the capture. Default 'drop'.
  *     cancel(state, ev, reason) → dirty?  optional — run when the capture is
  *                                         dropped without a release; reason:
- *                                         'press' — a lost release (the next
- *                                         press arrived first); 'scope' — the
- *                                         modes changed mid-drag (SCOPE)
+ *                                         'lost' — the release never came (a
+ *                                         press arrived first, or replay is
+ *                                         starting): discard the unreleased
+ *                                         drag, commit nothing; 'scope' — the
+ *                                         modes changed while the button is
+ *                                         still held (SCOPE)
  *   }
  *
  * SCOPE: a capture lives only within the scope it started in — the router
  * passes `{ chain, replay }` (the active chain modes + the replay view). If a
- * popup / an in-grid mode opens mid-drag, the next motion / release / press
- * ABANDONS the capture: its `cancel(…, 'scope')` runs and nothing else, so a
- * drag can't keep selecting / zooming / copying behind a modal (before R3 the
- * T13 gate dropped those gestures). If replay started or stopped, the model
- * itself was swapped (the reconstructed one / the restored live snapshot): the
- * capture is dropped and NO cancel runs — nothing the drag knew applies to the
- * model now present, and nothing may write into a replayed one.
+ * popup / an in-grid mode opens mid-drag, the next motion / release ABANDONS
+ * the capture: its `cancel(…, 'scope')` runs and nothing else, so a drag can't
+ * keep selecting / zooming / copying behind a modal (before R3 the T13 gate
+ * dropped those gestures). A PRESS in a changed scope is still a lost release:
+ * `cancel(…, 'lost')`, without asking the controller's policy (the press
+ * belongs to what the new scope shows).
+ *
+ * REPLAY swaps the whole model, so a capture must never cross it:
+ * replay-control's enter ends a held capture (`abandon('lost')`) BEFORE it
+ * snapshots the live model — the snapshot restored on exit must hold no
+ * half-finished drag. A capture that still sees the replay view change (replay
+ * entered some other way) is dropped with NO cancel ('swap'): nothing may write
+ * into a reconstructed model.
  *
  * Capture state is input-shell (like the router's press→double record), not
  * model: the visible effects ride the Msgs each controller dispatches. A
@@ -79,8 +88,8 @@ function start(name, args, ev, owner, scope) {
   return true;
 }
 
-// Drop the held capture without a release. `reason` 'press' / 'scope' runs the
-// controller's cancel; 'swap' (replay started / stopped) runs none. Returns dirty.
+// Drop the held capture without a release. `reason` 'lost' / 'scope' runs the
+// controller's cancel; 'swap' (the replay view changed) runs none. Returns dirty.
 function _abandon(ev, reason) {
   const s = _slot;
   _slot = null;
@@ -119,25 +128,32 @@ function motion(ev, scope) { const c = _scopeChange(scope); return c ? _abandon(
  *  changed). Returns dirty. */
 function release(ev, scope) { const c = _scopeChange(scope); return c ? _abandon(ev, c) : _call('release', ev); }
 
-/** A press while a capture is held. Returns `{ swallow, dirty }`: swallow →
- *  the press is consumed and the capture stays; otherwise the capture was
- *  dropped and the press routes normally. A scope change wins over the
- *  controller's lost-release policy (the policy may read a model that was
- *  swapped since). Nothing held → `{ swallow: false, dirty: false }`. */
+/** A press while a capture is held — a lost release. Returns `{ swallow,
+ *  dirty }`: swallow → the press is consumed and the capture stays; otherwise
+ *  the capture was dropped (cancel 'lost') and the press routes normally. A
+ *  scope change skips the controller's policy — the press belongs to what the
+ *  new scope shows — but is still a lost release (a replay swap: no cancel).
+ *  Nothing held → `{ swallow: false, dirty: false }`. */
 function press(ev, scope) {
   const s = _slot;
   if (!s) return { swallow: false, dirty: false };
   const c = _scopeChange(scope);
-  if (c) return { swallow: false, dirty: _abandon(ev, c) };
+  if (c) return { swallow: false, dirty: _abandon(ev, c === 'swap' ? 'swap' : 'lost') };
   let policy = s.ctl.pressWhileHeld;
   if (typeof policy === 'function') {
     try { policy = policy.call(s.ctl, s.state); } catch (e) { _record(s.name, 'pressWhileHeld', e); policy = 'drop'; }
   }
   if (policy === 'swallow') return { swallow: true, dirty: false };
-  return { swallow: false, dirty: _abandon(ev, 'press') };
+  return { swallow: false, dirty: _abandon(ev, 'lost') };
 }
+
+/** End the held capture from outside a pointer event — replay-control's enter,
+ *  before it snapshots the live model (REPLAY). Runs the controller's
+ *  `cancel(…, reason)`; default 'lost'. Returns dirty (false when nothing is
+ *  held). */
+function abandon(reason) { return _slot ? _abandon({}, reason || 'lost') : false; }
 
 /** Test seam — drop any held capture without running a hook. */
 function _reset() { _slot = null; }
 
-module.exports = { register, start, held, motion, release, press, _reset };
+module.exports = { register, start, held, motion, release, press, abandon, _reset };

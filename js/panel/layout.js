@@ -900,6 +900,18 @@ function update(msg, slice) {
       if (pos !== null) return { ...next, freeConfig: { ...next.freeConfig, notice: `added new column at position ${pos + 1}`, noticeKind: 'info' } };
       return next;
     }
+    // A lost release (pointer-capture cancel 'lost' — a press arrived first, or
+    // replay is starting): end the drag in flight WITHOUT committing it. A move
+    // drops its preview (nothing moves); a resize keeps the sizes its motion
+    // already applied (as the reducer's own next press always did); a pool drag
+    // is discarded like a drop on no target. Full repaint: a dropped preview
+    // reshuffles the panes under an unchanged arrange (the motion arms' rule).
+    case 'free_config_drag_discard': {
+      const ds = slice.freeConfig && slice.freeConfig.drag;
+      if (!ds) return slice;
+      if (ds.kind === 'pool-armed' || ds.kind === 'pool-dragging') return mpoolDrag.poolDragDiscard(slice);
+      return [{ ...slice, freeConfig: { ...slice.freeConfig, drag: null } }, [{ type: 'force_full_repaint' }]];
+    }
     // Pool-drag gesture from the panel-list overlay. Source is the
     // overlay cursor's item id; drop is on a layout cell (replace) or
     // column gap (append). poolDragRelease returns the [next, cmds]

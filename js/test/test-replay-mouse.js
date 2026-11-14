@@ -134,12 +134,13 @@ describe('[2b] replay frames are current while the replay view holds', () => {
   });
 });
 
-describe('[2c] a drag left over when replay starts (round-2 review)', () => {
+describe('[2c] a capture that sees the replay view change (the swap backstop, round-2 review)', () => {
   it('is dropped WITHOUT its cancel (nothing written into the replayed model); the first press seeks', () => {
-    // A free-config layout drag whose release was lost, then replay starts:
-    // its cancel would dispatch free_config_mouse_release into the model now
-    // present. (The injected replay leaves the live model in place, so "the
-    // replayed model" here is the one whose drag must stay untouched.)
+    // A free-config layout drag whose release was lost, then the replay view
+    // appears WITHOUT replay-control's enter (which ends a held capture first —
+    // [2d]): its cancel would write into the model now present. (The injected
+    // replay leaves the live model in place, so "the replayed model" here is
+    // the one whose drag must stay untouched.)
     const capture = require('../dispatch/control/pointer-capture');
     sm.bootFresh();
     toLayout({ type: 'view_set', mode: 'normal' });
@@ -163,6 +164,49 @@ describe('[2c] a drag left over when replay starts (round-2 review)', () => {
     eq(SEEKS, [0], 'the press seeked (not swallowed by the leftover drag)');
     restore();
     toLayout({ type: 'free_config_exit' });
+  });
+});
+
+describe('[2d] the REAL :record-load round trip with a drag left over (round-3 review)', () => {
+  it('replay enter ends the drag BEFORE the live snapshot: exit restores no zoom band', () => {
+    const capture = require('../dispatch/control/pointer-capture');
+    const sessionLog = require('../io/session-log');
+    const mpool = require('../leaves/wm/pool');
+    const stats = require('../panel/monitor/stats');
+    if (!api.getComponent(stats.name)) { try { api.registerComponent(stats); } catch (_) { /* registered */ } }
+    capture._reset();
+    const cfg = { id: 'g', type: 'stats', title: 'CPU', config: { topic: 'z.cpu', row: '_', metrics: ['cpu'], window: 300, y_axis: 'off' } };
+    const det = { id: 'd', type: 'detail', title: 'Out' };
+    sm.bootFresh({ groups: { grp: { label: 'G', containers: [], actions: { a: { cmd: 'echo', label: 'A' } } } },
+      layout: { pool: { g: cfg, d: det }, columns: [{ width: 80, panels: [cfg] }, { panels: [det] }] } });
+    toLayout({ type: 'view_set', mode: 'normal' });
+    sm.resize(120, 30);
+    require('../app/runtime').getModel().metrics = { 'z.cpu': { series: { _: Array.from({ length: 300 }, (_x, i) => ({ cpu: i % 100 })) }, schema: { columns: { cpu: { type: 'percent' } } } } };
+    // A tiny recorded session to load.
+    const wal = require('path').join(require('os').tmpdir(), `lazytui-replay-mouse-${process.pid}.jsonl`);
+    sessionLog.enable(true); sessionLog.clear();
+    sm.capture(() => { for (let i = 1; i <= 3; i++) loop.applyMsg({ type: 'clock_tick', now: i * 1000 }); });
+    sessionLog.save(wal);
+    sessionLog.enable(false); sessionLog.clear();
+    try {
+      hc.paint();
+      const p = mpool.allPanesInColumns(layout().arrange).find((x) => x.type === 'stats');
+      const b = geo.visibleBoundsFor(layout(), p.paneId);
+      tok(sgr(0, b.x + 10, b.y + 5));                              // press on the graph → graph-zoom
+      sm.capture(() => input._dispatchToken(sgr(32, b.x + 30, b.y + 5)));   // drag → band
+      assert(layout().dragBand, 'the zoom band is painted');
+      eq(capture.held() && capture.held().name, 'graph-zoom');
+      // The release is lost; the user runs :record-load.
+      sm.capture(() => rc.enter(wal));
+      assert(rc.active(), 'replay is active');
+      eq(capture.held(), null, 'the drag ended at replay enter');
+      sm.capture(() => rc.exit());
+      eq(rc.active(), false);
+      eq(layout().dragBand, null, 'the restored live session holds no band (it was taken down before the snapshot)');
+    } finally {
+      if (rc.active()) sm.capture(() => rc.exit());
+      try { require('fs').unlinkSync(wal); } catch (_) { /* gone */ }
+    }
   });
 });
 

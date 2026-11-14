@@ -59,13 +59,17 @@ function currentPaneId() { return _current; }
  *  `itemRows` = how many rows AFTER the header are the item list, when the pane
  *  paints non-item rows below it too (a composite's interactive bars widget
  *  above a graph widget) — a click past them maps to no row. null = the list
- *  runs to the pane's bottom border. */
-function recordContent(paneId, lines, scroll, windowed, selectableRows, fullLines, headerRows, itemRows) {
+ *  runs to the pane's bottom border.
+ *  `itemScroll` = the scroll those item rows were DRAWN at, when it is neither
+ *  `scroll` (a windowed capture) nor the model's getScroll — a composite's bars
+ *  widget windows its rows inside its own short body. null = not declared. */
+function recordContent(paneId, lines, scroll, windowed, selectableRows, fullLines, headerRows, itemRows, itemScroll) {
   if (!paneId) return;
   _content.set(paneId, { lines: lines || [], scroll: scroll || 0, windowed: !!windowed,
     selectableRows: selectableRows == null ? null : selectableRows,
     headerRows: headerRows | 0,
     itemRows: itemRows == null ? null : itemRows | 0,
+    itemScroll: itemScroll == null ? null : itemScroll | 0,
     // The full display-space buffer for extraction on windowed panes that apply
     // a per-line display transform (text-view right-aligns status rows), so a
     // yank reads the text at the columns the click captured — not the stored

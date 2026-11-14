@@ -57,14 +57,19 @@ function _interactiveWidget(widgets) {
 // cursor via `ctx` = { sel, scroll, focused }, threaded into the gauge body. An
 // unknown/mis-typed widget degrades to a dim marker (the lenient-parser
 // philosophy: no throw, a visible hint).
-function _bodyLines(widget, innerW, innerH, ctx, hoverCol = -1) {
+// A widget's body → { lines, scroll } — `scroll` is the row offset a `bars` body
+// windowed itself to (the interactive widget's click→row map needs it); 0 else.
+function _body(widget, innerW, innerH, ctx, hoverCol = -1) {
   const type = widget && widget.type;
-  if (type === 'graph') return stats.renderBody(widget, innerW, innerH, hoverCol).lines;
-  if (type === 'bars')  return gauge.renderBody(gauge.specFrom(widget), innerW, innerH, ctx || {}).lines;
+  if (type === 'graph') return { lines: stats.renderBody(widget, innerW, innerH, hoverCol).lines, scroll: 0 };
+  if (type === 'bars') {
+    const r = gauge.renderBody(gauge.specFrom(widget), innerW, innerH, ctx || {});
+    return { lines: r.lines, scroll: r.scroll || 0 };
+  }
   // `meter` — a SINGLE gauge bar (one scalar), vs `bars`' one-per-row. `single`
   // takes the top-sorted row; `row:` picks one by key. Reuses the gauge body.
-  if (type === 'meter') return gauge.renderBody(gauge.specFrom({ ...widget, single: true }), innerW, innerH, {}).lines;
-  return [`[${theme().dim}](unknown widget type: ${esc(String(type))})[/]`];
+  if (type === 'meter') return { lines: gauge.renderBody(gauge.specFrom({ ...widget, single: true }), innerW, innerH, {}).lines, scroll: 0 };
+  return { lines: [`[${theme().dim}](unknown widget type: ${esc(String(type))})[/]`], scroll: 0 };
 }
 
 // A widget height (`45`, `"45%"`) → a percent number 1-100, or null (flex share).
@@ -195,6 +200,7 @@ function render(panel, w, h, _slice, opts) {
   // (no select), fixing "clicking the TX graph switches the interface".
   let interactiveStart = 0;
   let interactiveRows = null;   // its body height — rows below it (a graph widget) are no item
+  let interactiveScroll = null; // the row offset its body windowed itself to (it scrolls inside its own height)
   if (!widgets.length) {
     lines = [`[${t.dim}](composite needs a widgets: list)[/]`];
   } else if (innerW < 1 || innerH < 1) {
@@ -229,8 +235,9 @@ function render(panel, w, h, _slice, opts) {
       // (rounding / few rows) doesn't shift the widgets below it out of their slots.
       const bh = heights[i];
       const hoverCol = (hover && hover.widgetIndex === i) ? hover.col : -1;
-      const body = _bodyLines(widget, innerW, bh, widget === iw ? iCtx : null, hoverCol);
-      for (let r = 0; r < bh; r++) lines.push(body[r] != null ? body[r] : '');
+      const body = _body(widget, innerW, bh, widget === iw ? iCtx : null, hoverCol);
+      if (widget === iw) interactiveScroll = body.scroll;
+      for (let r = 0; r < bh; r++) lines.push(body.lines[r] != null ? body.lines[r] : '');
     });
     // At a tiny innerH the heading/gap rows push the stack past innerH (`_split`'s
     // bodyAvail floors at one row per widget). A composite has NO scroll, so cap
@@ -261,6 +268,10 @@ function render(panel, w, h, _slice, opts) {
     // …and END after its own body: a click on a widget BELOW it resolves to no
     // row either (it selected a bar row drawn nowhere — pre-release review).
     itemRows: interactiveRows,
+    // …and its rows are offset by the scroll its body drew, not the pane's nav
+    // scroll (sized to the whole box): a click on a scrolled bar row selects the
+    // row painted there (round-3 review).
+    itemScroll: interactiveScroll,
   });
 }
 

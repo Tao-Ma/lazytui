@@ -334,20 +334,33 @@ The pane-body controllers live in `dispatch/control/pane-mouse.js`, the
 free-config ones in `dispatch/control/free-config-capture.js`; each re-checks
 the slice (a drag the keyboard ended makes the remaining motion a no-op).
 **Lost release** (a press while a capture is held): `pressWhileHeld` decides —
-`'drop'` (text-select, graph-zoom, free-config: the capture ends, the press
-routes normally) or `'swallow'` (pool-drag, while the slice still holds the
-pool drag — as before R3). **Scope** (pre-release review): a capture lives
-only within the chain modes + replay view it started under; if a popup or an
-in-grid mode opens mid-drag, the next motion / release / press abandons it —
-`cancel(…, 'scope')` runs and nothing else (the free-config drags release what
-the slice still holds; graph-zoom takes its band down; text-select dispatches
-nothing), so a drag can't keep selecting or copying behind a modal (the pre-R3
-T13 gate dropped those gestures). If replay started or stopped, the model was
-swapped: the capture is dropped with NO cancel. A lost release runs
-`cancel(…, 'press')` — the free-config drag then does nothing (the reducer's
-press discards the unreleased drag). Body drags are also TAB-scoped: after the
-pane switches tabs mid-drag, text-select / graph-zoom go inert (their Msgs ride
-`wrap(paneId)` to the pane's current instance). Mutual exclusion is structural: one slot, the
+`'drop'` (text-select, graph-zoom, free-config: the capture ends with
+`cancel(…, 'lost')`, the press routes normally) or `'swallow'` (pool-drag,
+while the slice still holds the pool drag — as before R3). A `'lost'` cancel
+discards the unreleased drag and commits nothing: the free-config drags
+dispatch `free_config_drag_discard` (a move drops its preview; a resize keeps
+the sizes its motion applied; a pool drag is discarded like a drop on no
+target, its list reopening), graph-zoom takes its band down, text-select
+dispatches nothing (the new press cancels selections itself). **Scope**
+(pre-release review): a capture lives only within the chain modes + replay
+view it started under; if a popup or an in-grid mode opens mid-drag, the next
+motion / release abandons it — `cancel(…, 'scope')` runs and nothing else (the
+button is still held: the free-config drags release what the slice still
+holds, as v0.6.57's eventual release did; graph-zoom takes its band down;
+text-select dispatches nothing), so a drag can't keep selecting or copying
+behind a modal (the pre-R3 T13 gate dropped those gestures). A **press** in a
+changed scope skips the controller's policy (the press belongs to what the new
+scope shows) but is still a lost release — `'lost'`, never `'scope'` (round 3:
+lost release + `t` + click committed the unreleased move). **Replay** swaps the
+whole model, so no capture crosses it: `replay-control.enter` ends a held
+capture (`pointer-capture.abandon('lost')`) BEFORE it snapshots the live
+model — exit restores that snapshot, and a band or layout drag frozen into it
+came back with no capture to take it down (round 3). A capture that still sees
+the replay view change (replay entered some other way) is dropped with NO
+cancel — nothing may write into a reconstructed model. Body drags are also
+TAB-scoped: while the pane shows another tab, text-select / graph-zoom are
+inert (their Msgs ride `wrap(paneId)` to the pane's current instance); back on
+the starting tab they resume. Mutual exclusion is structural: one slot, the
 press's winning region picks the controller. Capture state stays input-shell
 (like `_lastClick*`), not model — the visible effects already ride Msgs. A
 throwing controller loses its capture (recorded).
@@ -479,7 +492,10 @@ height) + chips + chrome glyphs — O(100). Pane rows are **not** published
 per row: the pane-body region resolves its row at realize time through the
 existing select-view capture (`_rowIndexAt`, dispatch/control/pane-mouse.js) —
 bounded above by the bottom border and, when the pane declares it, by
-`itemRows` (a composite's interactive widget above a graph widget). Resolve is a
+`itemRows` (a composite's interactive widget above a graph widget), offset by
+`itemScroll` (the scroll that widget drew at — its body windows itself inside
+its own height, which neither the pane's nav scroll nor an unwindowed capture
+knows). Resolve is a
 linear top-down scan — microseconds, even under mode 1003 hover. Gate:
 `bench-hotpaths.js` and the Release-2 render-construction baseline
 (`reference_release_2_bench_baseline`) within noise, same-directory runs.
@@ -1016,6 +1032,27 @@ step 7 is the bench, docs and review. Notes and deviations from the plan:
     leaked into the next — output depended on test order); two stats test
     files that clicked before painting (resolving against the previous test's
     frame, which only matched because of the leaked `modal`) now paint first;
+  - round 3 (one reviewer, on the round-2 fix commit `1da05120` only). Fixed,
+    each reproduced first: a lost release, then a mode change (`t` — rename),
+    then a click COMMITTED the unreleased free-config move (round-2 regression:
+    the press abandoned the capture as `'scope'`, which releases — a press is
+    now always `'lost'`, and the free-config / pool-drag `'lost'` cancels
+    discard explicitly via `free_config_drag_discard`); the router resolved
+    that press against the model read before the drag's cancel ran (a
+    discarded pool drag reopens the list — a stamp field — and the fresh frame
+    read as stale DROPPED the press). Inherited, fixed: a zoom band whose
+    release was lost survived a `:record-load` round trip (the live snapshot
+    held it; replay enter now ends the capture before the snapshot); a click
+    on a composite's scrolled bars selected a row offset by the pane's nav
+    scroll, not the one painted there (`renderPanel({ itemScroll })`). Kept
+    (judgment, steelmanned): a text selection whose pane switched tabs
+    mid-drag stays uncopied (copying a tab no longer on screen is as
+    surprising; `y` copies it); the tab scope is taken after the press's own
+    handlers (a press that flips an unfocused content pane to Info selects
+    Info — what the user sees after the repaint, identical to v0.6.57);
+    `dragBand` is keyed by paneId, so a band can show on a second stats tab
+    until release (transient); a `'scope'` cancel (button still held) commits
+    what the slice holds, as v0.6.57's eventual release did;
   - three tests passed for the wrong reason (stale-frame `+` + click, the
     replay hover check, test-mouse-wheel [4]) — re-pointed and mutation-checked;
   - doc parity (DATAFLOW / ONBOARDING / pane-selection / modes.js /
@@ -1032,10 +1069,12 @@ step 7 is the bench, docs and review. Notes and deviations from the plan:
   click case became a swallow (the intentional change); tests that read
   `region.owner` as a paneId read `region.paneId`.
 - Tests: `test-pane-body-mouse.js` (gating, empty screen, errored pane, capture
-  across panes, lost release, hover-out), `test-free-config-mouse.js` (rows,
-  header / preview / essential, outside press, right-click, chrome over the
-  backdrop, pool-drag press swallow), `test-replay-mouse.js` (owner region,
-  seek cells, hidden view, replay-start stale frame), pointer capture in
+  across panes, lost release, hover-out, scrolled composite bars),
+  `test-free-config-mouse.js` (rows, header / preview / essential, outside
+  press, right-click, chrome over the backdrop, pool-drag press swallow, lost
+  release across a mode change), `test-replay-mouse.js` (owner region, seek
+  cells, hidden view, replay-start stale frame, the real `:record-load` round
+  trip with a drag left over), pointer capture in
   `test-mouse-router.js` [6], decision A in `test-mouse-stale-frame.js` [5],
   bodies in the `test-hit-map-agreement.js` width sweep.
 - **Bench gate** (2026-11-14, same filesystem — v0.6.57 `1ad122ac` in a
