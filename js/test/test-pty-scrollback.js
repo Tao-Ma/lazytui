@@ -71,6 +71,10 @@ describe('_classifyTerminalToken — mouse', () => {
     eq(_classifyTerminalToken('\x1b[<0;7;9m', 'drag'),
       { kind: 'report', mouse: { x: 7, y: 9, button: 'left', action: 'up', shift: false, alt: false, ctrl: false } });
   });
+  it('a release is a release even with the motion bit set (no stuck button)', () => {
+    eq(_classifyTerminalToken('\x1b[<32;7;9m', 'drag'),
+      { kind: 'report', mouse: { x: 7, y: 9, button: 'left', action: 'up', shift: false, alt: false, ctrl: false } });
+  });
   it('… except what a child can\'t be sent (a wheel release) → dropped', () => {
     eq(_classifyTerminalToken('\x1b[<64;5;5m', 'vt200'), { kind: 'drop' });
   });

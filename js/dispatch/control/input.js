@@ -95,11 +95,14 @@ function handleMouse(kind, x, y) {
 const _SGR_MOUSE_RE = /^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/;
 
 // One host SGR mouse report (lazytui runs the host terminal in SGR, 1006) →
-// an emulator-neutral event `{ x, y (host, 1-based), button, action, shift,
-// alt, ctrl }` that io/terminal reportMouse encodes for the child. Field
-// report 2026-11-14: the host bytes were forwarded RAW — whole-screen
-// coordinates, always SGR — so a click in an nvim pane landed ~35 columns off.
-// null = nothing a child can be sent (buttons 8–11; a wheel "release").
+// `{ x, y (host, 1-based), button, action, shift, alt, ctrl }` — the ONE decode
+// of the button bits, for both modes: the normal-mode router's gestures
+// (_dispatchMouseEvent) and the child's report in terminal mode (io/terminal
+// reportMouse encodes it; field report 2026-11-14: the host bytes were
+// forwarded RAW — whole-screen coordinates, always SGR — so a click in an nvim
+// pane landed ~35 columns off). The `m` final is a release whatever the motion
+// bit says (a release during a drag can carry both). null = nothing to send or
+// route (buttons 8–11; a wheel "release").
 function _decodeSgrMouse(btn, x, y, final) {
   if (btn & 128) return null;
   const mods = { shift: !!(btn & 4), alt: !!(btn & 8), ctrl: !!(btn & 16) };
@@ -109,7 +112,7 @@ function _decodeSgrMouse(btn, x, y, final) {
     return { x, y, button: 'wheel', action: ['wheel-up', 'wheel-down', 'wheel-left', 'wheel-right'][low], ...mods };
   }
   const button = ['left', 'middle', 'right', 'none'][low];
-  const action = (btn & 32) ? 'move' : (final === 'm' ? 'up' : 'down');
+  const action = final === 'm' ? 'up' : (btn & 32) ? 'move' : 'down';
   return { x, y, button, action, ...mods };
 }
 
@@ -713,44 +716,31 @@ function _dispatchToken(tok) {
 }
 
 /** One SGR mouse event (an _SGR_MOUSE_RE match). */
+const _BUTTON_NUM = { left: 0, middle: 1, right: 2 };
 function _dispatchMouseEvent(mm) {
-  const btn      = parseInt(mm[1]);
-  const x        = parseInt(mm[2]);
-  const y        = parseInt(mm[3]);
-  const released = mm[4] === 'm';
-  if ((btn & 0x40) !== 0) {
-    if (released) return;
-    // SGR wheel buttons: 64 = up, 65 = down (VERTICAL); 66 = left, 67 = right
-    // (HORIZONTAL tilt-wheel / trackpad side-scroll). Only bit 0 tells up from
-    // down, so the old `btn & 1` misread 66 as wheel-up and 67 as wheel-down —
-    // a horizontal scroll injected spurious vertical steps, jittering the list
-    // cursor during a slow scroll (66/67 interleaved with the real 65s). lazytui
-    // has no horizontal axis, so drop 66/67 entirely.
-    const low = btn & 0x03;
-    if (low === 0)      handleMouse('wheel-up', x, y);
-    else if (low === 1) handleMouse('wheel-down', x, y);
-    // low === 2 (wheel-left) / 3 (wheel-right): horizontal — ignored.
+  const ev = _decodeSgrMouse(parseInt(mm[1], 10), parseInt(mm[2], 10), parseInt(mm[3], 10), mm[4]);
+  if (!ev) return;                                   // buttons 8–11, a wheel release
+  const { x, y } = ev;
+  if (ev.button === 'wheel') {
+    // Vertical only: lazytui has no horizontal axis, so wheel-left/-right
+    // (66/67, tilt wheel / trackpad side-scroll) drop. Reading only bit 0 once
+    // misread them as vertical steps — the list cursor jittered during a slow
+    // scroll.
+    if (ev.action === 'wheel-up' || ev.action === 'wheel-down') handleMouse(ev.action, x, y);
     return;
   }
-  const motion = (btn & 0x20) !== 0;
-  const button = btn & 3;
   // Motion + release stay left-only — text-select extend/commit have no
-  // right/middle analog, so a right/middle drag or release is dropped
-  // exactly as before. Released is checked first (a release-during-drag
-  // carries both the 'm' suffix and the motion bit).
-  if (released) {
-    if (button !== 0) return;
-    return handleMouse('release', x, y);
-  }
-  if (motion) {
-    if (button === 0) return handleMouse('motion', x, y);   // left-drag: text-select / pool drag
-    if (button === 3) return handleMouse('hover', x, y);     // button-less move (mode 1003): graph hover
-    return;                                                  // right/middle drag: dropped as before
+  // right/middle analog, so a right/middle drag or release is dropped.
+  if (ev.action === 'up') return ev.button === 'left' ? handleMouse('release', x, y) : undefined;
+  if (ev.action === 'move') {
+    if (ev.button === 'left') return handleMouse('motion', x, y);   // left-drag: text-select / pool drag
+    if (ev.button === 'none') return handleMouse('hover', x, y);    // button-less move (mode 1003): graph hover
+    return;                                                         // right/middle drag: dropped
   }
   // Fresh press — classify into press/double (left) or right/middle.
   // v0.6.4 Theme F Phase 3 — was `if (button !== 0) return`, which
   // dropped every non-left button at the door.
-  const gesture = _classifyPress(button, x, y, Date.now());
+  const gesture = _classifyPress(_BUTTON_NUM[ev.button], x, y, Date.now());
   if (gesture) handleMouse(gesture, x, y);
 }
 
