@@ -428,8 +428,10 @@ API keys. The recipe used for the Phase-A live pass:
    request (no `role:"tool"` message in the conversation) streams a
    `tool_calls` delta invoking pi's bash tool (`echo live-tool-ok`);
    the follow-up request streams the settled text + usage.
-3. An agent pane with `config: { backend: pi, provider: <name>,
-   model: <id> }` — send a prompt, watch the tool line, result block,
+3. An agent pane with the settings on its entry —
+   `chat: { type: agent, title: Chat, backend: pi, provider: <name>, model: <id> }`
+   under `panels:` (a nested `config: { backend: … }` is not read: the pane
+   falls back to `mock`) — send a prompt, watch the tool line, result block,
    settled text, and `N tok` fold live.
 
 Caveat: pi inherits lazytui's environment — an `http_proxy` in the env

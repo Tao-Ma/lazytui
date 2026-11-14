@@ -73,6 +73,10 @@ panels:                # the pool — every panel keyed by id
   notes:               # in pool but not placed below → starts hidden
     type: viewer
     title: Notes
+  dev:
+    type: terminal
+    title: Dev
+    cmd: ./dev.sh                  # a pane's settings sit on its entry, next to type/title
 
 layout:                # the grid — ordered columns, cells reference pool by id
   columns:
@@ -88,6 +92,12 @@ layout:                # the grid — ordered columns, cells reference pool by i
         - actions
         - { tabs: [detail], height: 60% }   # mapping form when an override applies
 ```
+
+A pane's settings (a terminal's `cmd`, an agent's `backend` / `model`, a
+text-view's `lines`, a refresh cadence) go on its entry, beside `type` and
+`title`. A nested `config:` block is not read — the pane starts without those
+settings (an agent runs `mock`, a terminal runs `$SHELL`) — and the parser warns
+(`panels.nested_config`, also in `--lint`).
 
 **Two layout-cell forms** — bare-string for the common case, mapping
 when you need more:

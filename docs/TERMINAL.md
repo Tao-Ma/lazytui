@@ -268,6 +268,19 @@ pane's bounds, then dispatches `terminal_enter`.
 
 ## YAML configuration
 
+A terminal pane declared in the `panels:` pool — always there, placed like any
+pane — runs the `cmd:` on its entry (through `$SHELL -c`; no `cmd:` runs the
+shell itself):
+
+```yaml
+panels:
+  dev: { type: terminal, title: Dev, cmd: ./dev.sh }
+```
+
+The command sits on the entry, beside `type` and `title`, like every pane
+setting; a nested `config: { cmd: … }` is not read (the pane runs `$SHELL`) and
+the parser warns (`panels.nested_config`).
+
 Per-group `terminals:` entries (parser normalizes to `{ cmd, label }`):
 
 ```yaml

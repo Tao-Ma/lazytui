@@ -195,5 +195,29 @@ section('[4] declared panes of real kinds start with their own settings');
   eq(s('pane-tb').topic, 'beta', 'table, other tab: its OWN topic (it read alpha)');
 }
 
+section('[5] a nested `config:` is flagged, not silently dropped');
+{
+  // The settings go on the entry; a nested `config:` block is not read (an agent
+  // written that way ran `mock`, a terminal ran $SHELL) — the parser says so.
+  // Pre-release review 2026-11-14: docs/live-agent.md's recipe used that form.
+  const head = 'project_dir: .\ngroups:\n  g1:\n    label: G\n    actions:\n      hello: { label: Hello, script: echo hello }\npanels:\n';
+  const lint = (panels) => writeConfig(head + panels).warnings.filter(w => w.code === 'panels.nested_config');
+  const w = lint('  chat: { type: agent, config: { backend: pi, model: m/x } }\n  dev: { type: terminal, config: { cmd: htop } }\n');
+  eq(w.length, 2, 'one warning per entry with a nested config');
+  assert(/panels\.chat/.test(w[0].message) && /`backend: …`, `model: …`/.test(w[0].message), `names the pane and the settings to move: ${w[0].message}`);
+  assert(/panels\.dev/.test(w[1].message) && /`cmd: …`/.test(w[1].message), w[1].message);
+  eq(lint('  chat: { type: agent, backend: pi, model: m/x }\n'), [], 'the flat form is fine');
+  // The recipe as docs/live-agent.md writes it: no warning, and the pane runs pi.
+  const doc = fs.readFileSync(path.join(__dirname, '../../docs/live-agent.md'), 'utf8');
+  const m = /`(chat: \{ type: agent[^`]*\})`/.exec(doc);
+  assert(m, 'docs/live-agent.md gives the agent pane entry');
+  const recipe = m[1].replace('<name>', 'local').replace('<id>', 'm1');
+  const cfg = writeConfig(head + '  ' + recipe + '\n  detail: { type: detail }\nlayout:\n  columns:\n    - panels: [chat, detail]\n');
+  eq(cfg.warnings.filter(x => x.code === 'panels.nested_config'), [], 'the documented recipe draws no warning');
+  sm.bootFresh(cfg);
+  const d = route.getInstanceSlice('pane-chat').descriptor;
+  eq([d.backend, d.provider, d.model], ['pi', 'local', 'm1'], 'and its pane runs pi with the provider and model');
+}
+
 for (const d of dirs) fs.rmSync(d, { recursive: true, force: true });
 report();

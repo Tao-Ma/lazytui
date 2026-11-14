@@ -136,7 +136,11 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   `seed.paneDef`, `subscriptions`' `paneDef`, `render`'s `panel`) is now
   documented in docs/PLUGINS.md. An agent pane written with a nested
   `config: { backend: … }` worked only by accident and now falls back to
-  `mock`. Write the settings directly on the entry (`backend: pi`).
+  `mock`. Write the settings directly on the entry (`backend: pi`). A nested
+  `config:` under any pane is not read, and the config now says so
+  (`panels.nested_config` warning, also in `--lint`) instead of the pane
+  quietly starting without its settings (a terminal written that way ran
+  `$SHELL`).
 
 ## [0.6.58] — 2026-11-14
 

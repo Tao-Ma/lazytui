@@ -137,7 +137,7 @@ function validate(data, _sourceFile, warnings) {
   if ('keymap' in data)   validateKeymap(data.keymap);
   if ('mouse' in data)    validateMouse(data.mouse);
   if ('context-menu' in data) validateContextMenu(data['context-menu']);
-  if ('panels' in data)   validatePanels(data.panels);
+  if ('panels' in data)   validatePanels(data.panels, warnings);
   if ('layout' in data)   validateLayout(data.layout, warnings);
   if ('metrics' in data)  validateMetrics(data.metrics);
 
@@ -566,7 +566,7 @@ function validateLayout(layout, warnings) {
  * `type`, no placement-only fields) lives in the resolver
  * (`normalizePoolEntry` in parser/index.js).
  */
-function validatePanels(panelsBlock) {
+function validatePanels(panelsBlock, warnings) {
   if (!isMapping(panelsBlock)) {
     throw new SchemaError("'panels' must be a mapping of id → { type, ... }");
   }
@@ -574,6 +574,19 @@ function validatePanels(panelsBlock) {
     const ctx = `panels.${id}`;
     if (!isMapping(entry)) {
       throw new SchemaError(`panel entry must be a mapping, got ${typeName(entry)}`, { context: ctx });
+    }
+    // A pane's settings sit on its entry (`backend: pi`, `cmd: …`); a nested
+    // `config:` block is not read — the pane starts without those settings (an
+    // agent pane runs `mock`, a terminal pane runs $SHELL). Warn, don't reject:
+    // the entry still loads.
+    if ('config' in entry && warnings) {
+      const keys = isMapping(entry.config) ? Object.keys(entry.config) : [];
+      const eg = keys.length ? keys.map(k => `\`${k}: …\``).join(', ') : 'each setting';
+      warnings.push({
+        code: 'panels.nested_config',
+        message: `${ctx}: a nested 'config:' is not read — write ${eg} on the entry itself ` +
+          `(\`${id}: { type: ${entry.type || '…'}, ${keys[0] || 'setting'}: … }\`); the pane starts without ${keys.length > 1 ? 'them' : 'it'}`,
+      });
     }
   }
 }
