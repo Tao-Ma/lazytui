@@ -87,7 +87,7 @@ function editFile(filepath, opts) {
   dispatchMsg(wrap('layout', {
     type: 'mint_tab', paneId: container, paneType: 'terminal', idPrefix: 'term',
     title: `✎ ${name}`,
-    config: { cmd, label: `edit ${name}`, onExit: { kind: 'edit', path: abs, isConfig } },
+    config: { cmd, onExit: { kind: 'edit', path: abs, isConfig } },
     hint: { origin: 'edit', key: abs },
   }));
   dispatchMsg(wrap('layout', { type: 'focus_set', focus: container }));

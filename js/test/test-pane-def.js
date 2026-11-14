@@ -1,0 +1,199 @@
+/**
+ * One pane-def builder — mpane.panelDef. Every place that turns a pool entry
+ * into a pane def produces its shape, and each tab's init is seeded with the
+ * def of its OWN entry.
+ *
+ * Field report 2026-11-14 (nvim in a `type: terminal` pane): terminal mode's
+ * footer read `[terminal: terminal]`, not the pane's `title: Dev`. Root: the
+ * pane def was built by hand in five places that disagreed. Boot dropped the
+ * nested `config` (a tab switch kept it), so the inits that read `config`
+ * (terminal, agent, text-view, info) got nothing for a pane declared under
+ * `panels:` — an agent declared `backend: pi` started as `mock`. And every
+ * tab's init got the SLOT, which mirrors only its active tab, so the other tabs
+ * of a multi-tab slot started with the active tab's settings (two tables on
+ * topics alpha + beta both read alpha). The hidden-panel preview built its def
+ * from a list item, so it never had the panel's settings at all.
+ *
+ *   [1] panelDef: settings at the top level AND under `config`; framework keys
+ *       win; title falls back to the type; the entry is not mutated
+ *   [2] every builder site produces panelDef's output: boot, the no-layout
+ *       fallback, a tab switch / add / remove, `:show` placement, the
+ *       hidden-panel preview
+ *   [3] each tab's init is seeded with its own entry's def (multi-tab slot)
+ *   [4] declared panes of real kinds start with their own settings: agent
+ *       backend/model, text-view lines/cap, a table per tab
+ *
+ * Run: node js/test/test-pane-def.js
+ */
+'use strict';
+
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { section, assert, eq, report } = require('./test-runner');
+const sm = require('./smoke/_helpers/smoke');
+const route = require('../panel/route');
+const mpane = require('../leaves/wm/pane');
+const mpool = require('../leaves/wm/pool');
+const { rebuildLayoutFromConfig } = require('../leaves/wm/arrange');
+const { parse } = require('../parser');
+
+for (const m of ['agent/agent', 'text-view/text-view', 'monitor/table']) {
+  const c = require('../panel/' + m);
+  if (!sm.api.getComponent(c.name)) sm.api.registerComponent(c);
+}
+// A probe kind: its init keeps the seed's pane def, its renderer records the
+// `panel` it was handed.
+const rendered = [];
+sm.api.registerComponent({
+  name: 'pdprobe',
+  init: (paneId, seed) => ({ paneId: paneId || null, seen: (seed && seed.paneDef) || null }),
+  update: (_msg, slice) => slice,
+  panelTypes: {
+    pdprobe: {
+      render: (panel, w, h) => {
+        rendered.push(panel);
+        return sm.api.renderPanel({ width: w, height: h, lines: [], title: panel.title, panelType: 'pdprobe' });
+      },
+    },
+  },
+});
+
+// Order-insensitive compare (eq is JSON.stringify).
+const canon = (v) => Array.isArray(v) ? v.map(canon)
+  : (v && typeof v === 'object') ? Object.fromEntries(Object.keys(v).sort().map(k => [k, canon(v[k])]))
+    : v;
+// A pane's def = the pane minus its slot-only fields.
+const SLOT_KEYS = ['paneId', 'tabs', 'activeTabId', 'heightPct', 'collapsed', 'role'];
+function defPart(pane) {
+  const d = { ...pane };
+  for (const k of SLOT_KEYS) delete d[k];
+  return d;
+}
+function sameDef(pane, entry, what) {
+  eq(canon(defPart(pane)), canon(mpane.panelDef(entry, pane)), what);
+}
+
+const dirs = [];
+function writeConfig(body) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lazytui-pane-def-'));
+  dirs.push(dir);
+  const yml = path.join(dir, 'tui.yml');
+  fs.writeFileSync(yml, body);
+  return parse(yml);
+}
+
+const YAML = `project_dir: .
+groups:
+  g1:
+    label: G
+    actions:
+      hello: { label: Hello, script: echo hello }
+panels:
+  groups: { type: groups, title: Groups }
+  pa: { type: pdprobe, title: A, color: red, size: 1 }
+  pb: { type: pdprobe, title: B, color: blue }
+  hid: { type: pdprobe, title: Hidden, color: green }
+  bot: { type: agent, title: Bot, backend: pi, model: foo/bar }
+  notes: { type: text-view, title: Notes, lines: [one, two], cap: 7 }
+  ta: { type: table, title: TA, topic: alpha, columns: [{ key: x }] }
+  tb: { type: table, title: TB, topic: beta, columns: [{ key: y }] }
+  detail: { type: detail, title: Detail }
+layout:
+  columns:
+    - width: 30
+      panels: [groups]
+    - width: flex
+      panels:
+        - { tabs: [pa, pb], hotkey: 4 }
+        - bot
+    - panels:
+        - { tabs: [ta, tb] }
+        - notes
+        - detail
+`;
+
+section('[1] panelDef: the shape');
+{
+  const entry = { id: 'x', type: 'my_kind', title: 'X', config: { topic: 't', title: 'shadowed', id: 'nope' } };
+  const frozen = JSON.stringify(entry);
+  const d = mpane.panelDef(entry, { hotkey: '5', columnIndex: 2 });
+  eq(d.topic, 't', 'a setting is on the top level');
+  eq(d.config, entry.config, '… and under `config`');
+  eq([d.id, d.type, d.title, d.hotkey, d.columnIndex], ['x', 'my_kind', 'X', '5', 2], 'framework keys win over same-named settings');
+  eq(mpane.panelDef({ id: 'y', type: 'my_kind' }).title, 'my kind', 'no title → the type, underscores spaced');
+  eq(mpane.panelDef({ id: 'y', type: 'my_kind' }).config, {}, 'no config → an empty `config`');
+  eq(JSON.stringify(entry), frozen, 'the entry is not mutated');
+  eq(mpane.titleOf(entry), 'X', 'titleOf names the entry as panelDef does');
+  eq(mpane.titleOf(null), undefined, 'titleOf(no entry) → undefined');
+}
+
+section('[2] every builder site produces panelDef\'s output');
+{
+  const config = writeConfig(YAML);
+  const arr = rebuildLayoutFromConfig(config);
+  for (const p of mpool.allPanesInColumns(arr)) {
+    // A content slot keeps its own identity (the slot's entry), every other
+    // pane mirrors its active tab.
+    const src = p.role === 'content' ? arr.pool[p.id] : arr.pool[p.activeTabId];
+    sameDef(p, src, `boot: ${p.paneId} is panelDef(${src.id})`);
+  }
+  const slot = mpool.allPanesInColumns(arr).find(p => p.activeTabId === 'pa');
+  eq(slot.config, { color: 'red', size: 1 }, 'boot: the pane carries its settings under `config` (it did not)');
+
+  const fb = rebuildLayoutFromConfig({ groups: {}, files: [{ path: 'a' }] });
+  for (const p of mpool.allPanesInColumns(fb)) {
+    const src = p.role === 'content' ? fb.pool[p.id] : fb.pool[p.activeTabId];
+    sameDef(p, src, `no-layout fallback: ${p.paneId}`);
+  }
+  eq(fb.pool.files.config, { source: 'declared' }, 'no-layout fallback: the files entry holds its setting (only the pane did)');
+
+  const switched = mpane.setActiveTab(slot, 'pb', arr.pool.pb);
+  sameDef(switched, arr.pool.pb, 'tab switch: panelDef(pb), nothing of pa left');
+  eq(switched.size, undefined, 'tab switch: pa\'s `size` does not leak');
+  const added = mpane.addTab(slot, { id: 'hid', poolId: 'hid' }, arr.pool.hid, { activate: true });
+  sameDef(added, arr.pool.hid, 'tab add (activate): panelDef(hid)');
+  const removed = mpane.removeTab(added, 'hid', arr.pool);
+  sameDef(removed.pane, arr.pool[removed.activeId], 'tab remove: panelDef(the new active tab)');
+
+  const shown = mpool.placementFromPoolEntry(arr.pool.hid, 1);
+  sameDef(shown, arr.pool.hid, ':show placement: panelDef(hid)');
+  eq([shown.hotkey, shown.columnIndex], ['', 1], ':show placement: no hotkey, the target column');
+
+  const { _buildPreviewLines } = require('../overlay/panel-list');
+  const item = mpool.panelListItems(arr).find(i => i.id === 'hid');
+  eq(item.status, 'hidden', 'precondition: hid is a hidden panel');
+  rendered.length = 0;
+  _buildPreviewLines(item, 40, 10, arr);
+  eq(rendered.length, 1, 'hidden preview: the renderer ran');
+  const prev = rendered[0];
+  sameDef(prev, arr.pool.hid, 'hidden preview: panelDef(hid) (the list item has no settings)');
+  eq(prev.color, 'green', 'hidden preview: the renderer sees the panel\'s settings');
+}
+
+section('[3] each tab\'s init is seeded with its own entry\'s def');
+{
+  sm.bootFresh(writeConfig(YAML));
+  sm.resize(160, 40);
+  const arr = route.getInstanceSlice('layout').arrange;
+  const slot = mpool.allPanesInColumns(arr).find(p => (p.tabs || []).some(t => t.poolId === 'pa'));
+  eq(slot.activeTabId, 'pa', 'precondition: pa is the active tab, pb the other');
+  const seenA = route.getInstanceSlice('pane-pa').seen;
+  const seenB = route.getInstanceSlice('pane-pb').seen;
+  eq(canon(seenA), canon(mpane.panelDef(arr.pool.pa, slot)), 'pa: panelDef(pa) on its slot');
+  eq(canon(seenB), canon(mpane.panelDef(arr.pool.pb, slot)), 'pb: panelDef(pb) on its slot — not the slot\'s (pa\'s)');
+  eq([seenB.color, seenB.config.color, seenB.title, seenB.size], ['blue', 'blue', 'B', undefined], 'pb sees its own settings and title');
+  eq([seenA.hotkey, seenA.columnIndex], ['4', 1], 'the slot\'s hotkey and column ride along');
+}
+
+section('[4] declared panes of real kinds start with their own settings');
+{
+  const s = (id) => route.getInstanceSlice(id);
+  eq([s('pane-bot').descriptor.backend, s('pane-bot').descriptor.model], ['pi', 'foo/bar'], 'agent: backend + model (it started as mock)');
+  eq([s('pane-notes').lines, s('pane-notes').cap], [['one', 'two'], 7], 'text-view: lines + cap');
+  eq(s('pane-ta').topic, 'alpha', 'table, active tab: its topic');
+  eq(s('pane-tb').topic, 'beta', 'table, other tab: its OWN topic (it read alpha)');
+}
+
+for (const d of dirs) fs.rmSync(d, { recursive: true, force: true });
+report();

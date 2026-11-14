@@ -324,8 +324,11 @@ overlay-subsystem reads, called out at the end):
   seed its initial slice receives them as an argument: the mint loop
   (`app/state.js`, the impure first-touch shell) threads a seed
   `{ config, projectDir, paneDef }` into `comp.init(paneId, seed)`.
-  config-status (the sole consumer) derives files/projectDir/branch from the
-  seed and reads NO globals — `init` is a pure function of `(paneId, seed)`.
+  `paneDef` is the TAB's own pane def — `leaves/wm/pane#panelDef` of its pool
+  entry, the one builder every pane def comes from (docs/PLUGINS.md "The pane
+  def"). config-status derives files/projectDir/branch from the seed, the
+  terminal / agent / text-view / monitor kinds their settings, and none reads
+  globals — `init` is a pure function of `(paneId, seed)`.
   This mirrors `register.init(config.register)` and retired the last
   cross-slice init read (it previously reached for `getModel()` +
   `getInstanceSlice('layout')`). Seed-blind inits arity-ignore the arg.

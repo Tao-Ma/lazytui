@@ -107,9 +107,9 @@ function subscriptions(paneDef, _model) {
 }
 
 function init(paneId, seed) {
-  // The per-pane config is HOISTED onto seed.paneDef (topic/columns/sort at top
-  // level — the parser hoists panel fields onto the placed pane); seed.config is
-  // the whole model config. Read the pane def.
+  // The pane's own settings (topic/columns/sort) are on seed.paneDef — this
+  // tab's pane def (mpane.panelDef: top level AND under `config`); seed.config
+  // is the whole model config. Read the pane def.
   const pd = (seed && seed.paneDef) || {};
   const nav = mnav.init();
   // Seed the default sort into nav so the table opens ordered (config intent),

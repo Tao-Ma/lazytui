@@ -48,24 +48,17 @@ function rebuildLayoutFromConfig(config) {
     // them only when an entry-level mutator lands.
     out.pool = { ...(ly.pool || {}) };
     const N = (ly.columns || []).length;
-    // Plugin-specific panel options ride alongside type/title/hotkey/
-    // columnIndex so the panel def can read them off `panel` directly.
-    // Spread first so the framework keys win on any overlap. `id` plumbs
-    // the link back to the pool — pool.js reads it to compute
-    // placed vs hidden.
+    // The parser's cell carries its active tab's entry (id/type/title/
+    // config); mpane.panelDef turns it into the runtime pane def — the
+    // same builder a tab switch uses, so a pane has one shape from boot
+    // on. `id` plumbs the link back to the pool — pool.js reads it to
+    // compute placed vs hidden.
     //
     // Multi-tab cells: when the parser emitted paneId + tabs[] +
     // activeTabId, preserve those verbatim. Single-tab pool refs and
     // JSON callers go through wrapAsPane.
     const widenPane = (p, hotkey, columnIndex) => {
-      const wide = {
-        ...(p.config || {}),
-        id: p.id,
-        type: p.type,
-        title: p.title || p.type.replace(/_/g, ' '),
-        hotkey,
-        columnIndex,
-      };
+      const wide = mpane.panelDef(p, { hotkey, columnIndex });
       if (p.heightPct !== undefined) wide.heightPct = p.heightPct;
       // U2e P1a — carry the stable content-slot role onto the runtime pane.
       // Prefer the parser-stamped `p.role` (survives :restore-layout, and — once
@@ -124,22 +117,17 @@ function rebuildLayoutFromConfig(config) {
     const hasContainers = Object.values(config.groups || {}).some(g => g.containers && g.containers.length);
     const hasConfigFiles = config.files && config.files.length;
     let hk = 1;
-    const push = (columnIndex, panel) => {
+    const push = (columnIndex, hotkey, id, type, title, config) => {
       const arr = columnIndex === 0 ? firstColPanels : lastColPanels;
-      arr.push(mpane.wrapAsPane(panel, mpane.newPaneId(panel.id)));
-      out.pool[panel.id] = {
-        id: panel.id, type: panel.type, title: panel.title, config: {}, _synthesized: true,
-      };
+      const entry = { id, type, title, config: config || {}, _synthesized: true };
+      out.pool[id] = entry;
+      arr.push(mpane.wrapAsPane(mpane.panelDef(entry, { hotkey, columnIndex }), mpane.newPaneId(id)));
     };
-    if (hasContainers) {
-      push(0, { id: 'containers', type: 'containers', title: 'Containers', hotkey: String(hk++), columnIndex: 0 });
-    }
-    push(0, { id: 'groups', type: 'groups', title: 'Groups', hotkey: String(hk++), columnIndex: 0 });
-    if (hasConfigFiles) {
-      push(0, { id: 'files', type: 'files', title: 'Files', hotkey: String(hk++), columnIndex: 0, source: 'declared' });
-    }
-    push(1, { id: 'actions', type: 'actions', title: 'Actions', hotkey: '7', columnIndex: 1 });
-    push(1, { id: 'detail',  type: 'detail',  title: 'Detail',  hotkey: '8', columnIndex: 1 });
+    if (hasContainers) push(0, String(hk++), 'containers', 'containers', 'Containers');
+    push(0, String(hk++), 'groups', 'groups', 'Groups');
+    if (hasConfigFiles) push(0, String(hk++), 'files', 'files', 'Files', { source: 'declared' });
+    push(1, '7', 'actions', 'actions', 'Actions');
+    push(1, '8', 'detail',  'detail',  'Detail');
     out.columns = [
       { width: 30, panels: firstColPanels },
       { panels: lastColPanels },

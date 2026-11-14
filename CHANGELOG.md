@@ -105,6 +105,24 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   colours (nvim under `solarized-light` reports `background=light`). With it
   off, your terminal's own colours show and the question stays unanswered, as
   before.
+- **In terminal mode the footer names the terminal by its title.** It read
+  `[terminal: terminal]` for a configured `type: terminal` pane: the footer
+  showed a separate label such panes never had, not the `title:` on the border.
+  It now shows the name the border or tab strip shows (`[terminal: Dev]`). An
+  `edit` terminal now reads `[terminal: ✎ tui.yml]`, like its tab.
+- **Panes declared under `panels:` start with their own settings.** A pane's
+  settings reached its Component in one shape at startup and another after a
+  tab switch, and several Components read the one that was missing at startup.
+  So a declared agent pane with `backend: pi` started as `mock`, and a
+  text-view's `lines:` / `cap:` were ignored. In a multi-tab slot every tab
+  started with the active tab's settings (two tables on different topics both
+  showed the first one's), and the Panels list previewed a hidden panel
+  without its settings. One builder now makes every pane definition, and each
+  tab starts from its own. For Component authors, the shape (`init`'s
+  `seed.paneDef`, `subscriptions`' `paneDef`, `render`'s `panel`) is now
+  documented in docs/PLUGINS.md. An agent pane written with a nested
+  `config: { backend: … }` worked only by accident and now falls back to
+  `mock`. Write the settings directly on the entry (`backend: pi`).
 
 ## [0.6.58] — 2026-11-14
 

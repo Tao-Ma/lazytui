@@ -17,6 +17,10 @@
  *       the exit banner offers no `x close`
  *   [4] dead, with a sibling tab: `x close` closes it; the banner offers it
  *   [5] the viewer footer no longer carries terminal hints
+ *   [6] terminal mode names the pane by the title its border shows
+ *       (`[terminal: Dev]`; it read `[terminal: terminal]` — the footer read a
+ *       separate `label` a configured pane never had)
+ *   [7] … and in a multi-tab slot, the active tab's title
  *
  * Run: node js/test/test-terminal-footer.js
  */
@@ -29,7 +33,8 @@ const terminal = require('../io/terminal');
 const route = require('../panel/route');
 const { getModel } = require('../model/store');
 const { dispatchMsg, applyMsg } = require('../dispatch/runtime/loop');
-const { _dispatchToken } = require('../dispatch/control/input');
+const { _dispatchToken, _makeDataHandler } = require('../dispatch/control/input');
+const { EventEmitter } = require('events');
 
 // Every frame the app writes goes to a virtual terminal (paint is a diff
 // against the previous frame, so the screen must see them all); the runner's
@@ -97,7 +102,7 @@ const collapse = (p) => dispatchMsg(route.wrap('layout', { type: 'panel_collapse
   section('[4] dead, with a sibling tab');
   dispatchMsg(route.wrap('layout', {
     type: 'mint_tab', paneId: fx.pane().paneId, paneType: 'terminal', poolId: 'term-sib',
-    title: 'sib', config: { cmd: 'sleep 60', label: 'sib' },
+    title: 'sib', config: { cmd: 'sleep 60' },
   }));
   eq(fx.pane().activeTabId, 'term-sib', 'precondition: the minted sibling is active');
   const sibId = 'pane-term-sib';
@@ -118,6 +123,37 @@ const collapse = (p) => dispatchMsg(route.wrap('layout', { type: 'panel_collapse
   const segs = bindings.footerSegs('detail', { total: 2, isTerminal: true, dead: true, isEphemeral: true });
   assert(segs.includes('/ search'), 'viewer: / search');
   assert(!segs.some(s => /Enter (activate|restart)|x close/.test(s)), `no terminal hints: ${JSON.stringify(segs)}`);
+
+  // Terminal mode's keys arrive on stdin (not _dispatchToken): Ctrl+\ leaves.
+  const stdin = new EventEmitter();
+  stdin.on('data', _makeDataHandler(stdin));
+
+  section('[6] terminal mode names the pane by its title');
+  focus(fx.pane().paneId);
+  eq(fx.pane().tabs.length, 1, 'precondition: the configured pane is alone in its slot again');
+  _dispatchToken('\r');                       // dead since [3]: Enter restarts it + types into it
+  assert(getModel().modes.terminalMode, 'precondition: Enter entered terminal mode');
+  const f6 = await footer();
+  assert(f6.includes('[terminal: Dev]'), `the footer names it as its border does: "${f6.trim()}"`);
+  assert(!f6.includes('[terminal: terminal]'), 'not the generic name');
+  assert((await screen()).some(r => r.includes('Dev')), 'precondition: the border shows Dev');
+  stdin.emit('data', '\x1c');
+  assert(!getModel().modes.terminalMode, 'Ctrl+\\ left terminal mode');
+
+  section('[7] a multi-tab slot: the active tab\'s title');
+  dispatchMsg(route.wrap('layout', {
+    type: 'mint_tab', paneId: fx.pane().paneId, paneType: 'terminal', poolId: 'term-two',
+    title: 'Two', config: { cmd: 'sleep 60' },
+  }));
+  eq(fx.pane().activeTabId, 'term-two', 'precondition: the minted tab is active');
+  _dispatchToken('\r');
+  assert(getModel().modes.terminalMode, 'precondition: Enter entered terminal mode');
+  const rows7 = await screen();
+  const f7 = rows7[39];
+  assert(f7.includes('[terminal: Two]'), `the footer names the active tab: "${f7.trim()}"`);
+  assert(rows7.some(r => r.includes('Dev') && r.includes('Two')), 'precondition: the tab strip shows both names');
+  stdin.emit('data', '\x1c');
+  assert(!getModel().modes.terminalMode, 'Ctrl+\\ left terminal mode');
 
   terminal.destroyAll();
   fx.cleanup();

@@ -213,7 +213,7 @@ function doRun(actionKey, action, args = []) {
         // it does NOT drive reuse (the fresh poolId means every spawn is new).
         dispatchMsg(wrap('layout', {
           type: 'mint_tab', paneId: container, paneType: 'terminal', idPrefix: 'term',
-          title: actionKey, config: { cmd: `${tmp}${argStr}`, label: actionKey },
+          title: actionKey, config: { cmd: `${tmp}${argStr}` },
           hint: { origin: 'spawn', group, key: actionKey },
         }));
         // mint_tab activates the tab but focus-FOLLOWS only a pre-focused slot; the
@@ -250,7 +250,7 @@ function doRun(actionKey, action, args = []) {
       const label = action.label || actionKey;
       dispatchMsg(wrap('layout', {
         type: 'mint_tab', paneId: container, paneType: 'terminal', poolId,
-        title: label, config: { cmd, label },
+        title: label, config: { cmd },
         hint: { origin: 'yaml-terminal', group, key: actionKey },
       }));
       dispatchMsg(wrap('layout', { type: 'set_active_tab', paneId: container, tabPoolId: poolId }));

@@ -46,6 +46,51 @@ function paneMatchesFocus(p, focus) {
 }
 
 /**
+ * A pool entry's name — what its pane title / tab-strip entry / terminal footer
+ * show: its `title`, else its type's name.
+ */
+function titleOf(entry) {
+  if (!entry) return undefined;
+  return entry.title || (typeof entry.type === 'string' ? entry.type.replace(/_/g, ' ') : entry.type);
+}
+
+/**
+ * THE pane-def shape — the one builder of "this pool entry, placed in a slot".
+ *
+ *   { ...config, id, type, title, hotkey, columnIndex, config }
+ *
+ * The entry's own settings (`config`, as the parser keeps them in the pool) are
+ * there twice: spread at the top level, so a renderer reads an option straight
+ * off `panel` (`panel.topic`), and nested under `config`. Framework keys win over
+ * a same-named setting. `title` is titleOf(entry).
+ *
+ * Every place that turns a pool entry into a pane def calls this: boot
+ * (arrange.rebuildLayoutFromConfig), a tab switch / add / remove
+ * (_rebuildLegacyFields), `:show` + its drag preview
+ * (pool.placementFromPoolEntry), the hidden-panel preview (overlay/panel-list),
+ * and each tab's init seed (`seed.paneDef`, app/state.js). They built it by hand
+ * before and drifted apart — a pane read its settings from `config` after a tab
+ * switch but not at boot, and every tab of a multi-tab slot was seeded with the
+ * active tab's settings (field report 2026-11-14: a `type: terminal` pane's
+ * `title: Dev` never reached its footer).
+ *
+ * `place` = { hotkey, columnIndex } of the slot. Pure; `entry` is not mutated.
+ */
+function panelDef(entry, place) {
+  const config = (entry && entry.config) || {};
+  const p = place || {};
+  return {
+    ...config,
+    id: entry.id,
+    type: entry.type,
+    title: titleOf(entry),
+    hotkey: p.hotkey,
+    columnIndex: p.columnIndex,
+    config,
+  };
+}
+
+/**
  * Return a new pane object with Pane fields minted onto `entry`.
  *
  * Adds:
@@ -94,8 +139,8 @@ function setActiveTab(pane, tabPoolId, entry) {
  * Rebuild a pane's legacy Panel fields (id/type/title/config + spread config
  * keys) from a pool `entry`, with `tabs` + `activeTabId` set explicitly and the
  * placement-only fields (paneId/hotkey/columnIndex/heightPct/collapsed)
- * preserved. Shared by setActiveTab (switch) and addTab (append+activate) so the
- * wide-pane shape lives in ONE place.
+ * preserved. Shared by setActiveTab (switch), addTab (append+activate) and
+ * removeTab; the pane-def part of the shape is panelDef's.
  */
 function _rebuildLegacyFields(pane, tabs, activeTabId, entry) {
   // U2f — a CONTENT slot (role:'content', the viewer slot) has a STABLE identity
@@ -112,13 +157,7 @@ function _rebuildLegacyFields(pane, tabs, activeTabId, entry) {
     ? { id: pane.id, type: pane.type, title: pane.title, config: pane.config }
     : entry;
   const next = {
-    ...(idEntry.config || {}),
-    id: idEntry.id,
-    type: idEntry.type,
-    title: idEntry.title,
-    hotkey: pane.hotkey,
-    columnIndex: pane.columnIndex,
-    config: idEntry.config,
+    ...panelDef(idEntry, pane),
     paneId: pane.paneId,
     tabs,
     activeTabId,
@@ -169,6 +208,8 @@ function removeTab(pane, tabId, pool) {
 module.exports = {
   newPaneId,
   poolIdOf,
+  panelDef,
+  titleOf,
   wrapAsPane,
   setActiveTab,
   addTab,

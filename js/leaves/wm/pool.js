@@ -285,22 +285,14 @@ function panelListItems(arrange) {
   return items;
 }
 
-/** Build a runtime placement object from a pool entry. Mirrors the
- *  flattening that `leaves/arrange.rebuildLayoutFromConfig` does on initial load —
- *  plugin-specific config spread first, framework fields override.
+/** Build a runtime placement object from a pool entry — the pane def from
+ *  `mpane.panelDef` (the one builder boot and tab switches use too).
  *  Shared between `panel/layout.js#pool_show` (the actual commit on
  *  release / cmdline `:show`) and the drag-preview path in
  *  `leaves/free-config-pool-drag.js#computePoolDragPreviewArrange` so both
  *  produce identical placements. */
 function placementFromPoolEntry(entry, columnIndex) {
-  return mpane.wrapAsPane({
-    ...(entry.config || {}),
-    id: entry.id,
-    type: entry.type,
-    title: entry.title,
-    hotkey: '',
-    columnIndex,
-  }, mpane.newPaneId(entry.id));
+  return mpane.wrapAsPane(mpane.panelDef(entry, { hotkey: '', columnIndex }), mpane.newPaneId(entry.id));
 }
 
 // --- Detail / actions accessors ------------------------------------------

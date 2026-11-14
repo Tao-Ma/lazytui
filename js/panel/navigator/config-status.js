@@ -78,21 +78,13 @@ const WALK_LIMIT = 10;
 // the documented Component contract.
 function _readFilesFromModel(m)        { return (m && m.config && m.config.files) || []; }
 function _branchFromPaneDef(paneDef) {
-  // THIS pane's `branch:` config. The mint loop already resolved the pane
-  // (it iterates the placed panes), so init receives the def directly —
-  // no pool lookup, no arrange/layout-slice read. The register-time
-  // singleton / unit tests pass no def → DEFAULT_BRANCH (throwaway seed).
-  //
-  // v0.6.4 #4 bugfix — read TOP-LEVEL `branch`: rebuildLayoutFromConfig's
-  // widenPane spreads the pool entry's `config` keys onto the pane
-  // (`{ branch, id, type, paneId, ... }`), so a placed pane carries
-  // `branch` at top level with NO `.config`. The pre-#4 `_branchFromArrange`
-  // read `paneDef.config.branch` and so ALWAYS fell back to DEFAULT in
-  // production — a second pane's custom `branch:` silently never routed
-  // (masked because the single/default-branch case equals DEFAULT). The
-  // `.config.branch` fallback keeps the pool-entry / hand-built shape working.
-  const b = paneDef && (paneDef.branch != null ? paneDef.branch
-                        : (paneDef.config && paneDef.config.branch));
+  // THIS pane's `branch:` setting. The mint loop seeds init with the tab's
+  // own pane def (mpane.panelDef — its settings under `config`), so no pool
+  // lookup, no arrange/layout-slice read. The register-time singleton / unit
+  // tests pass no def → DEFAULT_BRANCH (throwaway seed).
+  // (v0.6.4 #4 read a top-level copy with a `.config` fallback because boot's
+  // pane def then had no `config`; panelDef is now the one builder.)
+  const b = paneDef && paneDef.config && paneDef.config.branch;
   return (typeof b === 'string' && b) ? b : DEFAULT_BRANCH;
 }
 

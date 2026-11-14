@@ -187,7 +187,12 @@ A focused terminal pane's footer comes from the `terminal` context in
 `leaves/input/bindings.js`, fed by `focusedTerminalState` (`panel/terminal-surfaces`):
 `Enter type here` while it is on screen and alive, `Enter restart` once it exited,
 no Enter hint while it is minimized (Enter does nothing there), and `x close` vs
-`x menu` by the same closable rule as the banner and the `x` key.
+`x menu` by the same closable rule as the banner and the `x` key. In terminal
+mode the footer names the terminal by the title its border / tab strip shows
+(`[terminal: Dev]` for a `panels: { dev: { type: terminal, title: Dev } }` pane;
+`focusedTerminalTitle`, via `leaves/wm/pane#titleOf`). A terminal has that one
+name: its slice holds only the exit continuation (`onExit`), and the command it
+runs is the pool entry's `config.cmd`, which the finalizer spawns.
 
 ## Input (`js/dispatch/control/input.js`)
 

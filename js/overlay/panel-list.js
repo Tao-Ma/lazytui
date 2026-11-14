@@ -21,6 +21,7 @@ const { esc, visibleLen } = require('../leaves/text/ansi');
 const { renderOverlay, truncate, fitCell, viewportDims } = require('../leaves/render/draw');
 const { getInstanceSlice, theme } = require('../panel/api');
 const mpool = require('../leaves/wm/pool');
+const mpane = require('../leaves/wm/pane');
 
 // Side-by-side overlay sizing — middle ground between the v0.6 Phase 4
 // "preview is too tiny" cap (90×10) and the "fills the screen" pass
@@ -157,18 +158,14 @@ function _buildPreviewLines(entry, w, h, arrange) {
     }
     return lines;
   }
-  // Hidden entry — render on demand.
+  // Hidden entry — render on demand, from its POOL entry: the list item
+  // (pool.panelListItems) carries only id/type/title/status, not the settings
+  // the renderer reads off `panel`.
   const t = theme();
   const renderer = _rendererFor(entry.type);
   if (!renderer) return [`[${t.error}](no renderer for type '${esc(entry.type)}')[/]`];
-  const panel = {
-    ...(entry.config || {}),
-    id: entry.id,
-    type: entry.type,
-    title: entry.title,
-    hotkey: '',
-    columnIndex: mpool.lastColumnIndex(arrange),
-  };
+  const poolEntry = (arrange && arrange.pool && arrange.pool[entry.id]) || entry;
+  const panel = mpane.panelDef(poolEntry, { hotkey: '', columnIndex: mpool.lastColumnIndex(arrange) });
   // Reserve 1 trailing column so the rendered panel's right border
   // doesn't kiss the overlay's right border (which produced a visual
   // double-`│` or a half-painted border at the right edge depending
@@ -325,4 +322,4 @@ function registerSelf(compositor) {
   });
 }
 
-module.exports = { renderPanelListOverlay, registerSelf };
+module.exports = { renderPanelListOverlay, registerSelf, _buildPreviewLines };

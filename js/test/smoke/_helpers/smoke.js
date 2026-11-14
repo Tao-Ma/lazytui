@@ -144,8 +144,14 @@ function bootFresh(opts) {
   // rebuildLayoutFromConfig drops last scenario's minted content tabs, but the
   // persistent Info/Transcript instances keep their id across boots (reconcile
   // skips re-minting an existing tabInstId), so clear their buffers/view-state.
+  // Only those session tabs (a TRANSIENT pool entry): a text-view declared under
+  // `panels:` starts with its configured `lines`, which this must not wipe.
+  const bootPool = (route.getInstanceSlice('layout').arrange || {}).pool || {};
+  const mpane = require('../../../leaves/wm/pane');
   route.eachInstance((inst) => {
     if (inst.kind !== 'info' && inst.kind !== 'text-view') return;
+    const entry = bootPool[mpane.poolIdOf(inst.id)];
+    if (entry && !entry.transient) return;
     const s = inst.slice;
     s.lines = [];
     s.scroll = 0;

@@ -1175,7 +1175,7 @@ function render(panel, w, h, _slice, opts) {
 // aggregate stats pane carries an unused cursor (getItems → [] makes nav a no-op), so
 // it stays effectively stateless — the series it renders is still cross-cutting model
 // state read cross-pane. getItems reads the SLICE (all it's given), so the multi-row
-// fields `_multiRows` needs are hoisted here from the placed pane def.
+// fields `_multiRows` needs are copied here from the pane def (seed.paneDef).
 function init(paneId, seed) {
   const pd = (seed && seed.paneDef) || {};
   return {

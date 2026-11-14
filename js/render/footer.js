@@ -21,7 +21,7 @@ const { RESET, richToAnsi, esc, visibleLen, wrapColor } = require('../leaves/tex
 const { multiSelCount } = require('../panel/nav-state');
 const { theme } = require('../leaves/infra/themes');
 const { truncate, viewportDims } = require('../leaves/render/draw');
-const { focusedTerminalLabel, focusedTerminalState } = require('../panel/terminal-surfaces');
+const { focusedTerminalTitle, focusedTerminalState } = require('../panel/terminal-surfaces');
 const { getPanelDef, getInstanceSlice, getFocus, instanceKind,
         collectViewContributions, filterCurrentText, paneTypeHasBottomBar,
         borderControlsFor } = require('../panel/api');
@@ -78,8 +78,8 @@ function footerKeys(model) {
     return ` \\[leader]${esc(pending)}… | ${bindings.footerSegs('prefixMode').join(' | ')}`;
   }
   if (md.terminalMode) {
-    const label = focusedTerminalLabel() || 'terminal';
-    return ` \\[terminal: ${esc(label)}] | ${bindings.footerSegs('terminalMode').join(' | ')}`;
+    const name = focusedTerminalTitle() || 'terminal';
+    return ` \\[terminal: ${esc(name)}] | ${bindings.footerSegs('terminalMode').join(' | ')}`;
   }
   if (md.agentMode) {
     // Live-agent input (docs/live-agent.md A4) — the Esc dual role (interrupt

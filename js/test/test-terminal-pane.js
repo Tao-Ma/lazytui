@@ -54,7 +54,7 @@ describe('[terminal-pane] mint → spawn → render-surface → remove → destr
 
     dispatchMsg(route.wrap('layout', {
       type: 'mint_tab', paneId: focus, paneType: 'terminal', poolId: 'term-1',
-      title: 'sh', config: { cmd: 'sleep 30', label: 'sh' },
+      title: 'sh', config: { cmd: 'sleep 30' },
     }));
 
     const after = paneAt(focus);
@@ -65,9 +65,10 @@ describe('[terminal-pane] mint → spawn → render-surface → remove → destr
     const ptyId = 'pane-term-1';
     assert(route.getInstance(ptyId), 'terminal instance minted at pane-term-1');
     eq(route.getInstance(ptyId).kind, 'terminal');
-    eq(route.getInstanceSlice(focus).cmd, 'sleep 30', 'terminal slice seeded with cmd');
-    // The finalizer's PTY reconcile spawned the session, keyed by the instance id.
+    // The finalizer's PTY reconcile spawned the session, keyed by the instance id,
+    // running the mint's command (read from the pool entry's config).
     assert(terminal.getSession(ptyId), 'PTY spawned for the terminal pane');
+    eq(terminal.getSession(ptyId).cmd, 'sleep 30', 'the PTY runs the minted command');
     // The shared selector reports the surface (the overlay + the poll gate read it).
     assert(visibleTerminalSurfaces(getModel()).some(s => s.id === ptyId),
       'visibleTerminalSurfaces includes the minted terminal pane');

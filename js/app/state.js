@@ -843,23 +843,16 @@ function reconcilePaneInstances() {
       }
       if (!route.getInstance(tabInstId)) {
         // init-injection (v0.6.4 #4): thread the seed facts init would reach for
-        // as globals — init is a pure fn of (paneId, seed). seed.paneDef is the
-        // PLACED PANE `p` for a DECLARED tab: the parser HOISTS panel fields (e.g.
-        // ports' select_from) onto the placed pane but keeps them nested in the
-        // pool entry's `config`, and some inits read the hoisted form — so the pane
-        // shape, not the raw pool entry, is the contract.
-        //   U2f — but a RUNTIME-MINTED (transient) tab's init must see its OWN
-        // entry's config: a content slot's stable `pane.type/config` is now `detail`
-        // (kept by _rebuildLegacyFields), so `p.config` no longer mirrors the active
-        // minted tab. A minted content tab seeds its initial content via the mint's
-        // `config.lines` (content-tab.js) which text-view.init reads from
-        // seed.paneDef.config — so thread the tab's own entry for transient tabs
-        // (else the nested jobs-cascade job-info card renders empty). Transient
-        // entries are self-contained (no parser hoisting), so this is safe.
+        // as globals — init is a pure fn of (paneId, seed). seed.paneDef is THIS
+        // TAB's pane def, built from its OWN pool entry by the one builder
+        // (mpane.panelDef: settings at the top level AND under `config`, plus the
+        // slot's hotkey/columnIndex). Not the slot `p`: an instance is per tab,
+        // and `p` mirrors only the slot's active tab — every other tab of a
+        // multi-tab slot was seeded with the active tab's settings, and a content
+        // slot's `p` is the slot's own identity (`detail`), not the minted tab's.
+        // No entry (a hand-built layout without a pool) → the slot is all there is.
         const m = getModel();
-        const seedPaneDef = (entry && entry.transient)
-          ? { ...p, id: entry.id, type: entry.type, config: entry.config || {} }
-          : p;
+        const seedPaneDef = entry ? mpane.panelDef(entry, p) : p;
         const seed = { config: m.config, projectDir: m.projectDir, paneDef: seedPaneDef };
         route.setInstance(tabInstId, kind, comp.init(paneId, seed));
         route.setInstancePaneId(tabInstId, paneId);

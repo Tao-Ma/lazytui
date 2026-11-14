@@ -93,16 +93,16 @@ function focusedTerminalId() {
   return null;
 }
 
-// The FOCUSED terminal pane's label (its `{cmd,label}` config), for the
-// terminalMode footer. null when the focused pane isn't a terminal.
-function focusedTerminalLabel() {
-  const route = require('./route');
-  const focus = route.getFocus();
-  if (focus == null || route.instanceKind(focus) !== 'terminal') return null;
-  const id = route.activeInstanceOf(focus);
+// The FOCUSED terminal's name, for the terminalMode footer: its tab's title —
+// the name its border / tab strip shows (one name per terminal; a configured
+// `type: terminal` pane's `title: Dev` reads `[terminal: Dev]`). null when the
+// focused pane isn't a terminal.
+function focusedTerminalTitle() {
+  const id = focusedTerminalId();
   if (!id) return null;
-  const slice = require('./api').getInstanceSlice(id);
-  return (slice && slice.label) || null;
+  const layoutSlice = require('./api').getInstanceSlice('layout');
+  const pool = (layoutSlice && layoutSlice.arrange && layoutSlice.arrange.pool) || {};
+  return mpane.titleOf(pool[mpane.poolIdOf(id)]) || null;
 }
 
 // What the FOCUSED terminal pane's keys do right now, for the footer and `x`:
@@ -126,4 +126,4 @@ function focusedTerminalState(model) {
   };
 }
 
-module.exports = { visibleTerminalSurfaces, focusedTerminalId, focusedTerminalLabel, focusedTerminalState };
+module.exports = { visibleTerminalSurfaces, focusedTerminalId, focusedTerminalTitle, focusedTerminalState };

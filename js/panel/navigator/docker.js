@@ -515,7 +515,7 @@ function installEffects(registerEffect) {
     if (!container) return;
     host.dispatchMsg(host.wrap('layout', {
       type: 'mint_tab', paneId: container, paneType: 'terminal', poolId,
-      title: label, config: { cmd, label },
+      title: label, config: { cmd },
       hint: { origin: 'docker-shell', item: eff.item },
     }));
     // set_active_tab / mint_tab are transient (layout.js), so bringing the

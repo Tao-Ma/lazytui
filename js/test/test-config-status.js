@@ -560,13 +560,12 @@ describe('[9] two config-status panes resolve + route content per-pane', () => {
   // threads it as seed.paneDef, so branch reads straight off the def (no
   // pool lookup / arrange read). Two panes still track different branches.
   //
-  // SHAPE NOTE (and #4 bugfix): rebuildLayoutFromConfig's widenPane spreads
-  // the pool entry's `config` keys onto the pane, so a PLACED pane carries
-  // `branch` at TOP LEVEL (no `.config`). The earlier hand-built
-  // `config: { branch }` fixture was a fiction the parser never emits — and
-  // pre-#4 the read of `.config.branch` always fell back to DEFAULT in
-  // production. Derive paneA/paneB through the REAL widening path so this
-  // test exercises the production shape and can't drift back to fiction.
+  // SHAPE NOTE: the pane def is mpane.panelDef's — the one builder boot, tab
+  // switches and the init seed share — with the settings both at the top
+  // level and under `config`. (Boot's builder once dropped `config`, and a
+  // `.config.branch` read then always fell back to DEFAULT in production —
+  // the #4 bug.) Derive paneA/paneB through the REAL boot path so this test
+  // exercises the production shape.
   const { rebuildLayoutFromConfig } = require('../leaves/wm/arrange');
   const { allPanesInColumns } = require('../leaves/wm/pool');
   const wideArrange = rebuildLayoutFromConfig({ layout: { columns: [{ panels: [
@@ -577,15 +576,11 @@ describe('[9] two config-status panes resolve + route content per-pane', () => {
   const paneA = wideCfg[0];
   const paneB = wideCfg[1];
 
-  it("_branchFromPaneDef reads THIS pane's top-level branch (real widened shape)", () => {
-    eq(paneB.branch, 'prod', 'sanity: widenPane puts branch at top level (no .config)');
-    eq(paneB.config, undefined, 'sanity: widened pane has no nested .config');
+  it("_branchFromPaneDef reads THIS pane's branch (real boot shape)", () => {
+    eq(paneB.config, { branch: 'prod' }, 'sanity: the boot pane def carries its settings under `config`');
+    eq(paneB.branch, 'prod', 'sanity: … and at the top level');
     eq(cs._branchFromPaneDef(paneA), 'config', 'pane-a → its own branch');
     eq(cs._branchFromPaneDef(paneB), 'prod', 'pane-b → its own branch (not DEFAULT) — the #4 bugfix');
-  });
-
-  it('_branchFromPaneDef falls back to nested .config.branch (pool-entry shape)', () => {
-    eq(cs._branchFromPaneDef({ paneId: 'x', type: 'config-status', config: { branch: 'stage' } }), 'stage', 'nested shape still resolves');
   });
 
   it('missing / branchless pane def falls back to default', () => {

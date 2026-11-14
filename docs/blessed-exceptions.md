@@ -66,7 +66,10 @@ impure reads that are sanctioned, not bugs, and intentionally kept:
   fixture that used a shape the parser never emits). `_branchFromPaneDef`
   now reads top-level `branch` (nested fallback kept); the test derives
   panes through the real `rebuildLayoutFromConfig` widening path. See
-  PRINCIPLES §11.
+  PRINCIPLES §11. *(2026-11-14: the root cause was five hand-built pane-def
+  builders disagreeing; `leaves/wm/pane#panelDef` is now the one builder —
+  settings at the top level AND under `config` — and each tab's seed is its
+  own entry's def, so `_branchFromPaneDef` reads `config.branch` alone.)*
 
 **Overlay-subsystem render exceptions — RESOLVED by the model-clock arc
 2026-06-15** (found by a second, file-by-file code sweep that audited

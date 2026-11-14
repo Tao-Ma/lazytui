@@ -130,9 +130,9 @@ function specFrom(cfg) {
 }
 
 function init(paneId, seed) {
-  // Per-pane config is HOISTED onto seed.paneDef (topic/column/label/… at top
-  // level — the parser hoists panel fields onto the placed pane); seed.config is
-  // the whole model config. Read the pane def.
+  // The pane's own settings (topic/column/label/…) are on seed.paneDef — this
+  // tab's pane def (mpane.panelDef: top level AND under `config`); seed.config
+  // is the whole model config. Read the pane def.
   const pd = (seed && seed.paneDef) || {};
   return {
     ...specFrom(pd),

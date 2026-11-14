@@ -16,6 +16,9 @@
  */
 'use strict';
 
+// Zero-dep leaf — safe at top (no load cycle).
+const mpane = require('../leaves/wm/pane');
+
 // Lazily required (load order: api pulls the panel graph) and CACHED — this runs
 // per slot render, and a require() per call costs tens of µs.
 let _apiRef = null, _tsRef = null;
@@ -31,7 +34,7 @@ function unifiedSlotStrip(pane) {
   const entries = [];
   for (const t of pane.tabs) {
     const entry = pool[t.poolId];
-    entries.push({ label: (entry && entry.title) || t.poolId, kind: 'position', poolId: t.poolId });
+    entries.push({ label: (entry && mpane.titleOf(entry)) || t.poolId, kind: 'position', poolId: t.poolId });
   }
   // A single visible tab needs no strip — the pane keeps its own title.
   if (entries.length <= 1) return null;

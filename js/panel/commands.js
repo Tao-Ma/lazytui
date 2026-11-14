@@ -223,7 +223,7 @@ const FRAMEWORK_COMMANDS = [
       // (run_selected → activateTerminal → terminal_enter).
       _host.dispatchMsg(wrap('layout', {
         type: 'mint_tab', paneId: focus, paneType: 'terminal', title: label,
-        idPrefix: 'term', config: { cmd, label },
+        idPrefix: 'term', config: { cmd },
       }));
     },
   },

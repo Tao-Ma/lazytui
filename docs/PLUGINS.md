@@ -92,8 +92,9 @@ A Component is a module exporting:
 module.exports = {
   name: 'my-component',
 
-  // Called once per instance to mint the initial slice. `seed` is
-  // { config, projectDir, paneDef }; seed-blind inits ignore both args.
+  // Called once per instance (one per tab) to mint the initial slice.
+  // `seed` is { config, projectDir, paneDef } — `paneDef` is THIS tab's
+  // pane def (see "The pane def" below); seed-blind inits ignore both args.
   init: (paneId, seed) => ({ /* per-Component state */ }),
 
   // Pure: returns the next slice, or [slice, effects], or undefined
@@ -160,6 +161,30 @@ module.exports = {
   service:      true,
 };
 ```
+
+### The pane def
+
+`init`'s `seed.paneDef`, `subscriptions`' `paneDef` and `render`'s `panel` all
+have one shape, built by one function (`leaves/wm/pane#panelDef`) from a pool
+entry — the panel as declared under `panels:`:
+
+```javascript
+{ ...config, id, type, title, hotkey, columnIndex, config }
+```
+
+The panel's own settings (every key of its `panels:` entry except `type` and
+`title`) are there **twice**: spread at the top level (`panel.topic`) and
+nested under `config` (`panel.config.topic`). Read either; `config` is the
+safer one, since a framework key (`id`, `type`, `title`, `hotkey`,
+`columnIndex`, `config`) wins over a same-named setting at the top level.
+`title` is the entry's title, else its type's name.
+
+- `seed.paneDef` is the def of the instance's **own** tab. In a multi-tab
+  slot every tab gets its own settings, not the active tab's.
+- `subscriptions(paneDef)` and `render(panel)` receive the placed pane: the
+  active tab's def plus the slot's fields (`paneId`, `tabs`, `activeTabId`,
+  …). The one exception is the content slot (`role: 'content'`, the viewer
+  slot), which keeps its own identity whichever tab is active.
 
 Register with `api.registerComponent(component)`. In-tree built-ins are
 registered from the static list in `app/components.js`. A **consumer project**
