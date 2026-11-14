@@ -15,9 +15,9 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   editor's last screen also stayed painted where the pane body had been. A
   terminal pane with no interior (minimized, or squeezed below 3×3) is no
   longer treated as on screen: its PTY keeps its last size, the old grid is
-  cleared, and restoring it paints it back at the same size. The PTY sizing,
-  the overlay, its repaint poll and Enter now share one selector, so they
-  can't disagree about what is on screen.
+  cleared, and restoring it paints it back at the same size. Sizing the
+  terminal, painting it, repainting it and Enter now all ask the same question
+  — is the pane on screen? — so they can't disagree.
 - **Enter on a minimized terminal pane does nothing** instead of entering
   terminal mode with the terminal hidden (keys went to an editor you couldn't
   see), and a dead session is no longer restarted at the bar's negative size.
@@ -45,13 +45,12 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   list hints (`↑↓ select | / filter`, neither of which applies) and nothing
   said that Enter hands the keyboard to the program. It now shows `Enter type
   here` (or `Enter restart` once the program exited), and no Enter hint while
-  the pane is minimized. The terminal hints left in the viewer footer's table,
-  unreachable since terminals became their own pane kind, are gone.
+  the pane is minimized.
 - **`x` on an exited terminal that is its slot's only tab opens the menu**
   instead of doing nothing (such a tab can't be closed, e.g. a configured
   `type: terminal` pane). So does `x` on an exited agent pane or a text-view
-  pane alone in its slot, which also did nothing. The exit banner and the footer offer `x close` only
-  where `x` closes.
+  pane alone in its slot, which also did nothing. The exit banner and the
+  footer offer `x close` only where `x` closes.
 - **Emoji no longer push pane borders out of place.** lazytui measured every
   emoji (⚡ 💤 🚀 ✅ ⭐ …) as 1 column, but terminals draw them 2 wide (glibc's
   `wcwidth`, tmux), so each one shifted the rest of its row — border included —
@@ -60,8 +59,8 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   dashboard) ran rows past the pane border. Emoji now measure 2 columns
   everywhere, and the embedded terminal lays out a program's output with the
   same widths lazytui paints with. Combining marks newer than the width table
-  (Arabic, Syriac and other scripts' marks) now measure 0 instead of 1, so text
-  using them no longer drifts. Not covered: emoji built from several codepoints
+  (newer Arabic marks, Samaritan, Mandaic, NKo) now measure 0 instead of 1, so
+  text using them no longer drifts. Not covered: emoji built from several codepoints
   (❤️ with its emoji selector, skin tones, joined family emoji) still measure
   as the sum of their parts, where terminals draw one 2-wide glyph.
 - **Terminal panes show the program's colours.** A terminal pane drew
@@ -91,7 +90,9 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   showed in the which-key popup and worked by clicking its row, but never fired
   when typed. Home, End, Insert, Delete and the F-keys are now recognized in
   whichever form your terminal sends them (the agent prompt's Home/End/Delete
-  and the text view's Home/End, written for them, now work too). A binding no
+  and the text view's Home/End in visual mode, written for them, now work too),
+  and so are arrows and Page keys sent in another form than lazytui expected
+  (`ESC O A` from a terminal in application-cursor mode, `ESC [ 5 ~` …). A binding no
   keystroke can reach (`<esc>` and Space cancel a chord; `<ctrl-a>`, a typo)
   gets a config warning, also shown by `--lint`; it still fires by clicking its
   row in the which-key popup.
@@ -103,23 +104,20 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   program as xterm sends them, for the cursor mode the program asked for.
   Focus reports and paste markers reach a program only if it asked for them
   (`cat -v` showed `^[[I^[[200~hi^[[201~` for a paste of `hi`); pasted text
-  goes through untouched. Shift+PageUp/PageDown/Home/End go to a full-screen
-  program (vim, less) instead of scrolling an empty scrollback, and at a prompt
-  scroll it in whichever form your terminal sends them. Over a slow link a key,
+  goes through untouched. Over a slow link a key,
   a mouse event or a paste marker split across two reads is put back together
   first: a split paste end no longer leaves every later key (`Ctrl+\`
   included) going to the program as pasted text, and a split click no longer
   reaches it with whole-screen coordinates. Keys typed together with a click
-  are translated too, and a focus change arriving with a click reaches lazytui.
-  Typing always returns a scrolled-back pane to its live bottom, also when the
-  program reports the mouse.
+  are translated too.
 - **Programs in a terminal pane can ask for its colours.** nvim (and other
   programs) ask the terminal for its default background and foreground to pick
   a light or dark colour scheme; nothing answered, so nvim always assumed
   dark. With `theme_background` on, the pane now answers with the theme's
-  colours (nvim under `solarized-light` reports `background=light`). With it
-  off, your terminal's own colours show and the question stays unanswered, as
-  before.
+  colours (nvim under `solarized-light` reports `background=light`) — for a
+  theme whose screen colours are RGB, which is every built-in one except
+  `minimal`. With it off (or under `minimal`), your terminal's own colours show
+  and the question stays unanswered, as before.
 - **In terminal mode the footer names the terminal by its title.** It read
   `[terminal: terminal]` for a configured `type: terminal` pane: the footer
   showed a separate label such panes never had, not the `title:` on the border.
@@ -137,17 +135,45 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   started with the active tab's settings (two tables on different topics both
   showed the first one's), and the Panels list previewed a hidden panel
   without its settings. One builder now makes every pane definition, and each
-  tab starts from its own. For Component authors, the shape (`init`'s
-  `seed.paneDef`, `subscriptions`' `paneDef`, `render`'s `panel`) is now
-  documented in docs/PLUGINS.md. An agent pane written with a nested
-  `config: { backend: … }` worked only by accident and now falls back to
-  `mock`. Write the settings directly on the entry (`backend: pi`). A nested
-  `config:` under any pane is not read, and the config now says so
-  (`panels.nested_config` warning, also in `--lint`) instead of the pane
-  quietly starting without its settings (a terminal written that way ran
-  `$SHELL`). A setting named like a slot field (`role`, `tabs`, …) stays a
-  setting: `role: content` on a pane made it a second viewer slot, its own
-  tabs replaced by Info and Transcript.
+  tab starts from its own. A nested `config:` under a pane is not read, and the
+  config now says so (`panels.nested_config` warning, also in `--lint`) instead
+  of the pane quietly starting without its settings (a terminal written that
+  way ran `$SHELL`). A setting named like a slot field (`role`, `tabs`, …)
+  stays a setting: `role: content` on a pane made it a second viewer slot, its
+  own tabs replaced by Info and Transcript.
+
+### Changed
+
+- **An agent pane written with a nested `config: { backend: … }` now runs
+  `mock`.** That form worked only by accident; write the settings directly on
+  the entry (`chat: { type: agent, backend: pi, model: … }`). The config warns
+  (`panels.nested_config`).
+- **Shift+PageUp/PageDown/Home/End go to a full-screen program** (vim, less,
+  htop) in a terminal pane instead of scrolling its empty scrollback; at a
+  prompt they still scroll, in whichever form your terminal sends them.
+- **In terminal mode lazytui sees your terminal gaining and losing focus.**
+  Those reports used to go to the program; now they are lazytui's (and reach
+  the program only if it asked for them), so the polls that pause while the
+  terminal is unfocused pause in terminal mode too.
+- **Typing in a terminal pane returns a scrolled-back view to its live
+  bottom** also when the program reports the mouse.
+- **A `:record-load` over a running terminal pane stops its program when the
+  replay first reaches that pane** (it was stopped on leaving the replay, or
+  on a seek). The pane comes back showing its last screen, as before.
+- **`--lint` exits 1 for two new warnings**, `keys.unreachable_step` and
+  `panels.nested_config`, on configs it passed before.
+
+### For plugin / pane authors
+
+- **The pane-def shape is documented** (docs/PLUGINS.md §The pane def):
+  `init`'s `seed.paneDef`, `subscriptions`' `paneDef` and `render`'s `panel`
+  are built by one function, with a pane's settings both at the top level and
+  under `config`. `seed.paneDef` is now the def of the instance's OWN tab and
+  carries no slot fields (`paneId`, `tabs`, `heightPct`, `role` — `paneId` is
+  `init`'s first argument). A setting named like a slot field is under
+  `config` only.
+- **The `terminal` slice no longer has `cmd` / `label`.** The command is the
+  pool entry's `config.cmd`; the terminal's name is the entry's title.
 
 ## [0.6.58] — 2026-11-14
 
