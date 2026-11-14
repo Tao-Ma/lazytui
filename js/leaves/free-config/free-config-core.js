@@ -74,17 +74,34 @@ function snapshot(arrange) {
   return JSON.parse(JSON.stringify(arrange));
 }
 
-// The snapshot's columns, detail split AND pool: an edit can change a pool
-// entry (the title edit names the pane on its entry), and a tab placed in the
-// snapshot's columns needs its entry — so undo/redo restore the arrange the
-// snapshot holds, not just its placement.
+// Undo/redo restore what free-config EDITED — the snapshot's placement, detail
+// split and its version of each pool entry (the title edit names a pane on its
+// entry) — but not the runtime's tab lifecycle. A transient tab that closed
+// since the snapshot (a command that finished, a `:terminal` exited) stays
+// closed: putting its entry back re-minted it and the finalizer RAN ITS COMMAND
+// AGAIN (round-2 review 2026-11-14); placing it without its entry left a broken
+// tab. So: every entry that exists now, in the snapshot's version if it has
+// one; the snapshot's columns minus tabs whose entry is gone (a pane left with
+// none goes too); entries made since stay.
 function _applySnapshot(arrange, snap) {
-  return {
-    ...arrange,
-    columns: snap.columns,
-    detailHeightPct: snap.detailHeightPct,
-    pool: snap.pool || arrange.pool,
-  };
+  const cur = arrange.pool || {};
+  const old = snap.pool || {};
+  const pool = {};
+  for (const id of Object.keys(cur)) pool[id] = old[id] || cur[id];
+  const columns = (snap.columns || []).map(col => {
+    const panels = [];
+    for (let p of (col.panels || [])) {
+      for (const t of (p.tabs || [])) {
+        if (pool[t.poolId]) continue;
+        const r = mpane.removeTab(p, t.id, pool);
+        p = r ? r.pane : null;
+        if (!p) break;
+      }
+      if (p) panels.push(p);
+    }
+    return { ...col, panels };
+  });
+  return { ...arrange, columns, detailHeightPct: snap.detailHeightPct, pool };
 }
 
 /** Rendered bounds for a pane, addressed by paneId with a type fallback.
