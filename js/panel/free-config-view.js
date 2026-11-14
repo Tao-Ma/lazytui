@@ -83,7 +83,7 @@ function getFreeConfigFooter() {
   if (drag && (drag.kind === 'pool-armed' || drag.kind === 'pool-dragging')) {
     const slice = _slice();
     const entry = slice && slice.arrange.pool ? slice.arrange.pool[drag.sourceId] : null;
-    const srcTitle = entry ? (entry.title || entry.id) : drag.sourceId;
+    const srcTitle = entry ? require('../leaves/wm/pane').titleOf(entry) : drag.sourceId;
     if (drag.kind === 'pool-armed') {
       return ` | from pool: ${esc(srcTitle)} → [dim](move to drop)[/]`;
     }

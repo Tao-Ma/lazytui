@@ -121,7 +121,7 @@ section('[1] paneDef: the shape');
   eq(d.topic, 't', 'a setting is on the top level');
   eq(d.config, entry.config, '… and under `config`');
   eq([d.id, d.type, d.title, d.hotkey, d.columnIndex], ['x', 'my_kind', 'X', '5', 2], 'framework keys win over same-named settings');
-  eq(mpane.paneDef({ id: 'y', type: 'my_kind' }).title, 'my kind', 'no title → the type, underscores spaced');
+  eq(mpane.paneDef({ id: 'y', type: 'my_kind' }).title, 'My Kind', 'no title → the type\'s name (titleOf)');
   eq(mpane.paneDef({ id: 'y', type: 'my_kind' }).config, {}, 'no config → an empty `config`');
   eq(JSON.stringify(entry), frozen, 'the entry is not mutated');
   eq(mpane.titleOf(entry), 'X', 'titleOf names the entry as paneDef does');
@@ -244,6 +244,41 @@ layout:
   const tv = mpool.allPanesInColumns(arr).find(p => p.paneId === 'pane-tv');
   eq([tv.role, tv.tabs.map(t => t.id)], [undefined, ['tv', 'notes']], 'the pane keeps its own tabs');
   eq(route.resolveViewerPaneId(), 'pane-detail', 'the viewer is the detail slot');
+}
+
+section('[7] one name — every place that names a pane asks titleOf');
+{
+  // The readers fell back to the pool id (Panels list, `:hide` / `:show`, a pool
+  // drag's footer), the parser to a title-cased type, titleOf to a lower-case
+  // one (pre-release review 2026-11-14 T3) — one entry, up to three names.
+  const head = 'project_dir: .\ngroups:\n  g1:\n    label: G\n    actions:\n      hello: { label: Hello, script: echo hello }\n';
+  const cfg = writeConfig(head + `panels:
+  groups: { type: groups, title: Groups }
+  cs: { type: config_status }
+  spare: { type: text_view_probe }
+  detail: { type: detail, title: Detail }
+layout:
+  columns:
+    - width: 30
+      panels: [groups, cs]
+    - panels: [detail]
+`);
+  sm.bootFresh(cfg);
+  const arr = route.getInstanceSlice('layout').arrange;
+  eq(arr.pool.cs.title, 'Config Status', 'the parser names a title-less pane…');
+  eq(mpane.titleOf({ type: 'config_status' }), 'Config Status', '…as titleOf does');
+  // A runtime entry with no title (the parser always gives one) still has ONE
+  // name everywhere — not its id in the lists and its type on the border.
+  const bare = { ...arr.pool.spare, title: undefined };
+  const arr2 = { ...arr, pool: { ...arr.pool, spare: bare } };
+  eq(mpool.panelListItems(arr2).find(i => i.id === 'spare').title, 'Text View Probe', 'the Panels list');
+  const live = arr.pool.spare;
+  const kept = live.title;
+  live.title = undefined;                      // the live entry, untitled, for the verbs
+  const cmds = require('../panel/commands').collectCommands([], require('../model/store').getModel());
+  live.title = kept;
+  const show = cmds.find(c => c.name === 'show spare');
+  assert(show && /hidden Text View Probe panel/.test(show.desc), `:show names it: ${show && show.desc}`);
 }
 
 for (const d of dirs) fs.rmSync(d, { recursive: true, force: true });

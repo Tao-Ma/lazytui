@@ -134,7 +134,7 @@ function _rendererFor(type) {
 function _buildPreviewLines(entry, w, h, arrange) {
   if (!entry) return ['[dim](no entry)[/]'];
   if (entry.status !== 'hidden') {
-    const lines = [`[dim]── ${esc(entry.title || entry.id)} ──[/]`, ''];
+    const lines = [`[dim]── ${esc(entry.title)} ──[/]`, ''];   // panelListItems: titleOf
     // Find where it sits in the grid.
     const loc = mpool.findPaneLocation(arrange, p => p.id === entry.id);
     if (loc) {

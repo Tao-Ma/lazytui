@@ -58,9 +58,6 @@ function assignHotkeys(panelsYaml, pool, sideLabel) {
 }
 
 
-function titleCase(s) {
-  return s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-}
 
 /**
  * Build a normalized pool entry from a raw YAML mapping.
@@ -95,7 +92,7 @@ function normalizePoolEntry(id, raw, synthesized) {
   const entry = {
     id,
     type: raw.type,
-    title: raw.title || titleCase(raw.type),
+    title: mpane.titleOf({ type: raw.type, title: raw.title }),
     config,
   };
   if (synthesized) entry._synthesized = true;

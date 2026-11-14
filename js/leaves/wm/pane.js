@@ -46,12 +46,19 @@ function paneMatchesFocus(p, focus) {
 }
 
 /**
- * A pool entry's name — what its pane title / tab-strip entry / terminal footer
- * show: its `title`, else its type's name.
+ * A pool entry's name — what its pane title / tab-strip entry / terminal footer,
+ * the Panels list, the `:hide` / `:show` verbs and a pool drag show: its
+ * `title`, else its type's name title-cased (`config_status` → `Config Status`,
+ * what the parser has always given a declared pane without a title). The one
+ * fallback: the readers used to fall back to the id, the parser to a
+ * title-cased type, this to a lower-case one.
  */
 function titleOf(entry) {
   if (!entry) return undefined;
-  return entry.title || (typeof entry.type === 'string' ? entry.type.replace(/_/g, ' ') : entry.type);
+  if (entry.title) return entry.title;
+  return typeof entry.type === 'string'
+    ? entry.type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+    : entry.type;
 }
 
 /**

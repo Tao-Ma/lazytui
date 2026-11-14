@@ -367,7 +367,7 @@ function _frameworkDynamicCommands(m) {
       if (!entry || mpool.isDetailPane(entry)) continue;  // detail can't be hidden
       out.push({
         name: `hide ${id}`,
-        desc: `Hide the ${entry.title || id} panel (stays in pool)`,
+        desc: `Hide the ${require('../leaves/wm/pane').titleOf(entry)} panel (stays in pool)`,
         run: () => { _host.dispatchMsg(wrap('layout', { type: 'pool_hide', id })); },
       });
     }
@@ -376,7 +376,7 @@ function _frameworkDynamicCommands(m) {
       if (!entry) continue;
       out.push({
         name: `show ${id}`,
-        desc: `Show the hidden ${entry.title || id} panel`,
+        desc: `Show the hidden ${require('../leaves/wm/pane').titleOf(entry)} panel`,
         run: () => { _host.dispatchMsg(wrap('layout', { type: 'pool_show', id })); },
       });
     }

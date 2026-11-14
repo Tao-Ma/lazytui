@@ -273,14 +273,14 @@ function panelListItems(arrange) {
     // Essential = the sole CONTENT slot — test the PANE (carries `role`), not its
     // active-tab pool entry (post-P1b that's `info`, kind-blind to slot identity).
     const status = (isDetailPane(p) && soleDetail) ? 'essential' : 'placed';
-    items.push({ id: entry.id, type: entry.type, title: entry.title, status });
+    items.push({ id: entry.id, type: entry.type, title: mpane.titleOf(entry), status });
     seen.add(entry.id);
   }
   for (const id of Object.keys(arrange.pool)) {
     if (seen.has(id)) continue;
     const entry = arrange.pool[id];
     if (entry && entry.transient) continue;   // U2f — session-only tabs aren't summonable panels
-    items.push({ id: entry.id, type: entry.type, title: entry.title, status: 'hidden' });
+    items.push({ id: entry.id, type: entry.type, title: mpane.titleOf(entry), status: 'hidden' });
   }
   return items;
 }
