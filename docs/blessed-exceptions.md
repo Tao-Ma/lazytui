@@ -67,7 +67,7 @@ impure reads that are sanctioned, not bugs, and intentionally kept:
   now reads top-level `branch` (nested fallback kept); the test derives
   panes through the real `rebuildLayoutFromConfig` widening path. See
   PRINCIPLES §11. *(2026-11-14: the root cause was five hand-built pane-def
-  builders disagreeing; `leaves/wm/pane#panelDef` is now the one builder —
+  builders disagreeing; `leaves/wm/pane#paneDef` is now the one builder —
   settings at the top level AND under `config` — and each tab's seed is its
   own entry's def, so `_branchFromPaneDef` reads `config.branch` alone.)*
 
@@ -215,7 +215,7 @@ order was by **(correctness value × tractability)**.
    *Update 2026-11-14 (dfa24dbe):* the same latent bug had a twin in every
    other init that read its settings under `config` (an agent's `backend`, a
    text-view's `lines`/`cap` — boot's pane def had no `config`, a tab switch's
-   did). One builder now makes every pane def (`leaves/wm/pane#panelDef`:
+   did). One builder now makes every pane def (`leaves/wm/pane#paneDef`:
    the settings top-level AND under `config`) and each tab's seed comes from
    its OWN pool entry, so `_branchFromPaneDef` reads `config.branch` like the
    rest (docs/PLUGINS.md §The pane def).

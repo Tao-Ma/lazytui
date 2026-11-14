@@ -79,11 +79,11 @@ const WALK_LIMIT = 10;
 function _readFilesFromModel(m)        { return (m && m.config && m.config.files) || []; }
 function _branchFromPaneDef(paneDef) {
   // THIS pane's `branch:` setting. The mint loop seeds init with the tab's
-  // own pane def (mpane.panelDef — its settings under `config`), so no pool
+  // own pane def (mpane.paneDef — its settings under `config`), so no pool
   // lookup, no arrange/layout-slice read. The register-time singleton / unit
   // tests pass no def → DEFAULT_BRANCH (throwaway seed).
   // (v0.6.4 #4 read a top-level copy with a `.config` fallback because boot's
-  // pane def then had no `config`; panelDef is now the one builder.)
+  // pane def then had no `config`; paneDef is now the one builder.)
   const b = paneDef && paneDef.config && paneDef.config.branch;
   return (typeof b === 'string' && b) ? b : DEFAULT_BRANCH;
 }

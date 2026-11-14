@@ -845,14 +845,14 @@ function reconcilePaneInstances() {
         // init-injection (v0.6.4 #4): thread the seed facts init would reach for
         // as globals — init is a pure fn of (paneId, seed). seed.paneDef is THIS
         // TAB's pane def, built from its OWN pool entry by the one builder
-        // (mpane.panelDef: settings at the top level AND under `config`, plus the
+        // (mpane.paneDef: settings at the top level AND under `config`, plus the
         // slot's hotkey/columnIndex). Not the slot `p`: an instance is per tab,
         // and `p` mirrors only the slot's active tab — every other tab of a
         // multi-tab slot was seeded with the active tab's settings, and a content
         // slot's `p` is the slot's own identity (`detail`), not the minted tab's.
         // No entry (a hand-built layout without a pool) → the slot is all there is.
         const m = getModel();
-        const seedPaneDef = entry ? mpane.panelDef(entry, p) : p;
+        const seedPaneDef = entry ? mpane.paneDef(entry, p) : p;
         const seed = { config: m.config, projectDir: m.projectDir, paneDef: seedPaneDef };
         route.setInstance(tabInstId, kind, comp.init(paneId, seed));
         route.setInstancePaneId(tabInstId, paneId);

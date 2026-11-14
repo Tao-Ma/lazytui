@@ -49,7 +49,7 @@ function rebuildLayoutFromConfig(config) {
     out.pool = { ...(ly.pool || {}) };
     const N = (ly.columns || []).length;
     // The parser's cell carries its active tab's entry (id/type/title/
-    // config); mpane.panelDef turns it into the runtime pane def — the
+    // config); mpane.paneDef turns it into the runtime pane def — the
     // same builder a tab switch uses, so a pane has one shape from boot
     // on. `id` plumbs the link back to the pool — pool.js reads it to
     // compute placed vs hidden.
@@ -58,7 +58,7 @@ function rebuildLayoutFromConfig(config) {
     // activeTabId, preserve those verbatim. Single-tab pool refs and
     // JSON callers go through wrapAsPane.
     const widenPane = (p, hotkey, columnIndex) => {
-      const wide = mpane.panelDef(p, { hotkey, columnIndex });
+      const wide = mpane.paneDef(p, { hotkey, columnIndex });
       if (p.heightPct !== undefined) wide.heightPct = p.heightPct;
       // U2e P1a — carry the stable content-slot role onto the runtime pane.
       // Prefer the parser-stamped `p.role` (survives :restore-layout, and — once
@@ -121,7 +121,7 @@ function rebuildLayoutFromConfig(config) {
       const arr = columnIndex === 0 ? firstColPanels : lastColPanels;
       const entry = { id, type, title, config: config || {}, _synthesized: true };
       out.pool[id] = entry;
-      arr.push(mpane.wrapAsPane(mpane.panelDef(entry, { hotkey, columnIndex }), mpane.newPaneId(id)));
+      arr.push(mpane.wrapAsPane(mpane.paneDef(entry, { hotkey, columnIndex }), mpane.newPaneId(id)));
     };
     if (hasContainers) push(0, String(hk++), 'containers', 'containers', 'Containers');
     push(0, String(hk++), 'groups', 'groups', 'Groups');

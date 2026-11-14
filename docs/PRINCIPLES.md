@@ -324,7 +324,7 @@ overlay-subsystem reads, called out at the end):
   seed its initial slice receives them as an argument: the mint loop
   (`app/state.js`, the impure first-touch shell) threads a seed
   `{ config, projectDir, paneDef }` into `comp.init(paneId, seed)`.
-  `paneDef` is the TAB's own pane def — `leaves/wm/pane#panelDef` of its pool
+  `paneDef` is the TAB's own pane def — `leaves/wm/pane#paneDef` of its pool
   entry, the one builder every pane def comes from (docs/PLUGINS.md "The pane
   def"). config-status derives files/projectDir/branch from the seed, the
   terminal / agent / text-view / monitor kinds their settings, and none reads

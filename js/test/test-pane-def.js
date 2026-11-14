@@ -1,5 +1,5 @@
 /**
- * One pane-def builder — mpane.panelDef. Every place that turns a pool entry
+ * One pane-def builder — mpane.paneDef. Every place that turns a pool entry
  * into a pane def produces its shape, and each tab's init is seeded with the
  * def of its OWN entry.
  *
@@ -14,9 +14,9 @@
  * topics alpha + beta both read alpha). The hidden-panel preview built its def
  * from a list item, so it never had the panel's settings at all.
  *
- *   [1] panelDef: settings at the top level AND under `config`; framework keys
+ *   [1] paneDef: settings at the top level AND under `config`; framework keys
  *       win; title falls back to the type; the entry is not mutated
- *   [2] every builder site produces panelDef's output: boot, the no-layout
+ *   [2] every builder site produces paneDef's output: boot, the no-layout
  *       fallback, a tab switch / add / remove, `:show` placement, the
  *       hidden-panel preview
  *   [3] each tab's init is seeded with its own entry's def (multi-tab slot)
@@ -71,7 +71,7 @@ function defPart(pane) {
   return d;
 }
 function sameDef(pane, entry, what) {
-  eq(canon(defPart(pane)), canon(mpane.panelDef(entry, pane)), what);
+  eq(canon(defPart(pane)), canon(mpane.paneDef(entry, pane)), what);
 }
 
 const dirs = [];
@@ -113,22 +113,22 @@ layout:
         - detail
 `;
 
-section('[1] panelDef: the shape');
+section('[1] paneDef: the shape');
 {
   const entry = { id: 'x', type: 'my_kind', title: 'X', config: { topic: 't', title: 'shadowed', id: 'nope' } };
   const frozen = JSON.stringify(entry);
-  const d = mpane.panelDef(entry, { hotkey: '5', columnIndex: 2 });
+  const d = mpane.paneDef(entry, { hotkey: '5', columnIndex: 2 });
   eq(d.topic, 't', 'a setting is on the top level');
   eq(d.config, entry.config, '… and under `config`');
   eq([d.id, d.type, d.title, d.hotkey, d.columnIndex], ['x', 'my_kind', 'X', '5', 2], 'framework keys win over same-named settings');
-  eq(mpane.panelDef({ id: 'y', type: 'my_kind' }).title, 'my kind', 'no title → the type, underscores spaced');
-  eq(mpane.panelDef({ id: 'y', type: 'my_kind' }).config, {}, 'no config → an empty `config`');
+  eq(mpane.paneDef({ id: 'y', type: 'my_kind' }).title, 'my kind', 'no title → the type, underscores spaced');
+  eq(mpane.paneDef({ id: 'y', type: 'my_kind' }).config, {}, 'no config → an empty `config`');
   eq(JSON.stringify(entry), frozen, 'the entry is not mutated');
-  eq(mpane.titleOf(entry), 'X', 'titleOf names the entry as panelDef does');
+  eq(mpane.titleOf(entry), 'X', 'titleOf names the entry as paneDef does');
   eq(mpane.titleOf(null), undefined, 'titleOf(no entry) → undefined');
 }
 
-section('[2] every builder site produces panelDef\'s output');
+section('[2] every builder site produces paneDef\'s output');
 {
   const config = writeConfig(YAML);
   const arr = rebuildLayoutFromConfig(config);
@@ -136,7 +136,7 @@ section('[2] every builder site produces panelDef\'s output');
     // A content slot keeps its own identity (the slot's entry), every other
     // pane mirrors its active tab.
     const src = p.role === 'content' ? arr.pool[p.id] : arr.pool[p.activeTabId];
-    sameDef(p, src, `boot: ${p.paneId} is panelDef(${src.id})`);
+    sameDef(p, src, `boot: ${p.paneId} is paneDef(${src.id})`);
   }
   const slot = mpool.allPanesInColumns(arr).find(p => p.activeTabId === 'pa');
   eq(slot.config, { color: 'red', size: 1 }, 'boot: the pane carries its settings under `config` (it did not)');
@@ -149,15 +149,15 @@ section('[2] every builder site produces panelDef\'s output');
   eq(fb.pool.files.config, { source: 'declared' }, 'no-layout fallback: the files entry holds its setting (only the pane did)');
 
   const switched = mpane.setActiveTab(slot, 'pb', arr.pool.pb);
-  sameDef(switched, arr.pool.pb, 'tab switch: panelDef(pb), nothing of pa left');
+  sameDef(switched, arr.pool.pb, 'tab switch: paneDef(pb), nothing of pa left');
   eq(switched.size, undefined, 'tab switch: pa\'s `size` does not leak');
   const added = mpane.addTab(slot, { id: 'hid', poolId: 'hid' }, arr.pool.hid, { activate: true });
-  sameDef(added, arr.pool.hid, 'tab add (activate): panelDef(hid)');
+  sameDef(added, arr.pool.hid, 'tab add (activate): paneDef(hid)');
   const removed = mpane.removeTab(added, 'hid', arr.pool);
-  sameDef(removed.pane, arr.pool[removed.activeId], 'tab remove: panelDef(the new active tab)');
+  sameDef(removed.pane, arr.pool[removed.activeId], 'tab remove: paneDef(the new active tab)');
 
   const shown = mpool.placementFromPoolEntry(arr.pool.hid, 1);
-  sameDef(shown, arr.pool.hid, ':show placement: panelDef(hid)');
+  sameDef(shown, arr.pool.hid, ':show placement: paneDef(hid)');
   eq([shown.hotkey, shown.columnIndex], ['', 1], ':show placement: no hotkey, the target column');
 
   const { _buildPreviewLines } = require('../overlay/panel-list');
@@ -167,7 +167,7 @@ section('[2] every builder site produces panelDef\'s output');
   _buildPreviewLines(item, 40, 10, arr);
   eq(rendered.length, 1, 'hidden preview: the renderer ran');
   const prev = rendered[0];
-  sameDef(prev, arr.pool.hid, 'hidden preview: panelDef(hid) (the list item has no settings)');
+  sameDef(prev, arr.pool.hid, 'hidden preview: paneDef(hid) (the list item has no settings)');
   eq(prev.color, 'green', 'hidden preview: the renderer sees the panel\'s settings');
 }
 
@@ -180,8 +180,8 @@ section('[3] each tab\'s init is seeded with its own entry\'s def');
   eq(slot.activeTabId, 'pa', 'precondition: pa is the active tab, pb the other');
   const seenA = route.getInstanceSlice('pane-pa').seen;
   const seenB = route.getInstanceSlice('pane-pb').seen;
-  eq(canon(seenA), canon(mpane.panelDef(arr.pool.pa, slot)), 'pa: panelDef(pa) on its slot');
-  eq(canon(seenB), canon(mpane.panelDef(arr.pool.pb, slot)), 'pb: panelDef(pb) on its slot — not the slot\'s (pa\'s)');
+  eq(canon(seenA), canon(mpane.paneDef(arr.pool.pa, slot)), 'pa: paneDef(pa) on its slot');
+  eq(canon(seenB), canon(mpane.paneDef(arr.pool.pb, slot)), 'pb: paneDef(pb) on its slot — not the slot\'s (pa\'s)');
   eq([seenB.color, seenB.config.color, seenB.title, seenB.size], ['blue', 'blue', 'B', undefined], 'pb sees its own settings and title');
   eq([seenA.hotkey, seenA.columnIndex], ['4', 1], 'the slot\'s hotkey and column ride along');
 }
@@ -225,7 +225,7 @@ section('[6] a setting named like a slot field stays a setting');
   // they stay under `config`: a `role: content` setting made its pane a second
   // content slot — its own tabs replaced by Info / Transcript, the viewer moved
   // to it (pre-release review 2026-11-14, inherited).
-  const d = mpane.panelDef({ id: 'x', type: 't', config: { role: 'content', tabs: ['y'], paneId: 'p', topic: 'k' } });
+  const d = mpane.paneDef({ id: 'x', type: 't', config: { role: 'content', tabs: ['y'], paneId: 'p', topic: 'k' } });
   eq([d.role, d.tabs, d.paneId, d.topic], [undefined, undefined, undefined, 'k'], 'not at the top level');
   eq([d.config.role, d.config.tabs], ['content', ['y']], 'still readable under config');
   const head = 'project_dir: .\ngroups:\n  g1:\n    label: G\n    actions:\n      hello: { label: Hello, script: echo hello }\n';

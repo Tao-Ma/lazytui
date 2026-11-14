@@ -131,7 +131,7 @@ function specFrom(cfg) {
 
 function init(paneId, seed) {
   // The pane's own settings (topic/column/label/…) are on seed.paneDef — this
-  // tab's pane def (mpane.panelDef: top level AND under `config`); seed.config
+  // tab's pane def (mpane.paneDef: top level AND under `config`); seed.config
   // is the whole model config. Read the pane def.
   const pd = (seed && seed.paneDef) || {};
   return {

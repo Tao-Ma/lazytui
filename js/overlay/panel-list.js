@@ -165,7 +165,7 @@ function _buildPreviewLines(entry, w, h, arrange) {
   const renderer = _rendererFor(entry.type);
   if (!renderer) return [`[${t.error}](no renderer for type '${esc(entry.type)}')[/]`];
   const poolEntry = (arrange && arrange.pool && arrange.pool[entry.id]) || entry;
-  const panel = mpane.panelDef(poolEntry, { hotkey: '', columnIndex: mpool.lastColumnIndex(arrange) });
+  const panel = mpane.paneDef(poolEntry, { hotkey: '', columnIndex: mpool.lastColumnIndex(arrange) });
   // Reserve 1 trailing column so the rendered panel's right border
   // doesn't kiss the overlay's right border (which produced a visual
   // double-`│` or a half-painted border at the right edge depending

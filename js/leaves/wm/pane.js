@@ -83,7 +83,7 @@ function titleOf(entry) {
 // _rebuildLegacyFields) — never from a pane's settings.
 const SLOT_KEYS = ['paneId', 'tabs', 'activeTabId', 'heightPct', 'collapsed', 'role'];
 
-function panelDef(entry, place) {
+function paneDef(entry, place) {
   const config = (entry && entry.config) || {};
   const p = place || {};
   const settings = { ...config };
@@ -149,7 +149,7 @@ function setActiveTab(pane, tabPoolId, entry) {
  * keys) from a pool `entry`, with `tabs` + `activeTabId` set explicitly and the
  * placement-only fields (paneId/hotkey/columnIndex/heightPct/collapsed)
  * preserved. Shared by setActiveTab (switch), addTab (append+activate) and
- * removeTab; the pane-def part of the shape is panelDef's.
+ * removeTab; the pane-def part of the shape is paneDef's.
  */
 function _rebuildLegacyFields(pane, tabs, activeTabId, entry) {
   // U2f — a CONTENT slot (role:'content', the viewer slot) has a STABLE identity
@@ -166,7 +166,7 @@ function _rebuildLegacyFields(pane, tabs, activeTabId, entry) {
     ? { id: pane.id, type: pane.type, title: pane.title, config: pane.config }
     : entry;
   const next = {
-    ...panelDef(idEntry, pane),
+    ...paneDef(idEntry, pane),
     paneId: pane.paneId,
     tabs,
     activeTabId,
@@ -225,7 +225,7 @@ function removeTab(pane, tabId, pool) {
 module.exports = {
   newPaneId,
   poolIdOf,
-  panelDef,
+  paneDef,
   titleOf,
   wrapAsPane,
   setActiveTab,

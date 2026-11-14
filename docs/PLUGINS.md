@@ -165,7 +165,7 @@ module.exports = {
 ### The pane def
 
 `init`'s `seed.paneDef`, `subscriptions`' `paneDef` and `render`'s `panel` all
-have one shape, built by one function (`leaves/wm/pane#panelDef`) from a pool
+have one shape, built by one function (`leaves/wm/pane#paneDef`) from a pool
 entry — the panel as declared under `panels:`:
 
 ```javascript

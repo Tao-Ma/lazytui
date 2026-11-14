@@ -560,7 +560,7 @@ describe('[9] two config-status panes resolve + route content per-pane', () => {
   // threads it as seed.paneDef, so branch reads straight off the def (no
   // pool lookup / arrange read). Two panes still track different branches.
   //
-  // SHAPE NOTE: the pane def is mpane.panelDef's — the one builder boot, tab
+  // SHAPE NOTE: the pane def is mpane.paneDef's — the one builder boot, tab
   // switches and the init seed share — with the settings both at the top
   // level and under `config`. (Boot's builder once dropped `config`, and a
   // `.config.branch` read then always fell back to DEFAULT in production —
