@@ -232,8 +232,11 @@ function init() {
     // Device capabilities learned at runtime. `keyboard` starts 'legacy' and
     // flips to 'kitty' if the boot handshake confirms kitty-keyboard-protocol
     // support (docs/kitty-keyboard.md). Single-writer = the reducer's
-    // `kkp_detected` arm; folds identically from the WAL on replay.
-    caps: { keyboard: 'legacy' },
+    // `kkp_detected` arm; folds identically from the WAL on replay. `pty`:
+    // whether terminal panes can run (the optional node-pty is installed) —
+    // null until boot says (`caps_pty`), so a harness that never boots one
+    // keeps today's behaviour.
+    caps: { keyboard: 'legacy', pty: null },
     prefixSeq: [],
     register: null,                  // yank register {history, cap} (register.js)
     // v0.6.6 FIX-1 — module-local live stores mirrored into the model by the

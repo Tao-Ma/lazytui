@@ -267,11 +267,12 @@ identity-preserves on no-op. **All 30 arms are pure** — verified.
 | `prefix_key` | key in prefix mode | `prefixSeq` (descend) or clears prefix (leaf/cancel) | `run_binding` (leaf) | ✓² |
 | `next_tab` / `prev_tab` | `]` / `[` | — | `msg→set_active_tab` (layout — cycle the content slot's position-tabs) | shell³ |
 | `nav_select` | row select (kbd/mouse) | — | `msg→set_cursor` + `show_selected_info` (+ `msg→groups_selected` if groups) | shell⁴ |
-| `terminal_enter` | enter-terminal verb | `modes.terminalMode→true` | `kkp_suspend` (child owns the terminal → legacy encoding) | ✓ |
+| `terminal_enter` | enter-terminal verb | `modes.terminalMode→true` — refused when `caps.pty === false` (no node-pty: nothing to type into) | `kkp_suspend` (child owns the terminal → legacy encoding); refused → `msg→view_drop_full_to_normal` (undo the caller's auto-zoom) | ✓ |
 | `terminal_exit` | exit-terminal / dead PTY | `modes.terminalMode→false` | `kkp_resume` + `msg→view_drop_full_to_normal` (layout) | ✓ |
 | `agent_enter` / `agent_exit` | agent-mode verb / the `agent` pane | `modes.agentMode` | — | ✓ |
 | `focus_event` | DEC 1004 focus in/out | `model.focused` | — | ✓ |
 | `kkp_detected` | boot kitty-keyboard handshake (input.js) | `model.caps.keyboard` (`kitty`\|`legacy`) | — | ✓⁵ |
+| `caps_pty` | boot (tui.js — `io/terminal.ptyAvailable()`) | `model.caps.pty` (`true`\|`false`; `null` until then) | — | ✓ |
 | `clock_tick` | `clock` interval Sub | `model.now=msg.now` | `render` | ✓⁶ |
 | `history_synced` | `history` store-mirror Sub | `model.history` (whole snapshot) | `render` | ✓⁷ |
 | `diag_synced` | `diag` store-mirror Sub | `model.diagLog` (whole snapshot) | `render` | ✓⁷ |

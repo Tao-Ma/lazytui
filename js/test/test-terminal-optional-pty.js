@@ -83,6 +83,18 @@ describe('[terminal] without node-pty a terminal pane offers no typing (the keys
     key('j');
     eq(getModel().modes.terminalMode, false);
   });
+  it('once boot says no PTY can run (caps.pty false), every entry path is refused — and its auto-zoom undone', () => {
+    // `:edit`, a spawn action, a group terminal and a docker shell each mint a
+    // tab and enter terminal mode (some zooming the pane full first) — they
+    // skipped activateTerminal's guard (round-2 review 2026-11-14). The reducer
+    // refuses terminal_enter itself now.
+    applyMsg({ type: 'caps_pty', available: false });
+    dispatchMsg(route.wrap('layout', { type: 'view_set', mode: 'full' }));
+    eq(route.getInstanceSlice('layout').viewMode, 'full', 'precondition: a caller zoomed the pane');
+    applyMsg({ type: 'terminal_enter' });
+    eq(getModel().modes.terminalMode, false, 'refused');
+    eq(route.getInstanceSlice('layout').viewMode, 'normal', 'the zoom is undone');
+  });
   fx.cleanup();
 });
 

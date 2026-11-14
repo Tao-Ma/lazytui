@@ -143,6 +143,8 @@ function bootFresh(opts) {
     if (comp) api.registerComponent(comp);
   }
   initState();
+  // As tui.js's boot: whether terminal panes can run (the optional node-pty).
+  applyMsg({ type: 'caps_pty', available: require('../../../io/terminal').ptyAvailable() });
   getModel().projectDir = '.';
   // Clear modal flags that may have been set by an earlier scenario.
   const modes = require('../../../leaves/input/modes');

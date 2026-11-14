@@ -597,6 +597,9 @@ function bootInteractive(opts) {
   require('../dispatch/control/dispatch').loadContextMenu(getModel().config);
 
   initState();
+  // Whether terminal panes can run at all (the optional node-pty) — a model
+  // capability, so every terminal-mode entry asks the reducer one question.
+  require('../dispatch/control/dispatch').applyMsg({ type: 'caps_pty', available: require('../io/terminal').ptyAvailable() });
   // Post-T7: no captured `model` local at boot. handleKey / handleMouse
   // read getModel() at entry; the paint path threads the current model
   // through the render-queue seam thunk (#D6 — render(model) is pure, the

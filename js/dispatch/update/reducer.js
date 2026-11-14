@@ -240,6 +240,13 @@ function update(model, msg) {
     // reclaims the cells the PTY painted (the diff cache can't see those).
     case 'terminal_enter':
       if (model.modes.terminalMode) return [model, []];
+      // No PTY can run (node-pty absent): there is no program to hand the
+      // keyboard to — every entry path (Enter, `:edit`, a spawn action, a
+      // group terminal, a docker shell) lands here. Undo the auto-zoom its
+      // caller made, as terminal_exit would (round-2 review 2026-11-14).
+      if (model.caps && model.caps.pty === false) {
+        return [model, [{ type: 'msg', msg: route.wrap('layout', { type: 'view_drop_full_to_normal' }) }]];
+      }
       // Suspend kitty-keyboard while the embedded child owns the terminal, so
       // the outer terminal reverts to legacy encoding and the child (which
       // never negotiated CSI-u) gets clean keystrokes. Re-pushed on exit.
@@ -274,6 +281,9 @@ function update(model, msg) {
     // response arm). The terminal-side enable/disable is an impure-shell
     // effect the caller owns (like the focus catch-up scheduleRender above);
     // this arm only records the learned capability so it rides the WAL.
+    case 'caps_pty':
+      if (model.caps.pty === !!msg.available) return [model, []];
+      return [{ ...model, caps: { ...model.caps, pty: !!msg.available } }, []];
     case 'kkp_detected': {
       const keyboard = msg.supported ? 'kitty' : 'legacy';
       if (keyboard === model.caps.keyboard) return [model, []];

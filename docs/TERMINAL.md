@@ -283,9 +283,13 @@ scrollback (`pane-mouse.handleWheel` keys on `instanceKind(paneId) === 'terminal
 
 `Enter` on a (focused) `terminal` pane calls `dispatch/control/actions.js#
 activateTerminal`: nothing when the pane has no interior (minimized — Enter
-would hand the keyboard to a child you can't see); else, if the session is dead
-it `restartSession`s sized to the pane's interior, then dispatches
-`terminal_enter`.
+would hand the keyboard to a child you can't see) or no PTY can run (node-pty
+absent); else, if the session is dead it `restartSession`s sized to the pane's
+interior (with the pane's command, `surf.cmd`, when the session knows none),
+then dispatches `terminal_enter`. Every other way into terminal mode (`:edit`,
+a `type: spawn` action, a group terminal, a docker shell) dispatches
+`terminal_enter` too, and the reducer refuses it when boot found no PTY support
+(`caps.pty === false`), undoing the caller's auto-zoom.
 
 ## YAML configuration
 
