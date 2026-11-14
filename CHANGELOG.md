@@ -79,6 +79,16 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   the pane is repainted when the popup closes. (Keys on a focused terminal
   pane go to lazytui until you press Enter — so `p` opens the action palette;
   after Enter they go to the program until `Ctrl+\`.)
+- **Home, End and other special keys work in nvim in a terminal pane under
+  tmux.** Keys reached the program in whatever form your terminal sent them;
+  tmux sends Home/End in a form nvim ignores for the `xterm-256color` terminal
+  the pane says it is, so Home and End did nothing (vim happened to accept
+  them). Arrows, Home/End, Insert/Delete, Page keys and F1–F12 now reach the
+  program as xterm sends them, for the cursor mode the program asked for.
+  Focus reports and paste markers reach a program only if it asked for them
+  (`cat -v` showed `^[[I^[[200~hi^[[201~` for a paste of `hi`); pasted text
+  goes through untouched. Shift+PageUp/PageDown/Home/End go to a full-screen
+  program (vim, less) instead of scrolling an empty scrollback.
 - **Programs in a terminal pane can ask for its colours.** nvim (and other
   programs) ask the terminal for its default background and foreground to pick
   a light or dark colour scheme; nothing answered, so nvim always assumed

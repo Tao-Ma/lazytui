@@ -327,6 +327,14 @@ function sessionMouseMode(id) {
   return s ? emu.screenMouseMode(s.screen) : 'none';
 }
 
+/** What the child asked of its terminal's input side (term-screen
+ *  screenInputModes): { appCursor, sendFocus, bracketedPaste, altScreen }. */
+function sessionInputModes(id) {
+  const s = sessions[id];
+  return s ? emu.screenInputModes(s.screen)
+           : { appCursor: false, sendFocus: false, bracketedPaste: false, altScreen: false };
+}
+
 /** Send a mouse event to the child, encoded for the DEC protocol + encoding it
  *  asked for (the emulator tracks both); the report reaches the PTY through the
  *  reply wiring (ensureSession). `ev` = { col, row (0-based grid cell), button,
@@ -354,7 +362,7 @@ module.exports = {
   setExitHandler, setRenderHook, setJobsHooks, setSessionRecorder,
   // v0.6.5 §5(a) — scrollback effects.
   scrollSession, scrollSessionPages, scrollSessionToTop, scrollSessionToBottom,
-  sessionMouseMode, sessionScrollInfo, reportMouse,
+  sessionMouseMode, sessionInputModes, sessionScrollInfo, reportMouse,
   _onSessionExit,  // exported for tests (invokes the registered handler)
   // Test-only: inject a session (a `{ screen }` with an emulator screen handle)
   // so the scrollback effects can be exercised without spawning a PTY.

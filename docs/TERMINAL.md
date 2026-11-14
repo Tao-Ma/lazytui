@@ -64,6 +64,8 @@ scrollSessionPages(id, n)                 ± pages
 scrollSessionToTop(id) / ...ToBottom(id)
 sessionScrollInfo(id)                     → { atBottom, linesBelow }
 sessionMouseMode(id)                      → child's DEC mouse mode ('none'|x10|…)
+sessionInputModes(id)                     → { appCursor, sendFocus, bracketedPaste,
+                                            altScreen } — how input must reach it
 reportMouse(id, ev)                       encode a mouse event for the child (its
                                           protocol + encoding) → sent?
 ```
@@ -190,14 +192,36 @@ no Enter hint while it is minimized (Enter does nothing there), and `x close` vs
 ## Input (`js/dispatch/control/input.js`)
 
 When `model.modes.terminalMode` is true, the stdin closure routes the raw chunk
-to `_handleTerminalModeData`, bypassing normal key parsing.
+to `_handleTerminalChunk` (bracketed paste, then per-event control matching) →
+`_handleTerminalModeData`, bypassing normal key parsing. Outside terminal mode a
+focused terminal pane gets nothing: its keys are lazytui's (`Enter type here`).
+The kitty keyboard protocol is popped on entry (`kkp_suspend`), so the host
+sends legacy key bytes while the child has the keyboard.
 
 - **Exit key** — `Ctrl+\` (`0x1c`) dispatches `{type:'terminal_exit'}`; a
   dead/missing session also exits (and drops the keystroke). The PTY child keeps
   running.
 - **Scrollback keys** — `Shift+PageUp`/`PageDown` (`\x1b[5;2~` / `\x1b[6;2~`),
-  `Shift+Home`/`End` (`\x1b[1;2H` / `\x1b[1;2F`). Plain Page/Home/End fall
-  through to the child (less, vim).
+  `Shift+Home`/`End` (`\x1b[1;2H` / `\x1b[1;2F`) — at a prompt (the main
+  screen). On the alternate screen (a full-screen child: vim, less, htop) there
+  is no scrollback to show, so they are the child's keys and forward. Plain
+  Page/Home/End always go to the child.
+- **Keys as xterm sends them** — the child is told `TERM=xterm-256color`, so a
+  key reaches it in xterm's form, not the host's (`_keysToChild`,
+  `leaves/input/key-decode`): arrows, Home/End, Insert/Delete, Page keys and
+  F1–F12 (with modifiers) are decoded from any common host form (xterm, VT220 —
+  what tmux/screen send — rxvt, linux console) and re-encoded as xterm would for
+  the child's cursor mode (`sessionInputModes(id).appCursor`: SS3 for unmodified
+  arrows/Home/End under DECCKM). Everything else — text, control bytes, Alt
+  chords, unknown sequences — passes byte-for-byte. (Under tmux, Home/End arrive
+  as `CSI 1 ~`/`CSI 4 ~`, which nvim ignores for an xterm.)
+- **Focus reports** (`CSI I`/`CSI O`, turned on at the host) are lazytui's
+  `focus_event` as in normal mode, and reach the child only if it asked
+  (`CSI ? 1004 h`).
+- **Bracketed paste** — a host paste goes to the child verbatim (no key
+  translation, no Ctrl+\ or scrollback matching inside it, across chunks),
+  wrapped in `CSI 200 ~`/`CSI 201 ~` only if the child turned bracketed paste on
+  (`CSI ? 2004 h`); a child that didn't would read the markers as typed text.
 - **Smart mouse forwarding** — `_classifyTerminalChunk` (pure, unit-tested)
   decides per chunk using `sessionMouseMode(id)`. When the child enabled DEC
   mouse reporting (vim, htop, `less --mouse`), each host mouse event is decoded,

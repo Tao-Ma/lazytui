@@ -15,6 +15,7 @@
  *   onScreenReply(screen, fn) → disposable  (the emulator's replies to the program)
  *   scrollScreen / scrollScreenPages / scrollScreenToTop / scrollScreenToBottom → moved?
  *   screenScrollInfo(screen) → {atBottom,linesBelow}   screenMouseMode(screen) → mode
+ *   screenInputModes(screen) → {appCursor,sendFocus,bracketedPaste,altScreen}
  *   screenMouseReport(screen, ev) → sent?   (encode a mouse event for the program)
  *   readViewport(screen,h,w) → {viewportY, rows:[text], runs:[[{sgr,text}]]}   (render)
  *   serializeScreen(screen) → snapshot       restoreScreen(snapshot) → screen
@@ -143,6 +144,17 @@ function screenScrollInfo(screen) {
 
 /** The child's DEC mouse-tracking mode ('none' | x10 | vt200 | drag | any). */
 function screenMouseMode(screen) { return screen.modes.mouseTrackingMode; }
+
+/** What the program asked of its terminal's INPUT side — how keys and events
+ *  must reach it: `appCursor` (DECCKM `CSI ? 1 h`: arrows / Home / End in SS3
+ *  form), `sendFocus` (`CSI ? 1004 h`: focus in/out reports), `bracketedPaste`
+ *  (`CSI ? 2004 h`: pastes wrapped in `CSI 200 ~` … `CSI 201 ~`), `altScreen`
+ *  (on the alternate buffer — a full-screen program, no scrollback to show). */
+function screenInputModes(screen) {
+  const m = screen.modes;
+  return { appCursor: !!m.applicationCursorKeysMode, sendFocus: !!m.sendFocusMode,
+           bracketedPaste: !!m.bracketedPasteMode, altScreen: screen.buffer.active.type === 'alternate' };
+}
 
 // The emulator's mouse encoder: given a grid cell + button + action it applies
 // the program's DEC protocol (x10 / vt200 / drag / any — e.g. no hover motion
@@ -314,6 +326,6 @@ function restoreScreen(snap, cb) {
 module.exports = {
   createScreen, writeScreen, resizeScreen, disposeScreen, screenSize, onScreenReply,
   scrollScreen, scrollScreenPages, scrollScreenToTop, scrollScreenToBottom,
-  screenScrollInfo, screenMouseMode, screenMouseReport, readViewport, screenCursor,
+  screenScrollInfo, screenMouseMode, screenInputModes, screenMouseReport, readViewport, screenCursor,
   serializeScreen, restoreScreen,
 };
