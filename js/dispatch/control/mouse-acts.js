@@ -11,7 +11,14 @@
  * arguments (data); the code lives here, registered by name — the same shape
  * Release 3's pointer-capture controllers take.
  *
- * Each act returns nothing; a target that is gone or no longer clickable is a
+ * An act receives the handler and the event point `{ mx, my, x, y }` (0-based
+ * mx/my, 1-based SGR x/y) — a pane body is ONE region, so the row under the
+ * pointer is resolved at click time (Release 3). It returns nothing, or a
+ * capture request `{ capture: name, ...args }` that the router hands to
+ * ./pointer-capture (a press that starts a drag). Other modules register their
+ * acts by name (`register`) — the pane-body acts live with the pane mouse code.
+ *
+ * A target that is gone or no longer clickable is a
  * no-op (the click is still consumed by the region that drew it). A border
  * control that paint drew but the act cannot find, or whose spec throws, is
  * recorded in the event log (a plugin contract problem, not a user one).
@@ -85,10 +92,19 @@ const ACTS = {
   },
 };
 
-/** Realize an `{ act, ...args }` handler. Unknown act → no-op. */
-function realize(h) {
-  const fn = h && Object.prototype.hasOwnProperty.call(ACTS, h.act) ? ACTS[h.act] : null;
-  if (fn) fn(h);
+/** Register a named act (`fn(handler, ev)`). Names are unique — a second
+ *  registration under a taken name throws (two modules claiming one act). */
+function register(name, fn) {
+  if (Object.prototype.hasOwnProperty.call(ACTS, name)) throw new Error(`mouse act '${name}' already registered`);
+  if (typeof fn !== 'function') throw new TypeError(`mouse act '${name}' must be a function`);
+  ACTS[name] = fn;
 }
 
-module.exports = { realize, resolveBorderControl };
+/** Realize an `{ act, ...args }` handler at event point `ev`. Unknown act →
+ *  no-op. Returns the act's capture request, if any. */
+function realize(h, ev) {
+  const fn = h && Object.prototype.hasOwnProperty.call(ACTS, h.act) ? ACTS[h.act] : null;
+  return fn ? fn(h, ev || {}) : undefined;
+}
+
+module.exports = { realize, register, resolveBorderControl };

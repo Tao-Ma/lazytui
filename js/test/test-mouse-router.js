@@ -72,7 +72,7 @@ describe('[1] realizeHandler', () => {
 });
 
 describe('[2] route', () => {
-  it('non-discrete gestures always fall through (motion/release stay legacy)', () => {
+  it('non-discrete gestures fall through when no capture is held (motion/release → legacy arms)', () => {
     router._reset();
     hm.clear(STAMP(MODEL));
     hm.publish({ id: 'b', rect: R(0, 0, 10, 10), z: 1, opaque: true, on: {} });
@@ -235,6 +235,105 @@ describe('[5] paint + event-log', () => {
     withSpies(() => router.route('press', 1, 0, MODEL));
     const e = eventLog.snapshot().filter(x => x.type === 'input' && x.payload && x.payload.kind === 'mouse');
     eq(e.map(x => x.payload), [{ kind: 'mouse', gesture: 'press', owner: 'confirm', id: 'chip:n' }]);
+  });
+});
+
+describe('[6] pointer capture', () => {
+  const capture = require('../dispatch/control/pointer-capture');
+  const acts = require('../dispatch/control/mouse-acts');
+  const rq = require('../leaves/infra/render-queue');
+  const LOG = [];
+  let n = 0;
+  const ctl = (name, extra) => {
+    try {
+      capture.register(name, {
+        start: (args, ev) => (args.decline ? null : (LOG.push(`${name}:start:${ev.mx},${ev.my}:${args.tag || ''}`), { tag: args.tag })),
+        motion: (st, ev) => { LOG.push(`${name}:motion:${ev.mx},${ev.my}`); return true; },
+        release: (st, ev) => { LOG.push(`${name}:release:${ev.mx},${ev.my}`); return true; },
+        ...extra,
+      });
+    } catch (_) { /* registered by an earlier run in this process */ }
+  };
+  ctl('t-drag', { cancel: () => { LOG.push('t-drag:cancel'); return true; } });
+  ctl('t-sticky', { pressWhileHeld: 'swallow' });
+  ctl('t-throws', { motion: () => { throw new Error('boom'); } });
+  try { acts.register('t-press-act', (h, ev) => { LOG.push(`act:${ev.mx},${ev.my}`); return h.drag ? { capture: 't-drag', tag: 'from-act' } : undefined; }); } catch (_) {}
+  function fresh() {
+    router._reset(); LOG.length = 0; n = 0;
+    hm.clear(STAMP(MODEL));
+    rq.setRenderers({ render: () => { n++; } });
+  }
+  const done = () => rq.setRenderers({ render: null });
+
+  it('a { capture } press starts it; motion/release go to the holder wherever the pointer is; release ends it', () => {
+    fresh();
+    hm.publish({ id: 'body', rect: R(0, 0, 10, 10), z: 10, owner: 'pane:a', on: { press: { capture: 't-drag', tag: 'x' } } });
+    hm.publish({ id: 'box', rect: R(20, 0, 10, 10), z: 1500, owner: 'menu', opaque: true, on: {} });
+    eq(router.route('press', 2, 3, MODEL), true);
+    eq(capture.held(), { name: 't-drag', owner: 'pane:a' }, 'held, owner recorded');
+    eq(router.route('motion', 25, 4, MODEL), true, 'motion over a popup box stays with the drag');
+    eq(router.route('release', 26, 5, MODEL), true);
+    eq(capture.held(), null, 'release ended it');
+    eq(router.route('motion', 3, 3, MODEL), false, 'after release: no capture → legacy');
+    eq(LOG, ['t-drag:start:2,3:x', 't-drag:motion:25,4', 't-drag:release:26,5']);
+    eq(n, 3, 'press + dirty motion + dirty release each paint');
+    done();
+  });
+  it('a declining controller holds nothing', () => {
+    fresh();
+    hm.publish({ id: 'body', rect: R(0, 0, 10, 10), z: 10, owner: 'pane:a', on: { press: { capture: 't-drag', decline: true } } });
+    eq(router.route('press', 2, 3, MODEL), true, 'the press itself is still consumed');
+    eq(capture.held(), null);
+    done();
+  });
+  it('an act gets the event point and may return a capture request; in an array with other handlers', () => {
+    fresh();
+    hm.publish({ id: 'body', rect: R(0, 0, 10, 10), z: 10, owner: 'pane:b',
+      on: { press: [{ act: 't-press-act', drag: true }], right: { act: 't-press-act' } } });
+    router.route('press', 4, 5, MODEL);
+    eq(capture.held(), { name: 't-drag', owner: 'pane:b' });
+    router.route('release', 4, 5, MODEL);
+    router.route('right', 6, 7, MODEL);
+    eq(capture.held(), null, 'an act returning nothing starts nothing');
+    eq(LOG, ['act:4,5', 't-drag:start:4,5:from-act', 't-drag:release:4,5', 'act:6,7']);
+    done();
+  });
+  it('lost release: a press while held drops the capture (cancel runs) and routes normally', () => {
+    fresh();
+    hm.publish({ id: 'body', rect: R(0, 0, 10, 10), z: 10, owner: 'pane:a', on: { press: { capture: 't-drag', tag: 'one' } } });
+    router.route('press', 1, 1, MODEL);
+    router.route('press', 2, 2, MODEL);
+    eq(LOG, ['t-drag:start:1,1:one', 't-drag:cancel', 't-drag:start:2,2:one'], 'cancel, then the press starts a new drag');
+    eq(capture.held(), { name: 't-drag', owner: 'pane:a' });
+    done();
+  });
+  it('lost release: a swallow controller keeps the capture and eats the press', () => {
+    fresh();
+    hm.publish({ id: 'row', rect: R(0, 0, 10, 1), z: 1602, owner: 'panel-list', on: { press: { capture: 't-sticky' } } });
+    hm.publish({ id: 'chip', rect: R(0, 5, 3, 1), z: 1603, owner: 'confirm', on: { press: { key: 'y' } } });
+    router.route('press', 1, 0, MODEL);
+    let r;
+    const calls = withSpies(() => { r = router.route('press', 1, 5, MODEL); });
+    eq(r, true); eq(calls, [], 'the chip under the press did not fire');
+    eq(capture.held(), { name: 't-sticky', owner: 'panel-list' });
+    done();
+  });
+  it('a throwing controller loses its capture; nothing escapes', () => {
+    fresh();
+    hm.publish({ id: 'body', rect: R(0, 0, 10, 10), z: 10, owner: 'pane:a', on: { press: { capture: 't-throws' } } });
+    router.route('press', 1, 1, MODEL);
+    const err = console.error; console.error = () => {};
+    let threw = false;
+    try { eq(router.route('motion', 2, 2, MODEL), true); } catch (_) { threw = true; } finally { console.error = err; }
+    eq(threw, false);
+    eq(capture.held(), null);
+    done();
+  });
+  it('controller and act names are unique', () => {
+    let a = false, b = false;
+    try { capture.register('t-drag', { start: () => ({}) }); } catch (_) { a = true; }
+    try { acts.register('border-control', () => {}); } catch (_) { b = true; }
+    eq([a, b], [true, true]);
   });
 });
 

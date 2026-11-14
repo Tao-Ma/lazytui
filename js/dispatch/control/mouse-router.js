@@ -14,6 +14,11 @@
  *   { act, ...args }   a named input-time action (./mouse-acts) — the Msg is
  *                      computed at click time against current state (border
  *                      controls, the `[≡]` open), after re-checking the target.
+ *                      It receives the event point; it may return a capture
+ *                      request (a press that starts a drag).
+ *   { capture, ...args } start pointer capture `capture` (./pointer-capture) —
+ *                      the press starts a drag; motion / release then go to
+ *                      that controller wherever the pointer is.
  *   'swallow'          consume, no-op.
  *   'legacy'           the region owns these cells, but the legacy cascade
  *                      realizes the gesture (route returns false) — an overlay
@@ -21,11 +26,14 @@
  *                      (panel-list, until Release 3's pointer capture).
  *   [h1, h2, …]        realize each in order (row double-click = nav + return).
  *
- * Scope: DISCRETE gestures only (press / double / right / middle /
- * wheel). motion / release keep the legacy path until pointer capture lands
- * (Release 3) — a drag that crosses a popup box must not be swallowed by it.
- * A miss (no region, or a stale frame) returns false and handleMouse falls
- * through to the legacy cascade, unchanged.
+ * Scope: DISCRETE gestures (press / double / right / middle / wheel) resolve
+ * on the map. motion / release never do — a drag that crosses a popup box must
+ * not be swallowed by it: they go to the held pointer capture, if any, wherever
+ * the pointer is (Release 3); with none held they fall through to the legacy
+ * cascade (its select / zoom / free-config arms, until those move onto capture).
+ * A press while a capture is held runs the controller's lost-release policy
+ * first. A miss (no region, or a stale frame) returns false and handleMouse
+ * falls through to the legacy cascade, unchanged.
  *
  * Two guards:
  *   - STALE FRAME: the hit map is stamped with what the frame showed
@@ -60,6 +68,7 @@ const loop = require('../runtime/loop');
 const api = require('../../panel/api');
 const intent = require('./intent');
 const acts = require('./mouse-acts');
+const capture = require('./pointer-capture');
 const eventLog = require('../../io/event-log');
 
 const DISCRETE = new Set(hitMap.DISCRETE_GESTURES);
@@ -67,9 +76,18 @@ const DISCRETE = new Set(hitMap.DISCRETE_GESTURES);
 // The last press the hit map handled: { mx, my, owner, id, repeat } | null.
 let _lastPress = null;
 
-function realizeHandler(h) {
+// Start a capture requested by a `{ capture }` handler or returned by an act.
+function _startCapture(req, ctx) {
+  const { capture: name, ...args } = req;
+  capture.start(name, args, ctx && ctx.ev, ctx && ctx.owner);
+}
+
+/** Realize one handler. `ctx` = { ev: { mx, my, x, y }, owner } — the event
+ *  point (acts and captures need it) and the region owner (a capture records
+ *  who started it). */
+function realizeHandler(h, ctx) {
   if (h == null || h === 'swallow') return;
-  if (Array.isArray(h)) { for (const x of h) realizeHandler(x); return; }
+  if (Array.isArray(h)) { for (const x of h) realizeHandler(x, ctx); return; }
   if (typeof h !== 'object') return;
   if (h.key != null) { dispatch.handleKey(h.key, h.seq != null ? h.seq : seqForKey(h.key)); return; }
   if (h.msg) {
@@ -78,8 +96,14 @@ function realizeHandler(h) {
     return;
   }
   if (h.intent) { intent.realize(h.intent); return; }
-  if (h.act) acts.realize(h);
+  if (h.capture) { _startCapture(h, ctx); return; }
+  if (h.act) {
+    const req = acts.realize(h, ctx && ctx.ev);
+    if (req && typeof req === 'object' && req.capture) _startCapture(req, ctx);
+  }
 }
+
+const _ev = (mx, my) => ({ mx, my, x: mx + 1, y: my + 1 });
 
 // Does realizing `h` END with a keystroke? dispatch.handleKey paints at its own
 // end, so the router's trailing paint would be a second full frame for nothing.
@@ -94,7 +118,7 @@ function _realizeAndPaint(hit, kind, mx, my) {
   // like phantom keystrokes.
   eventLog.record('input', { kind: 'mouse', gesture: kind, owner: hit.region.owner, id: hit.region.id });
   try {
-    realizeHandler(hit.handler);
+    realizeHandler(hit.handler, { ev: _ev(mx, my), owner: hit.region.owner });
     if (!_endsWithKey(hit.handler)) render();
     return;
   } catch (e) {
@@ -114,7 +138,21 @@ function _realizeAndPaint(hit, kind, mx, my) {
 /** Route one gesture. Returns true when the hit map consumed it (the caller
  *  stops), false to fall through to the legacy cascade. `mx`/`my` are 0-based. */
 function route(kind, mx, my, model) {
+  if (kind === 'motion' || kind === 'release') {
+    if (!capture.held()) return false;   // no drag in flight → legacy arms
+    const dirty = kind === 'motion' ? capture.motion(_ev(mx, my)) : capture.release(_ev(mx, my));
+    if (dirty) render();
+    return true;
+  }
   if (!DISCRETE.has(kind)) return false;
+  if (kind === 'press') {
+    // A press while a drag is held = a lost release (the terminal never sent
+    // it). The controller decides: keep the drag and eat the press, or drop
+    // the drag and let the press route normally.
+    const p = capture.press(_ev(mx, my));
+    if (p.swallow) return true;
+    if (p.dirty) render();
+  }
   const layoutSlice = api.getInstanceSlice('layout');
   const fresh = hitMap.stampsEqual(hitMap.frameStamp(), hitMap.stampOf(model, layoutSlice));
   // A tab-scoped region (a border control, a fold marker) whose pane switched
@@ -150,7 +188,7 @@ function route(kind, mx, my, model) {
   return true;
 }
 
-/** Test seam — forget the press→double continuation. */
-function _reset() { _lastPress = null; }
+/** Test seam — forget the press→double continuation and any held capture. */
+function _reset() { _lastPress = null; capture._reset(); }
 
 module.exports = { route, realizeHandler, _reset };
