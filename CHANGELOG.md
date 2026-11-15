@@ -6,6 +6,16 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.59] — 2026-11-15
+
+Terminal panes, from a field report (nvim in a `terminal` pane): minimizing,
+answers to the program's terminal queries, mouse, colours, popups over the
+pane, emoji width, keys, the footer. Also leader bindings on named keys and one
+pane-def builder. 65 commits (`499c0269..6c2a4bb8`): the field-report fixes,
+then a 4-track pre-release review (architecture / file layout / code / doc
+parity) and three more adversarial review rounds. Every reproduced finding is
+fixed here.
+
 ### Fixed
 
 - **Minimizing a `terminal` pane no longer errors or leaves its screen
@@ -5799,7 +5809,8 @@ release tarballs. Full pre-squash development history is preserved
 on the internal gitea mirror under the `backup/main-history` branch
 and the `v0.1.0-pre-squash` tag.
 
-[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.58...HEAD
+[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.59...HEAD
+[0.6.59]: https://github.com/Tao-Ma/lazytui/compare/v0.6.58...v0.6.59
 [0.6.58]: https://github.com/Tao-Ma/lazytui/compare/v0.6.57...v0.6.58
 [0.6.57]: https://github.com/Tao-Ma/lazytui/compare/v0.6.56...v0.6.57
 [0.6.56]: https://github.com/Tao-Ma/lazytui/compare/v0.6.55...v0.6.56
