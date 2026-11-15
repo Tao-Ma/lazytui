@@ -45,7 +45,8 @@ const _slotStrip = () => (_slotStripRef || (_slotStripRef = require('../slot-str
 
 const tvu = require('../../leaves/text/text-view-update');
 const ms = require('../../leaves/text/search');
-const { esc, charWidth } = require('../../leaves/text/ansi');
+const { esc } = require('../../leaves/text/ansi');
+const { cellsOf, stringWidth } = require('../../leaves/text/char-width');
 const { buildTextView } = require('../../leaves/text-view/render');
 const { renderPanel, theme } = require('../api');
 const { paneInnerH } = require('../pane-viewport');
@@ -403,9 +404,9 @@ function _statusLine(slice) {
 
 /** The draft row. While typing (agent mode + focused) the cursor renders as a
  *  reverse cell — sliced from the RAW text before esc, so the split can't
- *  land inside an escape. The raw draft is WINDOWED around the cursor (code
- *  units — the draft is ASCII-gated; the cmdline-field idiom) so typing a
- *  message longer than the pane never goes blind: the leaf renderer right-
+ *  land inside an escape. The raw draft is WINDOWED around the cursor (in
+ *  cells — a paste can carry CJK and emoji; the cmdline-field idiom) so typing
+ *  a message longer than the pane never goes blind: the leaf renderer right-
  *  truncates rows, which would otherwise cut the cursor + new chars off. */
 const _isHigh = (s, i) => { const c = s.charCodeAt(i); return c >= 0xd800 && c <= 0xdbff; };
 const _isLow = (s, i) => { const c = s.charCodeAt(i); return c >= 0xdc00 && c <= 0xdfff; };
@@ -417,13 +418,16 @@ function _inputLine(slice, typing, w) {
   if (!typing) {
     return raw ? `[${t.accent}]›[/] ${esc(raw)}` : `[${t.accent}]›[/] [dim]Enter to chat[/]`;
   }
-  // The draft as CODEPOINTS with their column widths: the window and the
-  // cursor cell are measured in columns, so CJK / emoji neither overrun the pane
-  // nor get their surrogate pair split by the cursor cell (it windowed by UTF-16
-  // units). `d.cursor` is a UTF-16 offset → the codepoint it starts.
-  const chars = Array.from(raw);
-  const c = Array.from(raw.slice(0, Math.max(0, Math.min(raw.length, d.cursor | 0)))).length;
-  const cw = chars.map(ch => charWidth(ch.codePointAt(0)));
+  // The draft as CELLS with their column widths (char-width `cellsOf`: ❤️, 👍🏽,
+  // a flag are one cell each): the window and the cursor cell are measured in
+  // columns, so CJK / emoji neither overrun the pane nor get split by the cursor
+  // cell (it windowed by UTF-16 units, then by codepoints). `d.cursor` is a
+  // UTF-16 offset → the cell it starts (one it falls inside → that cell).
+  const chars = cellsOf(raw);
+  const cur = Math.max(0, Math.min(raw.length, d.cursor | 0));
+  let c = 0;                                         // cells that END at or before the cursor
+  for (let at = 0; c < chars.length && at + chars[c].length <= cur; c++) at += chars[c].length;
+  const cw = chars.map(stringWidth);
   // Budget: pane interior (w-2) minus the '› ' prefix and one slack column
   // for the left '…' marker; the cursor cell may sit one past the text end.
   // No floor above what the pane has: an 8-column floor ran the row past a

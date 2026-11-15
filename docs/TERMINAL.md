@@ -194,7 +194,11 @@ the emulator's Unicode provider, replacing its built-in Unicode 6 table (every
 emoji 1 column). A row the program fills is then exactly the pane's width when
 painted — with the built-in table, each ⚡/💤 in a full row (LazyVim's dashboard)
 put the row one column past the pane border. `test-char-width.js` [3] pins the
-two as identical for every codepoint.
+two as identical for every codepoint. The same goes for which codepoints JOIN
+into one glyph — ❤️ (VS16), 👍🏽, a ZWJ family, a flag pair: the provider's
+`charProperties` IS char-width's `joinStep`, the rule the frame's cell walk
+(`nextCell`) uses, so the emulator holds ❤️ in one 2-wide cell exactly where
+the frame measures it (`test-char-width.js` [7]).
 
 Two repaint paths drive the overlay:
 - **primary** — the `_renderHook` (`scheduleOverlay`) fired on each xterm write,

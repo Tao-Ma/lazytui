@@ -15,7 +15,8 @@
  *
  * Walk semantics mirror `draw.truncate`: `\[` → one literal `[`;
  * `\x1b[…m` → zero-width SGR run; `[tag]` → zero-width markup; otherwise
- * `charWidth(cp)` is the advance per codepoint. The SAME shared walker
+ * the advance is one CELL's width (char-width `nextCell` — a sequence like ❤️
+ * or a flag is one cell, never cut). The SAME shared walker
  * both halves of the split rely on, so visible-column accounting agrees
  * with every other paint-side consumer (visibleLen, truncate, cell-diff).
  *
@@ -37,7 +38,8 @@
  */
 'use strict';
 
-const { visibleLen, charWidth } = require('../text/ansi');
+const { visibleLen } = require('../text/ansi');
+const { nextCell } = require('../text/char-width');
 
 // Match an SGR run — raw (`\x1b[…m`) or esc()'d (`\x1b\[…m`). Zero visible
 // width, kept verbatim through the split. STICKY (`y`) to avoid slicing
@@ -63,6 +65,7 @@ const _SGR_RUN = /\x1b\\?\[[0-9;]*m/y;
  */
 function _splitAt(text, col) {
   if (col <= 0) return { prefix: '', suffix: text, prefixW: 0 };
+  const cell = { end: 0 };
   let prefix = '';
   let w = 0;
   let i = 0;
@@ -85,13 +88,11 @@ function _splitAt(text, col) {
       if (close !== -1) { prefix += text.slice(i, close + 1); i = close + 1; continue; }
       // unmatched `[` → fall through as visible char
     }
-    const cp = text.codePointAt(i);
-    const ch = String.fromCodePoint(cp);
-    const cw = charWidth(cp);
+    const cw = nextCell(text, i, cell);
     if (w + cw > col) break;
-    prefix += ch;
+    prefix += text.slice(i, cell.end);
     w += cw;
-    i += ch.length;
+    i = cell.end;
   }
   return { prefix, suffix: text.slice(i), prefixW: w };
 }
@@ -156,19 +157,22 @@ function compositeRow(rows, cols, overlayText, x, y, w) {
 
   const row = rows[y];
   const left = _splitAt(row, ox);
-  // Advance over `ow` cells of the main row; its prefix is discarded (the
-  // cells the overlay covers), its suffix is the right-of-overlay remainder.
-  const right = _splitAt(left.suffix, ow);
-
-  const leftPad = ox - left.prefixW;    // >0 iff a wide glyph straddled the LEFT edge
+  const leftPad = ox - left.prefixW;    // >0 iff a wide glyph straddled the LEFT edge (or the row is short)
+  // Advance the main row to the overlay's RIGHT edge, ox + ow: its prefix is
+  // discarded (the cells the overlay covers — and a wide glyph the left edge
+  // cut, which starts at left.prefixW), its suffix is the right-of-overlay
+  // remainder. A wide glyph straddling the right edge makes _splitAt stop one
+  // column short, BEFORE it; it is cut too (no half glyph), so take it with the
+  // prefix and stand a blank in for its right half.
+  const need = ox + ow - left.prefixW;
+  let right = _splitAt(left.suffix, need);
+  if (right.prefixW < need) {
+    const past = _splitAt(left.suffix, need + 1);
+    if (past.prefixW === need + 1) right = past;
+  }
+  const rightPad = right.prefixW - need;  // 1 iff a wide glyph straddled the RIGHT edge
   const bodyVis = visibleLen(otext);
   const bodyPad = ow - bodyVis;         // >0 iff overlay was short of its promised width
-  // When a wide glyph straddled the RIGHT edge of the overlay rect, right.prefixW
-  // can run ONE short of `ow` — the discarded prefix stopped before the glyph,
-  // leaving one invisible column. The main-row suffix picks up PAST the glyph,
-  // which is correct (the glyph is gone), but we need a filler cell to keep the
-  // total row width exact.
-  const rightPad = ow - right.prefixW;
 
   rows[y] =
     left.prefix +

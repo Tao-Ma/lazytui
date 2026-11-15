@@ -45,7 +45,8 @@
  */
 'use strict';
 
-const { richToAnsi, charWidth, RESET } = require('../text/ansi');
+const { richToAnsi, RESET } = require('../text/ansi');
+const { joinStep } = require('../text/char-width');
 
 // A CSI sequence. Post-richToAnsi rows carry SGR (`\x1b[…m`); pass through any
 // other zero-width CSI defensively. STICKY (`y`), matched in place via
@@ -133,6 +134,7 @@ function rowToCells(ansi) {
   const st = { mask: 0, fg: null, bg: null, ul: null, ex: null };
   let active = '';
   let i = 0;
+  let p = 0;                 // char-width joinStep state of the last cell (0: none to join)
   while (i < ansi.length) {
     if (ansi[i] === '\x1b') {
       _CSI.lastIndex = i;
@@ -151,27 +153,43 @@ function rowToCells(ansi) {
           }
         }
         i += seq.length;
+        p = 0;               // a cell never spans an escape (char-width header)
         continue;
       }
     }
     const cp = ansi.codePointAt(i);
-    const ch = String.fromCodePoint(cp);
-    const w = charWidth(cp);
-    if (w === 0) {
-      // Zero-width (combining mark / ZWJ / variation selector): no column of its
-      // own — the terminal folds it into the preceding glyph, so we must too, or
-      // every absolute MoveTo after it drifts right. Append to the last real cell
-      // (skip a wide glyph's continuation column). A leading combiner with no base
-      // is dropped (matches the terminal; rows never start with one).
+    if (cp < 0x300) {        // fast path (the common row is mostly ASCII): a 1-wide cell
+      cells.push({ g: ansi[i], w: 1, sgr: active });
+      p = 2;                 // joinStep's value for a 1-wide cell with no join state
+      i++;
+      continue;
+    }
+    const ch = cp > 0xFFFF ? ansi.slice(i, i + 2) : ansi[i];
+    i += ch.length;
+    // One CELL per glyph the host draws, which may be a SEQUENCE (❤️ 👍🏽 a ZWJ
+    // family, a flag — char-width `joinStep`): a joining codepoint goes into
+    // the cell before it, so a diff rewrites the sequence whole and the next
+    // MoveTo lands past its width (VS16 grows ❤ from 1 to 2: a continuation
+    // column follows).
+    const q = joinStep(cp, p);
+    const w = (q >> 1) & 3;
+    p = q;
+    if ((q & 1) || w === 0) {
+      // Joins the last cell — or is zero-width with no cell before it in this
+      // run (it follows an SGR): no column of its own, the terminal folds it
+      // into the preceding glyph, so we must too, or every absolute MoveTo after
+      // it drifts right. Append to the last real cell (skip a wide glyph's
+      // continuation column). A leading combiner with no base is dropped
+      // (matches the terminal; rows never start with one).
       let k = cells.length - 1;
       while (k >= 0 && cells[k].cont) k--;
-      if (k >= 0) cells[k].g += ch;
-      i += ch.length;
+      if (k < 0) continue;
+      cells[k].g += ch;
+      if ((q & 1) && w > cells[k].w) { cells[k].w = w; cells.push({ cont: true }); }
       continue;
     }
     cells.push({ g: ch, w, sgr: active });
     if (w === 2) cells.push({ cont: true });
-    i += ch.length;
   }
   return cells;
 }

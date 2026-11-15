@@ -28,7 +28,8 @@
  */
 'use strict';
 
-const { richToAnsi, charWidth } = require('../text/ansi');
+const { richToAnsi } = require('../text/ansi');
+const { nextCell } = require('../text/char-width');
 
 const HL_ON  = '\x1b[48;5;238m';   // subtle gray background (default highlight)
 const HL_OFF = '\x1b[49m';         // reset BACKGROUND only — leaves foreground intact
@@ -40,11 +41,13 @@ const HL_OFF = '\x1b[49m';         // reset BACKGROUND only — leaves foregroun
 // is always assigned before exec, so no state is carried between calls.
 const _CSI = /\x1b\[[0-9;?]*[ -/]*[@-~]/y;
 
-// Walk an ANSI row → { g: {startCol: glyph}, width }. Double-width (CJK) glyphs
-// claim two columns; the start column holds the glyph, the continuation column
-// has no entry. SGR sequences are zero-width.
+// Walk an ANSI row → { g: {startCol: glyph}, w: {startCol: width}, width }. A
+// glyph is one CELL (char-width `nextCell`: a sequence like ❤️ or a flag is one);
+// a wide one claims two columns — the start column holds the glyph, the
+// continuation column has no entry. SGR sequences are zero-width.
 function _glyphByCol(ansi) {
-  const g = {};
+  const g = {}, gw = {};
+  const cell = { end: 0 };
   let col = 0, i = 0, lastStart = -1;
   while (i < ansi.length) {
     if (ansi[i] === '\x1b') {
@@ -52,22 +55,22 @@ function _glyphByCol(ansi) {
       const m = _CSI.exec(ansi);
       if (m) { i += m[0].length; continue; }
     }
-    const cp = ansi.codePointAt(i);
-    const ch = String.fromCodePoint(cp);
-    const w = charWidth(cp);
+    const w = nextCell(ansi, i, cell);
+    const ch = ansi.slice(i, cell.end);
+    i = cell.end;
     if (w === 0) {
-      // Zero-width (combining mark / ZWJ / VS): fold into the preceding glyph's
-      // start column — don't advance, don't overwrite (a leading one is dropped).
+      // Zero-width with no cell before it in this run (it follows an SGR): fold
+      // into the preceding glyph's start column — don't advance, don't
+      // overwrite (a leading one is dropped).
       if (lastStart >= 0) g[lastStart] += ch;
-      i += ch.length;
       continue;
     }
     g[col] = ch;
+    gw[col] = w;
     lastStart = col;
     col += w;
-    i += ch.length;          // past the surrogate pair, if any
   }
-  return { g, width: col };
+  return { g, w: gw, width: col };
 }
 
 // Which visible columns changed (glyph differs by start column). A wide glyph
@@ -81,7 +84,7 @@ function _changedCols(prevAnsi, curAnsi) {
     const ga = a.g[c], gb = b.g[c];
     if (ga !== gb) {
       changed[c] = true;
-      const wide = (ga && charWidth(ga.codePointAt(0)) === 2) || (gb && charWidth(gb.codePointAt(0)) === 2);
+      const wide = a.w[c] === 2 || b.w[c] === 2;     // the CELL's width (❤️ is 2; its ❤ alone is 1)
       if (wide && c + 1 < max) changed[c + 1] = true;
     }
   }
@@ -91,6 +94,7 @@ function _changedCols(prevAnsi, curAnsi) {
 // Reproduce `curAnsi` byte-for-byte, splicing hlOn/hlOff around runs of columns
 // for which `isChanged(col)` is true.
 function _emit(curAnsi, isChanged, hlOn, hlOff) {
+  const cell = { end: 0 };
   let out = '';
   let col = 0, i = 0, inRun = false;
   while (i < curAnsi.length) {
@@ -104,14 +108,13 @@ function _emit(curAnsi, isChanged, hlOn, hlOff) {
         continue;
       }
     }
-    const cp = curAnsi.codePointAt(i);
-    const ch = String.fromCodePoint(cp);
+    const w = nextCell(curAnsi, i, cell);   // a whole cell: the tint never splits a sequence
     const want = isChanged(col);
     if (want && !inRun) { out += hlOn; inRun = true; }
     else if (!want && inRun) { out += hlOff; inRun = false; }
-    out += ch;
-    col += charWidth(cp);
-    i += ch.length;
+    out += curAnsi.slice(i, cell.end);
+    col += w;
+    i = cell.end;
   }
   if (inRun) out += hlOff;
   return out;

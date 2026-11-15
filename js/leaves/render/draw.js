@@ -8,7 +8,8 @@
  */
 'use strict';
 
-const { visibleLen, charWidth, richToAnsi, wrapColor, RESET, sealMarkup } = require('../text/ansi');
+const { visibleLen, richToAnsi, wrapColor, RESET, sealMarkup } = require('../text/ansi');
+const { nextCell } = require('../text/char-width');
 const { scrollbar } = require('./scrollbar');
 const { theme } = require('../infra/themes');
 const bctl = require('./border-controls');
@@ -67,6 +68,7 @@ function truncate(text, maxWidth) {
   if (maxWidth <= 0) return '';
   if (visibleLen(text) <= maxWidth) return text;
   const limit = maxWidth - 1;   // leave 1 col for the ellipsis
+  const cell = { end: 0 };
   let out = '';
   let w = 0;
   let i = 0;
@@ -94,13 +96,13 @@ function truncate(text, maxWidth) {
       if (close !== -1) { out += text.slice(i, close + 1); i = close + 1; continue; }
       // unmatched `[` → fall through and treat it as a visible char
     }
-    const cp = text.codePointAt(i);
-    const ch = String.fromCodePoint(cp);
-    const cw = charWidth(cp);
+    // One CELL (char-width `nextCell`): a sequence like ❤️ or a flag is kept or
+    // cut whole — half of one would draw as a different glyph.
+    const cw = nextCell(text, i, cell);
     if (w + cw > limit) break;
-    out += ch;
+    out += text.slice(i, cell.end);
     w += cw;
-    i += ch.length;
+    i = cell.end;
   }
   return out + '…';
 }

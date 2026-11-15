@@ -12,11 +12,12 @@
  * cells with the pane's blank body; the grid has to come back over them).
  *
  * Rows are styled runs `[{ sgr, text }]` (io/term-screen readViewport): `text`
- * advances `charWidth` columns per codepoint.
+ * advances one CELL's width per cell (char-width `nextCell` — a sequence like ❤️
+ * or a flag is one cell, the emulator's cell).
  */
 'use strict';
 
-const { charWidth, stringWidth } = require('../text/char-width');
+const { nextCell, stringWidth } = require('../text/char-width');
 
 /** The parts of [lo, hi) no span in `spans` ([[a, b), …], any order, may
  *  overlap or fall outside) covers, as [[a, b), …] left to right. */
@@ -40,13 +41,16 @@ function uncovered(lo, hi, spans) {
  *  glyph's own style, so the slice is exactly c1 − c0 columns. */
 function sliceRuns(runs, c0, c1) {
   const out = [];
+  const cell = { end: 0 };
   let col = 0;
   let baseIn = false;                 // was the last glyph drawn? (its marks follow it)
   for (const r of runs) {
     if (col >= c1) break;
     let text = '';
-    for (const ch of r.text) {
-      const w = charWidth(ch.codePointAt(0));
+    const t = r.text;
+    for (let i = 0; i < t.length; i = cell.end) {
+      const w = nextCell(t, i, cell);
+      const ch = t.slice(i, cell.end);
       if (w === 0) { if (baseIn) text += ch; continue; }
       const start = col, end = col + w;
       col = end;

@@ -468,17 +468,15 @@ function stripControls(s) {
 const TAB_SIZE = 8;
 function _expandTabs(s) {
   if (s.indexOf('\t') < 0) return s;
-  let out = '';
-  let col = 0;
-  for (const ch of s) {
-    if (ch === '\t') {
-      const n = TAB_SIZE - (col % TAB_SIZE);
-      out += ' '.repeat(n);
-      col += n;
-    } else {
-      out += ch;
-      col += charWidth(ch.codePointAt(0));
-    }
+  // The text between tabs measured as cells (stringWidth: ❤️ is 2, not 1 + 0) —
+  // a tab breaks any sequence, as on the host.
+  const parts = s.split('\t');
+  let out = parts[0];
+  let col = stringWidth(parts[0]);
+  for (let k = 1; k < parts.length; k++) {
+    const n = TAB_SIZE - (col % TAB_SIZE);
+    out += ' '.repeat(n) + parts[k];
+    col += n + stringWidth(parts[k]);
   }
   return out;
 }

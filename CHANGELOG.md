@@ -6,6 +6,25 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Emoji made of several codepoints no longer shift pane borders.** ❤️ (a
+  heart with its emoji selector), 👍🏽 (a skin tone), 👨‍👩‍👧 (a joined family),
+  🇺🇸 (a flag), 1️⃣ (a keycap) and 🏴󠁧󠁢󠁥󠁮󠁧󠁿 are each drawn by terminals as ONE
+  2-column glyph, but lazytui added up their parts — ❤️ measured 1, 👨‍👩‍👧 6 —
+  so the rest of the row, border included, landed a column late or several
+  early. They now measure what tmux draws (measured on tmux 3.4), in panes,
+  labels, popups and terminal panes alike, and truncation, selection, search
+  highlights and popup edges never cut one in half. Text that terminals do NOT
+  join keeps adding up: Devanagari, Thai and Korean jamo measure as before.
+  Where tmux joins more than Unicode does — two flags side by side, a skin
+  tone after a non-emoji — lazytui follows Unicode, so tmux draws those 2
+  columns narrower. A lone flag letter (🇦) is now 2 columns, as tmux draws it.
+- **A wide character under a popup's edge no longer widens its row.** A CJK
+  character or emoji cut by the left or right edge of a popup (palette, menu,
+  which-key, tooltip) pushed the rest of the row — the pane border included —
+  one or two columns right while the popup was open.
+
 ## [0.6.59] — 2026-11-15
 
 Terminal panes, from a field report (nvim in a `terminal` pane): minimizing,

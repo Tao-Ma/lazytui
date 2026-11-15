@@ -27,7 +27,8 @@
  */
 'use strict';
 
-const { stripMarkup, charWidth } = require('./ansi');
+const { stripMarkup } = require('./ansi');
+const { nextCell } = require('./char-width');
 // computeMatches + _displayWidthBefore moved to match-core (shared with the
 // bounded-match worker so both sides run byte-identical matching).
 const { computeMatches, _displayWidthBefore } = require('./match-core');
@@ -113,13 +114,19 @@ function decorateWindow(lines, matches, activeIdx, offset = 0, tags = _DEFAULT_T
 function _multiHighlight(line, spans, activeIdx, tags) {
   const plain = stripMarkup(line);
   const chars = [...plain];
-  // Codepoint-index → display-col cumulative array → map [col,col+len) → cp range.
+  // Codepoint-index → display-col array → map [col,col+len) → cp range. Every
+  // codepoint of a CELL (char-width `nextCell`: ❤️, a flag) gets the cell's
+  // start column, so a range boundary only ever lands between cells.
   const colAt = new Array(chars.length + 1);
-  colAt[0] = 0;
-  for (let i = 0; i < chars.length; i++) {
-    colAt[i + 1] = colAt[i] + charWidth(chars[i].codePointAt(0));
+  const cell = { end: 0 };
+  let col = 0, ci = 0;
+  for (let i = 0; i < plain.length; i = cell.end) {
+    const w = nextCell(plain, i, cell);
+    for (const _ of plain.slice(i, cell.end)) colAt[ci++] = col;   // one entry per codepoint
+    col += w;
   }
-  const totalCols = colAt[chars.length];
+  colAt[chars.length] = col;
+  const totalCols = col;
 
   const sorted = spans
     .filter(s => s.col < totalCols)

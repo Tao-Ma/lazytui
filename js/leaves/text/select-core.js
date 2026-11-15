@@ -15,7 +15,8 @@
  */
 'use strict';
 
-const { stripMarkup, charWidth, stringWidth, esc } = require('./ansi');
+const { stripMarkup, stringWidth, esc } = require('./ansi');
+const { nextCell } = require('./char-width');
 
 /** Plain (markup-stripped) projection of content line `i`. */
 function plainLineAt(lines, i) {
@@ -26,34 +27,48 @@ function plainLineAt(lines, i) {
 /** Display width of a plain string (CJK/wide-aware). */
 const displayWidth = stringWidth;
 
+// Walk `plain` one CELL at a time (char-width `nextCell`: ❤️, 👍🏽, a flag are
+// one cell each), calling `visit(width, codepoints)`; a truthy return stops the
+// walk. Boundaries are codepoint indices (codepointSlice), but they only ever
+// fall BETWEEN cells — a selection never takes half a glyph.
+function _walkCells(plain, visit) {
+  const cell = { end: 0 };
+  for (let i = 0; i < plain.length; i = cell.end) {
+    const w = nextCell(plain, i, cell);
+    let n = 0;
+    for (const _ of plain.slice(i, cell.end)) n++;   // codepoints, as codepointSlice counts them
+    if (visit(w, n)) return;
+  }
+}
+
 /**
- * START boundary: the codepoint index of the first character whose display
- * range contains or starts at `displayCol`. Clicking either cell of a 2-wide
- * glyph resolves to that char; past the end returns the past-the-end index.
+ * START boundary: the codepoint index of the first cell whose display range
+ * contains or starts at `displayCol`. Clicking either column of a 2-wide glyph
+ * resolves to that glyph; past the end returns the past-the-end index.
  */
 function displayColToCharIdx(plain, displayCol) {
   let dc = 0, ci = 0;
-  for (const ch of plain) {
-    const w = charWidth(ch.codePointAt(0));
-    if (dc + w > displayCol) return ci;
-    dc += w; ci += 1;
-  }
+  _walkCells(plain, (w, n) => {
+    if (dc + w > displayCol) return true;
+    dc += w; ci += n;
+    return false;
+  });
   return ci;
 }
 
 /**
- * END boundary (exclusive): one past the codepoint index of the last char whose
- * cells overlap [..displayCol]. Paired with the start helper, [a,b) includes
- * every char whose cells fall within [startCol, endCol] — so a drag onto the
- * left cell of a wide glyph still grabs the whole glyph.
+ * END boundary (exclusive): one past the codepoint index of the last cell whose
+ * columns overlap [..displayCol]. Paired with the start helper, [a,b) includes
+ * every cell whose columns fall within [startCol, endCol] — so a drag onto the
+ * left column of a wide glyph still grabs the whole glyph.
  */
 function displayColToCharIdxEnd(plain, displayCol) {
   let dc = 0, ci = 0;
-  for (const ch of plain) {
-    if (dc > displayCol) return ci;
-    dc += charWidth(ch.codePointAt(0));
-    ci += 1;
-  }
+  _walkCells(plain, (w, n) => {
+    if (dc > displayCol) return true;
+    dc += w; ci += n;
+    return false;
+  });
   return ci;
 }
 

@@ -36,7 +36,7 @@
 'use strict';
 
 const { Terminal } = require('@xterm/headless');
-const { charWidth, stringWidth } = require('../leaves/text/char-width');
+const { charWidth, stringWidth, joinStep } = require('../leaves/text/char-width');
 const { screenColors } = require('../leaves/text/ansi');
 
 // The emulator measures with the frame's width truth. A program's output is laid
@@ -45,23 +45,20 @@ const { screenColors } = require('../leaves/text/ansi');
 // for both ends means a row the emulator fills is exactly the pane's width when
 // painted. The emulator's built-in table is Unicode 6 (every emoji 1 column),
 // which put each ⚡/💤 one column past the pane border on a full row.
-// `charProperties` packs (width << 1 | join) the way @xterm/headless's own
-// provider does: a zero-width codepoint joins the preceding cell and keeps its
-// width; C0/C1 controls are 0, as in the built-in table.
+// The same goes for which codepoints JOIN a cell (❤️, 👍🏽, a ZWJ family, a
+// flag): `charProperties` IS char-width's `joinStep` — it packs (state << 3 |
+// width << 1 | join) the way @xterm/headless's Unicode service reads it, and the
+// emulator re-widens a cell a joining codepoint grows (VS16: 1 → 2). C0/C1
+// controls are 0, as in the built-in table (the parser executes them; they never
+// reach a cell).
+const _isControl = (cp) => cp < 0x20 || (cp >= 0x7f && cp < 0xa0);
 const _WIDTH_PROVIDER = {
   version: 'lazytui',
   wcwidth(cp) {
-    return (cp < 0x20 || (cp >= 0x7f && cp < 0xa0)) ? 0 : charWidth(cp);
+    return _isControl(cp) ? 0 : charWidth(cp);
   },
   charProperties(cp, preceding) {
-    let width = _WIDTH_PROVIDER.wcwidth(cp);
-    let join = width === 0 && preceding !== 0;
-    if (join) {
-      const prev = (preceding >> 1) & 3;
-      if (prev === 0) join = false;
-      else if (prev > width) width = prev;
-    }
-    return ((width & 3) << 1) | (join ? 1 : 0);
+    return _isControl(cp) ? 0 : joinStep(cp, preceding);
   },
 };
 
@@ -260,8 +257,10 @@ function _readRow(line, width, cell) {
     // VS16 at the start of a row) gets a cell of its own in the emulator (width
     // 0, but the cursor moved past it): skipped like a wide glyph's right half,
     // the rest of the row landed one column left of where the program put it.
-    // It paints as a space carrying the mark — the column the emulator gave it.
-    if (w === 0) { text = ' ' + text; w = 1; }
+    // It paints as a space carrying the mark — the column the emulator gave it —
+    // unless the mark would make that one cell wider (VS16: a space + VS16 is a
+    // 2-wide emoji-presentation cell on the host): then as the bare space.
+    if (w === 0) { text = _textWidth(' ' + text) === 1 ? ' ' + text : ' '; w = 1; }
     if (col + w > width) break;                         // never past the edge
     const f = cell.getFgColorMode() + cell.getFgColor();
     const b = cell.getBgColorMode() + cell.getBgColor();

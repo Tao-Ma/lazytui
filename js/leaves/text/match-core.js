@@ -10,19 +10,30 @@
 'use strict';
 
 const { safeRegex } = require('./regex-guard');
-const { stripMarkup, charWidth } = require('./ansi');
+const { stripMarkup } = require('./ansi');
+const { nextCell } = require('./char-width');
 
-/** Display-column count of plain text up to (not including) codepoint index
- *  `charIdx` (a UTF-16 index). Translates regex match positions into columns. */
-function _displayWidthBefore(plain, charIdx) {
-  let consumed = 0;
-  let width = 0;
-  for (const ch of plain) {
-    if (consumed >= charIdx) break;
-    width += charWidth(ch.codePointAt(0));
-    consumed += ch.length;
+/** The display columns [col, col + len) of plain text's UTF-16 range [a, b),
+ *  widened to whole CELLS (char-width `nextCell`): a match that starts or ends
+ *  inside a sequence — `❤` inside `❤️`, one flag letter — covers the whole
+ *  glyph, never half of it. Translates regex match positions into columns. */
+function _cellSpan(plain, a, b) {
+  const cell = { end: 0 };
+  let col = 0, start = -1;
+  for (let i = 0; i < plain.length; i = cell.end) {
+    const w = nextCell(plain, i, cell);
+    if (start < 0 && cell.end > a) start = col;
+    col += w;
+    if (start >= 0 && cell.end >= b) break;
   }
-  return width;
+  if (start < 0) start = col;
+  return { col: start, len: col - start };
+}
+
+/** Display-column count of plain text before the cell holding UTF-16 index
+ *  `charIdx` (all of the text when past its end). */
+function _displayWidthBefore(plain, charIdx) {
+  return _cellSpan(plain, charIdx, charIdx).col;
 }
 
 /** Run `term` (regex, gi) against `lines` → [{line, col, len}] in display
@@ -43,9 +54,7 @@ function computeMatches(lines, term) {
     while ((m = rx.exec(plain)) !== null) {
       if (m.index <= prev) { rx.lastIndex = m.index + 1; continue; }
       prev = m.index;
-      const col = _displayWidthBefore(plain, m.index);
-      let len = 0;
-      for (const ch of m[0]) len += charWidth(ch.codePointAt(0));
+      const { col, len } = _cellSpan(plain, m.index, m.index + m[0].length);
       if (len > 0) matches.push({ line: li, col, len });
       if (m.index === rx.lastIndex) rx.lastIndex++;  // zero-width safety
     }
