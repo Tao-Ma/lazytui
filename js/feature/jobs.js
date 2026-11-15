@@ -49,13 +49,21 @@ function _genId(startedAt) {
  *   owner: arbitrary metadata for kind-specific jump behavior
  *          (tabKey/groupName for streams, ptyId for pty, etc.).
  */
+// A label is one line of display text (the jobs overlay row, the job card's
+// `$` line): a command's line breaks become ` ⏎ `, other control characters a
+// space. A multi-line command as the label broke the overlay row — the right
+// border gone, status/age wrapped over the box (round-4 review 2026-11-15).
+function _oneLine(s) {
+  return String(s || '').replace(/[ \t]*(?:\r\n|\r|\n)+[ \t]*/g, ' ⏎ ').replace(/[\x00-\x1f\x7f]/g, ' ').trim();
+}
+
 function register({ kind, label, pid, owner }) {
   const startedAt = Date.now();
   const id = _genId(startedAt);
   _jobs.set(id, {
     id,
     kind,
-    label: String(label || ''),
+    label: _oneLine(label),
     startedAt,
     pid: pid == null ? null : (pid | 0),
     owner: owner || {},

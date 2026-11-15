@@ -145,7 +145,8 @@ function update(model, msg) {
           `[dim]age:[/]      ${ageS}s`,
           '',
           `[dim]cmd:[/]`,
-          `  ${esc(owner.cmd || '(no cmd recorded)')}`,
+          // One display line per command line (a multi-line spawn body / cmd).
+          ...String(owner.cmd || '(no cmd recorded)').split(/\r?\n/).map(l => `  ${esc(l)}`),
         ];
         // U2e P4 — the job-info card is a text-view content tab now (was the
         // viewer's viewerOverride). The open_doc_tab effect mints/reuses the 'Job'

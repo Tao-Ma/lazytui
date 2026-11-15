@@ -215,6 +215,9 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   replay stopped). The tab ran a temp script that deleted itself, so the
   restart failed with `No such file or directory`; it now runs the action's
   command again, in the project directory with the same arguments.
+- **The `:jobs` list keeps a job whose command has several lines on one
+  row** (a terminal pane's or a spawn action's): its row lost its right
+  border and the status wrapped over the box. Line breaks show as `⏎`.
 - **`--lint` exits 1 for two new warnings**, `keys.unreachable_step` and
   `panels.nested_config`, on configs it passed before.
 

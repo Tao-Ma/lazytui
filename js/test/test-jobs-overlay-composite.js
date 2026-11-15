@@ -76,6 +76,33 @@ describe('[jobs-overlay-composite] composites into newRows when invoked with tar
   // end-of-Release-2 cleanup; the overlay fn no longer has a stdout path.)
 });
 
+// A job's label is one display line: a terminal job's label is its command,
+// and a spawn action's (or a `cmd:` with line breaks) has several lines — its
+// row lost its right border and the status/age/tag wrapped over the box
+// (round-4 review 2026-11-15). The registry flattens the label at register.
+describe('[jobs-overlay-composite] a multi-line command as a job label stays on its row', () => {
+  it('the registry stores one line; the row keeps its border and status', () => {
+    const jobs = require('../feature/jobs');
+    const id = jobs.register({ kind: 'pty', label: "/bin/sh -c cd '/tmp' && echo building\nsleep 30\n", pid: null, owner: {} });
+    const job = jobs.snapshot().find(j => j.id === id);
+    assert(!/[\r\n]/.test(job.label), `one line: ${JSON.stringify(job.label)}`);
+    assert(job.label.includes('echo building ⏎ sleep 30'), `the line break shows as ⏎: ${JSON.stringify(job.label)}`);
+    const COLS = 100, NOW = Date.now();
+    let m = freshOverlayModel({ cols: COLS, rows: 30 });
+    [m] = runtime.update(m, { type: 'jobs_synced', jobs: [{ ...job }] });
+    [m] = runtime.update(m, { type: 'jobs_open', now: NOW });
+    require('../model/store').setModel(m);
+    const newRows = new Array(24).fill(' '.repeat(COLS));
+    renderJobsOverlay(NOW, newRows, COLS);
+    const row = newRows.find(r => r.includes('echo building'));
+    const plain = row ? require('../leaves/text/ansi').stripMarkup(row) : '';
+    assert(/│▢ .* running .*│/.test(plain),
+      `the row carries its status and ends at the box border: ${JSON.stringify(plain)}`);
+    for (let i = 0; i < newRows.length; i++) assert(visibleLen(newRows[i]) === COLS, `row ${i} width ${visibleLen(newRows[i])}`);
+    jobs.close(id, { status: 'killed' });
+  });
+});
+
 describe('[jobs-overlay-composite] no FULL_CLEAR on jobs_open', () => {
   process.stdout.columns = 100; process.stdout.rows = 30;
   const sm = require('./smoke/_helpers/smoke');
