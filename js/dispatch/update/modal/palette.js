@@ -25,6 +25,7 @@
 
 const { withModalMode, withModal } = require('../model-ops');
 const { appendCapped, withoutLastCell } = require('../../../leaves/text/char-width');
+const { fieldInput } = require('../../../leaves/text/printable');
 
 const TYPES = [
   'palette_open',
@@ -69,7 +70,7 @@ function update(model, msg) {
         // codepoints; one code unit left half a surrogate pair).
         next = withoutLastCell(cur);
       } else {
-        next = _appendClamp(cur, typeof msg.seq === 'string' ? msg.seq : '');
+        next = _appendClamp(cur, fieldInput(msg));   // typed text / a paste made single-line + control-free
       }
       if (next === cur) return [model, []];
       // Reset idx to 0 on every filter change — the narrowed view can

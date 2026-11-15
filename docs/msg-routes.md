@@ -574,7 +574,7 @@ dataflow mechanics.
 | `fabric_form_choices_open{port}` | sets `picking={port, idx:0, filter:''}` — resets the filter on every open (Brief 2 of v0.6.43). Guarded: field must stamp `hasChoices` (ANY of the three channels: fn/cmd/literal — Brief 1 of v0.6.43 single-sources this via `declHasChoices`); idempotent on same-port. | — | ✓ |
 | `fabric_form_choices_close` | clears `picking` (identity-preserve when already closed) | — | ✓ |
 | `fabric_form_choices_nav{dir:-1|1}` | moves `picking.idx` within the FILTERED view (Brief 2 of v0.6.43 — clamp uses `filterChoices(computed.items, computed.labels, picking.filter).items.length` so Up/Down walks only the rows the user sees); no wrap; identity-preserve at edges or when `state !== 'ok'`. | — | ✓ |
-| `fabric_form_choices_filter{seq}` | appends one printable code unit to `picking.filter`, or pops the last code unit when `seq === '\x7f'` (backspace). Hard cap `MAX_FILTER_LEN=128` applied POST-concat with a surrogate-split guard (so a paste can't bypass the cap and so a cut on a HIGH surrogate steps back one unit). `picking.idx` resets to 0 on every filter change. Guarded on fabricFormMode + non-null picking; control chars no-op; cap-hit returns the same model ref. (Brief 2 of v0.6.43) | — | ✓ |
+| `fabric_form_choices_filter{key,seq}` | appends typed text / a paste to `picking.filter` (`printable.fieldInput` — the input every text field shares: any script typed; a paste made single-line and control-free), or pops the last glyph when `seq === '\x7f'` (backspace). Hard cap `MAX_FILTER_LEN=128` applied POST-concat with a surrogate-split guard (so a paste can't bypass the cap and so a cut on a HIGH surrogate steps back one unit). `picking.idx` resets to 0 on every filter change. Guarded on fabricFormMode + non-null picking; control chars no-op; cap-hit returns the same model ref. (Brief 2 of v0.6.43) | — | ✓ |
 | `fabric_form_choices_filter_clear` | resets `picking.filter→''` and `picking.idx→0` (identity-preserve when filter already empty). Fired by first-Esc when the filter is non-empty; a second Esc then dispatches `fabric_form_choices_close`. (Brief 2 of v0.6.43 — Esc two-step; the decision between clear-vs-close is made in dispatch.js by peeking at `picking.filter.length`, matching the existing peek pattern at the Enter branch.) | — | ✓ |
 
 ¹ Won't open over a live modal (`isChainActive` guard). Opens only via
@@ -626,7 +626,7 @@ on pick). Modal state stays `{filter, idx}` only.
 |-----|--------|------|------|
 | `palette_open` | `modes.paletteMode→true`, `modal.palette={filter:'',idx:0}` | — | ✓ |
 | `palette_close` | `modes.paletteMode→false`, `modal.palette=CLOSED` | — | ✓ |
-| `palette_filter{seq}` | append / backspace into `modal.palette.filter`; `idx→0` | — | ✓ |
+| `palette_filter{key,seq}` | append (`printable.fieldInput`) / backspace into `modal.palette.filter`; `idx→0` | — | ✓ |
 | `palette_filter_clear` | `modal.palette={filter:'',idx:0}` (guard: non-empty only) | — | ✓ |
 | `palette_nav{dir,total}` | clamp `modal.palette.idx` against `total` | — | ✓ |
 | `palette_pick{groupPath,actionKey}` | close modal | `palette_run_action{groupPath,actionKey}` | ✓ |
@@ -861,7 +861,7 @@ through `pt.reduceTabMsg`, then handled its own arms, then ran its pure `_finali
 | `viewer_set_tab{tab,total,toTabKey}` | `slice.tab` + restore `tabState[toKey]` (skips restore if `viewerOverride`) | — | shell⁴ |
 | `viewer_reset_chrome{paneMenuMode}` | `tab=0`, cursor reset, clears `viewerOverride`, select inactive | `msg→pane_menu_close` (layout) if `paneMenuMode` | shell⁷ |
 | `viewer_search_enter` | search typing state (`ms.enter`) | `msg→mode_set{detailSearchMode}` (conditional) | ✓ |
-| `viewer_search_key{seq}` | search typing text (`ms.keystroke`) | — | ✓ |
+| `viewer_search_key{key,seq}` | search typing text (`ms.keystroke`; `key: 'paste'` marks a paste — `printable.fieldInput`) | — | ✓ |
 | `viewer_search_nav{dir}` | search match cursor (`ms.next/prev` over derived matches) | — | ✓ᴮ |
 | `viewer_search_commit` | commits search (`ms.commit`) | `msg→mode_clear{detailSearchMode}` (conditional) | ✓ᴮ |
 | `viewer_search_cancel` | cancels search (`ms.cancel`) | `msg→mode_clear{detailSearchMode}` (conditional) | ✓ |

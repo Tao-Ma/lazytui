@@ -26,7 +26,7 @@
 const hoverRegion = require('../panel/hover-region');
 const modes = require('../leaves/input/modes');
 const { renderOverlay } = require('../leaves/render/draw');
-const { esc } = require('../leaves/text/ansi');
+const { esc, stringWidth } = require('../leaves/text/ansi');
 
 function _hv(model) {
   const md = (model && model.modes) || {};
@@ -58,7 +58,9 @@ function render(model, newRows, cols) {
   renderOverlay({
     lines: [`[accent]${esc(hv.text)}[/]`],
     anchor: { x: hv.x, y: hv.y + 1 },
-    maxWidth: Math.min(60, hv.text.length + 4),
+    // Sized by the text's WIDTH: `.length` made a CJK label's box (2 columns
+    // per UTF-16 unit) too narrow, cutting it with `…`.
+    maxWidth: Math.min(60, stringWidth(hv.text) + 4),
     targetRows: newRows,
     targetCols: cols,
   });

@@ -102,6 +102,19 @@ describe('[3] e edits a field → sticky inject', () => {
     assert(/0\/BEEF/.test(f), 'the injected value renders on the row');
     assert(/✓ ready/.test(f), 'readiness flips to ✓ once start resolves');
   });
+  it('a long edit keeps its end and the cursor in view (the shared field window)', () => {
+    // Painted from the start, the buffer ran off the pane's edge past its
+    // width: the cursor block and the end of what was typed were cut.
+    focusPorts();
+    key('e');
+    key('paste', 'x'.repeat(200) + 'END');
+    const rows = sm.stripAnsi(frame()).split('\n');
+    const ok = rows.some((r) => /▸ .*…x+END▏/.test(r));
+    if (!ok) console.log(rows.join('\n'));
+    assert(ok, 'the edit row shows … + the tail + the cursor');
+    key('escape');
+    assert(!getModel().modes.fabricFieldMode, 'Esc leaves the editor (nothing committed)');
+  });
 });
 
 describe('[4] w offers EVERY compatible producer (multi-source) → runtime wire', () => {

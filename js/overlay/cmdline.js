@@ -15,7 +15,9 @@
 'use strict';
 
 const { getModel } = require('../model/store');
-const { richToAnsi, RESET, visibleLen, stringWidth, esc } = require('../leaves/text/ansi');
+const { richToAnsi, RESET, visibleLen, esc } = require('../leaves/text/ansi');
+const { fieldText } = require('../leaves/text/printable');
+const { fieldWindow } = require('../leaves/text/field-window');
 const { theme } = require('../leaves/infra/themes');
 const { renderPanel, viewportDims, writeOut, publishBox } = require('../leaves/render/draw');
 const { compositeRow } = require('../leaves/render/row-compositor');
@@ -110,7 +112,11 @@ function renderCmdline(newRows, cols) {
   // it covers.
   // The typed text is TEXT: escaped, so `a[0].txt` shows as typed instead of
   // being read as a markup tag (it showed `a.txt`, the cursor past its end).
-  const prompt = ` :${esc(_text)}`;
+  // Windowed to the row (_promptView, shared with cmdlineCursor): the row was
+  // never cut, so a command wider than the screen ran past the last column of
+  // the LAST row — the host wrapped it and the whole screen scrolled up.
+  const { shown } = _promptView(_text, COLS);
+  const prompt = ` :${shown}`;
   const padded = prompt + ' '.repeat(Math.max(0, COLS - visibleLen(prompt)));
   const buf = `\x1b[${ROWS};1H` + richToAnsi(`[${t.footer}]${padded}[/]`) + RESET;
   // The cursor's position is cmdlineCursor's — paint's terminal-surface pass
@@ -146,13 +152,29 @@ function registerSelf(compositor) {
 }
 
 /** Where the hardware cursor goes in cmd mode: the end of the typed text on the
- *  prompt row — column 1 (leading space) + ':' + the text's WIDTH (columns, not
- *  UTF-16 units). 1-based { row, col }; null outside cmd mode. paint's
+ *  prompt row — column 1 (leading space) + ':' + the WIDTH of the text the row
+ *  shows (columns, not UTF-16 units; `…` + the tail once it is scrolled —
+ *  _promptView). 1-based { row, col }; null outside cmd mode. paint's
  *  terminal-surface pass emits it as the last move of every frame and of every
  *  PTY fast-path repaint. */
 function cmdlineCursor(model) {
   if (!model.modes.cmdMode) return null;
-  return { row: viewportDims().rows, col: 3 + stringWidth(model.modal.cmdline.text || '') };
+  const { cols, rows } = viewportDims();
+  return { row: rows, col: 3 + _promptView(model.modal.cmdline.text, cols).caretCol };
+}
+
+/** The prompt row's text and the cursor's place in it — ONE derivation, so
+ *  what renderCmdline paints and where cmdlineCursor puts the cursor cannot
+ *  disagree. The text after ` :` is a field window (leaves/text/field-window)
+ *  over the text as a field shows it (printable.fieldText: a tab or line break
+ *  is a space, control sequences are gone — whatever path set it; typed and
+ *  pasted text is already that), scrolled to keep its END and the cursor cell
+ *  on the row: `cols - 2` columns, `…` first when the start is cut. `shown` is
+ *  markup (esc'd); `caretCol` is 0-based from the text's first column. */
+function _promptView(text, cols) {
+  const t = fieldText(text || '');
+  const { clipped, before, caretCol } = fieldWindow(t, t.length, (cols | 0) - 2);
+  return { shown: (clipped ? '…' : '') + esc(before), caretCol };
 }
 
 module.exports = { renderCmdline, registerSelf, cmdlineCursor };

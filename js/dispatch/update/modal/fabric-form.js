@@ -37,7 +37,7 @@
 const { withModalMode, withModal } = require('../model-ops');
 const { isChainActive } = require('../../../leaves/input/modes');
 const { applyInject } = require('../fabric');
-const { isPrintableSeq: _isPrintableSeq } = require('../../../leaves/text/printable');
+const { fieldInput } = require('../../../leaves/text/printable');
 const { appendCapped, withoutLastCell } = require('../../../leaves/text/char-width');
 // Brief 3 — variadic fields tokenize `text` → argv items at submit using the
 // same leaf compileCommand uses, so form text and `run:` string templates
@@ -407,18 +407,15 @@ function update(model, msg) {
       let text = cur.text;
       if (msg.seq === '\x7f') text = withoutLastCell(text);                   // backspace: one glyph
       else if (msg.seq === '\x15') text = '';                                  // Ctrl+U — clear-line
-      else if (msg.key === 'paste' && typeof msg.seq === 'string') {
-        text = appendCapped(text, msg.seq.replace(/[\r\n]+/g, ' '), MAX_FIELD_TEXT);   // single-line: collapse breaks
-      } else if (_isPrintableSeq(msg.seq)) {
-        // R3C-BUG1 — non-ASCII keystrokes (CJK IME, Cyrillic, Arabic, emoji
-        // surrogate pairs) are legitimate text content. The pre-fix gate
-        // `charCodeAt(0) >= 32 && < 127` rejected them silently, so an author
-        // adding `choices_fn:` on a port that holds Japanese section names
-        // couldn't free-type (and the "free-type wins" guarantee failed for
-        // every non-ASCII user). Shared predicate with fabric-field.
-        text = appendCapped(text, msg.seq, MAX_FIELD_TEXT);
-      } else {
-        return [model, []];
+      else {
+        // Typed text in any script (R3C-BUG1 — the old `charCodeAt(0) >= 32 &&
+        // < 127` gate rejected CJK IME / emoji silently, so an author adding
+        // `choices_fn:` on a port that holds Japanese section names couldn't
+        // free-type), or a paste made single-line and control-free —
+        // printable.fieldInput, shared by every text field.
+        const add = fieldInput(msg);
+        if (add == null) return [model, []];
+        text = appendCapped(text, add, MAX_FIELD_TEXT);
       }
       // Both growing paths cap the field (paste or sustained typing can't bloat
       // the WAL past MAX_FIELD_TEXT) through char-width appendCapped: the cut
@@ -1040,9 +1037,11 @@ function update(model, msg) {
       return [withModal(model, { fabricForm: { ...f, picking: { ...f.picking, idx: nextIdx } } }), []];
     }
     case 'fabric_form_choices_filter': {
-      // `{ seq }` — append one printable code-unit to picking.filter, or pop
-      // the last code-unit when seq === '\x7f' (backspace). Any other control
-      // seq is a no-op (dispatch.js only sends printables + \x7f here; this
+      // `{ key, seq }` — append typed text / a paste to picking.filter
+      // (printable.fieldInput: a paste made single-line and control-free — a
+      // pasted tab or line break used to drop the whole paste), or pop the
+      // last glyph when seq === '\x7f' (backspace). Any other control seq is
+      // a no-op (dispatch.js only sends field input + \x7f here; this
       // defense-in-depth stops a hand-built Msg from pushing a Tab byte into
       // the filter string). idx RESETS TO 0 on any filter change so a
       // narrowing refilter doesn't leave the highlight past the end of the
@@ -1058,7 +1057,9 @@ function update(model, msg) {
       if (msg.seq === '\x7f') {
         if (cur.length === 0) return [model, []];
         next = withoutLastCell(cur);                                          // one glyph
-      } else if (typeof msg.seq === 'string' && msg.seq.length > 0 && !/[\x00-\x1f\x7f]/.test(msg.seq)) {
+      } else {
+        const add = fieldInput(msg);
+        if (!add) return [model, []];
         // Cap the filter at MAX_FILTER_LEN code units — anything past that
         // is a stuck key or an accidental paste, not a reasonable needle.
         // Pre-release review (code fork): the pre-concat guard was bypassable
@@ -1067,9 +1068,7 @@ function update(model, msg) {
         // the cap is enforced regardless of per-event seq length, and cut at a
         // cell boundary as the field-key arm does (fabric_form_key — never half
         // a surrogate pair or a sequence).
-        next = appendCapped(cur, msg.seq, MAX_FILTER_LEN);
-      } else {
-        return [model, []];
+        next = appendCapped(cur, add, MAX_FILTER_LEN);
       }
       if (next === cur) return [model, []];
       return [withModal(model, { fabricForm: {

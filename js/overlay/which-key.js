@@ -15,7 +15,8 @@
 'use strict';
 
 const { esc } = require('../leaves/text/ansi');
-const { renderOverlay } = require('../leaves/render/draw');
+const { renderOverlay, padCell } = require('../leaves/render/draw');
+const { cellsOf } = require('../leaves/text/char-width');
 const { getModel } = require('../model/store');
 const kb = require('../leaves/input/keybindings');
 
@@ -66,13 +67,18 @@ function renderWhichKey(newRows, cols) {
 }
 
 /**
- * Right-pad a key token to a small fixed column so labels line up.
- * Named tokens (`up`, `esc`) are wrapped in <> for clarity.
+ * Right-pad a key token to a small fixed column so labels line up. Named
+ * tokens (`up`, `esc`) are wrapped in <> for clarity. Returns MARKUP: the token
+ * is esc()'d — a binding on `[` was read as a tag start and its key vanished
+ * from the row — and padded by visible width (draw.padCell): `.length` padded a
+ * CJK key (中, 2 columns, 1 unit) one column too far, an emoji or a VS16 key
+ * (❤️) by the wrong amount, so the labels after them did not line up. A typed
+ * character is one GLYPH (`[...tok].length === 1` was one codepoint: ❤️ and 👍🏽
+ * read as named tokens and got `<…>`).
  */
 function _padKey(tok) {
-  const shown = tok.length === 1 ? tok : `<${tok}>`;
-  const pad = Math.max(0, 5 - shown.length);
-  return shown + ' '.repeat(pad);
+  const shown = cellsOf(tok).length === 1 ? tok : `<${tok}>`;
+  return padCell(esc(shown), 5);
 }
 
 // Overlay-compositor R3 descriptor. zIndex=80. which-key is the

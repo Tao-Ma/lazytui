@@ -17,7 +17,7 @@
 const { withModalMode, withModal } = require('../model-ops');
 const { isChainActive } = require('../../../leaves/input/modes');
 const { applyInject } = require('../fabric');
-const { isPrintableSeq: _isPrintableSeq } = require('../../../leaves/text/printable');
+const { fieldInput } = require('../../../leaves/text/printable');
 const { appendCapped, withoutLastCell } = require('../../../leaves/text/char-width');
 
 const TYPES = ['fabric_field_enter', 'fabric_field_key', 'fabric_field_submit', 'fabric_field_cancel'];
@@ -61,18 +61,14 @@ function update(model, msg) {
       let text = f.text;
       if (msg.seq === '\x7f') text = withoutLastCell(text);        // backspace: one glyph
       else if (msg.seq === '\x15') text = '';                      // Ctrl+U — clear
-      else if (msg.key === 'paste' && typeof msg.seq === 'string') {
-        // Single-line: collapse breaks. Capped at a cell boundary, never into
-        // the text already there — see fabric-form.js's cap comment.
-        text = appendCapped(text, msg.seq.replace(/[\r\n]+/g, ' '), MAX_FIELD_TEXT);
-      } else if (_isPrintableSeq(msg.seq)) {
-        // R3C-BUG1 — non-ASCII keystrokes (CJK IME, Cyrillic, Arabic, emoji
-        // surrogate pairs) are legitimate text content. The pre-fix gate
-        // `charCodeAt(0) >= 32 && < 127` rejected them silently. The new
-        // predicate accepts any string whose characters are all printable
-        // (>= 0x20, not DEL), including supplementary-plane sequences
-        // (seq.length can be 1 for BMP chars or 2 for an emoji surrogate pair).
-        text = appendCapped(text, msg.seq, MAX_FIELD_TEXT);
+      else {
+        // Typed text in any script (R3C-BUG1: CJK IME, Cyrillic, emoji — the
+        // old ASCII gate rejected them silently), or a paste made single-line
+        // and control-free — printable.fieldInput, shared by every text field.
+        // Capped at a cell boundary, never into the text already there — see
+        // fabric-form.js's cap comment.
+        const add = fieldInput(msg);
+        if (add) text = appendCapped(text, add, MAX_FIELD_TEXT);
       }
       if (text === f.text) return [model, []];
       return [withModal(model, { fabricField: { ...f, text } }), []];

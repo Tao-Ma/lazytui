@@ -125,7 +125,7 @@ function reduce(msg, slice, lines, ownKind) {
     case 'viewer_search_enter':
       return _enterSearchReturn(slice);
     case 'viewer_search_key':
-      return ms.keystroke(slice, msg.seq);
+      return ms.keystroke(slice, msg.seq, msg.key);
     case 'viewer_search_nav':
       return msg.dir > 0
         ? ms.next(slice, _innerH(slice), lines, slice.search.typing || '')

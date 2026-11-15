@@ -751,6 +751,13 @@ function _dispatchToken(tok) {
   if (tok === '\r' || tok === '\n' || tok === '\r\n') return handleKey('return');
   if (tok === '\x03') { cleanup(); process.exit(0); }
   if (tok === '\x12') return handleKey('ctrl-r');  // Ctrl+R → free-config redo
+  // ^H (BS) is Backspace: terminals set to send it (PuTTY, `stty erase ^H`,
+  // some Windows consoles) and readline's Ctrl+H. Normalized ONCE here, so every
+  // handler that reads Backspace as `seq === '\x7f'` (each text field, menu
+  // back) takes it — only the free-config rename knew it before. A KKP Ctrl+H /
+  // BS event decodes to \x08 and re-enters this ladder. (Terminal mode never
+  // gets here: an embedded program gets its bytes raw.)
+  if (tok === '\b') return handleKey('\x7f', '\x7f');
 
   // Kitty-keyboard CSI-u key event (`\x1b[<code>;<mods>u`, only arrives once
   // the protocol is enabled). Normalize back to the legacy byte and re-run the

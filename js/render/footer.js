@@ -21,6 +21,7 @@ const { RESET, richToAnsi, esc, visibleLen, wrapColor } = require('../leaves/tex
 const { multiSelCount } = require('../panel/nav-state');
 const { theme } = require('../leaves/infra/themes');
 const { truncate, viewportDims } = require('../leaves/render/draw');
+const { fieldWindow } = require('../leaves/text/field-window');
 const { focusedTerminalTitle, focusedTerminalState } = require('../panel/terminal-surfaces');
 const { getPanelDef, getInstanceSlice, getFocus, instanceKind,
         collectViewContributions, filterCurrentText, paneTypeHasBottomBar,
@@ -61,13 +62,28 @@ function _showFooterHints(model, focus) {
   return !barShown;
 }
 
+/** A footer text field: `prefix`, the text, and the `│` caret, the text a field
+ *  window (leaves/text/field-window) over what `cols` leaves after the prefix,
+ *  scrolled to keep its end and the caret on the row (`…` first when the start
+ *  is cut). Painted from the start, a long filter / search / rename pushed the
+ *  caret and what was being typed off the right edge (the row is truncated to
+ *  the screen); the key hints after it are what gets cut now — one column is
+ *  left for the `…` that cut puts after the caret (it took the caret's column). */
+function _fieldSeg(prefix, text, cols) {
+  const t = text || '';
+  const win = fieldWindow(t, t.length, cols - 1 - visibleLen(prefix));
+  return `${prefix}${win.clipped ? '…' : ''}${esc(win.before)}│`;
+}
+
 /**
  * Build the keys-string for the footer's left half. Modal footers
  * (terminal / filter / copy / free-config / menu) own the message; the
  * standard non-modal footer is built from segments. Returns the
- * leading-space-prefixed concatenation ready for assembly.
+ * leading-space-prefixed concatenation ready for assembly. `cols` is what the
+ * row leaves the keys (the screen minus the right-hand tags): a footer text
+ * field (filter / search / rename) windows its text into it (_fieldSeg).
  */
-function footerKeys(model) {
+function footerKeys(model, cols = viewportDims().cols) {
   const md = model.modes;
   // Modal footers: a LIVE prefix (pending keys / label / match count / typed
   // text) computed here, joined to the mode's static key tail from the registry.
@@ -99,13 +115,14 @@ function footerKeys(model) {
     const vlines = (vslice && Array.isArray(vslice.lines)) ? vslice.lines : [];
     const n = ms.matchesFor(vlines, term).length;
     const idx = n ? Math.min((vslice && vslice.search && vslice.search.idx) || 0, n - 1) + 1 : 0;
-    return ` /${esc(term)}│ \\[${idx}/${n}] | ${bindings.footerSegs('detailSearchMode').join(' | ')}`;
+    const count = ` \\[${idx}/${n}]`;     // kept beside the field — it is live
+    return `${_fieldSeg(' /', term, cols - visibleLen(count))}${count} | ${bindings.footerSegs('detailSearchMode').join(' | ')}`;
   }
-  if (md.filterMode) return ` /${esc(filterCurrentText())}│ |${bindings.footerFor('filterMode')}`;
+  if (md.filterMode) return `${_fieldSeg(' /', filterCurrentText(), cols)} |${bindings.footerFor('filterMode')}`;
   if (md.copyMode)   return bindings.footerFor('copyMode');
   if (md.freeConfigTitleEditMode) {
     const { titleEditText } = require('../panel/free-config-view');
-    return ` rename: ${esc(titleEditText())}│ | Esc cancel | Enter ok`;
+    return `${_fieldSeg(' rename: ', titleEditText(), cols)} | Esc cancel | Enter ok`;
   }
   if (md.freeConfigMode) {
     const layoutSlice = getInstanceSlice('layout');
@@ -170,7 +187,23 @@ function renderFooter(model = getModel()) {
   // below. Each getPanelDef() can walk arrange for docker-style focus.
   const focus = getFocus();
   const focusDef = getPanelDef(focus);
-  let keys = footerKeys(model);
+  // Right-hand tags (visual-select, view mode) — measured first: a footer text
+  // field windows into what they leave (footerKeys `cols`).
+  // The visual-select tag (`[v-char]` / `[v-line]`) is a precursor to
+  // the configurable status-bar segments planned for v0.5/v0.6 — when
+  // that lands, this becomes one of several registered widgets, but
+  // for now it's hardcoded next to the existing [half]/[full] tag.
+  // List-select tag only when the armed mode actually applies — i.e.
+  // focus is on a list panel. (The flag can stay armed while focus is
+  // on a non-list panel, where space falls back to the leader.)
+  const selectActive = model.modes.listSelectMode && focusDef && typeof focusDef.getItems === 'function';
+  const sel = getInstanceSlice(_route().resolveTarget('viewer'))?.select;
+  const selectTag = (sel && sel.active)
+    ? ` \\[${sel.kind === 'line' ? 'v-line' : 'v-char'}]`
+    : (selectActive ? ' \\[select]' : '');
+  const vm = layoutSlice.viewMode;
+  const modeTag = vm !== 'normal' ? ` \\[${vm}]` : '';
+  let keys = footerKeys(model, COLS - visibleLen(selectTag) - visibleLen(modeTag));
   if (!inModal) {
     if (focusDef && focusDef.keyHints && _showFooterHints(model, focus)) keys += ` | ${esc(focusDef.keyHints)}`;
     const msCount = multiSelCount(focus);
@@ -227,23 +260,9 @@ function renderFooter(model = getModel()) {
     if (hv && hv.text) keys += ` | [${t.accent}]⌖ ${esc(hv.text)}[/]`;
   }
 
-  // Right tail: footer:right + visual-select tag + view-mode tag.
-  // The visual-select tag (`[v-char]` / `[v-line]`) is a precursor to
-  // the configurable status-bar segments planned for v0.5/v0.6 — when
-  // that lands, this becomes one of several registered widgets, but
-  // for now it's hardcoded next to the existing [half]/[full] tag.
+  // Right tail: footer:right + the visual-select / view-mode tags (measured
+  // above, before the keys).
   const rightTail = footerRightExtra ? `${footerRightExtra} │ ` : '';
-  // List-select tag only when the armed mode actually applies — i.e.
-  // focus is on a list panel. (The flag can stay armed while focus is
-  // on a non-list panel, where space falls back to the leader.)
-  // focusDef hoisted at the top of this function.
-  const selectActive = model.modes.listSelectMode && focusDef && typeof focusDef.getItems === 'function';
-  const sel = getInstanceSlice(_route().resolveTarget('viewer'))?.select;
-  const selectTag = (sel && sel.active)
-    ? ` \\[${sel.kind === 'line' ? 'v-line' : 'v-char'}]`
-    : (selectActive ? ' \\[select]' : '');
-  const vm = layoutSlice.viewMode;
-  const modeTag = vm !== 'normal' ? ` \\[${vm}]` : '';
 
   // Pad left → right tail → tags, using visible width math (esc'd
   // [ characters and double-width chars must not throw the alignment).

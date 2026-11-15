@@ -36,6 +36,40 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   character or emoji cut by the left or right edge of a popup (palette, menu,
   which-key, tooltip) pushed the rest of the row — the pane border included —
   one or two columns right while the popup was open.
+- **A long `:` command no longer scrolls the whole screen.** The command
+  line was never cut to the screen's width: once a command was wider than the
+  screen, it ran past the last column of the last row, the terminal wrapped it,
+  and every pane moved up a row. The command line now shows `…` and the end
+  of what you are typing, with the cursor after it.
+- **Long input stays in view as you type.** The port field popup, the
+  in-pane port editor, the focused field and the choices filter of a port
+  form, the action palette's filter, and the filter / search / rename fields
+  in the footer showed the start of their text. Past the field's width, the
+  cursor and the end of what you were typing went off the edge. Each one now
+  scrolls like the agent prompt: `…`, then the end and the cursor.
+- **Text in any script, and emoji, can be typed into every text field.** The
+  command line, the filter, search, the agent prompt and the layout editor's
+  title edit took only ASCII from the keyboard: an input-method commit (你好),
+  an emoji picker or a compose key typed nothing, and the filter kept only
+  the invisible joiners of a typed 👨‍👩‍👧. Typing now works in every field,
+  the same as pasting.
+- **Ctrl+H is Backspace.** Terminals set to send ^H for Backspace (PuTTY's
+  option, `stty erase ^H`, some Windows consoles) could delete only in the
+  layout editor's title edit. ^H, including a kitty-protocol Ctrl+H, now
+  deletes in every text field and goes up a level in menus, as Backspace does.
+- **A paste with tabs or colour codes lands as the field shows it.** A tab
+  pasted into the command line or the agent prompt showed as up to 8 columns
+  while the cursor counted 1. A pasted colour code tinted the row and put the
+  cursor 5 columns past the text. The action palette and the choices filter
+  dropped such a paste entirely. A single-line field now turns each tab and
+  line break into a space and drops control sequences, in every field. A tab
+  pasted alone into the command line is text, not Tab completion.
+- **CJK labels fit their tooltip and line up in help, which-key and
+  `--list`.** The hover tooltip was sized by character count, so a CJK value
+  was cut short with `…`. Help, the leader-key popup and `lazytui --list`
+  padded by character count, so a CJK key, command or label pushed the text
+  after it out of line. A leader binding on `[` showed in the popup without
+  its key.
 
 ## [0.6.59] — 2026-11-15
 

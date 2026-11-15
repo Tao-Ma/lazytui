@@ -21,6 +21,7 @@ const route = require('../route');
 const { listWires, portValue } = require('../../fabric/ports');
 const { inspectWires } = require('../../fabric/inspect');
 const { fmtValue } = require('./format');
+const { padCell } = require('../../leaves/render/draw');
 
 // Rows = every merged wire, annotated with its current value + validity.
 function getItems() {
@@ -67,8 +68,9 @@ function render(panel, w, h, _slice, opts) {
   });
 }
 
-// Visible-width pad (not char count), so a wide-char edge label aligns (B4 class).
-function _pad(s, n) { const len = visibleLen(s); return len >= n ? s : s + ' '.repeat(n - len); }
+// Visible-width pad (draw.padCell, not char count), so a wide-char edge label
+// aligns (B4 class).
+const _pad = padCell;
 
 // d/x on a wire → delete it (runtime only; a config wire lives in the YAML). The
 // row address needs model access, so a fabric_wire_delete effect resolves it.

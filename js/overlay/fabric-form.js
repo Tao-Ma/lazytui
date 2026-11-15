@@ -36,6 +36,7 @@ const { renderOverlay, truncate, viewportDims } = require('../leaves/render/draw
 const { formatHints } = require('../leaves/render/hints');
 const { filterChoices } = require('../leaves/ports/choices-filter');
 const { windowSlice } = require('../leaves/render/window-slice');
+const { fieldWindow } = require('../leaves/text/field-window');
 
 // Hard max for the overlay; the dims clamp (renderOverlay → overlayBox) narrows
 // to COLS-2 on tight terminals. 78 = the widest help line (`[tab] next
@@ -98,10 +99,11 @@ function _chipMarkup(f) {
 // right-anchored inside a CHIP_SLOT-wide reserve so chips of different widths
 // ([default]=9, [modified]=10, [unset]=7) all END at the same column — the
 // right-anchoring the docstring originally claimed, now actually enforced
-// (slice-1 pre-release review round 2 Finding 3). If the input + caret
-// overflow midW, text is truncated via `truncate` (adds `…`); the caret rides
-// along in markup so its byte-level `[reverse] [/]` tag survives truncation
-// (zero visible width).
+// (slice-1 pre-release review round 2 Finding 3). The FOCUSED field is a
+// field window (leaves/text/field-window) over midW, scrolled to keep its end
+// and the caret in view (`…` first when the start is cut) — it was truncated
+// from the end with the caret dropped, so past midW the user typed blind. An
+// unfocused field that overflows shows its start, truncated with `…`.
 //
 // Narrow-terminal fallback: when `midW` collapses to 0 (COLS ≈ 20 — menuW=18,
 // innerW=16, leftW ≈ 9, CHIP_SLOT+1 = 12 → midW = max(0, 16-9-12) = 0), the
@@ -114,22 +116,19 @@ function _chipMarkup(f) {
 function _inputRow(f, focused, name, pad, leftW, midW, chip, chipSlot) {
   const prefix = focused ? '[accent]>[/] ' : '  ';
   const left = `  ${focused ? '[accent]' + name + '[/]' : name}${pad} ${prefix}`;
-  const caret = focused ? '[reverse] [/]' : '';
-  const textVis = visibleLen(esc(f.text));
-  const caretVis = focused ? 1 : 0;
+  const text = f.text || '';
   let mid;
-  if (textVis + caretVis <= midW) {
-    const padEnd = ' '.repeat(midW - textVis - caretVis);
-    mid = `${esc(f.text)}${caret}${padEnd}`;
+  if (midW <= 0) {
+    mid = '';                                  // narrow-terminal fallback (below)
+  } else if (focused) {
+    // caretCol + 1 = the columns painted: `…`, the text, the caret cell.
+    const win = fieldWindow(text, text.length, midW);
+    mid = `${win.clipped ? '[dim]…[/]' : ''}${esc(win.before)}[reverse] [/]${' '.repeat(Math.max(0, midW - win.caretCol - 1))}`;
   } else {
-    // Overflow — truncate text to leave room for the ellipsis; caret is
-    // dropped (ellipsis takes the slot). `truncate` returns a string whose
-    // visibleLen ALREADY INCLUDES the trailing `…`, so pad to midW directly.
-    const budget = Math.max(0, midW);
-    const t = truncate(esc(f.text), budget);
-    const tv = visibleLen(t);
-    const padEnd = ' '.repeat(Math.max(0, midW - tv));
-    mid = `${t}${padEnd}`;
+    // `truncate` returns a string whose visibleLen ALREADY INCLUDES the
+    // trailing `…`, so pad to midW directly.
+    const t = truncate(esc(text), midW);
+    mid = `${t}${' '.repeat(Math.max(0, midW - visibleLen(t)))}`;
   }
   let chipPart;
   if (midW <= 0) {
@@ -295,16 +294,17 @@ function renderFabricFormOverlay(newRows, cols) {
       // row, so the popover's chrome stays as compact as pre-Brief-2.
       const filterStr = typeof picking.filter === 'string' ? picking.filter : '';
       if (filterStr) {
-        // Pre-release round-2 edge-case review — truncate the filter text
-        // to the available input area so a 100-char filter on a narrow
-        // terminal (COLS=20) can't push the panel-painter's `…`
-        // truncation mid-markup (`[acc…`) and leak a stray `[accent` into
-        // the frame. The chip slot is reserved on data rows but NOT on
-        // the filter row (filter is single-column, left-aligned), so the
-        // budget is the inner width minus the leading left column.
-        const filterBudget = Math.max(1, innerW - leftW);
-        const filterPainted = truncate(esc(filterStr), filterBudget);
-        rows.push(`${' '.repeat(leftW)}[dim]/[/][accent]${filterPainted}[/]`);
+        // Pre-release round-2 edge-case review — fit the filter text to the
+        // available input area so a 100-char filter on a narrow terminal
+        // (COLS=20) can't push the panel-painter's `…` truncation mid-markup
+        // (`[acc…`) and leak a stray `[accent` into the frame. The chip slot
+        // is reserved on data rows but NOT on the filter row (filter is
+        // single-column, left-aligned), so the budget is the inner width minus
+        // the leading left column and the '/'. A field window
+        // (leaves/text/field-window) keeps the END of what is typed in view —
+        // truncating from the end hid it once the filter outgrew the row.
+        const win = fieldWindow(filterStr, filterStr.length, innerW - leftW - 1);
+        rows.push(`${' '.repeat(leftW)}[dim]/${win.clipped ? '…' : ''}[/][accent]${esc(win.before)}[/]`);
       }
       if (!c || c.state === 'pending') {
         rows.push(`${' '.repeat(leftW)}[dim]awaiting choices…[/]`);

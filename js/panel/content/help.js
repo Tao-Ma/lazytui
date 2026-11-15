@@ -30,6 +30,7 @@
 const { allPanels, setViewerContent } = require('../nav-state');
 const { getModel } = require('../../model/store');
 const { esc } = require('../../leaves/text/ansi');
+const { padCell } = require('../../leaves/render/draw');
 const {getCommands, getPanelDef, getInstanceSlice, getFocus } = require('../api');
 const kb = require('../../leaves/input/keybindings');
 const mpane = require('../../leaves/wm/pane');
@@ -52,11 +53,10 @@ function _leaderChordLines() {
   const items = [];
   _walkLeader(kb.rootNode(), [], items);
   if (items.length === 0) return [];
-  return items.map(({ seq, label }) => {
-    const left = `Space ${seq.join(' ')}`;
-    const padded = left.length >= 15 ? left : left + ' '.repeat(15 - left.length);
-    return `  ${padded} ${esc(label)}`;
-  });
+  // The key column is esc()'d (a `[` / `]` binding was read as markup) and
+  // padded by visible width (draw.padCell — `.length` padded a CJK key one
+  // column too far per character, so its label sat out of line).
+  return items.map(({ seq, label }) => `  ${padCell(esc(`Space ${seq.join(' ')}`), 15)} ${esc(label)}`);
 }
 
 /**
@@ -158,8 +158,7 @@ function helpLines() {
   if (cmds.length) {
     lines.push('', '[dim]Command mode (`:`)[/]');
     for (const c of cmds) {
-      const left = `:${c.name}`.padEnd(15);
-      lines.push(`  ${esc(left)} ${esc(c.desc || '')}`);
+      lines.push(`  ${padCell(esc(`:${c.name}`), 15)} ${esc(c.desc || '')}`);   // visible width (padCell), not .padEnd
     }
   }
 

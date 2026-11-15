@@ -46,7 +46,9 @@ const _slotStrip = () => (_slotStripRef || (_slotStripRef = require('../slot-str
 const tvu = require('../../leaves/text/text-view-update');
 const ms = require('../../leaves/text/search');
 const { esc } = require('../../leaves/text/ansi');
-const { cellsOf, cellFloor, cellCeil, stringWidth } = require('../../leaves/text/char-width');
+const { cellFloor, cellCeil } = require('../../leaves/text/char-width');
+const { fieldInput } = require('../../leaves/text/printable');
+const { fieldWindow } = require('../../leaves/text/field-window');
 const { buildTextView } = require('../../leaves/text-view/render');
 const { renderPanel, theme } = require('../api');
 const { paneInnerH } = require('../pane-viewport');
@@ -228,8 +230,8 @@ const BUSY_STATES = ['thinking', 'tool', 'compacting', 'retrying'];
 /** One agent-mode keystroke (`agent_input`, id stamped by the mode handler).
  *  Enter sends (and idempotently starts/restarts the session — self-healing
  *  after an exit); Esc interrupts while busy, leaves the mode when not;
- *  everything else edits the draft (the prompt_key idiom: ASCII printable via
- *  seq, \x7f backspace, Ctrl+U clear, bracketed paste) with a cursor. */
+ *  everything else edits the draft (the prompt_key idiom: typed text via seq,
+ *  \x7f backspace, Ctrl+U clear, bracketed paste) with a cursor. */
 function _input(slice, msg) {
   const { key, seq, selfId } = msg;
   const d = slice.inputDraft || { text: '', cursor: 0 };
@@ -317,15 +319,13 @@ function _input(slice, msg) {
   else if (key === 'home')    { cursor = 0; }
   else if (key === 'end')     { cursor = text.length; }
   else if (seq === '\x15')    { text = ''; cursor = 0; }                 // Ctrl+U (prompt/cmdline parity)
-  else if (key === 'paste' && typeof seq === 'string') {
-    const pasted = seq.replace(/[\r\n]+/g, ' ');                          // single-line draft
-    text = text.slice(0, cursor) + pasted + text.slice(cursor);
-    cursor += pasted.length;
-  } else if (seq && seq.length === 1 && seq.charCodeAt(0) >= 32 && seq.charCodeAt(0) < 127) {
-    text = text.slice(0, cursor) + seq + text.slice(cursor);
-    cursor++;
-  } else {
-    return slice;
+  else {
+    // Typed text in any script, or a paste made single-line and control-free
+    // (printable.fieldInput — the draft holds what the row shows).
+    const add = fieldInput(msg);
+    if (add == null) return slice;
+    text = text.slice(0, cursor) + add + text.slice(cursor);
+    cursor += add.length;
   }
   // An edit can JOIN what was on either side of the cursor into one glyph
   // (deleting the X of 👍X🏽, pasting 👍 before a lone 🏽, typing e before a
@@ -422,38 +422,14 @@ function _inputLine(slice, typing, w) {
   if (!typing) {
     return raw ? `[${t.accent}]›[/] ${esc(raw)}` : `[${t.accent}]›[/] [dim]Enter to chat[/]`;
   }
-  // The draft as CELLS with their column widths (char-width `cellsOf`: ❤️, 👍🏽,
-  // a flag are one cell each): the window and the cursor cell are measured in
-  // columns, so CJK / emoji neither overrun the pane nor get split by the cursor
-  // cell (it windowed by UTF-16 units, then by codepoints). `d.cursor` is a
-  // UTF-16 offset → the cell it starts (one it falls inside → that cell).
-  const chars = cellsOf(raw);
-  const cur = Math.max(0, Math.min(raw.length, d.cursor | 0));
-  let c = 0;                                         // cells that END at or before the cursor
-  for (let at = 0; c < chars.length && at + chars[c].length <= cur; c++) at += chars[c].length;
-  const cw = chars.map(stringWidth);
-  // Budget: pane interior (w-2) minus the '› ' prefix and one slack column
-  // for the left '…' marker; the cursor cell may sit one past the text end.
-  // No floor above what the pane has: an 8-column floor ran the row past a
-  // narrow pane, which cut the cursor off (round-2 review).
-  const avail = Math.max(1, (w | 0) - 5);
-  const cursorW = c < chars.length ? cw[c] : 1;
-  let toCursor = 0;                                  // columns before the cursor
-  for (let i = 0; i < c; i++) toCursor += cw[i];
-  let start = 0;
-  if (toCursor + cursorW > avail) {
-    // Scroll: drop chars from the left until the cursor cell fits beside '…'.
-    let used = toCursor + cursorW;
-    while (start < c && used > avail - 1) used -= cw[start++];
-  }
-  let end = c + (c < chars.length ? 1 : 0), cols = 0;
-  for (let i = start; i < end; i++) cols += cw[i];
-  const room = avail - (start > 0 ? 1 : 0);
-  while (end < chars.length && cols + cw[end] <= room) cols += cw[end++];
-  const pre = start > 0 ? '[dim]…[/]' : '';
-  const at = c < chars.length ? chars[c] : '';
-  const before = chars.slice(start, c).join('');
-  const after = chars.slice(c + 1, end).join('');
+  // The window around the cursor cell (leaves/text/field-window — the shared
+  // one-line field window, born here), measured in columns: CJK / emoji neither
+  // overrun the pane nor get split by the cursor cell. Budget: pane interior
+  // (w-2) minus the '› ' prefix and one slack column. No floor above what the
+  // pane has: an 8-column floor ran the row past a narrow pane, which cut the
+  // cursor off (round-2 review).
+  const { clipped, before, at, after } = fieldWindow(raw, d.cursor, (w | 0) - 5);
+  const pre = clipped ? '[dim]…[/]' : '';
   return `[${t.accent}]›[/] ${pre}${esc(before)}[reverse]${at ? esc(at) : ' '}[/]${esc(after)}`;
 }
 

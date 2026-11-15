@@ -33,6 +33,7 @@ const mpane = require('../leaves/wm/pane');
 const { halfProjection, visibleBoundsFor } = require('../leaves/wm/geometry');
 const route = require('../panel/route');
 const { withoutLastCell } = require('../leaves/text/char-width');
+const { fieldInput } = require('../leaves/text/printable');
 
 
 /** Compare two drag drop targets for visual equality. Used by both
@@ -949,13 +950,14 @@ function update(msg, slice) {
     case 'free_config_title_key': {
       const te = slice.freeConfig && slice.freeConfig.titleEdit;
       if (!te) return slice;
-      if (msg.key === 'backspace' || msg.seq === '\x7f' || msg.seq === '\b') {
+      if (msg.key === 'backspace' || msg.seq === '\x7f') {   // (^H arrives as \x7f — input ladder)
         // One glyph: the title it starts from can carry ❤️ or 👍🏽 (several codepoints).
         return { ...slice, freeConfig: { ...slice.freeConfig, titleEdit: { ...te, text: withoutLastCell(te.text) } } };
       }
-      if (msg.seq && msg.seq.length === 1 && msg.seq >= ' ' && msg.seq < '\x7f') {
-        return { ...slice, freeConfig: { ...slice.freeConfig, titleEdit: { ...te, text: te.text + msg.seq } } };
-      }
+      // Typed text in any script, or a paste made single-line and control-free
+      // (printable.fieldInput — the ASCII gate dropped 你好 / 👍🏽 and pastes).
+      const add = fieldInput(msg);
+      if (add) return { ...slice, freeConfig: { ...slice.freeConfig, titleEdit: { ...te, text: te.text + add } } };
       return slice;
     }
     case 'free_config_title_cancel': {

@@ -37,6 +37,7 @@ const route = require('../../panel/route');
 const mpane = require('../../leaves/wm/pane');
 const { halfProjection } = require('../../leaves/wm/geometry');
 const { filterChoices } = require('../../leaves/ports/choices-filter');
+const { fieldInput } = require('../../leaves/text/printable');
 // getModel is the bottom-layer store (v0.6.5 §1), imported down.
 const { getModel } = require('../../model/store');
 // #D4b — the root-Msg pump (applyMsg) now lives in the runtime loop alongside
@@ -551,7 +552,7 @@ function handleDetailSearchKey(key, seq) {
   if (key === 'return') { dispatchMsg(wrap(focus, { type: 'viewer_search_commit' })); return; }
   if (key === 'up')   { dispatchMsg(wrap(focus, { type: 'viewer_search_nav', dir: -1 })); return; }
   if (key === 'down') { dispatchMsg(wrap(focus, { type: 'viewer_search_nav', dir: +1 })); return; }
-  dispatchMsg(wrap(focus, { type: 'viewer_search_key', seq }));
+  dispatchMsg(wrap(focus, { type: 'viewer_search_key', key, seq }));   // key: a paste is key='paste'
 }
 
 function handleNormalKey(key, seq) {
@@ -1030,11 +1031,12 @@ function handlePaletteKey(key, seq) {
   }
   // Backspace pops the filter buffer.
   if (seq === '\x7f') { applyMsg({ type: 'palette_filter', seq }); return; }
-  // Any printable code unit appends to the filter. Mirrors the v0.6.43
-  // choices-filter popover's guard: reject C0 + DEL so a stray control
-  // byte doesn't quietly pollute the filter.
-  if (typeof seq === 'string' && seq.length > 0 && !/[\x00-\x1f\x7f]/.test(seq)) {
-    applyMsg({ type: 'palette_filter', seq });
+  // Typed text or a paste appends to the filter (printable.fieldInput, shared
+  // by every text field: a stray control byte never lands; a paste is made
+  // single-line and control-free — one with a tab or a line break was dropped
+  // whole).
+  if (fieldInput({ key, seq }) != null) {
+    applyMsg({ type: 'palette_filter', key, seq });
     return;
   }
   // Anything else — a control sequence we don't bind — is swallowed. The
@@ -1150,12 +1152,12 @@ const _modeHandlers = {
         }
         return;
       }
-      // Brief 2 — backspace pops the filter; a printable code-unit appends.
+      // Brief 2 — backspace pops the filter; typed text / a paste appends.
       // Tab / Shift-Tab + any other control seq fall through to the regular
       // form routing after closing the popover (same semantics as pre-Brief-2).
       else if (seq === '\x7f') { applyMsg({ type: 'fabric_form_choices_filter', seq }); return; }
-      else if (typeof seq === 'string' && seq.length > 0 && !/[\x00-\x1f\x7f]/.test(seq)) {
-        applyMsg({ type: 'fabric_form_choices_filter', seq });
+      else if (fieldInput({ key, seq }) != null) {   // typed text / a paste (printable.fieldInput)
+        applyMsg({ type: 'fabric_form_choices_filter', key, seq });
         return;
       }
       // Tab / Shift-Tab + anything else: close the popover, then fall through

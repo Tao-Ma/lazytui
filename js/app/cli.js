@@ -35,6 +35,7 @@ const path = require('path');
 const { loadConfig } = require('./state');
 const { getModel } = require('../model/store');
 const { findVariadicPortName } = require('../leaves/ports/variadic');
+const { stringWidth } = require('../leaves/text/char-width');
 
 // Built-in Components consulted for `groupActions(group, name)`
 // synthesis. Add new generic Components here as they ship — keep
@@ -118,11 +119,14 @@ function formatActionList(config, filter) {
   if (!rows.length) {
     return f ? `(no actions matched "${filter}")` : '(no YAML actions found)';
   }
-  const pathW = Math.max(...rows.map((r) => r[0].length));
-  const labelW = Math.max(...rows.map((r) => r[1].length));
+  // Columns in terminal COLUMNS (stringWidth), not UTF-16 units: a CJK label
+  // is 2 per character, so `.padEnd` pushed every desc after it out of line.
+  const pad = (s, w) => s + ' '.repeat(Math.max(0, w - stringWidth(s)));
+  const pathW = Math.max(...rows.map((r) => stringWidth(r[0])));
+  const labelW = Math.max(...rows.map((r) => stringWidth(r[1])));
   return rows
     .map(([p, l, d]) =>
-      `${p.padEnd(pathW)}  ${l.padEnd(labelW)}${d ? '  — ' + d : ''}`.trimEnd()
+      `${pad(p, pathW)}  ${pad(l, labelW)}${d ? '  — ' + d : ''}`.trimEnd()
     )
     .join('\n');
 }

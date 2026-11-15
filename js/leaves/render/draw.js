@@ -91,6 +91,20 @@ function fitCell(s, width) {
 }
 
 /**
+ * Pad a markup string with spaces to at least `width` visible columns, never
+ * cutting it — fitCell's sibling for a label column whose long entries may run
+ * on (help's key column, which-key's key tokens, the fabric tables' port / type
+ * columns). Measured with visibleLen, so 中 or 👍 pads to the same column as an
+ * ASCII key (`.length` / `.padEnd` padded a CJK key one column too far per
+ * character). As with fitCell, esc() a plain string that may hold a `[` first.
+ */
+function padCell(s, width) {
+  const str = s == null ? '' : String(s);
+  const vis = visibleLen(str);
+  return vis >= width ? str : str + ' '.repeat(width - vis);
+}
+
+/**
  * Render a bordered panel as Rich markup.
  *
  * @param {object} opts
@@ -648,7 +662,7 @@ function renderOverlay({ lines, title, count = null, maxWidth = 44, anchor = nul
 }
 
 module.exports = {
-  renderPanel, renderOverlay, overlayBox, truncate, fitCell, viewportDims, setDimsProvider,
+  renderPanel, renderOverlay, overlayBox, truncate, fitCell, padCell, viewportDims, setDimsProvider,
   setWriter, setChromeSink, setHitSink, publishBox, HIT_Z, writeOut,
   chromeFor, leftBorderPrefix, _collapseGlyphMarkup, _closeGlyphMarkup,
 };

@@ -23,7 +23,8 @@
 const { getModel } = require('../model/store');
 const { renderOverlay, viewportDims } = require('../leaves/render/draw');
 const { formatHints } = require('../leaves/render/hints');
-const { esc } = require('../leaves/text/ansi');
+const { esc, stringWidth } = require('../leaves/text/ansi');
+const { fieldWindow } = require('../leaves/text/field-window');
 const { filterChoices } = require('../leaves/ports/choices-filter');
 const { windowSlice } = require('../leaves/render/window-slice');
 
@@ -133,9 +134,9 @@ function _formatRow(row, cols) {
   const parts = [pathStr];
   if (row.label) parts.push(`[dim]— ${esc(row.label)}[/]`);
   // Rough budget: don't paint the desc when the label already dominates
-  // the row. Rendered width check is approximate (esc leaves escape chars
-  // in) — renderOverlay/truncate is the real guard.
-  const budget = cols - row.path.length - (row.label ? row.label.length + 4 : 0);
+  // the row (in columns — a CJK label is 2 per character, not 1);
+  // renderOverlay/truncate is the real guard.
+  const budget = cols - stringWidth(row.path) - (row.label ? stringWidth(row.label) + 4 : 0);
   if (row.desc && budget > 10) {
     parts.push(`[dim]· ${esc(row.desc)}[/]`);
   }
@@ -169,7 +170,12 @@ function renderActionPalette(newRows, cols) {
     // literally so the row shows `//foo` when the needle is `/foo`.
     // Accept the cosmetic — the alternative is swallowing `/` as a
     // special key, which breaks filtering a path like `net/foo`.
-    lines.push(`[dim]/[/]${esc(filter)}`);
+    // A field window (leaves/text/field-window) over the box's interior past
+    // the '/', keeping the END of what is typed in view (painted from the
+    // start, it fell off the right edge once the needle outgrew the box).
+    const innerW = Math.min(PALETTE_MAX_WIDTH, viewportDims().cols - 2) - 2;
+    const win = fieldWindow(filter, filter.length, innerW - 1);
+    lines.push(`[dim]/${win.clipped ? '…' : ''}[/]${esc(win.before)}`);
   }
 
   if (total === 0) {

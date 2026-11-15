@@ -15,6 +15,7 @@ const { withModalMode: _withModalMode, withModal: _withModal } = require('../mod
 // dispatch/control/cmdline.js, and overlay/cmdline.js all read the same values.
 const { splitQuery: _cmdlineSplit, DROPDOWN_VIEWPORT: CMDLINE_VW } = require('../../../leaves/text/cmdline-split');
 const { withoutLastCell } = require('../../../leaves/text/char-width');
+const { fieldInput } = require('../../../leaves/text/printable');
 
 const TYPES = ['cmdline_enter', 'cmdline_set_matches', 'cmdline_nav', 'cmdline_key', 'cmdline_submit', 'cmdline_cancel'];
 
@@ -81,7 +82,7 @@ function update(model, msg) {
     }
     case 'cmdline_key': {
       const c = model.modal.cmdline;
-      if (msg.seq === '\t') {
+      if (msg.seq === '\t' && msg.key !== 'paste') {   // (a pasted lone tab is text, not Tab)
         // Tab accepts the SELECTED match into the buffer (refine further),
         // keeping any args already typed past the matched name. argComplete
         // entries already pack the full cmdline replacement into `display`
@@ -105,16 +106,13 @@ function update(model, msg) {
         const text = withoutLastCell(c.text);
         return [_withModal(model, { cmdline: { ...c, text, sel: 0 } }), [{ type: 'cmdline_rebuild' }]];
       }
-      if (msg.seq && msg.seq.length === 1 && msg.seq.charCodeAt(0) >= 32 && msg.seq.charCodeAt(0) < 127) {
-        return [_withModal(model, { cmdline: { ...c, text: c.text + msg.seq, sel: 0 } }), [{ type: 'cmdline_rebuild' }]];
-      }
-      // T26 — paste support: bracketed-paste content arrives as
-      // key='paste', seq=<full content>. Single-line modal — collapse
-      // line breaks to single spaces.
-      if (msg.key === 'paste' && typeof msg.seq === 'string') {
-        const pasted = msg.seq.replace(/[\r\n]+/g, ' ');
-        return [_withModal(model, { cmdline: { ...c, text: c.text + pasted, sel: 0 } }), [{ type: 'cmdline_rebuild' }]];
-      }
+      // Typed text in any script (an IME commit, an emoji picker), or a paste
+      // (T26: key='paste', seq=<content>) made single-line and control-free —
+      // printable.fieldInput, shared by every text field. A pasted tab or SGR
+      // kept raw showed as up to 8 columns / a colour change while the cursor
+      // counted 1 / 5.
+      const add = fieldInput(msg);
+      if (add) return [_withModal(model, { cmdline: { ...c, text: c.text + add, sel: 0 } }), [{ type: 'cmdline_rebuild' }]];
       return [model, []];
     }
     case 'cmdline_submit': {

@@ -12,6 +12,7 @@
 const { withModalMode: _withModalMode, withModal: _withModal } = require('../model-ops');
 const route = require('../../../panel/route');
 const { withoutLastCell } = require('../../../leaves/text/char-width');
+const { fieldInput } = require('../../../leaves/text/printable');
 
 const TYPES = ['filter_enter', 'filter_key', 'filter_exit'];
 
@@ -39,15 +40,14 @@ function update(model, msg) {
       if (msg.seq === '\x7f') {
         if (!text) return [model, []];
         text = withoutLastCell(text);                // one glyph (❤️ is two codepoints)
-      } else if (msg.seq && msg.seq.length === 1 && msg.seq.charCodeAt(0) >= 32) {
-        text = text + msg.seq;
-      // T26 — paste support: bracketed-paste content arrives as
-      // key='paste', seq=<full content>. Single-line modal — collapse
-      // line breaks to single spaces.
-      } else if (msg.key === 'paste' && typeof msg.seq === 'string') {
-        text = text + msg.seq.replace(/[\r\n]+/g, ' ');
       } else {
-        return [model, []];
+        // Typed text in any script, or a paste (T26: key='paste') made
+        // single-line and control-free — printable.fieldInput. The old
+        // `length === 1` gate dropped every astral glyph (emoji are two UTF-16
+        // units) and kept only the ZWJs of a typed 👨‍👩‍👧.
+        const add = fieldInput(msg);
+        if (!add) return [model, []];
+        text = text + add;
       }
       const next = _withModal(model, { filter: { ...f, text } });
       // Re-home the cursor as the filter narrows; the panel's nav slice
