@@ -95,6 +95,20 @@ describe('[terminal] without node-pty a terminal pane offers no typing (the keys
     eq(getModel().modes.terminalMode, false, 'refused');
     eq(route.getInstanceSlice('layout').viewMode, 'normal', 'the zoom is undone');
   });
+  // The model has the say once boot set it (`caps.pty`, recorded): a replayed
+  // frame from a host where terminals ran paints the pane, not this host's
+  // notice — and offers Enter as that host did (round-3 review 2026-11-14).
+  it('caps.pty true (a recording from a host with node-pty): no notice, Enter offered', () => {
+    applyMsg({ type: 'caps_pty', available: true });
+    const out = panel.panelTypes.terminal.render({ title: 'T', hotkey: '' }, 44, 9, {}, { chrome: null });
+    eq(stripMarkup(out).includes('unavailable'), false, 'no notice');
+    eq(focusedTerminalState(getModel()).typeable, true, 'typeable, as there');
+  });
+  it('caps.pty false: the notice', () => {
+    applyMsg({ type: 'caps_pty', available: false });
+    const out = panel.panelTypes.terminal.render({ title: 'T', hotkey: '' }, 44, 9, {}, { chrome: null });
+    eq(stripMarkup(out).includes('unavailable'), true);
+  });
   fx.cleanup();
 });
 

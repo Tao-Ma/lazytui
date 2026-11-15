@@ -46,6 +46,15 @@ function terminalInterior(bounds) {
   return (cols >= 1 && rows >= 1) ? { cols, rows } : null;
 }
 
+// Can terminals run in what this frame shows? The model says (`caps.pty`, set at
+// boot and recorded — a replayed frame paints as the recording's host did,
+// whatever this host has); before boot has said (null: a harness, a WAL older
+// than caps.pty), this host does.
+function ptyRuns(model) {
+  const pty = model && model.caps ? model.caps.pty : null;
+  return typeof pty === 'boolean' ? pty : terminal.ptyAvailable();
+}
+
 // Can `x` close this terminal tab? leaves/wm/pane canRemoveTab — the rule
 // remove_tab enforces (a terminal alone in its slot stays put; `x` is the menu
 // there, and nothing may offer `x close` for it — field report 2026-11-14: the
@@ -120,7 +129,7 @@ function surfaceOf(model, id) {
 // null when the focus isn't a terminal; else { id, dead (the child exited —
 // Enter restarts), closable (`x` closes the tab; else `x` is the menu),
 // onScreen (a surface — has an interior), typeable (on screen AND a PTY can
-// run — the optional node-pty is installed: Enter types into it / restarts it) }.
+// run — ptyRuns: Enter types into it / restarts it) }.
 function focusedTerminalState(model) {
   const id = focusedTerminalId();
   if (!id) return null;
@@ -136,8 +145,8 @@ function focusedTerminalState(model) {
     dead: terminal.isSessionDead(id),
     closable: _closable(pane),
     onScreen,
-    typeable: onScreen && terminal.ptyAvailable(),
+    typeable: onScreen && ptyRuns(model),
   };
 }
 
-module.exports = { visibleTerminalSurfaces, surfaceOf, focusedTerminalId, focusedTerminalTitle, focusedTerminalState };
+module.exports = { visibleTerminalSurfaces, surfaceOf, focusedTerminalId, focusedTerminalTitle, focusedTerminalState, ptyRuns };

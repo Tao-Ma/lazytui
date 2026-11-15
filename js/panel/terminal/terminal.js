@@ -58,8 +58,11 @@ function update(_msg, slice) { return slice; }
 // OPTIONAL node-pty dependency isn't installed, no session ever spawns and the
 // overlay skips this pane (null session) — so draw a notice in the body instead
 // of leaving a blank box (the overlay won't overwrite it: there's no session).
+// Whether it is installed is the MODEL's word (terminal-surfaces ptyRuns): a
+// replayed frame shows what the recording's host showed.
 function render(panel, w, h, slice, opts) {
-  const lines = require('../../io/terminal').ptyAvailable() ? [] : [
+  const { getModel } = require('../../model/store');
+  const lines = require('../terminal-surfaces').ptyRuns(getModel()) ? [] : [
     '',
     '  [dim]Terminal unavailable[/]',
     '',

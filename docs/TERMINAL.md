@@ -295,7 +295,10 @@ interior (with the pane's command, `surf.cmd`, when the session knows none),
 then dispatches `terminal_enter`. Every other way into terminal mode (`:edit`,
 a `type: spawn` action, a group terminal, a docker shell) dispatches
 `terminal_enter` too, and the reducer refuses it when boot found no PTY support
-(`caps.pty === false`), undoing the caller's auto-zoom.
+(`caps.pty === false`), undoing the caller's auto-zoom. What the frame shows
+asks the model too (`terminal-surfaces.ptyRuns`: `caps.pty`, this host only
+before boot has said): the pane's `Terminal unavailable` notice and the footer's
+`Enter type here` — so a replayed frame shows what the recording's host showed.
 
 ## YAML configuration
 
