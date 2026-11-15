@@ -18,6 +18,7 @@ const { withModalMode, withModal } = require('../model-ops');
 const { isChainActive } = require('../../../leaves/input/modes');
 const { applyInject } = require('../fabric');
 const { isPrintableSeq: _isPrintableSeq } = require('../../../leaves/text/printable');
+const { cellFloor, withoutLastCell } = require('../../../leaves/text/char-width');
 
 const TYPES = ['fabric_field_enter', 'fabric_field_key', 'fabric_field_submit', 'fabric_field_cancel'];
 
@@ -58,7 +59,7 @@ function update(model, msg) {
       if (!model.modes.fabricFieldMode) return [model, []];
       const f = model.modal.fabricField;
       let text = f.text;
-      if (msg.seq === '\x7f') text = text.slice(0, -1);            // backspace
+      if (msg.seq === '\x7f') text = withoutLastCell(text);        // backspace: one glyph
       else if (msg.seq === '\x15') text = '';                      // Ctrl+U — clear
       else if (msg.key === 'paste' && typeof msg.seq === 'string') {
         text += msg.seq.replace(/[\r\n]+/g, ' ');                  // single-line: collapse breaks
@@ -72,10 +73,8 @@ function update(model, msg) {
         text += msg.seq;
       }
       if (text.length > MAX_FIELD_TEXT) {
-        text = text.slice(0, MAX_FIELD_TEXT);
-        // Surrogate split guard — see fabric-form.js's cap comment for rationale.
-        const last = text.charCodeAt(text.length - 1);
-        if (last >= 0xD800 && last <= 0xDBFF) text = text.slice(0, -1);
+        // Cut at a cell boundary — see fabric-form.js's cap comment.
+        text = text.slice(0, cellFloor(text, MAX_FIELD_TEXT));
       }
       if (text === f.text) return [model, []];
       return [withModal(model, { fabricField: { ...f, text } }), []];

@@ -20,6 +20,14 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   Where tmux joins more than Unicode does — two flags side by side, a skin
   tone after a non-emoji — lazytui follows Unicode, so tmux draws those 2
   columns narrower. A lone flag letter (🇦) is now 2 columns, as tmux draws it.
+- **Backspace deletes a whole emoji in every text field.** In the filter,
+  the action palette, port fields and forms, the choices filter, search and
+  the layout editor's title edit, Backspace after a pasted emoji left half
+  of it behind as a broken character; in the command line and the agent
+  prompt, it turned ❤️ into ❤ and 👍🏽 into 👍. Backspace, Delete, ← and →
+  now step over one glyph (❤️, 👍🏽, a flag, an accented letter typed as two
+  codepoints), and a paste longer than a field's limit is cut before an
+  emoji rather than through it.
 - **A wide character under a popup's edge no longer widens its row.** A CJK
   character or emoji cut by the left or right edge of a popup (palette, menu,
   which-key, tooltip) pushed the rest of the row — the pane border included —

@@ -46,7 +46,7 @@ const _slotStrip = () => (_slotStripRef || (_slotStripRef = require('../slot-str
 const tvu = require('../../leaves/text/text-view-update');
 const ms = require('../../leaves/text/search');
 const { esc } = require('../../leaves/text/ansi');
-const { cellsOf, stringWidth } = require('../../leaves/text/char-width');
+const { cellsOf, cellFloor, cellCeil, stringWidth } = require('../../leaves/text/char-width');
 const { buildTextView } = require('../../leaves/text-view/render');
 const { renderPanel, theme } = require('../api');
 const { paneInnerH } = require('../pane-viewport');
@@ -302,11 +302,12 @@ function _input(slice, msg) {
   }
   let text = d.text || '';
   let cursor = Math.max(0, Math.min(text.length, d.cursor | 0));
-  // Edits and moves step one CODEPOINT: a pasted emoji is two UTF-16 units, and
-  // stepping by one left half a surrogate pair behind (Backspace) or put the
-  // cursor inside it (round-2 review 2026-11-14).
-  const prev = (i) => (i >= 2 && _isLow(text, i - 1) && _isHigh(text, i - 2) ? i - 2 : Math.max(0, i - 1));
-  const next = (i) => (_isHigh(text, i) && _isLow(text, i + 1) ? i + 2 : Math.min(text.length, i + 1));
+  // Edits and moves step one CELL (char-width cellFloor / cellCeil): a pasted
+  // emoji is two UTF-16 units — stepping by one left half a surrogate pair
+  // behind (Backspace) or put the cursor inside it (round-2 review 2026-11-14) —
+  // and ❤️ / 👍🏽 / a flag are one glyph of several codepoints.
+  const prev = (i) => (i > 0 ? cellFloor(text, i - 1) : 0);
+  const next = (i) => cellCeil(text, i + 1);
   if (key === 'backspace' || seq === '\x7f') {
     if (cursor > 0) { const p = prev(cursor); text = text.slice(0, p) + text.slice(cursor); cursor = p; }
   } else if (key === 'delete') {
@@ -408,8 +409,6 @@ function _statusLine(slice) {
  *  cells — a paste can carry CJK and emoji; the cmdline-field idiom) so typing
  *  a message longer than the pane never goes blind: the leaf renderer right-
  *  truncates rows, which would otherwise cut the cursor + new chars off. */
-const _isHigh = (s, i) => { const c = s.charCodeAt(i); return c >= 0xd800 && c <= 0xdbff; };
-const _isLow = (s, i) => { const c = s.charCodeAt(i); return c >= 0xdc00 && c <= 0xdfff; };
 
 function _inputLine(slice, typing, w) {
   const t = theme();

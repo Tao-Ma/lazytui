@@ -24,6 +24,7 @@
 'use strict';
 
 const { withModalMode, withModal } = require('../model-ops');
+const { cellFloor, withoutLastCell } = require('../../../leaves/text/char-width');
 
 const TYPES = [
   'palette_open',
@@ -47,11 +48,8 @@ function _appendClamp(cur, add) {
   if (!add) return cur;
   let next = cur + add;
   if (next.length <= MAX_FILTER_LEN) return next;
-  next = next.slice(0, MAX_FILTER_LEN);
-  // Surrogate guard: if the cut lands between a high + low surrogate,
-  // drop the lone high so the string stays well-formed UTF-16.
-  if (next.length && /[\uD800-\uDBFF]$/.test(next)) next = next.slice(0, -1);
-  return next;
+  // Cut at a cell boundary: never half a surrogate pair, nor ❤ without its VS16.
+  return next.slice(0, cellFloor(next, MAX_FILTER_LEN));
 }
 
 function update(model, msg) {
@@ -70,10 +68,9 @@ function update(model, msg) {
       const cur = model.modal.palette.filter;
       let next;
       if (msg.seq === '\x7f') {
-        // Backspace — pop one code unit. Surrogate-safe is overkill for
-        // a user-typed filter; the paste path (append) is where the
-        // guard matters.
-        next = cur.slice(0, -1);
+        // Backspace — pop one glyph (a pasted ❤️ or 👍🏽 is several
+        // codepoints; one code unit left half a surrogate pair).
+        next = withoutLastCell(cur);
       } else {
         next = _appendClamp(cur, typeof msg.seq === 'string' ? msg.seq : '');
       }

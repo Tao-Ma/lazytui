@@ -38,6 +38,7 @@ const { withModalMode, withModal } = require('../model-ops');
 const { isChainActive } = require('../../../leaves/input/modes');
 const { applyInject } = require('../fabric');
 const { isPrintableSeq: _isPrintableSeq } = require('../../../leaves/text/printable');
+const { cellFloor, withoutLastCell } = require('../../../leaves/text/char-width');
 // Brief 3 — variadic fields tokenize `text` → argv items at submit using the
 // same leaf compileCommand uses, so form text and `run:` string templates
 // agree on quoting semantics (no second splitter).
@@ -168,11 +169,10 @@ function _cachePut(cache, key, payload) {
 // unlimited as always (shrinking is fine). Slice-1 pre-release review Fork 2
 // Finding 6 + round 2 wording cleanup.
 //
-// The cap is applied via `text.slice(0, MAX_FIELD_TEXT)`, which can split a
-// surrogate pair at the boundary. The resulting unmatched surrogate is still
-// valid JS (JSON.stringify round-trips it, markup rendering treats it as a
-// replacement glyph) — and the user controls what they typed, so a mid-paste
-// cut lands wherever they stopped reading. No special handling needed.
+// The cap cuts at the last cell boundary at or before MAX_FIELD_TEXT (char-width
+// `cellFloor`), so it never leaves half a surrogate pair or half a sequence
+// (❤ without its VS16); otherwise a mid-paste cut lands wherever the user
+// stopped reading.
 const MAX_FIELD_TEXT = 8192;
 
 // Brief 2 — hard upper bound on picking.filter length. Filter is a popover
@@ -405,7 +405,7 @@ function update(model, msg) {
       const cur = f.fields[f.focusIdx];
       if (!cur) return [model, []];
       let text = cur.text;
-      if (msg.seq === '\x7f') text = text.slice(0, -1);                       // backspace
+      if (msg.seq === '\x7f') text = withoutLastCell(text);                   // backspace: one glyph
       else if (msg.seq === '\x15') text = '';                                  // Ctrl+U — clear-line
       else if (msg.key === 'paste' && typeof msg.seq === 'string') {
         text += msg.seq.replace(/[\r\n]+/g, ' ');                              // single-line: collapse breaks
@@ -424,15 +424,12 @@ function update(model, msg) {
       // this. Shrinking paths (backspace / Ctrl+U) bypass the cap by taking the
       // `slice` or `''` branch first.
       if (text.length > MAX_FIELD_TEXT) {
-        text = text.slice(0, MAX_FIELD_TEXT);
-        // Surrogate split guard — if the cap landed on the HIGH surrogate of a
-        // supplementary-plane char (emoji ≥ U+10000), step back one unit so we
-        // never leave a lone high surrogate at the tail. Lone surrogates are
-        // technically-valid UTF-16 but trip `visibleLen` (counts +1 for the
-        // orphan) and render as a replacement glyph, which drifts one column
-        // against the painted midW. (Round 4 Fork 4 Finding 2.)
-        const last = text.charCodeAt(text.length - 1);
-        if (last >= 0xD800 && last <= 0xDBFF) text = text.slice(0, -1);
+        // Cut at a cell boundary (char-width cellFloor): never on the HIGH
+        // surrogate of a supplementary-plane char (a lone surrogate trips
+        // `visibleLen` and renders as a replacement glyph, which drifts one
+        // column against the painted midW — Round 4 Fork 4 Finding 2), nor
+        // inside a sequence (❤ without its VS16 is a different, narrower glyph).
+        text = text.slice(0, cellFloor(text, MAX_FIELD_TEXT));
       }
       const nextFields = _editCurrent(f.fields, f.focusIdx, text);
       if (nextFields === f.fields) return [model, []];
@@ -1063,22 +1060,18 @@ function update(model, msg) {
       let next;
       if (msg.seq === '\x7f') {
         if (cur.length === 0) return [model, []];
-        next = cur.slice(0, -1);
+        next = withoutLastCell(cur);                                          // one glyph
       } else if (typeof msg.seq === 'string' && msg.seq.length > 0 && !/[\x00-\x1f\x7f]/.test(msg.seq)) {
         // Cap the filter at MAX_FILTER_LEN code units — anything past that
         // is a stuck key or an accidental paste, not a reasonable needle.
         // Pre-release review (code fork): the pre-concat guard was bypassable
         // by a long paste (seq is a multi-char string on `key:'paste'`), so
         // cur=127 + a 100-char paste yielded next=227. CLAMP POST-CONCAT so
-        // the cap is enforced regardless of per-event seq length, and apply
-        // the same surrogate-split guard the field-key arm uses so a cap
-        // landing on a HIGH surrogate steps back one unit (fabric_form_key
-        // L400 — same hazard class).
-        next = (cur + msg.seq).slice(0, MAX_FILTER_LEN);
-        if (next.length > 0) {
-          const lastCU = next.charCodeAt(next.length - 1);
-          if (lastCU >= 0xD800 && lastCU <= 0xDBFF) next = next.slice(0, -1);
-        }
+        // the cap is enforced regardless of per-event seq length, and cut at a
+        // cell boundary as the field-key arm does (fabric_form_key — never half
+        // a surrogate pair or a sequence).
+        next = cur + msg.seq;
+        next = next.slice(0, cellFloor(next, MAX_FILTER_LEN));
       } else {
         return [model, []];
       }

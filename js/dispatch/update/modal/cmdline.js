@@ -14,6 +14,7 @@ const { withModalMode: _withModalMode, withModal: _withModal } = require('../mod
 // cmdline split + viewport size live in a zero-dep leaf so this file,
 // dispatch/control/cmdline.js, and overlay/cmdline.js all read the same values.
 const { splitQuery: _cmdlineSplit, DROPDOWN_VIEWPORT: CMDLINE_VW } = require('../../../leaves/text/cmdline-split');
+const { withoutLastCell } = require('../../../leaves/text/char-width');
 
 const TYPES = ['cmdline_enter', 'cmdline_set_matches', 'cmdline_nav', 'cmdline_key', 'cmdline_submit', 'cmdline_cancel'];
 
@@ -99,9 +100,9 @@ function update(model, msg) {
         return [_withModal(model, { cmdline: { ...c, text, sel: 0, scroll: 0 } }), [{ type: 'cmdline_rebuild' }]];
       }
       if (msg.seq === '\x7f') {
-        // One CODEPOINT (a pasted emoji is two UTF-16 units — slice(0, -1) left
-        // half a surrogate pair).
-        const text = Array.from(c.text).slice(0, -1).join('');
+        // One CELL — a pasted ❤️ or 👍🏽 is one glyph of several codepoints
+        // (one codepoint left ❤ or 👍 behind; one UTF-16 unit, half a pair).
+        const text = withoutLastCell(c.text);
         return [_withModal(model, { cmdline: { ...c, text, sel: 0 } }), [{ type: 'cmdline_rebuild' }]];
       }
       if (msg.seq && msg.seq.length === 1 && msg.seq.charCodeAt(0) >= 32 && msg.seq.charCodeAt(0) < 127) {

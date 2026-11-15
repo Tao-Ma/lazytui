@@ -242,4 +242,44 @@ function cellsOf(s) {
   return out;
 }
 
-module.exports = { charWidth, stringWidth, nextCell, cellsOf, joinStep };
+// A character below U+0300 always STARTS a cell (nothing there joins one), so
+// a walk to index `i` can begin at the nearest one at or before it instead of
+// at 0 — a cut into a long paste stays local.
+function _cellWalkFrom(s, i) {
+  let a = i;
+  while (a > 0 && !(s.charCodeAt(a) < 0x300)) a--;
+  return a;
+}
+
+/** The last cell boundary at or before UTF-16 index `i`: where a cut at `i`
+ *  lands without splitting a glyph (❤️ is cut before the ❤, never between ❤
+ *  and its VS16 — nor between the halves of a surrogate pair). An editor's
+ *  Backspace / ← is `cellFloor(text, cursor - 1)`; a length cap is
+ *  `text.slice(0, cellFloor(text, max))`. */
+function cellFloor(s, i) {
+  if (i <= 0) return 0;
+  if (i >= s.length) return s.length;
+  const cell = { end: 0 };
+  for (let at = _cellWalkFrom(s, i); at < s.length; at = cell.end) {
+    nextCell(s, at, cell);
+    if (cell.end > i) return at;
+  }
+  return s.length;
+}
+
+/** The first cell boundary at or after UTF-16 index `i`. An editor's Delete /
+ *  → is `cellCeil(text, cursor + 1)`. */
+function cellCeil(s, i) {
+  if (i <= 0) return 0;
+  if (i >= s.length) return s.length;
+  const cell = { end: 0 };
+  let at = _cellWalkFrom(s, i);
+  while (at < i) { nextCell(s, at, cell); at = cell.end; }
+  return at;
+}
+
+/** `s` without its last cell — Backspace at the end of a text field: one
+ *  glyph goes, however many codepoints it is (❤️, 👍🏽, a flag, é as e + ́). */
+const withoutLastCell = (s) => s.slice(0, cellFloor(s, s.length - 1));
+
+module.exports = { charWidth, stringWidth, nextCell, cellsOf, cellFloor, cellCeil, withoutLastCell, joinStep };

@@ -11,6 +11,7 @@
 
 const { withModalMode: _withModalMode, withModal: _withModal } = require('../model-ops');
 const route = require('../../../panel/route');
+const { withoutLastCell } = require('../../../leaves/text/char-width');
 
 const TYPES = ['filter_enter', 'filter_key', 'filter_exit'];
 
@@ -37,7 +38,7 @@ function update(model, msg) {
       let text = f.text;
       if (msg.seq === '\x7f') {
         if (!text) return [model, []];
-        text = text.slice(0, -1);
+        text = withoutLastCell(text);                // one glyph (❤️ is two codepoints)
       } else if (msg.seq && msg.seq.length === 1 && msg.seq.charCodeAt(0) >= 32) {
         text = text + msg.seq;
       // T26 — paste support: bracketed-paste content arrives as

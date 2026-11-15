@@ -28,7 +28,7 @@
 'use strict';
 
 const { stripMarkup } = require('./ansi');
-const { nextCell } = require('./char-width');
+const { nextCell, withoutLastCell } = require('./char-width');
 // computeMatches + _displayWidthBefore moved to match-core (shared with the
 // bounded-match worker so both sides run byte-identical matching).
 const { computeMatches, _displayWidthBefore } = require('./match-core');
@@ -212,7 +212,7 @@ function keystroke(slice, seq) {
   // typing phase before invoking this). idx resets per edit (the match
   // list the idx points into derives from the new typing term).
   const typing = slice.search.typing == null ? '' : slice.search.typing;
-  if (seq === '\x7f') return _withSearch(slice, { typing: typing.slice(0, -1), idx: 0 });
+  if (seq === '\x7f') return _withSearch(slice, { typing: withoutLastCell(typing), idx: 0 });   // one glyph
   if (seq === '\x15') return _withSearch(slice, { typing: '', idx: 0 });
   if (seq && seq.length === 1 && seq.charCodeAt(0) >= 32 && seq.charCodeAt(0) < 127) {
     return _withSearch(slice, { typing: typing + seq, idx: 0 });

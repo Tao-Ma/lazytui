@@ -32,6 +32,7 @@ const mpool = require('../leaves/wm/pool');
 const mpane = require('../leaves/wm/pane');
 const { halfProjection, visibleBoundsFor } = require('../leaves/wm/geometry');
 const route = require('../panel/route');
+const { withoutLastCell } = require('../leaves/text/char-width');
 
 
 /** Compare two drag drop targets for visual equality. Used by both
@@ -949,7 +950,8 @@ function update(msg, slice) {
       const te = slice.freeConfig && slice.freeConfig.titleEdit;
       if (!te) return slice;
       if (msg.key === 'backspace' || msg.seq === '\x7f' || msg.seq === '\b') {
-        return { ...slice, freeConfig: { ...slice.freeConfig, titleEdit: { ...te, text: te.text.slice(0, -1) } } };
+        // One glyph: the title it starts from can carry ❤️ or 👍🏽 (several codepoints).
+        return { ...slice, freeConfig: { ...slice.freeConfig, titleEdit: { ...te, text: withoutLastCell(te.text) } } };
       }
       if (msg.seq && msg.seq.length === 1 && msg.seq >= ' ' && msg.seq < '\x7f') {
         return { ...slice, freeConfig: { ...slice.freeConfig, titleEdit: { ...te, text: te.text + msg.seq } } };
