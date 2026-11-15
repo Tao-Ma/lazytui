@@ -26,6 +26,7 @@
  *   [7] a paste that outlives terminal mode finishes as a paste, not as keys
  *   [8] a paste over the size cap is dropped whole — never typed as keys
  *   [9] a paste open marker split more than 50 ms apart still opens a paste
+ *   [10] a paste opening in a chunk for a gone session is still a paste
  *
  * Run: node js/test/test-terminal-input-events.js
  */
@@ -186,6 +187,28 @@ const wait = (ms) => new Promise((res) => setTimeout(res, ms));
   send(`0~:theme nord\r${CLOSE}`);
   eq(nothingRan(), [false, 'monokai'], 'normal mode: the text was pasted, nothing ran');
   enter();
+
+  section('[10] a paste opening in a chunk for a gone session is still a paste');
+  // Terminal mode over a session that is gone exits, dropping the keys typed for
+  // it — a paste OPEN marker among them was dropped too, untracked, and the
+  // paste's later chunks were typed as keys (round-3 review). Driven through the
+  // mechanism: no real path is known to leave terminal mode on over a gone
+  // session.
+  terminal.destroySession(id);
+  assert(inTerminal() && !terminal.getSession(id), 'precondition: terminal mode over a gone session');
+  send(`typed\x1b[200~first line\n`, `:theme nord\r${CLOSE}`);
+  assert(!inTerminal(), 'terminal mode exited');
+  eq(nothingRan(), [false, 'monokai'], 'the paste\'s rest ran nothing');
+  send(':');
+  eq(getModel().modes.cmdMode, true, 'a key after its close is a key');
+  applyMsg({ type: 'cmdline_cancel' });
+  applyMsg({ type: 'terminal_enter' });                    // (the finalizer spawns it again…)
+  terminal.destroySession(id);                              // (…so it goes again)
+  assert(inTerminal() && !terminal.getSession(id), 'precondition: terminal mode over the gone session again');
+  send('typed\x1b[20');
+  await wait(120);
+  send(`0~:theme nord\r${CLOSE}`);
+  eq(nothingRan(), [false, 'monokai'], 'a split open head in that chunk rides along: nothing ran');
 
   terminal.destroyAll();
   fx.cleanup();

@@ -212,7 +212,7 @@ function _exitTerminalMode() {
  * session (focus moved off the terminal pane while the mode lingered, or no
  * PTY support) exits
  * too, dropping the keys typed for it — the run up to the next exit or scroll
- * key; the rest re-emits.
+ * key or paste open marker; the rest re-emits.
  */
 function _handleTerminalChunk(data, reemit) {
   beginBatch();
@@ -231,9 +231,13 @@ function _terminalWalk(data, reemit) {
     const { tokens, carry } = tokenizeInput(data);
     const kinds = tokens.map(t => _classifyTerminalToken(t, 'none').kind);
     let i = 0;
-    while (i < tokens.length && kinds[i] !== 'exit' && kinds[i] !== 'scroll') i++;
-    if (i === tokens.length) return;          // all of it was typed for the program
+    while (i < tokens.length && kinds[i] !== 'exit' && kinds[i] !== 'scroll' && kinds[i] !== 'paste') i++;
     if (kinds[i] === 'exit') i++;             // a Ctrl+\ is spent on the exit
+    // A paste opening here is still a paste: from its marker on, the rest goes
+    // to the normal-mode accumulator (dropped as typed for the program, its
+    // later chunks were typed as keys — round-3 review). Nor is the carry
+    // typed yet (an incomplete sequence: a split marker's head, say) — it
+    // rides along.
     const rest = tokens.slice(i).join('') + carry;
     if (rest) reemit(rest);
     return;

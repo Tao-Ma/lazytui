@@ -253,7 +253,8 @@ sends legacy key bytes while the child has the keyboard.
 
 - **Exit key** — `Ctrl+\` (`0x1c`) dispatches `{type:'terminal_exit'}`; the rest
   of the chunk goes to the normal-mode pipeline. A dead/missing session also
-  exits, dropping the keys typed for it. The PTY child keeps running.
+  exits, dropping the keys typed for it (a paste that opens among them is still
+  a paste: the normal-mode pipeline finishes it). The PTY child keeps running.
 - **Scrollback keys** — `Shift+PageUp`/`PageDown`, `Shift+Home`/`End` (in the
   forms `leaves/input/key-decode` names: xterm's `\x1b[5;2~`, `\x1b[1;2H`, the
   `\x1b[1;2~` tmux / screen send — not rxvt's `\x1b[5$` …) — at a
