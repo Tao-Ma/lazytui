@@ -153,8 +153,7 @@ function rowToCells(ansi) {
           }
         }
         i += seq.length;
-        p = 0;               // a cell never spans an escape (char-width header)
-        continue;
+        continue;            // the join state carries over: the host joins across an SGR
       }
     }
     const cp = ansi.codePointAt(i);
@@ -170,15 +169,17 @@ function rowToCells(ansi) {
     // family, a flag — char-width `joinStep`): a joining codepoint goes into
     // the cell before it, so a diff rewrites the sequence whole and the next
     // MoveTo lands past its width (VS16 grows ❤ from 1 to 2: a continuation
-    // column follows).
+    // column follows). Also across an SGR: tmux 3.4 draws `❤ ESC[31m VS16` as
+    // one ❤️ (a per-character colourizer writes exactly that), so the joined
+    // part rides in the cell, drawn in the cell's style.
     const q = joinStep(cp, p);
     const w = (q >> 1) & 3;
     p = q;
     if ((q & 1) || w === 0) {
-      // Joins the last cell — or is zero-width with no cell before it in this
-      // run (it follows an SGR): no column of its own, the terminal folds it
-      // into the preceding glyph, so we must too, or every absolute MoveTo after
-      // it drifts right. Append to the last real cell (skip a wide glyph's
+      // Joins the last cell — or is zero-width with nothing to join (the row
+      // starts with it): no column of its own, the terminal folds it into the
+      // preceding glyph, so we must too, or every absolute MoveTo after it
+      // drifts right. Append to the last real cell (skip a wide glyph's
       // continuation column). A leading combiner with no base is dropped
       // (matches the terminal; rows never start with one).
       let k = cells.length - 1;

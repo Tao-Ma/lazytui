@@ -50,12 +50,15 @@ function computeMatches(lines, term) {
     const plain = stripMarkup(lines[li]);
     rx.lastIndex = 0;
     let prev = -1;
+    let colEnd = 0;           // end column of the last match kept on this line
     let m;
     while ((m = rx.exec(plain)) !== null) {
       if (m.index <= prev) { rx.lastIndex = m.index + 1; continue; }
       prev = m.index;
       const { col, len } = _cellSpan(plain, m.index, m.index + m[0].length);
-      if (len > 0) matches.push({ line: li, col, len });
+      // Widened to whole cells, several matches inside ONE glyph (`.` on ❤ and
+      // its VS16, each half of a flag) cover the same columns: one match each.
+      if (len > 0 && col >= colEnd) { matches.push({ line: li, col, len }); colEnd = col + len; }
       if (m.index === rx.lastIndex) rx.lastIndex++;  // zero-width safety
     }
   }

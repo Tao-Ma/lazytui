@@ -36,7 +36,7 @@
 'use strict';
 
 const { Terminal } = require('@xterm/headless');
-const { charWidth, stringWidth, joinStep } = require('../leaves/text/char-width');
+const { charWidth, stringWidth, cellsOf, joinStep } = require('../leaves/text/char-width');
 const { screenColors } = require('../leaves/text/ansi');
 
 // The emulator measures with the frame's width truth. A program's output is laid
@@ -98,7 +98,38 @@ function createScreen(cols, rows) {
   screen.unicode.activeVersion = _WIDTH_PROVIDER.version;
   screen.parser.registerOscHandler(10, (d) => _answerColorQuery(screen, 10, d));
   screen.parser.registerOscHandler(11, (d) => _answerColorQuery(screen, 11, d));
+  _joinAcrossSgr(screen);
   return screen;
+}
+
+// A host joins a sequence across an SGR — tmux 3.4 draws `❤ ESC[31m VS16` as one
+// 2-wide ❤️, `👍 ESC[31m 🏽` as one 👍🏽 — and a per-character colourizer (lolcat,
+// rainbow prompts) emits exactly that. The emulator's parser drops its join
+// state at EVERY CSI, so it held the parts as separate cells: a layout the host
+// never draws. Keep the state across an SGR (CSI … m): the handler marks the
+// SGR, and the parser's reset right after it is skipped. Every other control,
+// CSI, ESC, OSC and DCS still resets it (a cursor move between the parts: the
+// parts stay apart, and _readRow keeps the row exact). Internal API
+// (`_inputHandler._parser.precedingJoinState`): absent → the emulator just
+// keeps resetting, and _readRow still keeps every row exact
+// (test-char-width [7] pins the hook).
+function _joinAcrossSgr(screen) {
+  const ih = screen._core && screen._core._inputHandler;
+  const parser = ih && ih._parser;
+  if (!parser || !Object.prototype.hasOwnProperty.call(parser, 'precedingJoinState')) return;
+  let state = parser.precedingJoinState;
+  let sgr = false;
+  Object.defineProperty(parser, 'precedingJoinState', {
+    configurable: true,
+    enumerable: true,
+    get() { return state; },
+    set(v) {
+      const skip = v === 0 && sgr;
+      sgr = false;
+      if (!skip) state = v;
+    },
+  });
+  screen.parser.registerCsiHandler({ final: 'm' }, () => { sgr = true; return false; });
 }
 
 function writeScreen(screen, data, cb) { screen.write(data, cb); }
@@ -242,25 +273,62 @@ function _attrBits(c) {
 
 const _textWidth = stringWidth;
 
+// The text to paint for one emulator cell `cw` columns wide, after painted text
+// whose join state (char-width joinStep) is `p`: ONE host glyph exactly `cw`
+// wide that cannot join what precedes it — the host joins across the SGR runs
+// between cells (positionally, even across a cursor move), so a cell the
+// emulator holds apart must not be painted as something the host would merge.
+//   - a trailing ZWJ goes: tmux joins ANY non-ASCII codepoint after one (the next
+//     cell, or the pane border); alone it draws nothing;
+//   - a cell whose first codepoint would join the painted text before it (the
+//     parts of a sequence the program wrote apart, a cursor move between them)
+//     paints as blanks;
+//   - a cell whose text isn't one glyph of its width (autowrap off: the emulator
+//     dropped a wide glyph at the margin and glued the next joiner to the cell
+//     before) paints its first glyph, padded;
+//   - a zero-width character with nothing to join (a ZWSP, a combining mark or
+//     VS16 at the start of a row) gets a cell of its own in the emulator (width
+//     0, but the cursor moved past it): it paints as a space carrying the mark —
+//     the column the emulator gave it — unless the mark would make that cell
+//     wider (a space + VS16 is a 2-wide emoji-presentation cell on the host).
+const _noTrailingZwj = (s) => (s.endsWith('\u200D') ? s.slice(0, -1) : s);
+function _paintCell(text, cw, p) {
+  const cp = text.codePointAt(0);
+  if (text.length === (cp > 0xFFFF ? 2 : 1) && cw > 0 && charWidth(cp) === cw && !(joinStep(cp, p) & 1)) {
+    return text;                                        // one codepoint, as wide as its cell (CJK, a plain emoji)
+  }
+  text = _noTrailingZwj(text);
+  if (text === '') return ' '.repeat(cw || 1);
+  if (cw === 0) return _textWidth(' ' + text) === 1 ? ' ' + text : ' ';
+  if (joinStep(text.codePointAt(0), p) & 1) return ' '.repeat(cw);
+  if (_textWidth(text) === cw && cellsOf(text).length === 1) return text;
+  const first = _noTrailingZwj(cellsOf(text)[0]);
+  const fw = _textWidth(first);
+  return fw > 0 && fw <= cw ? first + ' '.repeat(cw - fw) : ' '.repeat(cw);
+}
+
 /** One buffer line → runs `[{ sgr, text }]` exactly `width` columns wide. */
 function _readRow(line, width, cell) {
   const runs = [];
   let col = 0, run = null, pf = NaN, pb = NaN, pa = NaN;
+  let p = 0;                                            // joinStep state of the text painted so far
   const n = line ? Math.min(width, line.length) : 0;
   for (let x = 0; x < n; x++) {
     line.getCell(x, cell);
     let text = cell.getChars();
-    if (cell.getWidth() === 0 && text === '') continue; // right half of a wide glyph
-    let w = text === '' ? 1 : _textWidth(text);
-    if (text === '') text = ' ';                        // never-written / erased cell
-    // A zero-width character with nothing to join (a ZWSP, a combining mark or
-    // VS16 at the start of a row) gets a cell of its own in the emulator (width
-    // 0, but the cursor moved past it): skipped like a wide glyph's right half,
-    // the rest of the row landed one column left of where the program put it.
-    // It paints as a space carrying the mark — the column the emulator gave it —
-    // unless the mark would make that one cell wider (VS16: a space + VS16 is a
-    // 2-wide emoji-presentation cell on the host): then as the bare space.
-    if (w === 0) { text = _textWidth(' ' + text) === 1 ? ' ' + text : ' '; w = 1; }
+    const cw = cell.getWidth();
+    if (cw === 0 && text === '') continue;              // right half of a wide glyph
+    let w;
+    if (text.length === 1 && text.charCodeAt(0) < 0x300) {
+      w = 1; p = 2;                                     // fast path: a narrow base can't join or be joined
+    } else if (text === '') {
+      text = ' '; w = 1; p = 2;                         // never-written / erased cell
+    } else {
+      text = _paintCell(text, cw, p);
+      w = cw || 1;
+      p = 0;
+      for (const ch of text) p = joinStep(ch.codePointAt(0), p);
+    }
     if (col + w > width) break;                         // never past the edge
     const f = cell.getFgColorMode() + cell.getFgColor();
     const b = cell.getBgColorMode() + cell.getBgColor();

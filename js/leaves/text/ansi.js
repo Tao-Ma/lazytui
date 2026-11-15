@@ -47,7 +47,7 @@
  */
 'use strict';
 
-const { charWidth, stringWidth } = require('./char-width');
+const { charWidth, stringWidth, joinStep } = require('./char-width');
 // Semantic theme tokens resolve against the LIVE palette at paint (below). themes
 // is a dependency-free infra leaf, so this is an acyclic leaf→leaf edge.
 const { theme } = require('../infra/themes');
@@ -342,6 +342,67 @@ function stripMarkup(text) {
     .replace(/\x1b\[[0-9;]*m/g, '');
 }
 
+// One SGR run — raw (`\x1b[…m`) or esc()'d (`\x1b\[…m`). STICKY: matched in place.
+const _SGR_RUN = /\x1b\\?\[[0-9;]*m/y;
+
+/**
+ * Where to cut a markup string so the part before the cut holds the most whole
+ * CELLS that fit in `cols` columns — the walk the frame's cutters share
+ * (draw.truncate, row-compositor's split). Returns `{ cut, width }`:
+ * `text.slice(0, cut)` is that part, `width` its columns.
+ *
+ * Tokens: `\[` is one literal `[`; an SGR run (raw or esc()'d) and a `[tag]`
+ * are zero-width and kept verbatim; anything else is a codepoint. Markup does
+ * NOT end a cell: the host joins a sequence across an SGR (tmux 3.4: `❤ ESC[31m
+ * VS16` is one 2-wide ❤️, `👍 ESC[31m 🏽` one 👍🏽), and markup becomes SGR — so a
+ * glyph is kept or cut whole even with a tag inside it, and the cut agrees with
+ * visibleLen (which strips the markup, then measures).
+ *
+ * `greedy` (truncate): markup after the last cell that fits stays before the cut,
+ * up to the next cell. Otherwise (a split) once the part before the cut is
+ * exactly `cols` wide, the cut sits right after its last character — markup at
+ * the boundary goes with the rest — and before that, markup preceding a cell
+ * that doesn't fit stays before the cut.
+ */
+function markupCut(text, cols, greedy) {
+  const n = text.length;
+  let fitW = 0, fitEnd = 0;                 // the cells that fit: their width; the index past their last character
+  let start = -1, end = 0, cw = 0, p = 0;   // the open cell: where it starts, the index past its last part, its width
+  let i = 0;
+  while (i < n) {
+    let cp, len;
+    const c = text[i];
+    if (c === '\\' && text[i + 1] === '[') { cp = 0x5B; len = 2; }
+    else {
+      if (c === '\x1b') {
+        _SGR_RUN.lastIndex = i;
+        const m = _SGR_RUN.exec(text);
+        if (m) { i += m[0].length; continue; }
+      }
+      if (c === '[') {
+        const close = text.indexOf(']', i);
+        if (close !== -1) { i = close + 1; continue; }
+      }
+      cp = text.codePointAt(i);
+      len = cp > 0xFFFF ? 2 : 1;
+    }
+    const q = joinStep(cp, p);
+    p = q;
+    if (q & 1) { cw = (q >> 1) & 3; end = i + len; i += len; continue; }   // joins the open cell
+    if (start >= 0) {                       // a new cell: settle the open one
+      if (fitW + cw > cols) return { cut: greedy || fitW < cols ? start : fitEnd, width: fitW };
+      fitW += cw; fitEnd = end;
+    }
+    start = i; end = i + len; cw = (q >> 1) & 3;
+    i += len;
+  }
+  if (start >= 0) {
+    if (fitW + cw > cols) return { cut: greedy || fitW < cols ? start : fitEnd, width: fitW };
+    fitW += cw; fitEnd = end;
+  }
+  return { cut: greedy || fitW < cols ? n : fitEnd, width: fitW };
+}
+
 // charWidth — see ./char-width (re-exported below).
 
 /**
@@ -533,4 +594,4 @@ function wrapColor(color, content) {
 }
 
 module.exports = {
-  sealMarkup, richToAnsi, sgrRun, screenColors, stripMarkup, visibleLen, charWidth, stringWidth, esc, wrapColor, stripControls, enableScreenColors, RESET };
+  sealMarkup, richToAnsi, sgrRun, screenColors, stripMarkup, visibleLen, markupCut, charWidth, stringWidth, esc, wrapColor, stripControls, enableScreenColors, RESET };

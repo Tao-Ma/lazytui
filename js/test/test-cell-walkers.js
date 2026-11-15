@@ -22,6 +22,11 @@
  *   [7] select-core — a drag onto any column of a sequence selects it whole
  *   [8] match-core + search — a match inside a sequence highlights it whole
  *   [9] ansi esc — a tab stop is counted after the sequence's real width
+ *  [10] a sequence with an SGR or a tag INSIDE it (a per-character colourizer)
+ *       is still one cell to every walker — tmux 3.4 joins across an SGR
+ *       (`❤ ESC[31m VS16` is one 2-wide ❤️): the cell diff, truncate, a popup
+ *       edge and visibleLen agree, and a diff lands where the host drew
+ *  [11] search: several matches inside ONE glyph are one match
  *
  * Run: node js/test/test-cell-walkers.js
  */
@@ -156,6 +161,11 @@ describe('[8] search: a match inside a sequence highlights it whole', () => {
   it('a match after a sequence starts at its real column (y after ❤️ is column 3)', () => {
     eq(computeMatches(['x❤️y'], 'y'), [{ line: 0, col: 3, len: 1 }]);
   });
+  it('several matches inside one glyph are one (`.` on ❤ and its VS16; each flag half)', () => {
+    eq(computeMatches(['I \u2764\uFE0F it'], '[^ -~]').map((m) => [m.col, m.len]), [[2, 2]]);
+    eq(computeMatches(['ok \u{1F44D}\u{1F3FD} \u{1F1FA}\u{1F1F8}'], '[^ -~]').map((m) => [m.col, m.len]), [[3, 2], [6, 2]]);
+    eq(computeMatches(['\u4E2D\u6587'], '.').map((m) => [m.col, m.len]), [[0, 2], [2, 2]], 'two glyphs: two matches');
+  });
   it('a match after a ZWJ family starts 2 columns past it', () => {
     eq(computeMatches(['\u{1F468}‍\u{1F469}‍\u{1F467}ok'], 'ok'), [{ line: 0, col: 2, len: 2 }]);
   });
@@ -172,6 +182,39 @@ describe('[9] esc: a tab stop is counted after the sequence\'s real width', () =
       const out = esc(`a${seq}\tb`);
       eq(out, `a${seq}${' '.repeat(8 - 1 - w)}b`, 'the tab pads to column 8');
       eq(visibleLen(out), 9);
+    });
+  }
+});
+
+// [10] the same sequences with an SGR or a tag between their parts.
+const SPLIT = [
+  ['❤ SGR VS16', '\u2764\x1b[31m\uFE0F'],
+  ['❤ esc()\'d SGR VS16', '\u2764\x1b\\[31m\uFE0F'],
+  ['👍 [red] 🏽', '\u{1F44D}[red]\u{1F3FD}'],
+  ['🇺 [/] 🇸', '\u{1F1FA}[/]\u{1F1F8}'],
+  ['👨‍ [bold] 👩', '\u{1F468}\u200D[bold]\u{1F469}'],
+  ['\\[ + VS16 (a literal [ made 2 wide)', '\\[\uFE0F'],
+];
+describe('[10] a sequence with an SGR or a tag inside it is one cell to every walker', () => {
+  for (const [label, seq] of SPLIT) {
+    it(label, () => {
+      const row = `a${seq}hi`;
+      eq(visibleLen(row), 5, 'visibleLen: a + one 2-wide glyph + hi');
+      const cells = rowToCells(richToAnsi(row));
+      eq([cells.length, cells[1].w, cells[3].g], [5, 2, 'h'], 'rowToCells: the same 5 columns, h after the glyph');
+      const out = diffRowToAnsi(row, `a${seq}ho`, 0);
+      assert(out.startsWith('\x1b[1;5H') && /^[^]*o[^]*$/.test(out) && !out.includes('h'),
+        `the diff writes o at column 5, where the host drew i: ${JSON.stringify(out)}`);
+      for (let n = 1; n <= 5; n++) {
+        const t = truncate(row, n);
+        assert(visibleLen(t) <= n, `truncate ${n}: fits (${JSON.stringify(t)})`);
+        eq(rowToCells(richToAnsi(t)).length, visibleLen(t), `truncate ${n}: the cell walk agrees`);
+      }
+      for (let x = 0; x <= 3; x++) {
+        const rows = [row];
+        compositeRow(rows, 5, 'P', x, 0, 1);
+        eq([visibleLen(rows[0]), rowToCells(richToAnsi(rows[0])).length], [5, 5], `popup at ${x}: the row keeps 5 columns`);
+      }
     });
   }
 });

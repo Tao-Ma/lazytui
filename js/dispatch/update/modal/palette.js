@@ -24,7 +24,7 @@
 'use strict';
 
 const { withModalMode, withModal } = require('../model-ops');
-const { cellFloor, withoutLastCell } = require('../../../leaves/text/char-width');
+const { appendCapped, withoutLastCell } = require('../../../leaves/text/char-width');
 
 const TYPES = [
   'palette_open',
@@ -46,10 +46,7 @@ const MAX_FILTER_LEN = 128;
 
 function _appendClamp(cur, add) {
   if (!add) return cur;
-  let next = cur + add;
-  if (next.length <= MAX_FILTER_LEN) return next;
-  // Cut at a cell boundary: never half a surrogate pair, nor ❤ without its VS16.
-  return next.slice(0, cellFloor(next, MAX_FILTER_LEN));
+  return appendCapped(cur, add, MAX_FILTER_LEN);   // a cell boundary, never into `cur`
 }
 
 function update(model, msg) {

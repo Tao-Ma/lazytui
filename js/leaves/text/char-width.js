@@ -50,7 +50,8 @@
  *   - zero-width (combining mark, ZWJ, VS15, tag character) — keeps the width;
  *   - VS16 (U+FE0F, emoji presentation) — the cell becomes 2 wide, whatever its
  *     base (tmux 3.4: `a️` `│️` `©️` `1️⃣` are all 2);
- *   - a skin tone (🏻–🏿) after an Emoji_Modifier_Base — keeps the width;
+ *   - a skin tone (🏻–🏿) after an Emoji_Modifier_Base — the cell becomes 2
+ *     wide (☝ alone is 1, ☝🏽 is 2 — tmux 3.4);
  *   - a pictograph right after a ZWJ in an emoji cell — keeps the width (so
  *     `❤‍🔥` without the VS16 stays 1, as tmux has it);
  *   - the second Regional Indicator of a flag — the pair is 2.
@@ -61,10 +62,14 @@
  * 45 sequences: this rule agrees on 38. The 7 others are tmux joining what
  * Unicode doesn't — two adjacent flags 🇺🇸🇫🇷 in 2 columns, `中🏽` `a‍👨` `中‍中`.
  *
- * A cell never spans an escape: `nextCell` stops at any codepoint below 0x300
- * (nothing there joins), and the emulator's parser drops the join state at
- * every control and CSI sequence — SGR included — so both ends split a
- * sequence an SGR interrupts.
+ * A cell spans an SGR: the host joins across one (tmux 3.4: `❤ ESC[31m VS16`
+ * is one 2-wide ❤️, `👍 ESC[31m 🏽` one 👍🏽 — a per-character colourizer writes
+ * exactly that), so the walkers over markup and ANSI carry the join state over
+ * a tag or an SGR (cell-grid rowToCells, cell-diff, ansi markupCut; visibleLen
+ * strips the markup, then measures), and the emulator keeps it across an SGR
+ * too (io/term-screen). tmux joins POSITIONALLY — a joiner attaches to the cell
+ * left of the cursor, even after a cursor move — which the emulator doesn't;
+ * term-screen paints the parts it keeps apart so a row stays exact.
  *
  * The regexes use Unicode property escapes — the runtime's own Unicode data
  * (Node ≥ 18 with ICU, Bun), no dependency, synchronous, CommonJS; a runtime
@@ -163,7 +168,9 @@ function joinStep(cp, preceding) {
     if ((st & _S_ZWJ) && (props & _P_PICTO)) {
       return _pack(_S_EMOJI | (props & _P_MOD_BASE ? _S_MOD_BASE : 0), prevW, true);
     }
-    if ((st & _S_MOD_BASE) && _isSkinTone(cp)) return _pack(st & ~_S_ZWJ, prevW, true);
+    // A skin tone makes an emoji-presentation sequence: 2 wide, like VS16 — the
+    // text-default bases (☝ ✌ ✍ ⛹ 🖐 🕴 🕵 🏋 🏌) are 1 alone, ☝🏽 is 2.
+    if ((st & _S_MOD_BASE) && _isSkinTone(cp)) return _pack(st & ~_S_ZWJ, 2, true);
     if ((st & _S_FLAG_HALF) && _isRegional(cp)) return _pack(_S_EMOJI, 2, true);
     if (w === 0) return _pack(cp === _ZWJ && (st & _S_EMOJI) ? st | _S_ZWJ : st & ~_S_ZWJ, prevW, true);
   }
@@ -180,11 +187,10 @@ function joinStep(cp, preceding) {
 const _mayJoin = (cp) => (_props(cp) & 3) === 1 || _isSkinTone(cp) || _isRegional(cp);
 
 /**
- * The cell (one host glyph) starting at UTF-16 index `i` of `s`. Returns the
- * cell's width in columns and sets `out.end` to the index just past it. A
- * caller walking an ANSI or markup string calls it at a visible character: the
- * cell never extends past a character below U+0300 (ESC, `[`, `\`), so it ends
- * where the next escape or tag starts. A zero-width codepoint with no cell
+ * The cell (one host glyph) starting at UTF-16 index `i` of PLAIN text `s` (no
+ * markup, no escapes — a walk over markup or ANSI carries `joinStep`'s state
+ * across the tags instead: a cell spans an SGR). Returns the cell's width in
+ * columns and sets `out.end` to the index just past it. A zero-width codepoint with no cell
  * before it is a cell of its own, width 0 — the caller folds it (or drops it)
  * the way it always has. The caller owns `out` (one object per walk), so the
  * hot loops allocate nothing per cell.
@@ -282,4 +288,16 @@ function cellCeil(s, i) {
  *  glyph goes, however many codepoints it is (❤️, 👍🏽, a flag, é as e + ́). */
 const withoutLastCell = (s) => s.slice(0, cellFloor(s, s.length - 1));
 
-module.exports = { charWidth, stringWidth, nextCell, cellsOf, cellFloor, cellCeil, withoutLastCell, joinStep };
+/** `cur + add`, kept to at most `max` UTF-16 units — a text field's length cap.
+ *  The cut lands on a cell boundary (never half a surrogate pair, nor ❤ without
+ *  its VS16) and never inside `cur`: when what is added JOINS `cur`'s last
+ *  glyph (a skin tone after 👍, a VS16, a combining mark) and the joined glyph
+ *  would cross `max`, nothing is added — the text already there stays. */
+function appendCapped(cur, add, max) {
+  const next = cur + add;
+  if (next.length <= max) return next;
+  const cut = cellFloor(next, max);
+  return cut < cur.length ? cur : next.slice(0, cut);
+}
+
+module.exports = { charWidth, stringWidth, nextCell, cellsOf, cellFloor, cellCeil, withoutLastCell, appendCapped, joinStep };

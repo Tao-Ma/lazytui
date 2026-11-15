@@ -29,7 +29,7 @@
 'use strict';
 
 const { richToAnsi } = require('../text/ansi');
-const { nextCell } = require('../text/char-width');
+const { joinStep } = require('../text/char-width');
 
 const HL_ON  = '\x1b[48;5;238m';   // subtle gray background (default highlight)
 const HL_OFF = '\x1b[49m';         // reset BACKGROUND only — leaves foreground intact
@@ -42,27 +42,32 @@ const HL_OFF = '\x1b[49m';         // reset BACKGROUND only — leaves foregroun
 const _CSI = /\x1b\[[0-9;?]*[ -/]*[@-~]/y;
 
 // Walk an ANSI row → { g: {startCol: glyph}, w: {startCol: width}, width }. A
-// glyph is one CELL (char-width `nextCell`: a sequence like ❤️ or a flag is one);
-// a wide one claims two columns — the start column holds the glyph, the
-// continuation column has no entry. SGR sequences are zero-width.
+// glyph is one CELL — char-width `joinStep`, the walk cell-grid's rowToCells
+// makes: a sequence like ❤️ or a flag is one, even with an SGR inside it (the
+// host joins across one). A wide one claims two columns — the start column holds
+// the glyph, the continuation column has no entry. SGR sequences are zero-width.
 function _glyphByCol(ansi) {
   const g = {}, gw = {};
-  const cell = { end: 0 };
-  let col = 0, i = 0, lastStart = -1;
+  let col = 0, i = 0, lastStart = -1, p = 0;
   while (i < ansi.length) {
     if (ansi[i] === '\x1b') {
       _CSI.lastIndex = i;
       const m = _CSI.exec(ansi);
       if (m) { i += m[0].length; continue; }
     }
-    const w = nextCell(ansi, i, cell);
-    const ch = ansi.slice(i, cell.end);
-    i = cell.end;
-    if (w === 0) {
-      // Zero-width with no cell before it in this run (it follows an SGR): fold
-      // into the preceding glyph's start column — don't advance, don't
-      // overwrite (a leading one is dropped).
-      if (lastStart >= 0) g[lastStart] += ch;
+    const cp = ansi.codePointAt(i);
+    const ch = cp > 0xFFFF ? ansi.slice(i, i + 2) : ansi[i];
+    i += ch.length;
+    const q = joinStep(cp, p);
+    const w = (q >> 1) & 3;
+    p = q;
+    if ((q & 1) || w === 0) {
+      // Joins the glyph before it (growing it: VS16 makes ❤ 2 wide), or is
+      // zero-width with nothing to join: fold into the preceding glyph's start
+      // column (a leading one is dropped).
+      if (lastStart < 0) continue;
+      g[lastStart] += ch;
+      if ((q & 1) && w > gw[lastStart]) { col += w - gw[lastStart]; gw[lastStart] = w; }
       continue;
     }
     g[col] = ch;
@@ -94,9 +99,9 @@ function _changedCols(prevAnsi, curAnsi) {
 // Reproduce `curAnsi` byte-for-byte, splicing hlOn/hlOff around runs of columns
 // for which `isChanged(col)` is true.
 function _emit(curAnsi, isChanged, hlOn, hlOff) {
-  const cell = { end: 0 };
   let out = '';
   let col = 0, i = 0, inRun = false;
+  let p = 0, lastW = 0;          // joinStep state; the width of the glyph being written
   while (i < curAnsi.length) {
     if (curAnsi[i] === '\x1b') {
       _CSI.lastIndex = i;
@@ -108,13 +113,24 @@ function _emit(curAnsi, isChanged, hlOn, hlOff) {
         continue;
       }
     }
-    const w = nextCell(curAnsi, i, cell);   // a whole cell: the tint never splits a sequence
+    const cp = curAnsi.codePointAt(i);
+    const ch = cp > 0xFFFF ? curAnsi.slice(i, i + 2) : curAnsi[i];
+    i += ch.length;
+    const q = joinStep(cp, p);
+    const w = (q >> 1) & 3;
+    p = q;
+    if ((q & 1) || w === 0) {
+      // Part of the glyph before it: the tint never splits a sequence.
+      out += ch;
+      if ((q & 1) && w > lastW) { col += w - lastW; lastW = w; }
+      continue;
+    }
     const want = isChanged(col);
     if (want && !inRun) { out += hlOn; inRun = true; }
     else if (!want && inRun) { out += hlOff; inRun = false; }
-    out += curAnsi.slice(i, cell.end);
+    out += ch;
     col += w;
-    i = cell.end;
+    lastW = w;
   }
   if (inRun) out += hlOff;
   return out;

@@ -327,6 +327,11 @@ function _input(slice, msg) {
   } else {
     return slice;
   }
+  // An edit can JOIN what was on either side of the cursor into one glyph
+  // (deleting the X of 👍X🏽, pasting 👍 before a lone 🏽, typing e before a
+  // combining mark): the cursor would sit inside it, and the next Backspace
+  // would take half. It lands after the glyph instead.
+  cursor = cellCeil(text, cursor);
   if (text === d.text && cursor === d.cursor) return slice;
   const out = { ...slice, inputDraft: { text, cursor } };
   // A content edit while browsing edits a transient working copy AT this

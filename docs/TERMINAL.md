@@ -198,7 +198,15 @@ two as identical for every codepoint. The same goes for which codepoints JOIN
 into one glyph — ❤️ (VS16), 👍🏽, a ZWJ family, a flag pair: the provider's
 `charProperties` IS char-width's `joinStep`, the rule the frame's cell walk
 (`nextCell`) uses, so the emulator holds ❤️ in one 2-wide cell exactly where
-the frame measures it (`test-char-width.js` [7]).
+the frame measures it (`test-char-width.js` [7]). A host joins across an SGR
+(tmux: `❤ ESC[31m VS16` is one ❤️ — a per-character colourizer writes that),
+and so does the emulator: `term-screen` keeps the join state across a `CSI … m`
+(the parser drops it at every other control and CSI). Parts the emulator still
+holds apart (a cursor move between them — tmux joins positionally) paint so the
+host can't merge them: `_readRow` paints each cell as one glyph of the cell's
+width that can't join what precedes it (blanks if it would; no trailing ZWJ,
+which tmux would join the next glyph — or the border — to), so a row is always
+exactly the pane's width.
 
 Two repaint paths drive the overlay:
 - **primary** — the `_renderHook` (`scheduleOverlay`) fired on each xterm write,

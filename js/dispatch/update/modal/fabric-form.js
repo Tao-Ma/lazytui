@@ -38,7 +38,7 @@ const { withModalMode, withModal } = require('../model-ops');
 const { isChainActive } = require('../../../leaves/input/modes');
 const { applyInject } = require('../fabric');
 const { isPrintableSeq: _isPrintableSeq } = require('../../../leaves/text/printable');
-const { cellFloor, withoutLastCell } = require('../../../leaves/text/char-width');
+const { appendCapped, withoutLastCell } = require('../../../leaves/text/char-width');
 // Brief 3 — variadic fields tokenize `text` → argv items at submit using the
 // same leaf compileCommand uses, so form text and `run:` string templates
 // agree on quoting semantics (no second splitter).
@@ -170,9 +170,9 @@ function _cachePut(cache, key, payload) {
 // Finding 6 + round 2 wording cleanup.
 //
 // The cap cuts at the last cell boundary at or before MAX_FIELD_TEXT (char-width
-// `cellFloor`), so it never leaves half a surrogate pair or half a sequence
-// (❤ without its VS16); otherwise a mid-paste cut lands wherever the user
-// stopped reading.
+// `appendCapped`), so it never leaves half a surrogate pair or half a sequence
+// (❤ without its VS16) and never cuts into text already typed; otherwise a
+// mid-paste cut lands wherever the user stopped reading.
 const MAX_FIELD_TEXT = 8192;
 
 // Brief 2 — hard upper bound on picking.filter length. Filter is a popover
@@ -408,7 +408,7 @@ function update(model, msg) {
       if (msg.seq === '\x7f') text = withoutLastCell(text);                   // backspace: one glyph
       else if (msg.seq === '\x15') text = '';                                  // Ctrl+U — clear-line
       else if (msg.key === 'paste' && typeof msg.seq === 'string') {
-        text += msg.seq.replace(/[\r\n]+/g, ' ');                              // single-line: collapse breaks
+        text = appendCapped(text, msg.seq.replace(/[\r\n]+/g, ' '), MAX_FIELD_TEXT);   // single-line: collapse breaks
       } else if (_isPrintableSeq(msg.seq)) {
         // R3C-BUG1 — non-ASCII keystrokes (CJK IME, Cyrillic, Arabic, emoji
         // surrogate pairs) are legitimate text content. The pre-fix gate
@@ -416,21 +416,18 @@ function update(model, msg) {
         // adding `choices_fn:` on a port that holds Japanese section names
         // couldn't free-type (and the "free-type wins" guarantee failed for
         // every non-ASCII user). Shared predicate with fabric-field.
-        text += msg.seq;
+        text = appendCapped(text, msg.seq, MAX_FIELD_TEXT);
       } else {
         return [model, []];
       }
-      // Cap total field size — paste or sustained typing can't bloat WAL beyond
-      // this. Shrinking paths (backspace / Ctrl+U) bypass the cap by taking the
-      // `slice` or `''` branch first.
-      if (text.length > MAX_FIELD_TEXT) {
-        // Cut at a cell boundary (char-width cellFloor): never on the HIGH
-        // surrogate of a supplementary-plane char (a lone surrogate trips
-        // `visibleLen` and renders as a replacement glyph, which drifts one
-        // column against the painted midW — Round 4 Fork 4 Finding 2), nor
-        // inside a sequence (❤ without its VS16 is a different, narrower glyph).
-        text = text.slice(0, cellFloor(text, MAX_FIELD_TEXT));
-      }
+      // Both growing paths cap the field (paste or sustained typing can't bloat
+      // the WAL past MAX_FIELD_TEXT) through char-width appendCapped: the cut
+      // lands on a cell boundary — never on the HIGH surrogate of a
+      // supplementary-plane char (a lone surrogate trips `visibleLen` and renders
+      // as a replacement glyph, which drifts one column against the painted midW
+      // — Round 4 Fork 4 Finding 2), nor inside a sequence (❤ without its VS16 is
+      // a different, narrower glyph) — and never into the text already typed.
+      // Shrinking paths (Backspace / Ctrl+U) need no cap.
       const nextFields = _editCurrent(f.fields, f.focusIdx, text);
       if (nextFields === f.fields) return [model, []];
       return [withModal(model, { fabricForm: { ...f, fields: nextFields } }), []];
@@ -1070,8 +1067,7 @@ function update(model, msg) {
         // the cap is enforced regardless of per-event seq length, and cut at a
         // cell boundary as the field-key arm does (fabric_form_key — never half
         // a surrogate pair or a sequence).
-        next = cur + msg.seq;
-        next = next.slice(0, cellFloor(next, MAX_FILTER_LEN));
+        next = appendCapped(cur, msg.seq, MAX_FILTER_LEN);
       } else {
         return [model, []];
       }

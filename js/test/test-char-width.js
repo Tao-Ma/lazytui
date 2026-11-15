@@ -30,7 +30,7 @@
 const { describe, it, eq, assert, report } = require('./test-runner');
 const { charWidth, visibleLen } = require('../leaves/text/ansi');
 const { stringWidth, nextCell } = require('../leaves/text/char-width');
-const { createScreen } = require('../io/term-screen');
+const { createScreen, readViewport } = require('../io/term-screen');
 
 // The embedded emulator's OWN width function, as io/term-screen configures it.
 // `_core.unicodeService.wcwidth` is the synchronous primitive the parser uses to
@@ -262,6 +262,8 @@ const HOST_CELLS = [
   ['1️⃣ keycap', '1️⃣', 2], ['#️⃣ keycap', '#️⃣', 2], ['1 + VS16', '1️', 2],
   ['👍🏽 skin tone', '\u{1F44D}\u{1F3FD}', 2], ['🏽 lone tone', '\u{1F3FD}', 2],
   ['👍🏽🏽 two tones', '\u{1F44D}\u{1F3FD}\u{1F3FD}', 2], ['a + tone (no base)', 'a\u{1F3FD}', 3],
+  ['☝🏽 tone on a text-default base', '\u261D\u{1F3FD}', 2], ['✌🏽', '\u270C\u{1F3FD}', 2],
+  ['🖐🏽', '\u{1F590}\u{1F3FD}', 2], ['🕵🏽', '\u{1F575}\u{1F3FD}', 2],
   ['☺️ + tone (not a modifier base)', '☺️\u{1F3FD}', 4],
   ['👨‍👩‍👧 ZWJ family', '\u{1F468}‍\u{1F469}‍\u{1F467}', 2],
   ['👩🏽‍💻 tone + ZWJ', '\u{1F469}\u{1F3FD}‍\u{1F4BB}', 2],
@@ -284,6 +286,10 @@ const TMUX_OVERJOINS = [
   ['a‍👨 pictograph after a text ZWJ', 'a‍\u{1F468}', 1, 3],
   ['中‍中', '中‍中', 2, 4],
 ];
+// tmux 3.4 draws the 9 text-default Emoji_Modifier_Bases 2 wide even BARE
+// (measured 2026-11-15); Unicode (and glibc wcwidth) give them 1 — with a tone
+// or VS16 they are 2 everywhere. Bare, the rule follows Unicode (pinned).
+const TMUX_WIDE_BASES = [0x261D, 0x26F9, 0x270C, 0x270D, 0x1F3CB, 0x1F3CC, 0x1F574, 0x1F575, 0x1F590];
 const _emuAdvance = (text) => {
   const s = createScreen(40, 2);
   s._core._inputHandler.parse(text);
@@ -298,6 +304,11 @@ describe('[7] cells: a sequence the host draws as one glyph is one cell', () => 
   });
   it('where tmux over-joins, the rule follows Unicode (pinned)', () => {
     for (const [l, t, , ours] of TMUX_OVERJOINS) eq(stringWidth(t), ours, l);
+  });
+  it('the 9 text-default modifier bases: 1 bare (tmux: 2), 2 with a skin tone or VS16', () => {
+    eq(TMUX_WIDE_BASES.map((cp) => [stringWidth(String.fromCodePoint(cp)),
+      stringWidth(String.fromCodePoint(cp, 0x1F3FD)), stringWidth(String.fromCodePoint(cp, 0xFE0F))]),
+    TMUX_WIDE_BASES.map(() => [1, 2, 2]));
   });
   it('the emulator advances exactly what the frame measures (every sequence)', () => {
     const wrong = [...HOST_CELLS, ...TMUX_OVERJOINS].filter(([, t]) => _emuAdvance(t) !== stringWidth(t))
@@ -326,8 +337,11 @@ describe('[7] cells: a sequence the host draws as one glyph is one cell', () => 
     const POOL = [0x61, 0x20, 0x2502, 0x4E2D, 0x0301, 0x094D, 0x0915, 0x093F, 0x2764, 0xFE0F, 0xFE0E,
       0x200D, 0x1F468, 0x1F469, 0x1F44D, 0x1F3FD, 0x1F1FA, 0x1F1F8, 0x1F3F4, 0xE0067, 0xE007F, 0x20E3,
       0x31, 0x1100, 0x1161, 0x00A9, 0x263A, 0x1F525, 0x200B];
+    // Math.imul: a plain `seed * 1103515245` loses precision past 2^53 and the
+    // sequence collapses (2987 of 3000 strings were one codepoint); the HIGH
+    // bits: an LCG's low bits cycle with a tiny period (every length was 7).
     let seed = 12345;
-    const rnd = (n) => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed % n; };
+    const rnd = (n) => { seed = (Math.imul(seed, 1103515245) + 12345) >>> 0; return (seed >>> 16) % n; };
     const out = { end: 0 };
     const wrong = [];
     for (let k = 0; k < 3000 && wrong.length < 5; k++) {
@@ -339,14 +353,39 @@ describe('[7] cells: a sequence the host draws as one glyph is one cell', () => 
     }
     assert(wrong.length === 0, 'the two walks agree' + (wrong.length ? `:\n    ${wrong.join('\n    ')}` : ''));
   });
-  it('a cell never spans an escape (the emulator drops the join state at a CSI too)', () => {
-    const t = '❤\x1b[31m️';
-    const out = { end: 0 };
-    eq(nextCell(t, 0, out), 1, '❤ alone: the ESC stops the cell');
-    eq(out.end, 1);
-    const s = createScreen(10, 2);
-    s._core._inputHandler.parse(t);
-    eq(s.buffer.active.getLine(0).getCell(0).getWidth(), 1, 'the emulator: VS16 after an SGR does not widen ❤');
+  it('a sequence split by an SGR is one glyph, as tmux draws it (a per-character colourizer)', () => {
+    // tmux 3.4: `❤ ESC[31m VS16` = 2, `👍 ESC[31m 🏽` = 2, `🇺 ESC[0m 🇸` = 2.
+    for (const [label, t] of [['❤ SGR VS16', '❤\x1b[31m️x'], ['👍 SGR 🏽', '\u{1F44D}\x1b[31m\u{1F3FD}x'],
+      ['🇺 SGR 🇸', '\u{1F1FA}\x1b[0m\u{1F1F8}x'], ['👨‍ SGR 👩', '\u{1F468}‍\x1b[1m\u{1F469}x']]) {
+      const s = createScreen(10, 2);
+      s._core._inputHandler.parse(t);
+      const c0 = s.buffer.active.getLine(0).getCell(0);
+      eq([c0.getWidth(), s.buffer.active.cursorX], [2, 3], `${label}: one 2-wide cell, x after it`);
+    }
+  });
+  it('parts the emulator keeps apart (a cursor move between them) paint as a row of exact width', () => {
+    // 🇺, cursor forward + back, 🇸: two cells in the emulator, one flag on the
+    // host — the second paints as blanks, never merged into the first.
+    const s = createScreen(12, 2);
+    s._core._inputHandler.parse('|\u{1F1FA}\x1b[C\x1b[D\u{1F1F8}|');
+    const row = readViewport(s, 1, 12).rows[0];
+    eq(stringWidth(row), 12, `the row is 12 columns: ${JSON.stringify(row)}`);
+    eq(row.indexOf('|', 1), 5, 'the second | where the program put it');
+  });
+  it('autowrap off: a joiner the emulator glues to the cell before a dropped wide glyph paints as that cell', () => {
+    // 6 columns, `?7l abcda👍🏽`: 👍 can't fit at the margin and is dropped; the
+    // emulator then glues 🏽 to the a (one 2-wide cell "a🏽").
+    const s = createScreen(6, 2);
+    s._core._inputHandler.parse('\x1b[?7labcda\u{1F44D}\u{1F3FD}');
+    const row = readViewport(s, 1, 6).rows[0];
+    eq([row.slice(0, 5), stringWidth(row)], ['abcda', 6], `the a stays, the row is 6 columns: ${JSON.stringify(row)}`);
+  });
+  it('a painted cell never ends in a ZWJ (tmux joins any non-ASCII codepoint after one)', () => {
+    const s = createScreen(12, 2);
+    s._core._inputHandler.parse('\u{1F468}‍\x1b[5G│');
+    const row = readViewport(s, 1, 12).rows[0];
+    assert(!row.includes('‍'), `no ZWJ painted: ${JSON.stringify(row)}`);
+    eq(stringWidth(row), 12);
   });
 });
 

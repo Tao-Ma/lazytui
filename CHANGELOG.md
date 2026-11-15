@@ -14,12 +14,16 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   2-column glyph, but lazytui added up their parts — ❤️ measured 1, 👨‍👩‍👧 6 —
   so the rest of the row, border included, landed a column late or several
   early. They now measure what tmux draws (measured on tmux 3.4), in panes,
-  labels, popups and terminal panes alike, and truncation, selection, search
-  highlights and popup edges never cut one in half. Text that terminals do NOT
-  join keeps adding up: Devanagari, Thai and Korean jamo measure as before.
-  Where tmux joins more than Unicode does — two flags side by side, a skin
-  tone after a non-emoji — lazytui follows Unicode, so tmux draws those 2
-  columns narrower. A lone flag letter (🇦) is now 2 columns, as tmux draws it.
+  labels, popups and terminal panes alike — also when a program colours each
+  character separately (a colour change between ❤ and its selector still makes
+  one ❤️) — and truncation, selection, search highlights and popup edges never
+  cut one in half. A skin tone makes any hand 2 columns (☝🏽 ✌🏽 ✍🏽). Text
+  that terminals do NOT join keeps adding up: Devanagari, Thai and Korean jamo
+  measure as before. Where tmux joins more than Unicode does — two flags side
+  by side, a skin tone after a non-emoji — lazytui follows Unicode, so tmux
+  draws those 2 columns narrower. A bare ☝ ✌ ✍ ⛹ 🖐 🕴 🕵 🏋 🏌 stays 1
+  column, as Unicode has it (tmux draws it 2). A lone flag letter (🇦) is now 2
+  columns, as tmux draws it.
 - **Backspace deletes a whole emoji in every text field.** In the filter,
   the action palette, port fields and forms, the choices filter, search and
   the layout editor's title edit, Backspace after a pasted emoji left half

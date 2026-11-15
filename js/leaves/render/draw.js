@@ -8,8 +8,7 @@
  */
 'use strict';
 
-const { visibleLen, richToAnsi, wrapColor, RESET, sealMarkup } = require('../text/ansi');
-const { nextCell } = require('../text/char-width');
+const { visibleLen, markupCut, richToAnsi, wrapColor, RESET, sealMarkup } = require('../text/ansi');
 const { scrollbar } = require('./scrollbar');
 const { theme } = require('../infra/themes');
 const bctl = require('./border-controls');
@@ -55,11 +54,6 @@ function leftBorderPrefix(hotkey) {
  * is preserved as-is (a literal `[`, 1 col) so richToAnsi re-emits a literal,
  * not a tag start.
  */
-// SGR color/style run — zero visible width; kept verbatim through truncation so the color
-// survives the cut, exactly like a Rich `[...]` tag. Matches BOTH the raw form (\x1b[…m) and
-// the esc()'d content form (\x1b\[…m — esc escapes the SGR's `[`). Sticky to avoid slicing
-// per step.
-const _SGR_RUN = /\x1b\\?\[[0-9;]*m/y;
 function truncate(text, maxWidth) {
   // Non-positive budget → nothing fits (not even the ellipsis). Return empty so
   // `visibleLen(out) <= max(0, maxWidth)` holds unconditionally — the cell-diff
@@ -67,44 +61,10 @@ function truncate(text, maxWidth) {
   // a degenerate sub-2-col panel (title truncation, a 0-width preview column).
   if (maxWidth <= 0) return '';
   if (visibleLen(text) <= maxWidth) return text;
-  const limit = maxWidth - 1;   // leave 1 col for the ellipsis
-  const cell = { end: 0 };
-  let out = '';
-  let w = 0;
-  let i = 0;
-  const n = text.length;
-  while (i < n) {
-    // Escaped bracket `\[` → one literal `[` glyph. Keep the escape.
-    if (text[i] === '\\' && text[i + 1] === '[') {
-      if (w + 1 > limit) break;
-      out += '\\[';
-      w += 1;
-      i += 2;
-      continue;
-    }
-    // SGR color/style sequence `\x1b[…m` — zero visible width, kept verbatim so the
-    // color survives the cut, like a Rich tag. (A non-SGR escape falls through and is
-    // treated as a visible char, matching charWidth's cp<0x300 → 1.)
-    if (text[i] === '\x1b') {
-      _SGR_RUN.lastIndex = i;
-      const m = _SGR_RUN.exec(text);
-      if (m) { out += m[0]; i += m[0].length; continue; }
-    }
-    // Rich tag `[...]` — zero visible width, kept verbatim (incl. `[/]`).
-    if (text[i] === '[') {
-      const close = text.indexOf(']', i);
-      if (close !== -1) { out += text.slice(i, close + 1); i = close + 1; continue; }
-      // unmatched `[` → fall through and treat it as a visible char
-    }
-    // One CELL (char-width `nextCell`): a sequence like ❤️ or a flag is kept or
-    // cut whole — half of one would draw as a different glyph.
-    const cw = nextCell(text, i, cell);
-    if (w + cw > limit) break;
-    out += text.slice(i, cell.end);
-    w += cw;
-    i = cell.end;
-  }
-  return out + '…';
+  // The most whole cells that fit beside the `…` (ansi markupCut: an SGR run or
+  // a tag is kept verbatim at zero width, `\[` is one literal `[`, and a glyph
+  // — ❤️, a flag, one with a tag inside it — is kept or cut whole).
+  return text.slice(0, markupCut(text, maxWidth - 1, true).cut) + '…';
 }
 
 /**

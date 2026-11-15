@@ -17,7 +17,11 @@
  *   [5] filter: the same (raw bytes)
  *   [6] fabric field, fabric-form choices filter, search typing, free-config
  *       title edit: one glyph per Backspace
- *   [7] agent prompt: ← → Backspace Delete step one glyph
+ *   [7] agent prompt: ← → Backspace Delete step one glyph; an edit that JOINS
+ *       the text either side of the cursor leaves it after the glyph, never inside
+ *   [8] at a field's cap, a keystroke that joins the last glyph (a skin tone
+ *       after 👍, a combining mark, a flag's second half) is dropped — it never
+ *       takes the glyph already there with it
  *
  * Run: node js/test/test-edit-cells.js
  */
@@ -30,7 +34,7 @@ const runtime = require('../app/runtime');
 const store = require('../model/store');
 const { getModel } = runtime;
 const { _makeDataHandler } = require('../dispatch/control/input');
-const { cellFloor, cellCeil, withoutLastCell } = require('../leaves/text/char-width');
+const { cellFloor, cellCeil, withoutLastCell, appendCapped } = require('../leaves/text/char-width');
 
 const HEART = '❤️';               // ❤ + VS16
 const THUMB = '\u{1F44D}\u{1F3FD}';         // 👍 + skin tone
@@ -197,6 +201,41 @@ describe('[7] agent prompt: ← → Backspace Delete step one glyph', () => {
     eq(draft(s), [`X${HEART}`, 3], 'Delete: 👍🏽 whole');
     s = inp(s, 'backspace', BS);
     eq(draft(s), ['X', 1], 'Backspace: ❤️ whole');
+  });
+  it('an edit that joins the text either side of the cursor leaves it after the glyph', () => {
+    const TONE = '\u{1F3FD}';
+    const at = (text, cursor) => ({ ...agent.init('p1', null), inputDraft: { text, cursor } });
+    let s = inp(at(`\u{1F44D}X${TONE}`, 3), 'backspace', BS);        // 👍X🏽, delete the X
+    eq(draft(s), [THUMB, 4], '👍X🏽 − X = 👍🏽, cursor after it');
+    s = inp(s, 'backspace', BS);
+    eq(draft(s), ['', 0], 'the next Backspace takes 👍🏽 whole');
+    s = inp(at(TONE, 0), 'paste', '\u{1F44D}');                          // 👍 pasted before a lone 🏽
+    eq(draft(s), [THUMB, 4], '👍 before 🏽 = 👍🏽, cursor after it');
+    s = inp(at('\u0301x', 0), 'e');                                      // e before a lone combining acute
+    eq(draft(s), ['e\u0301x', 2], 'e before ́ = é, cursor after it');
+    s = inp(at('\u{1F1E7}\u{1F1E8}', 0), 'paste', '\u{1F1E6}');         // 🇦 before the flag 🇧🇨
+    eq(draft(s), ['\u{1F1E6}\u{1F1E7}\u{1F1E8}', 4], '🇦 + 🇧🇨 = 🇦🇧 + 🇨, cursor after 🇦🇧');
+  });
+});
+
+describe('[8] at a cap, a keystroke that joins the last glyph is dropped', () => {
+  it('appendCapped never cuts into the text already there', () => {
+    eq(appendCapped('a'.repeat(126) + '\u{1F44D}', '\u{1F3FD}', 128), 'a'.repeat(126) + '\u{1F44D}', 'a tone after 👍 at the cap');
+    eq(appendCapped('a'.repeat(128), '\u0301', 128), 'a'.repeat(128), 'a combining mark after the last a');
+    eq(appendCapped('a'.repeat(126) + '\u{1F1FA}', '\u{1F1F8}', 128), 'a'.repeat(126) + '\u{1F1FA}', 'a flag\'s second half');
+    eq(appendCapped('a'.repeat(126), 'bc' + HEART, 128), 'a'.repeat(126) + 'bc', 'a paste: what fits whole');
+  });
+  it('raw bytes: the palette (128) and a form field (8192) keep their text', () => {
+    sm.bootFresh();
+    sm.resize(120, 30);
+    type('p');
+    paste('a'.repeat(126) + '\u{1F44D}');
+    paste('\u{1F3FD}');
+    eq(getModel().modal.palette.filter, 'a'.repeat(126) + '\u{1F44D}', 'palette: 👍 stays');
+    openForm();
+    paste('a'.repeat(8190) + '\u{1F44D}');
+    paste('\u{1F3FD}');
+    eq(getModel().modal.fabricForm.fields[0].text, 'a'.repeat(8190) + '\u{1F44D}', 'form field: 👍 stays');
   });
 });
 

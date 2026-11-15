@@ -13,12 +13,12 @@
  * `[/]` resets from `renderPanel`, so a markup-level splice preserves
  * terminal-state isolation without re-implementing the walker.
  *
- * Walk semantics mirror `draw.truncate`: `\[` → one literal `[`;
- * `\x1b[…m` → zero-width SGR run; `[tag]` → zero-width markup; otherwise
- * the advance is one CELL's width (char-width `nextCell` — a sequence like ❤️
- * or a flag is one cell, never cut). The SAME shared walker
- * both halves of the split rely on, so visible-column accounting agrees
- * with every other paint-side consumer (visibleLen, truncate, cell-diff).
+ * The split is ansi `markupCut` — the walk `draw.truncate` cuts with: `\[` →
+ * one literal `[`; `\x1b[…m` → zero-width SGR run; `[tag]` → zero-width markup;
+ * otherwise the advance is one CELL's width (a sequence like ❤️ or a flag is one
+ * cell, never cut — even with markup inside it, which the host joins across).
+ * The SAME walk both halves of the split rely on, so visible-column accounting
+ * agrees with every other paint-side consumer (visibleLen, truncate, cell-diff).
  *
  * The caller (`draw.renderOverlay`) loops this per overlay row:
  *   for (let i = 0; i < content.length; i++)
@@ -38,23 +38,16 @@
  */
 'use strict';
 
-const { visibleLen } = require('../text/ansi');
-const { nextCell } = require('../text/char-width');
-
-// Match an SGR run — raw (`\x1b[…m`) or esc()'d (`\x1b\[…m`). Zero visible
-// width, kept verbatim through the split. STICKY (`y`) to avoid slicing
-// per step — mirrors the `_SGR_RUN` pattern in draw.truncate so both
-// walkers tokenise raw SGR the same way.
-const _SGR_RUN = /\x1b\\?\[[0-9;]*m/y;
+const { visibleLen, markupCut } = require('../text/ansi');
 
 /**
- * Walk `text` consuming cells until `col` visible columns have been
- * emitted. Zero-width markup (`[tag]`, `\x1b[…m`) and `\[` escapes
- * route through verbatim. Returns `{ prefix, suffix, prefixW }` where
- * `prefix` holds the markup for the first `prefixW <= col` visible
- * columns and `suffix = text.slice(i)` is everything past the cut.
+ * Split `text` after the most whole cells that fit in `col` visible columns
+ * (ansi markupCut, non-greedy). Zero-width markup (`[tag]`, `\x1b[…m`) and
+ * `\[` escapes route through verbatim. Returns `{ prefix, suffix, prefixW }`
+ * where `prefix` holds the markup for the first `prefixW <= col` visible
+ * columns and `suffix` is everything past the cut.
  *
- * When a wide (2-col) glyph straddles the cut, the walker stops BEFORE
+ * When a wide (2-col) glyph straddles the cut, the split lands BEFORE
  * it — `prefixW` can lag `col` by one; the caller pads with a blank so
  * the output cell count still matches `col` exactly.
  *
@@ -65,36 +58,8 @@ const _SGR_RUN = /\x1b\\?\[[0-9;]*m/y;
  */
 function _splitAt(text, col) {
   if (col <= 0) return { prefix: '', suffix: text, prefixW: 0 };
-  const cell = { end: 0 };
-  let prefix = '';
-  let w = 0;
-  let i = 0;
-  const n = text.length;
-  while (i < n && w < col) {
-    if (text[i] === '\\' && text[i + 1] === '[') {
-      if (w + 1 > col) break;
-      prefix += '\\[';
-      w += 1;
-      i += 2;
-      continue;
-    }
-    if (text[i] === '\x1b') {
-      _SGR_RUN.lastIndex = i;
-      const m = _SGR_RUN.exec(text);
-      if (m) { prefix += m[0]; i += m[0].length; continue; }
-    }
-    if (text[i] === '[') {
-      const close = text.indexOf(']', i);
-      if (close !== -1) { prefix += text.slice(i, close + 1); i = close + 1; continue; }
-      // unmatched `[` → fall through as visible char
-    }
-    const cw = nextCell(text, i, cell);
-    if (w + cw > col) break;
-    prefix += text.slice(i, cell.end);
-    w += cw;
-    i = cell.end;
-  }
-  return { prefix, suffix: text.slice(i), prefixW: w };
+  const { cut, width } = markupCut(text, col, false);
+  return { prefix: text.slice(0, cut), suffix: text.slice(cut), prefixW: width };
 }
 
 // Record on the buffer the columns [x0, x1) an overlay now covers on row `y`:
