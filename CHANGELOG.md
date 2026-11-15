@@ -102,6 +102,9 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   emoji, and in a narrow pane the cursor was cut off. All measured in columns
   and codepoints now.
 - **`:` with text matching no command, then ↑, no longer crashes lazytui.**
+- **A paste over 256 KB is dropped whole.** Past the size limit the rest of the
+  paste was typed as keys, so a pasted `:theme nord` line ran; now everything
+  up to the paste's end is discarded, and the keys after it work.
 - **Leader bindings on named keys fire from the keyboard.** A `keys:` binding
   on `<tab>`, `<backspace>`, `<home>`, `<end>`, `<insert>`, `<delete>` or
   `<f1>`–`<f12>` — or on the vim spellings `<cr>`, `<enter>`, `<bs>`, `<del>` —

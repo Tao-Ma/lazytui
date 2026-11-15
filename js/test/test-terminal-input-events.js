@@ -24,6 +24,7 @@
  *   [6] a sequence that never completes reaches the program after the window;
  *       inside a paste, a piece of the close marker waits however long
  *   [7] a paste that outlives terminal mode finishes as a paste, not as keys
+ *   [8] a paste over the size cap is dropped whole — never typed as keys
  *
  * Run: node js/test/test-terminal-input-events.js
  */
@@ -137,6 +138,29 @@ const wait = (ms) => new Promise((res) => setTimeout(res, ms));
   applyMsg({ type: 'terminal_exit' });
   send(':theme nord\r', `${CLOSE}`);
   eq([getModel().modes.cmdMode, getModel().theme], [false, 'monokai'], 'no cmdline opened, nothing ran');
+  enter();
+
+  section('[8] a paste over the size cap is dropped whole — never typed as keys');
+  // The accumulator dropped its buffer at the 256 KB cap and forgot a paste was
+  // in progress: the rest of it was typed as keys (round-3 review).
+  const BIG = 'y'.repeat(300 * 1024);
+  const nothingRan = () => [getModel().modes.cmdMode, getModel().theme];
+  send('\x1c');
+  assert(!inTerminal(), 'precondition: normal mode');
+  send('\x1b[200~' + BIG, ':theme nord\r', `tail${CLOSE.slice(0, 3)}`, `${CLOSE.slice(3)}`);
+  eq(nothingRan(), [false, 'monokai'], 'the rest of an oversized paste (its close split) ran nothing');
+  send(':');
+  eq(getModel().modes.cmdMode, true, 'a key after the close is a key');
+  applyMsg({ type: 'cmdline_cancel' });
+  send(`\x1b[200~${BIG}:theme nord\r${CLOSE}:`);
+  eq(getModel().modes.cmdMode, true, 'one chunk: the paste dropped, the key after its close typed');
+  applyMsg({ type: 'cmdline_cancel' });
+  eq(getModel().theme, 'monokai', '…and nothing inside it ran');
+  enter();
+  send('\x1b[200~ab');
+  applyMsg({ type: 'terminal_exit' });                      // its program exited mid-paste
+  send(BIG, ':theme nord\r', CLOSE);
+  eq(nothingRan(), [false, 'monokai'], 'a paste that outlived terminal mode, over the cap: nothing ran');
   enter();
 
   terminal.destroyAll();

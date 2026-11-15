@@ -275,7 +275,9 @@ sends legacy key bytes while the child has the keyboard.
   in `CSI 200 ~`/`CSI 201 ~` only if the child turned bracketed paste on
   (`CSI ? 2004 h`); a child that didn't would read the markers as typed text. If
   terminal mode ends mid-paste (the program exited, its session died), the rest
-  of the paste is finished as a normal-mode paste — never typed as keys.
+  of the paste is finished as a normal-mode paste — never typed as keys. (A
+  normal-mode paste over 256 KB is dropped whole: the rest of it, up to its
+  close marker, is discarded in whatever mode lazytui is in by then.)
 - **Smart mouse forwarding** — per event, by `sessionMouseMode(id)`. When the child enabled DEC
   mouse reporting (vim, htop, `less --mouse`), each host mouse event is decoded,
   made relative to the terminal's grid, and re-encoded by the pane's emulator for

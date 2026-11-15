@@ -348,6 +348,9 @@ function _flushTerminalCarry(bytes) {
 // (see the token loop's _PASTE_OPEN re-emit).
 let _pasteBuffer = '';
 const _PASTE_MAX = 256 * 1024;   // 256 KB cap (R16)
+// null | the held piece of a close marker: a paste over the cap is being
+// discarded up to its close (the stdin handler's first branch).
+let _pasteDrop = null;
 const _PASTE_OPEN = '\x1b[200~';
 const _PASTE_CLOSE = '\x1b[201~';
 
@@ -474,6 +477,24 @@ function _makeDataHandler(stdin) {
   };
 
   return (data) => {
+    // The rest of a paste over the size cap, up to its close marker: discarded,
+    // in whatever mode lazytui is in by now — it is still the host's paste.
+    // (Dropping only the buffer forgot a paste was in progress: its later
+    // chunks were typed as keys, a pasted `:theme nord\r` ran the command —
+    // round-3 review.) A piece of the close marker at a chunk's end waits for
+    // the next chunk; the bytes after the close go back to the pipeline.
+    if (_pasteDrop !== null) {
+      const joined = _pasteDrop + data;
+      const end = joined.indexOf(_PASTE_CLOSE);
+      if (end < 0) {
+        _pasteDrop = joined.slice(joined.length - _markerPrefixAtEnd(joined, _PASTE_CLOSE));
+        return;
+      }
+      _pasteDrop = null;
+      const tail = joined.slice(end + _PASTE_CLOSE.length);
+      if (tail) stdin.emit('data', tail);
+      return;
+    }
     // Terminal mode: to the program, event by event (_handleTerminalChunk),
     // with the carry from the previous chunk joined on.
     if (getModel().modes.terminalMode) {
@@ -498,18 +519,28 @@ function _makeDataHandler(stdin) {
     // until we see the close marker (or hit the size cap).
     if (_pasteBuffer || data.startsWith(_PASTE_OPEN)) {
       _pasteBuffer += data;
-      if (_pasteBuffer.length > _PASTE_MAX) {
-        console.error(`[input] bracketed paste exceeded ${_PASTE_MAX} bytes — dropped`);
-        require('../../io/event-log').record('input', { kind: 'paste_oversize', size: _pasteBuffer.length });
-        _pasteBuffer = '';
-        return;
-      }
       // The close marker doesn't have to be at the END of the chunk —
       // a fast sender can fire the next event in the same chunk as the
       // paste close. Look for the FIRST close marker after the OPEN
       // and dispatch what's between; stash any trailing bytes back for
       // the next iteration.
       const closeIdx = _pasteBuffer.indexOf(_PASTE_CLOSE);
+      // Over the cap, the paste is dropped WHOLE: what arrived is discarded,
+      // the rest (still to come) goes to _pasteDrop, the bytes after a close
+      // in this chunk go on.
+      if ((closeIdx >= 0 ? closeIdx : _pasteBuffer.length) > _PASTE_MAX) {
+        console.error(`[input] bracketed paste exceeded ${_PASTE_MAX} bytes — dropped`);
+        require('../../io/event-log').record('input', { kind: 'paste_oversize', size: _pasteBuffer.length });
+        const buf = _pasteBuffer;
+        _pasteBuffer = '';
+        if (closeIdx < 0) {
+          _pasteDrop = buf.slice(buf.length - _markerPrefixAtEnd(buf, _PASTE_CLOSE));
+          return;
+        }
+        const tail = buf.slice(closeIdx + _PASTE_CLOSE.length);
+        if (tail) stdin.emit('data', tail);
+        return;
+      }
       if (closeIdx >= 0) {
         const text = _pasteBuffer.slice(_PASTE_OPEN.length, closeIdx);
         const tail = _pasteBuffer.slice(closeIdx + _PASTE_CLOSE.length);
