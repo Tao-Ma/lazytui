@@ -219,15 +219,35 @@ function canRemoveTab(pane) {
 }
 
 function removeTab(pane, tabId, pool) {
+  if (!(pane.tabs || []).some(t => t.id === tabId) || !canRemoveTab(pane)) return null;
+  const next = dropTabs(pane, t => t.id === tabId, pool);
+  return next && { pane: next, activeId: next.activeTabId, wasActive: pane.activeTabId === tabId };
+}
+
+/**
+ * Remove every tab `isGone(tab)` picks, in one step — removing them one at a
+ * time strands as soon as the active tab and the tab it would hand over to both
+ * go (that tab's entry is gone → removeTab refuses; round-3 review 2026-11-14:
+ * free-config undo then dropped the whole slot, configured tabs and running
+ * program included). An active tab that stays, stays; a gone one hands over to
+ * the first remaining tab after it, else the last remaining one — removeTab's
+ * choice for one tab. Pure: the pane (unchanged when nothing goes), or null when
+ * no tab is left or the new active tab's entry is missing from `pool`.
+ */
+function dropTabs(pane, isGone, pool) {
   const tabs = pane.tabs || [];
-  const idx = tabs.findIndex(t => t.id === tabId);
-  if (idx < 0 || !canRemoveTab(pane)) return null;
-  const nextTabs = tabs.slice(0, idx).concat(tabs.slice(idx + 1));
-  const wasActive = pane.activeTabId === tabId;
-  const activeId = wasActive ? nextTabs[Math.min(idx, nextTabs.length - 1)].id : pane.activeTabId;
+  const kept = tabs.filter(t => !isGone(t));
+  if (kept.length === tabs.length) return pane;
+  if (!kept.length) return null;
+  let activeId = pane.activeTabId;
+  const idx = tabs.findIndex(t => t.id === activeId);
+  if (idx >= 0 && isGone(tabs[idx])) {
+    const after = tabs.slice(idx + 1).find(t => !isGone(t));
+    activeId = (after || kept[kept.length - 1]).id;
+  }
   const entry = (pool || {})[activeId];
   if (!entry) return null;
-  return { pane: _rebuildLegacyFields(pane, nextTabs, activeId, entry), activeId, wasActive };
+  return _rebuildLegacyFields(pane, kept, activeId, entry);
 }
 
 module.exports = {
@@ -239,6 +259,7 @@ module.exports = {
   setActiveTab,
   addTab,
   removeTab,
+  dropTabs,
   canRemoveTab,
   paneMatchesFocus,
   SLOT_KEYS,

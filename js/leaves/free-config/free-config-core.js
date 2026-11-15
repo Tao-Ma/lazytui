@@ -81,8 +81,10 @@ function snapshot(arrange) {
 // closed: putting its entry back re-minted it and the finalizer RAN ITS COMMAND
 // AGAIN (round-2 review 2026-11-14); placing it without its entry left a broken
 // tab. So: every entry that exists now, in the snapshot's version if it has
-// one; the snapshot's columns minus tabs whose entry is gone (a pane left with
-// none goes too); entries made since stay.
+// one; the snapshot's columns minus tabs whose entry is gone, all of a pane's
+// at once (mpane.dropTabs — one at a time, a pane whose active tab and the tab
+// after it both closed went WHOLE, its configured tabs and running program with
+// it: round-3 review); a pane left with no tab goes; entries made since stay.
 function _applySnapshot(arrange, snap) {
   const cur = arrange.pool || {};
   const old = snap.pool || {};
@@ -90,14 +92,9 @@ function _applySnapshot(arrange, snap) {
   for (const id of Object.keys(cur)) pool[id] = old[id] || cur[id];
   const columns = (snap.columns || []).map(col => {
     const panels = [];
-    for (let p of (col.panels || [])) {
-      for (const t of (p.tabs || [])) {
-        if (pool[t.poolId]) continue;
-        const r = mpane.removeTab(p, t.id, pool);
-        p = r ? r.pane : null;
-        if (!p) break;
-      }
-      if (p) panels.push(p);
+    for (const p of (col.panels || [])) {
+      const kept = mpane.dropTabs(p, t => !pool[t.poolId], pool);
+      if (kept) panels.push(kept);
     }
     return { ...col, panels };
   });

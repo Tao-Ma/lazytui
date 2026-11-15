@@ -13,6 +13,14 @@
  *   [2] an edit to an entry that still exists is undone (the title)
  *   [3] redo after it
  *
+ * Round-3 review 2026-11-14: the drop went tab by tab (mpane.removeTab), and a
+ * slot whose ACTIVE tab and the tab it hands over to had both closed (two
+ * `:terminal`s minted into it — a mint activates) was dropped WHOLE: its
+ * configured tab, its instance and its running program with it.
+ *   [4] two closed transient tabs of one slot, the snapshot's active one of
+ *       them: the slot stays with its configured tab, instance alive; redo too
+ *   [5] the same in the viewer slot: the layout keeps its viewer
+ *
  * Run: node js/test/test-free-config-undo.js
  */
 'use strict';
@@ -60,4 +68,54 @@ layout({ type: 'free_config_redo' });
 eq([L().arrange.pool.groups.title, tabIds().includes('out-1')], ['Renamed', false]);
 
 layout({ type: 'free_config_exit' });
+
+// Two transient tabs minted into one slot, then an edit (the snapshot holds the
+// slot with the LAST minted tab active), then both close on their own.
+function twoClosed(slotPane, prefix) {
+  const pid = slotPane().paneId;
+  const own = slotPane().tabs.map(t => t.poolId);
+  layout({ type: 'mint_tab', paneId: pid, paneType: 'text-view', poolId: `${prefix}-1`, title: 'one' });
+  layout({ type: 'mint_tab', paneId: pid, paneType: 'text-view', poolId: `${prefix}-2`, title: 'two' });
+  layout({ type: 'free_config_enter' });
+  const acts = panes().find(p => p.id === 'actions');
+  layout({ type: 'focus_set', focus: acts.paneId });
+  layout({ type: 'free_config_title_enter' });
+  L().freeConfig.titleEdit.text = `Renamed-${prefix}`;
+  layout({ type: 'free_config_title_submit', freeConfigTitleEditMode: true });
+  const snapSlot = L().freeConfig.undo[L().freeConfig.undo.length - 1].columns
+    .flatMap(c => c.panels).find(p => p.paneId === pid);
+  eq(snapSlot && snapSlot.activeTabId, `${prefix}-2`, 'precondition: the snapshot\'s active tab is one that will close');
+  layout({ type: 'remove_tab', paneId: pid, tabPoolId: `${prefix}-1` });
+  layout({ type: 'remove_tab', paneId: pid, tabPoolId: `${prefix}-2` });
+  const state = () => {
+    const p = panes().find(q => q.paneId === pid);
+    return { placed: !!p, tabs: p ? p.tabs.map(t => t.poolId) : null,
+      active: p ? p.activeTabId : null,
+      instance: !!(p && route.getInstance(route.activeInstanceOf(pid))) };
+  };
+  layout({ type: 'free_config_undo' });
+  const undone = state();
+  const title = L().arrange.pool.actions.title;
+  layout({ type: 'free_config_redo' });
+  const redone = state();
+  layout({ type: 'free_config_exit' });
+  return { pid, own, undone, title, redone };
+}
+
+section('[4] two closed transient tabs of one slot — the slot stays');
+{
+  const r = twoClosed(() => panes().find(p => p.id === 'groups'), 'term');
+  eq(r.undone, { placed: true, tabs: r.own, active: r.own[r.own.length - 1], instance: true },
+    'undo: the slot, its configured tab active, its instance alive');
+  eq(r.title, 'Actions', 'the edit itself is undone');
+  eq(r.redone, { placed: true, tabs: r.own, active: r.own[r.own.length - 1], instance: true }, 'redo: the same');
+}
+
+section('[5] the same in the viewer slot — the layout keeps its viewer');
+{
+  const r = twoClosed(viewer, 'run');
+  eq([r.undone.placed, r.undone.tabs, r.undone.instance], [true, r.own, true], 'undo keeps the viewer slot');
+  eq(!!viewer(), true, 'a viewer is still resolvable');
+  eq([r.redone.placed, r.redone.tabs], [true, r.own], 'redo too');
+}
 report();
