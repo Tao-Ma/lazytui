@@ -25,7 +25,7 @@ const child_process = require('child_process');
 const spawnCalls = [];
 child_process.spawn = (...args) => { spawnCalls.push(args); return { on() {}, kill() {} }; };
 
-const { describe, it, assert, eq, report } = require('./test-runner');
+const { describe, section, it, assert, eq, report } = require('./test-runner');
 const sm = require('./smoke/_helpers/smoke');
 const route = require('../panel/route');
 const mpane = require('../leaves/wm/pane');
@@ -73,7 +73,8 @@ describe('[1] spawn outside tmux → terminal PANE + viewMode=full + terminalMod
     const entry = layoutSlice().arrange.pool[vp.activeTabId];
     assert(entry && entry.type === 'terminal', 'active tab entry is a terminal');
     assert(entry.hint && entry.hint.origin === 'spawn', 'stamped a spawn-origin hint');
-    eq(entry.config.cmd.includes('/tmp/tui-'), true, 'cmd runs the temp spawn script');
+    eq(entry.config.cmd.startsWith('/bin/sh -c '), true, 'cmd runs the body under /bin/sh');
+    eq(entry.config.cmd.includes('/tmp/tui-'), false, 'no temp script (it deleted itself: no restart)');
   });
   it('the finalizer spawned the PTY (keyed by the tab-instance id)', () => {
     assert(terminal.getSession(mpane.newPaneId(vp.activeTabId)), 'PTY spawned');
@@ -108,6 +109,8 @@ describe('[2] spawn inside tmux → tmux new-window path (unchanged; no pane)', 
     eq(historyStarts[historyStarts.length - 1].opts.detached, true);
   });
   delete process.env.TMUX;
+  // The mocked tmux never runs the self-deleting script — remove it here.
+  try { require('fs').unlinkSync(spawnCalls[0][1][3].split(/[ ;]/)[0]); } catch (_) {}
 });
 
 describe('[3] two spawns of one action → two DISTINCT terminal panes', () => {
@@ -127,12 +130,12 @@ describe('[3] two spawns of one action → two DISTINCT terminal panes', () => {
   cleanupTerminals();
 });
 
-describe('[4] the spawn temp-script shQuotes projectDir (a path with a space still cd\'s)', () => {
-  // #4: the temp script (run by the PTY / tmux window) did `cd ${projectDir}`
+describe('[4] the tmux temp-script shQuotes projectDir (a path with a space still cd\'s)', () => {
+  // #4: the temp script (run by the tmux window) did `cd ${projectDir}`
   // unquoted, so a projectDir with a space passed `cd` two args and failed. Capture
   // the written body and assert the path is single-quoted.
   sm.bootFresh();
-  delete process.env.TMUX;
+  process.env.TMUX = '/tmp/mock-tmux';
   const fsmod = require('fs');
   const realWrite = fsmod.writeFileSync;
   let body = null;
@@ -142,7 +145,7 @@ describe('[4] the spawn temp-script shQuotes projectDir (a path with a space sti
   };
   getModel().projectDir = '/tmp/has a space';
   try { runAction('a:q', { type: 'spawn', script: 'echo hi' }, []); }
-  finally { fsmod.writeFileSync = realWrite; }
+  finally { fsmod.writeFileSync = realWrite; delete process.env.TMUX; }
 
   it('interpolates cd with a single-quoted projectDir', () => {
     assert(body, 'the temp-script body was written');
@@ -150,7 +153,48 @@ describe('[4] the spawn temp-script shQuotes projectDir (a path with a space sti
       `projectDir is shQuoted in the cd (body: ${JSON.stringify(body)})`);
     assert(!/cd \/tmp\/has a space/.test(body), 'not the old unquoted form');
   });
-  cleanupTerminals();
+  try { fsmod.unlinkSync(spawnCalls[spawnCalls.length - 1][1][3].split(/[ ;]/)[0]); } catch (_) {}
 });
 
-report();
+// The embedded terminal's command, run as its PTY runs it ($SHELL -c <cmd>):
+// in the project dir (a path with a space), the action's args as $1.. — quotes
+// and all.
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { spawnSync } = require('child_process');
+describe('[5] the embedded command runs in the project dir with the args', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lazytui spawn '));
+  sm.bootFresh();
+  getModel().projectDir = dir;
+  runAction('a:args', { type: 'spawn', script: 'printf "%s|%s|%s" "$(pwd)" "$1" "$2"' }, ['a b', "it's"]);
+  const entry = layoutSlice().arrange.pool[viewerPane().activeTabId];
+  cleanupTerminals();
+  const r = spawnSync(process.env.SHELL || '/bin/bash', ['-c', entry.config.cmd], { encoding: 'utf8' });
+  it('cwd, $1 and $2 as given', () => eq(r.stdout, `${fs.realpathSync(dir)}|a b|it's`));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// Enter on a spawn tab whose program exited (or a replay stopped) restarts it:
+// the same command runs again — it ran a self-deleting temp script, so the
+// restart found nothing (`No such file or directory`, exit 127; round-3 review).
+(async () => {
+  sm.bootFresh();
+  getModel().projectDir = '/tmp';
+  runAction('a:again', { type: 'spawn', script: 'echo "RAN-$1"; exit 3' }, ['x']);
+  const id = mpane.newPaneId(viewerPane().activeTabId);
+  const settle = async (pred) => { for (let i = 0; i < 100 && !pred(); i++) await new Promise(r => setTimeout(r, 30)); };
+  const exited = () => { const s = terminal.getSession(id); return !!(s && s.exited); };
+  const screen = () => terminal.sessionViewportRows(id, 5, 60).rows.join('|');
+  await settle(exited);
+  const first = [terminal.getSession(id).exitCode, /RAN-x/.test(screen())];
+  terminal.restartSession(id, 60, 5);
+  await settle(exited);
+  await settle(() => /RAN-x|No such file/.test(screen()));
+  const second = [terminal.getSession(id).exitCode, /RAN-x/.test(screen()), /No such file/.test(screen())];
+  section('[6] a spawn tab restarts with its command');
+  eq(first, [3, true], 'first run: printed, exited 3');
+  eq(second, [3, true, false], 'restart: the same command ran again');
+  cleanupTerminals();
+  report();
+})();

@@ -199,6 +199,10 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   run's exit.
 - **`:record-load` while `:record-save` is on leaves the live recording
   intact** (it went on with repeated sequence numbers).
+- **Enter restarts a `type: spawn` tab** whose program exited (or that a
+  replay stopped). The tab ran a temp script that deleted itself, so the
+  restart failed with `No such file or directory`; it now runs the action's
+  command again, in the project directory with the same arguments.
 - **`--lint` exits 1 for two new warnings**, `keys.unreachable_step` and
   `panels.nested_config`, on configs it passed before.
 

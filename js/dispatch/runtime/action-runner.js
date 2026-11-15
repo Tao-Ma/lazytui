@@ -152,24 +152,19 @@ function doRun(actionKey, action, args = []) {
   const actionType = action.type || 'run';
 
   if (actionType === 'spawn') {
-    // Wrap so the temp script removes itself before running the command —
-    // works for both the tmux and bare-spawn paths, and survives crashes
-    // (the rm runs even if cmd later fails). Args reach the script body
-    // as positional params: bare-spawn passes them via argv, tmux path
-    // shell-escapes them into the new-window command string.
-    const tmp = `/tmp/tui-${process.pid}-${Date.now()}.sh`;
-    // shQuote projectDir — it's interpolated into the script, so an unquoted path
-    // with a space (`cd /home/me/My Project`) passes `cd` two args and fails. `cmd`
-    // is the user's own shell body (left as-is, by design); only the path is quoted.
-    const body = `#!/bin/sh\nrm -- "$0"\ncd ${shQuote(getModel().projectDir)} && ${cmd}\n`;
-    // Write the self-deleting script only at the site that RUNS it — a bare-spawn with
-    // no placeable slot (container null, below) would otherwise orphan it in /tmp
-    // (nothing runs the `rm -- "$0"`).
-    const writeScript = () => fs.writeFileSync(tmp, body, { mode: 0o700 });
+    // The body runs under /bin/sh in the project dir, the action's args as its
+    // positional params. shQuote projectDir — an unquoted path with a space
+    // (`cd /home/me/My Project`) passes `cd` two args and fails. `cmd` is the
+    // user's own shell body (left as-is, by design); only the path is quoted.
+    const run = `cd ${shQuote(getModel().projectDir)} && ${cmd}`;
+    const argStr = args.length ? ' ' + args.map(shQuote).join(' ') : '';
     if (_spawnUsesTmux()) {
-      writeScript();
+      // tmux new-window takes one command string through the tmux server (its
+      // message size is capped): the body goes in a temp script that removes
+      // itself before running it (the rm runs even if the command then fails).
+      const tmp = `/tmp/tui-${process.pid}-${Date.now()}.sh`;
+      fs.writeFileSync(tmp, `#!/bin/sh\nrm -- "$0"\n${run}\n`, { mode: 0o700 });
       appendViewerLines(`[dim]$ ${esc(actionKey)}[/]\n[warning]Spawned in new tmux window.[/]`);
-      const argStr = args.length ? ' ' + args.map(shQuote).join(' ') : '';
       spawn('tmux', ['new-window', '-n', actionKey, `${tmp}${argStr}; read`], { detached: true, stdio: 'ignore' });
       history.start(actionKey, cmd, { detached: true });
       // Jobs registry — pid=null because the spawn returned is the tmux
@@ -200,20 +195,23 @@ function doRun(actionKey, action, args = []) {
       // analog of the retired ephemeral content-tab). The PTY id is the tab-instance
       // id; the finalizer spawns it once it's the slot's active tab.
       const route = require('../../panel/route');
-      const argStr = args.length ? ' ' + args.map(shQuote).join(' ') : '';
       const group = getModel().currentGroup;
       // The viewer slot (matches the legacy detail-panel placement); fall back to
       // the focused slot when no viewer is placed.
       const container = route.resolveViewerPaneId() || getInstanceSlice('layout').focus;
       if (container) {
-        writeScript();   // only now — a slot exists to run it (see writeScript note)
+        // The terminal runs the body itself (`/bin/sh -c <body> sh <args>`), not a
+        // temp script: one that deleted itself left Enter-restart — after a
+        // non-zero exit, or a replay stopping it — with nothing to run (round-3
+        // review 2026-11-14). The pane's command is the whole run, every time.
+        const ptyCmd = `/bin/sh -c ${shQuote(run)} sh${argStr}`;
         // Reducer-derived poolId (idPrefix `term`, NO Date.now()) → replay-
         // deterministic AND fresh per run, so two spawns of one action open two
         // distinct terminals. The hint tags origin for later tab-groups clustering;
         // it does NOT drive reuse (the fresh poolId means every spawn is new).
         dispatchMsg(wrap('layout', {
           type: 'mint_tab', paneId: container, paneType: 'terminal', idPrefix: 'term',
-          title: actionKey, config: { cmd: `${tmp}${argStr}` },
+          title: actionKey, config: { cmd: ptyCmd },
           hint: { origin: 'spawn', group, key: actionKey },
         }));
         // mint_tab activates the tab but focus-FOLLOWS only a pre-focused slot; the
