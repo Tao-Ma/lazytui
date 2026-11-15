@@ -185,7 +185,8 @@ pane, keeps its grid. The scrollback tag and the exit prompt are spliced into th
 (`spliceRuns`), so they are cached and clipped like the grid.
 Render is **read-only** for the PTY (the spawn/resize moved to the finalizer);
 it positions each surface's overlay against its pane's committed (or, mid-drag,
-preview) bounds.
+preview) bounds — on every pass: the PTY fast path and the 250 ms poll paint at
+the drag preview too (`_dragPreviewArrange`), where the frame on screen put it.
 
 **Widths.** The emulator measures with the frame's width function:
 `term-screen.createScreen` registers `charWidth` (`leaves/text/char-width`) as

@@ -89,7 +89,9 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   gave up; one moved without changing size shows its whole screen at the new
   place (most of its rows stayed blank until the program printed), and a
   terminal tab that closes leaves nothing in the next tab when another
-  terminal on screen repaints first. (Keys on a focused terminal
+  terminal on screen repaints first. While a free-config drag previews a
+  terminal pane somewhere else, it no longer flickers back to its old place
+  between frames. (Keys on a focused terminal
   pane go to lazytui until you press Enter — so `p` opens the action palette;
   after Enter they go to the program until `Ctrl+\`.)
 - **Wide text in the `:` prompt and the agent prompt.** The `:` prompt's
@@ -129,8 +131,9 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   goes through untouched. Over a slow link a key,
   a mouse event or a paste marker split across two reads is put back together
   first: a split paste end no longer leaves every later key (`Ctrl+\`
-  included) going to the program as pasted text, a paste start split by more
-  than 50 ms is still a paste (its text was typed as keys, in lazytui too),
+  included) going to the program as pasted text, a paste start cut after
+  `ESC [ 2 0` and completed more than 50 ms later is still a paste (its text
+  was typed as keys, in lazytui too),
   and a split click no longer
   reaches it with whole-screen coordinates. Keys typed together with a click
   are translated too.

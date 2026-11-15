@@ -321,6 +321,45 @@ const hs = require('./_helpers/host-screen').install({ cols: 160, rows: 40 });
     await hs.paint();
   }
 
+  section('[10] mid-drag, a pass between frames paints where the preview put the terminal');
+  {
+    // The fast path / poll passed no preview: they painted at the committed
+    // rect, and since fdd4b111's `moved` force a quiet terminal the preview
+    // had moved (same size) was repainted WHOLE there — over the preview's
+    // other pane — until the next frame (round-4 review 2026-11-15).
+    const { renderTerminalOverlay } = require('../render/paint');
+    const idM = await bootThree('drag');
+    const slot = paneOf('tm');
+    const s0 = visibleTerminalSurfaces(getModel()).find(x => x.id === idM);
+    dispatchMsg(route.wrap('layout', { type: 'focus_set', focus: slot.paneId }));
+    dispatchMsg(route.wrap('layout', { type: 'free_config_enter' }));
+    await hs.paint();
+    // Press in the terminal pane, drag into the lower part of the pane below.
+    const px = s0.bounds.x + 10, py = s0.bounds.y + 4;
+    const my = s0.bounds.y + 2 * s0.bounds.h - 2;
+    dispatchMsg(route.wrap('layout', { type: 'free_config_mouse_press', mx: px, my: py, cols: 160 }));
+    dispatchMsg(route.wrap('layout', { type: 'free_config_mouse_motion', mx: px, my, cols: 160 }));
+    const drag = route.getInstanceSlice('layout').freeConfig.drag;
+    await hs.paint();
+    const sp = visibleTerminalSurfaces(getModel(), drag && drag.previewArrange).find(x => x.id === idM);
+    assert(sp && sp.bounds.y !== s0.bounds.y && sp.rows === s0.rows && sp.cols === s0.cols,
+      `precondition: the preview moves it, same size (${s0.bounds.y}→${sp && sp.bounds.y})`);
+    const offPreview = () => {
+      const o = [];
+      for (let y = 0; y < 40; y++) {
+        if ((y < sp.bounds.y + 1 || y >= sp.bounds.y + 1 + sp.rows) && hs.line(y).includes('MMM')) o.push(y);
+      }
+      return o;
+    };
+    eq(offPreview(), [], 'precondition: the frame shows it at the preview rect only');
+    renderTerminalOverlay(getModel());   // a poll tick, no frame after it
+    await hs.sync();
+    eq(offPreview(), [], 'a poll tick paints nothing outside the preview rect');
+    dispatchMsg(route.wrap('layout', { type: 'free_config_mouse_release', mx: px, my, cols: 160 }));
+    dispatchMsg(route.wrap('layout', { type: 'free_config_exit' }));
+    await hs.paint();
+  }
+
   terminal.destroyAll();
   fs.rmSync(dir, { recursive: true, force: true });
   hs.restore();

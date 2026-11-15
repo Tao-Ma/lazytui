@@ -760,7 +760,20 @@ function _overlaps(runs, left, right) {
 // (below in render()), a sibling surface's vanish reclaim, an `invalidate` from
 // elsewhere, a highlighted replay frame that rewrites whole rows — and the
 // row's cache key can't see any of those.
+// The free-config drag preview's arrange (a drag with a valid target), or null
+// — the layout the frame on screen shows. render() paints it; a pass BETWEEN
+// frames (the PTY fast path, the 250 ms poll — no `arrangeOverride`) must paint
+// the surfaces where that frame put them: at the committed rect, a quiet
+// terminal moved by the preview was repainted WHOLE (the `moved` force) over
+// the preview's other pane until the next frame (round-4 review 2026-11-15).
+function _dragPreviewArrange() {
+  const ls = getInstanceSlice('layout');
+  const drag = ls && ls.freeConfig && ls.freeConfig.drag;
+  return (drag && drag.previewArrange) || null;
+}
+
 function renderTerminalOverlay(model, arrangeOverride, forceAll, wrote) {
+  if (arrangeOverride === undefined) arrangeOverride = _dragPreviewArrange();
   const surfaces = visibleTerminalSurfaces(model, arrangeOverride);
   const nowPainted = new Set();
   let out = '';
@@ -1004,8 +1017,7 @@ function render(model) {
   // save/restore). The terminal overlay is the one consumer that wants the
   // PREVIEW coords (its detail rect follows the would-be-after-release
   // layout), so the preview arrange is passed to it explicitly.
-  const drag = layoutSlice.freeConfig && layoutSlice.freeConfig.drag;
-  const previewArrange = (drag && drag.previewArrange) || null;
+  const previewArrange = _dragPreviewArrange();
   // A terminal surface that painted last pass but won't paint this pass
   // (active tab switched away, tab closed, session destroyed) left PTY bytes
   // on cells the main diff cache never saw: the overlay writes the grid
