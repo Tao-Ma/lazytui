@@ -700,12 +700,25 @@ function _paintMainFrame(newRows, COLS) {
 let _paintedOverlayIds = new Set();
 // The screen cells (0-based, half-open rows [top, bottom) × columns
 // [left, right)) each painted surface's interior covered on its LAST paint —
-// the counterpart bookkeeping for the VANISH direction (render()'s reclaim
-// check invalidates exactly these rows when a surface stops painting), and the
-// columns render()'s coverage check watches. Kept here, not on the session,
-// because a closed tab's session is already destroyed by the time the
-// reclaiming frame renders.
+// the rect a surface's `moved` force compares against, and the columns
+// render()'s coverage check watches. Kept here, not on the session, because a
+// closed tab's session is already destroyed by the time the next frame renders.
 const _overlayLastRows = new Map();
+// Every rect a surface's grid was painted on since render() last reconciled the
+// screen (id → [rect, …]) — what render()'s reclaim reads. Not _overlayLastRows:
+// the PTY fast path and the 250 ms poll paint between frames too, and they
+// re-record a surface at the rect the model has NOW (or prune one that stopped
+// painting) — a deferred render() then saw "same rect" / "never painted" and
+// reclaimed nothing: a closed terminal's text stayed in the next tab (round-3
+// review). Every overlay pass ADDS the rects it paints; render() reclaims each
+// one a surface no longer occupies, then resets the map to what its own pass
+// painted — the grids actually on screen.
+const _gridRects = new Map();
+function _noteGridRect(id, r) {
+  const list = _gridRects.get(id);
+  if (!list) { _gridRects.set(id, [r]); return; }
+  if (!list.some(x => x.top === r.top && x.bottom === r.bottom && x.left === r.left && x.right === r.right)) list.push(r);
+}
 // The overlay coverage of the frame ON SCREEN — `newRows.covered` from the last
 // render() (row → [[x0, x1), …], recorded by row-compositor.compositeRow for
 // every popup composited into the frame), or null. The terminal surfaces paint
@@ -768,9 +781,12 @@ function renderTerminalOverlay(model, arrangeOverride, forceAll, wrote) {
     if (!session) continue;
     nowPainted.add(id);
     // Interior rows this surface writes (incl. the exit prompt on the last
-    // inner row and the scrollback tag on the first) — the vanish-reclaim
-    // range. The border/strip rows stay main-pass-owned.
-    _overlayLastRows.set(id, { top: bounds.y + 1, bottom: bounds.y + 1 + innerH, left: bounds.x + 1, right: bounds.x + 1 + innerW });
+    // inner row and the scrollback tag on the first) — the reclaim range. The
+    // border/strip rows stay main-pass-owned.
+    const rect = { top: bounds.y + 1, bottom: bounds.y + 1 + innerH, left: bounds.x + 1, right: bounds.x + 1 + innerW };
+    const last = _overlayLastRows.get(id);
+    _overlayLastRows.set(id, rect);
+    _noteGridRect(id, rect);
 
     // Per-session force-full triggers (replacing the old _frame singletons):
     //  - appeared: this session was not painted last pass (its region may be
@@ -779,7 +795,14 @@ function renderTerminalOverlay(model, arrangeOverride, forceAll, wrote) {
     //    drag preview-shifting the bounds while the PTY holds its committed
     //    dims — the finalizer sizes off the committed arrange). render only
     //    NOTICES the change to rebuild the per-row diff cache.
+    //  - moved: the same-size interior sits somewhere else now (a free-config
+    //    reorder of two equal panes). The row cache holds what was drawn at the
+    //    OLD place; the frame rewrites the new place only where the previous
+    //    occupant's cells differ from the blank interior, so the rows where
+    //    both were blank stayed blank — the terminal looked empty until its
+    //    program printed (round-3 review).
     const appeared = !_paintedOverlayIds.has(id);
+    const moved = !!last && (last.top !== rect.top || last.left !== rect.left);
     const dimChanged = session.prevW !== innerW || session.prevH !== innerH;
     session.prevW = innerW;
     session.prevH = innerH;
@@ -795,7 +818,7 @@ function renderTerminalOverlay(model, arrangeOverride, forceAll, wrote) {
     // user returns to the bottom.
     const scrolled = viewportY !== session.prevViewportY;
     session.prevViewportY = viewportY;
-    const force = forceAll || appeared || dimChanged || scrolled;
+    const force = forceAll || appeared || moved || dimChanged || scrolled;
 
     // v0.6.5 §5(a) Phase 4 — scrollback position indicator: while the viewport
     // sits above the live bottom, a reverse-video `[↑N]` tag at the top-right
@@ -980,33 +1003,31 @@ function render(model) {
   // switch (user-found 2026-08-05: docker-shell residue in the next tab).
   // VANISH completes the per-surface reconciliation family (appeared /
   // dimChanged / scrolled forces + the shrink invalidation): invalidate
-  // exactly the rows the surface last covered, so THIS frame's diff pass
-  // rewrites them from the underlying panels — no full clear, no whole-frame
-  // bytes over a slow link. The overlay pass prunes the bookkeeping at the
-  // end of the frame, so the reclaim fires once per vanish.
+  // exactly the rows the surface's grid was painted on, so THIS frame's diff
+  // pass rewrites them from the underlying panels — no full clear, no
+  // whole-frame bytes over a slow link.
   // MOVED / RESIZED is the same gap for the cells a surface GAVE UP: its grid
   // stays on them wherever the new layout's cells are blank in the same style
   // (a terminal shrinking as the pane above it is restored, a free-config
-  // reorder moving it — round-2 review 2026-11-14, since v0.6.58). A surface
-  // whose interior rectangle changed reclaims its old rows the same way; its own
-  // repaint (dimChanged / the `wrote` record) puts its grid back where it is now.
-  if (_paintedOverlayIds.size) {
+  // reorder moving it — round-2 review 2026-11-14, since v0.6.58). A rect the
+  // surface no longer occupies is reclaimed the same way; its own repaint
+  // (moved / dimChanged / the `wrote` record) puts its grid where it is now.
+  // The rects come from _gridRects — every place a grid was painted since the
+  // last frame, the fast path's and the poll's paints included — and the
+  // overlay pass below resets it, so each reclaim fires once.
+  if (_gridRects.size) {
     const nowVisible = new Map();
     for (const s of visibleTerminalSurfaces(model, previewArrange)) {
       if (getSession(s.id)) nowVisible.set(s.id, s);
     }
-    for (const id of _paintedOverlayIds) {
-      const rows = _overlayLastRows.get(id);
+    for (const [id, rects] of _gridRects) {
       const s = nowVisible.get(id);
-      if (s) {
-        const top = s.bounds.y + 1, left = s.bounds.x + 1;
-        const same = rows && rows.top === top && rows.left === left &&
-          rows.bottom === top + s.rows && rows.right === left + s.cols;
-        if (rows && !same) invalidateRows(rows.top, rows.bottom);
-        continue;
+      const top = s ? s.bounds.y + 1 : -1, left = s ? s.bounds.x + 1 : -1;
+      for (const r of rects) {
+        const same = s && r.top === top && r.left === left &&
+          r.bottom === top + s.rows && r.right === left + s.cols;
+        if (!same) invalidateRows(r.top, r.bottom);
       }
-      if (rows) invalidateRows(rows.top, rows.bottom);
-      else _frame.forceFull = true;   // no recorded bounds — reclaim conservatively
     }
   }
   // (Hover tooltip vanish/move reclaim retired — overlay-compositor
@@ -1099,6 +1120,10 @@ function render(model) {
   const footerAnsi = renderFooter(model);
   if (footerAnsi) _emit(footerAnsi);
   renderTerminalOverlay(model, previewArrange, mainDidFull, wrote);
+  // The screen now holds each painted surface's grid at its current rect and no
+  // other — the reclaim above rewrote every rect a grid left.
+  _gridRects.clear();
+  for (const [id, r] of _overlayLastRows) _gridRects.set(id, [r]);
   // blessed-exceptions Phase A — render produces NO slice writes: `innerH`
   // is computed in the post-dispatch finalizer (A.1), `paneBounds` is a pure
   // derived selector (A.2), and the former `tabBounds` render-write is gone

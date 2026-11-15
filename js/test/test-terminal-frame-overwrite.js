@@ -24,6 +24,9 @@
  *   [5] switching one terminal's slot to another tab leaves the other intact
  *   [6] a row invalidated from elsewhere comes back
  *   [7] a terminal that shrinks leaves nothing in the cells it gave up
+ *   [8] a terminal moved without changing size shows its whole grid where it is now
+ *   [9] a surface that vanishes or moves between frames is still reclaimed
+ *       (a fast-path / poll repaint first)
  *
  * Run: node js/test/test-terminal-frame-overwrite.js
  */
@@ -226,6 +229,96 @@ const hs = require('./_helpers/host-screen').install({ cols: 160, rows: 40 });
     assert(small.rows < big.rows, 'precondition: it shrank');
     const outside = grownRows().filter(y => y < small.bounds.y + 1 || y >= small.bounds.y + 1 + small.rows);
     eq(outside, [], `no terminal text outside its interior (rows ${small.bounds.y + 1}..${small.bounds.y + small.rows})`);
+  }
+
+  // A terminal slot over an equal-height Actions pane, Detail below, in one
+  // full-width column: reordering the terminal down moves it without changing
+  // its size (the [8] precondition checks).
+  async function bootThree(tag) {
+    terminal.destroyAll();
+    const yml3 = path.join(dir, `three-${tag}.yml`);
+    fs.writeFileSync(yml3, [
+      'project_dir: .', 'groups:', '  g1:', '    label: Group 1', '    actions:', '      hello: { label: Hello, script: echo hello }',
+      'panels:', '  groups: { type: groups, title: Groups }', `  tm: { type: terminal, title: TM, cmd: ${JSON.stringify(fill(`m-${tag}.sh`, 'MMM'))} }`,
+      '  detail: { type: detail, title: Detail }', '  actions: { type: actions, title: Actions }',
+      'layout:', '  columns:', '    - width: flex', '      panels: [{ tabs: [tm, groups] }, actions, detail]', '',
+    ].join('\n'));
+    sm.bootFresh(parse(yml3));
+    sm.resize(160, 40);
+    const idM = mpane.newPaneId('tm');
+    await waitFor(idM, 'MMM60');
+    await hs.paint();
+    return idM;
+  }
+  // The terminal's interior rows whose screen text differs from its program's
+  // screen, and the rows outside it that show its text.
+  function gridCheck(id, needle) {
+    const s = visibleTerminalSurfaces(getModel()).find(x => x.id === id);
+    const outside = [];
+    for (let y = 0; y < 40; y++) {
+      const inside = s && y >= s.bounds.y + 1 && y < s.bounds.y + 1 + s.rows;
+      if (!inside && hs.line(y).includes(needle)) outside.push(y);
+    }
+    if (!s) return { wrong: [], outside };
+    const x0 = s.bounds.x + 1, y0 = s.bounds.y + 1;
+    const want = terminal.sessionViewportRows(id, s.rows, s.cols).rows;
+    const wrong = [];
+    for (let r = 0; r < s.rows; r++) if (hs.line(y0 + r).slice(x0, x0 + s.cols).trimEnd() !== want[r].trimEnd()) wrong.push(y0 + r);
+    return { wrong, outside };
+  }
+
+  section('[8] a terminal moved without changing size shows its whole grid where it is now');
+  {
+    // A same-size move left the per-row cache valid for rows it was never
+    // drawn on: the frame rewrites the new place only where the previous
+    // occupant's cells differ from the blank interior, so the terminal showed
+    // blank rows (most of them) until its program printed (round-3 review).
+    const idM = await bootThree('move');
+    const s0 = visibleTerminalSurfaces(getModel()).find(x => x.id === idM);
+    eq(gridCheck(idM, 'MMM'), { wrong: [], outside: [] }, 'precondition: the terminal shows its program\'s screen');
+    const slot = paneOf('tm');
+    dispatchMsg(route.wrap('layout', { type: 'focus_set', focus: slot.paneId }));
+    dispatchMsg(route.wrap('layout', { type: 'free_config_enter' }));
+    await hs.paint();
+    dispatchMsg(route.wrap('layout', { type: 'free_config_reorder', dir: +1 }));
+    await hs.paint();
+    const s1 = visibleTerminalSurfaces(getModel()).find(x => x.id === idM);
+    assert(s1.bounds.y > s0.bounds.y && s1.rows === s0.rows && s1.cols === s0.cols,
+      `precondition: moved down, same size (${s0.bounds.y}→${s1.bounds.y}, ${s0.cols}x${s0.rows}→${s1.cols}x${s1.rows})`);
+    eq(gridCheck(idM, 'MMM'), { wrong: [], outside: [] }, 'its whole grid at the new place, nothing at the old');
+    dispatchMsg(route.wrap('layout', { type: 'free_config_exit' }));
+    await hs.paint();
+    eq(gridCheck(idM, 'MMM'), { wrong: [], outside: [] }, 'and after free-config exits');
+  }
+
+  section('[9] a surface that vanishes or moves between frames is still reclaimed (fast path / poll first)');
+  {
+    // The PTY fast path and the 250 ms poll paint the surfaces between frames
+    // and re-recorded (or pruned) the rect render()'s reclaim read: a layout
+    // change whose frame is deferred (a clean exit's remove_tab → scheduleRender)
+    // with a poll tick first left the closed terminal's text in the next tab
+    // (round-3 review).
+    const { renderTerminalOverlay } = require('../render/paint');
+    let idM = await bootThree('vanish');
+    let slot = paneOf('tm');
+    dispatchMsg(route.wrap('layout', { type: 'remove_tab', paneId: slot.paneId, tabPoolId: 'tm' }));
+    renderTerminalOverlay(getModel());   // a poll tick lands before the frame
+    await hs.paint();
+    assert(!visibleTerminalSurfaces(getModel()).some(x => x.id === idM), 'precondition: the terminal tab closed');
+    eq(gridCheck(idM, 'MMM').outside, [], 'a vanished terminal leaves no text (a poll tick before the frame)');
+
+    idM = await bootThree('moved');
+    slot = paneOf('tm');
+    dispatchMsg(route.wrap('layout', { type: 'focus_set', focus: slot.paneId }));
+    dispatchMsg(route.wrap('layout', { type: 'free_config_enter' }));
+    await hs.paint();
+    dispatchMsg(route.wrap('layout', { type: 'free_config_reorder', dir: +1 }));
+    renderTerminalOverlay(getModel());   // the poll paints it at its new place first
+    await hs.sync();
+    await hs.paint();
+    eq(gridCheck(idM, 'MMM'), { wrong: [], outside: [] }, 'a moved terminal: its grid where it is, nothing where it was');
+    dispatchMsg(route.wrap('layout', { type: 'free_config_exit' }));
+    await hs.paint();
   }
 
   terminal.destroyAll();

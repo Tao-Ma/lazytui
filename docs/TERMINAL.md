@@ -171,8 +171,13 @@ pane body. That happens on more than coverage: the vanish reclaim of a surface
 that stopped painting (minimized, its slot switched tab, its tab closed), an
 `invalidate` from elsewhere, a replay frame with change highlighting (which
 rewrites each changed row) — and a surface that MOVED or was RESIZED reclaims the
-rows it occupied last frame the same way, so the cells it gave up (a terminal
-shrinking as the pane above it is restored) don't keep its text. The row's cache key sees none of them, so
+rows it occupied the same way, so the cells it gave up (a terminal
+shrinking as the pane above it is restored) don't keep its text. The reclaim
+reads every rect a grid was painted on since the last frame (`_gridRects`), not
+just the last one: the PTY fast path and the backstop poll paint between frames
+at the rect the model has now, and a closed tab's deferred frame must still
+reclaim the rows its grid was on. A surface that moved repaints its whole grid
+at the new place (its row cache describes the old one). The row's cache key sees none of them, so
 `painter.paintFrame` returns `wrote` (row → the `[x0, x1)` column runs it
 wrote) and the terminal painter repaints every grid row whose interior the frame
 wrote over — a terminal beside the one that vanished, or beside the popup's

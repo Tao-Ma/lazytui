@@ -86,7 +86,10 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   another tab, keeps its screen too (its rows sharing the other pane's went
   blank). And a terminal pane that shrinks or moves (the pane above it
   restored, a free-config reorder) no longer leaves its text on the rows it
-  gave up. (Keys on a focused terminal
+  gave up; one moved without changing size shows its whole screen at the new
+  place (most of its rows stayed blank until the program printed), and a
+  terminal tab that closes leaves nothing in the next tab when another
+  terminal on screen repaints first. (Keys on a focused terminal
   pane go to lazytui until you press Enter — so `p` opens the action palette;
   after Enter they go to the program until `Ctrl+\`.)
 - **Wide text in the `:` prompt and the agent prompt.** The `:` prompt's
