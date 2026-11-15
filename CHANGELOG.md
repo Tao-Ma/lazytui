@@ -209,8 +209,9 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 - **A recording that restarted a terminal replays as two runs**: the second
   run on a fresh screen, not both runs on one screen ending in the first
   run's exit.
-- **`:record-load` while `:record-save` is on leaves the live recording
-  intact** (it went on with repeated sequence numbers).
+- **A `:record-save` after a `:record-load` keeps your own recording.**
+  `:record-load` stops a recording in progress; saving again to the same
+  file then wrote the loaded recording's entries over yours.
 - **Enter restarts a `type: spawn` tab** whose program exited (or that a
   replay stopped). The tab ran a temp script that deleted itself, so the
   restart failed with `No such file or directory`; it now runs the action's

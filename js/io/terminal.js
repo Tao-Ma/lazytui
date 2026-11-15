@@ -232,6 +232,12 @@ function _takeOver(id) {
   destroySession(id);
 }
 
+/** Replay: clear `id` for a replay screen to be rebuilt from the recording (a
+ *  reverse seek with no checkpoint before it resets the spawned sessions) — a
+ *  live session there is taken over and remembered like any other (_takeOver),
+ *  so leaving the replay brings it back as it was. */
+function resetForReplay(id) { _takeOver(id); }
+
 /** Replay: a recorded spawn — a fresh PTY-less session backed by an emulator
  *  screen, replacing whatever has the id (a live session, or this replay's
  *  screen of an earlier run). */
@@ -355,8 +361,9 @@ function destroyAll() {
 }
 
 /** Restart a session — kill old, spawn fresh with the same cmd. A session
- *  that knows none (one rebuilt PTY-less after a replay) takes `fallback`'s
- *  `{ cmd, cwd }` — the pane's own (terminal-surfaces: the surface's cmd). */
+ *  that knows none takes `fallback`'s `{ cmd, cwd }` — the pane's own
+ *  (terminal-surfaces: the surface's cmd). One a replay stopped knows the live
+ *  session's (restoreLiveSessions). */
 function restartSession(id, cols, rows, fallback) {
   const old = sessions[id];
   if (!old) return null;
@@ -434,7 +441,7 @@ module.exports = {
   sessionViewportRows, sessionCursor, sessionSize,
   resizeSession, destroySession, destroyAll,
   restartSession, isSessionDead,
-  ensureReplaySession, feedReplay, resizeReplaySession, markReplayExit,
+  ensureReplaySession, resetForReplay, feedReplay, resizeReplaySession, markReplayExit,
   snapshotSession, snapshotAllSessions, restoreReplaySession, restoreLiveSessions,
   setExitHandler, setRenderHook, setJobsHooks, setSessionRecorder,
   // v0.6.5 §5(a) — scrollback effects.

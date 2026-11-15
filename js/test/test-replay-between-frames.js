@@ -15,6 +15,9 @@
  *   [3] a between-frame Msg spawns no recorded terminal; nothing it could have
  *       started outlives the replay
  *   [4] `:record-load` while recording: the live stream's seqs stay monotonic
+ *   [5] through the verbs: `:record-load` stops the live recording (by design),
+ *       and a later `:record-save` to the same file keeps YOUR entries — it
+ *       wrote the loaded recording's over them (round-4 review 2026-11-15)
  *
  * Run: node js/test/test-replay-between-frames.js
  */
@@ -126,6 +129,32 @@ const between = () => sm.capture(() => sm.api.dispatchMsg(sm.api.wrap('layout', 
     section('[4] `:record-load` while recording leaves the recorder alone');
     eq(bufDuring >= bufBefore, true, 'the live buffer is not replaced by the loaded file');
     eq(seqs.every((s, i) => i === 0 || s > seqs[i - 1]), true, `the live stream's seqs stay monotonic (${seqs.join(',')})`);
+    sessionLog.clear();
+  }
+
+  // ---- [5] the same through the verbs (record-control) ----
+  {
+    sm.bootFresh(); sm.resize(120, 30);
+    const recCtl = require('../dispatch/runtime/record-control');
+    const live = path.join(dir, 'live5.jsonl');
+    const tick = (n) => sm.capture(() => require('../dispatch/control/dispatch').applyMsg({ type: 'clock_tick', now: n }));
+    sm.capture(() => recCtl.save(live));
+    for (let i = 0; i < 3; i++) tick(1000 + i);
+    const old = path.join(dir, 'old5.jsonl');
+    fs.writeFileSync(old, [1, 2, 3].map(s => JSON.stringify({ seq: s, t: s, kind: 'msg', lane: 'root', msg: { type: 'clock_tick', now: s } })).join('\n') + '\n');
+    sm.capture(() => recCtl.load(old));
+    await new Promise(r => setImmediate(r));
+    sm.capture(() => replayControl.exit());
+    const stopped = !sessionLog.isEnabled();
+    sm.capture(() => recCtl.save(live));
+    tick(9000);
+    recCtl.stop();
+    const nows = fs.readFileSync(live, 'utf8').trim().split('\n').map(l => JSON.parse(l))
+      .filter(e => e.kind === 'msg').map(e => e.msg.now);
+    section('[5] the verbs: `:record-load` stops recording; a later `:record-save` keeps your entries');
+    eq(stopped, true, '`:record-load` stopped the live recording');
+    eq(nows.filter(n => n < 1000), [], 'none of the loaded recording\'s entries in your file');
+    eq(nows.filter(n => n >= 1000), [1000, 1001, 1002, 9000], 'yours, before and after');
     sessionLog.clear();
   }
 

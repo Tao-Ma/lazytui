@@ -279,6 +279,26 @@ process.stdin.on('data', d => require('fs').appendFileSync(process.argv[2], d.to
     describe('[10] a live program started during the replay does not outlive it', () => {
       it('gone, its program killed', () => eq([!!terminal.getSession('g10'), killed], [false, true]));
     });
+
+    // [11] A reverse seek with no checkpoint before it resets the recording's
+    // spawned sessions — it destroyed a live one there without remembering it,
+    // so after the replay it came back `stopped`, its exit code and command
+    // lost (round-4 review 2026-11-15).
+    terminal.destroyAll();
+    terminal._setSessionForTest('g11', liveOf({ cmd: 'own-11', exited: true, exitCode: 3, pty: null }));
+    grids = terminal.snapshotAllSessions();
+    replay.reverseTo([
+      { seq: 1, kind: 'term', id: 'g11', ev: 'spawn', cols: 40, rows: 5 },
+      { seq: 2, kind: 'term', id: 'g11', ev: 'out', d: 'REC' },
+    ], 1, { state: replay.snapshotState(), idx: -1 });
+    const during11 = terminal.getSession('g11');
+    const during11Replay = !!(during11 && during11.replay);
+    terminal.restoreLiveSessions(grids);
+    const g11 = terminal.getSession('g11');
+    describe('[11] a reverse seek takes a live pane over like any other replay entry', () => {
+      it('the replay shows its own screen there', () => eq(during11Replay, true));
+      it('after it: its own exit code and command', () => eq([g11.exited, g11.exitCode, g11.cmd], [true, 3, 'own-11']));
+    });
     terminal.destroyAll();
   }
 

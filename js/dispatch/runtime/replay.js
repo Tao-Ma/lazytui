@@ -201,7 +201,7 @@ function reverseTo(log, targetIdx, base) {
     } else {
       // No checkpoint before target → reset spawned sessions, feed terminal from 0.
       for (let i = 0; i <= targetIdx; i++) {
-        if (log[i].kind === 'term' && log[i].ev === 'spawn') terminal.destroySession(log[i].id);
+        if (log[i].kind === 'term' && log[i].ev === 'spawn') terminal.resetForReplay(log[i].id);
       }
       termStart = -1;
     }

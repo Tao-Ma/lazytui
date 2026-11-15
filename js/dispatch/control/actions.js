@@ -139,8 +139,9 @@ function activateTerminal() {
   // notice): no session to type into, so no terminal mode either. It was
   // entered, and every key vanished into the missing session until Ctrl+\.
   if (!ptyAvailable()) return;
-  // A session rebuilt PTY-less after a replay knows no command: it restarts
-  // with its pane's (the same one the finalizer spawns).
+  // A session that knows no command restarts with its pane's (the same one the
+  // finalizer spawns); one a replay stopped keeps its own (io/terminal
+  // restoreLiveSessions).
   if (isSessionDead(id)) restartSession(id, surf.cols, surf.rows, { cmd: surf.cmd, cwd: getModel().projectDir });
   applyMsg({ type: 'terminal_enter' });
 }
