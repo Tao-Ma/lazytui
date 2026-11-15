@@ -35,6 +35,8 @@ const { toXtermKey, decodeKey } = require('../../leaves/input/key-decode');
 const mouseBindings = require('./mouse-bindings');
 
 const { handleKey, applyMsg } = require('./dispatch');
+// Require-free at top level, so this edge can't cycle (see _terminalOwnsInput).
+const replayControl = require('../runtime/replay-control');
 // Hit-map router (docs/mouse-hit-map.md).
 const mouseRouter = require('./mouse-router');
 const { cleanup } = require('../runtime/cleanup');
@@ -89,6 +91,16 @@ function handleMouse(kind, x, y) {
 // with a click never reached lazytui, tmux's Home went untranslated), and a
 // paste close marker split across chunks was never seen, so the paste never
 // ended and Ctrl+\ went to the program.
+//
+// Every "is stdin the program's?" question asks _terminalOwnsInput, never the
+// flag alone. While an interactive replay (`:record-load`) is up, the stores
+// hold the RECORDING's model, and its terminalMode is the recorded user's
+// keyboard, not this one; the replay controller takes every key and click
+// (dispatch.handleKey). A frame recorded in terminal mode sent q / Esc to the
+// recorded pane and the scrubber never saw them; only Ctrl+\ got out.
+function _terminalOwnsInput() {
+  return !!getModel().modes.terminalMode && !replayControl.active();
+}
 
 // One SGR mouse event — the tokenizer hands each one over as its own token.
 // Shared with the normal-mode ladder (_dispatchToken).
@@ -467,7 +479,7 @@ function _holdCarry(c, { flush = true } = {}) {
     const held = _carry;
     _carry = '';
     _carryTimer = null;
-    if (getModel().modes.terminalMode) { _flushTerminalCarry(held); return; }
+    if (_terminalOwnsInput()) { _flushTerminalCarry(held); return; }
     // No continuation arrived — the "incomplete sequence" was a deliberate
     // Esc-prefix keyboard chord after all. Log + drop, exactly the
     // pre-tokenizer treatment of an incomplete chunk.
@@ -512,7 +524,7 @@ function _makeDataHandler(stdin) {
     }
     // Terminal mode: to the program, event by event (_handleTerminalChunk),
     // with the carry from the previous chunk joined on.
-    if (getModel().modes.terminalMode) {
+    if (_terminalOwnsInput()) {
       const joined = _carry + data;
       _holdCarry('');
       _handleTerminalChunk(joined, reemit);
@@ -580,7 +592,7 @@ function _makeDataHandler(stdin) {
         const tok = tokens[i];
         // A token can flip the input mode mid-chunk; the REST of the
         // chunk then belongs to the new mode's parser, not this ladder.
-        if (i > 0 && getModel().modes.terminalMode) { reemit(tokens.slice(i).join('')); return; }
+        if (i > 0 && _terminalOwnsInput()) { reemit(tokens.slice(i).join('')); return; }
         // A paste-open reaching here came from a chunk-split OPEN marker
         // rejoined by the carry (a whole-chunk open hits the accumulator
         // branch above) — hand the rest back so the accumulator owns it.
@@ -592,7 +604,7 @@ function _makeDataHandler(stdin) {
       // stream now, not the keyboard parser: hand it to the terminal path
       // (which holds it again for the next chunk, or exits the mode at once
       // when the session is already dead).
-      if (_carry && getModel().modes.terminalMode) reemit('');
+      if (_carry && _terminalOwnsInput()) reemit('');
     } finally { if (batch) endBatch(); }
   };
 }

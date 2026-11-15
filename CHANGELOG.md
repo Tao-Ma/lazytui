@@ -209,6 +209,11 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 - **A recording that restarted a terminal replays as two runs**: the second
   run on a fresh screen, not both runs on one screen ending in the first
   run's exit.
+- **Resizing the window while a recording is loaded sticks after you leave
+  it** (`:record-load`): the UI went back to the size from before the
+  replay and stayed drawn at it until the next resize.
+- **`q` and Esc leave a replay whose frame is in terminal mode**: they went
+  to the recorded terminal pane and only `Ctrl+\` got out.
 - **A `:record-save` after a `:record-load` keeps your own recording.**
   `:record-load` stops a recording in progress; saving again to the same
   file then wrote the loaded recording's entries over yours.

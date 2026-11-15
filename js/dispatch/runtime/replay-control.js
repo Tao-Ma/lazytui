@@ -280,7 +280,20 @@ function exit() {
     _replay().restoreState(liveSnapshot);
     _terminal().restoreLiveSessions(liveGrids);   // scrub replay bytes off live panes (#D14 island)
   } finally { _replay().setReplayFrame(false); }
+  _reseedHostSize();
   _render();
+}
+
+// The live session comes back as it was at enter — size included. A resize of
+// the outer terminal during the replay landed in the recording's model (the
+// stores held it), so the restore put the old size back and the UI drew at it
+// until the next resize. Seed the host's size again, as boot does
+// (app/state initState): with the replay flag down, this is a live dispatch, so
+// its finalizer fits the panes and their terminals to it.
+function _reseedHostSize() {
+  const { cols, rows } = require('../../io/term').dims();
+  const { wrap } = require('../../panel/route');
+  require('./loop').dispatchMsg(wrap('layout', { type: 'term_resized', cols, rows }));
 }
 
 // --- navigation ---------------------------------------------------------

@@ -293,7 +293,9 @@ is now retired:
 (resize-as-Msg, docs/resize-as-msg.md). Terminal dimensions live in
 the model — `layout.dims`, written only by the `term_resized` arm;
 the stdout `'resize'` listener (tui.js) dispatches the Msg and the
-boot seed comes from `initState`. Geometry reads the model's dims,
+boot seed comes from `initState`; leaving an interactive replay seeds
+it again (`replay-control.exit` — a resize during the replay landed in
+the recording's model). Geometry reads the model's dims,
 never the live terminal. After every OUTERMOST dispatch (`dispatchMsg`
 / `dispatchKeyToFocused` share a depth counter), `dispatch/runtime/finalize`'s
 finalizer re-clamps each navigator pane's scroll against a freshly

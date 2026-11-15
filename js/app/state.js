@@ -965,10 +965,11 @@ function initState() {
   // performs the boot sub-wiring through the same path as the boot instance mint.
   require('../dispatch/runtime/finalize').setSubscriptionReconciler(reconcileSubscriptions);
 
-  // Seed the model's terminal dimensions (resize-as-Msg P1). The ONLY
-  // place besides the tui.js 'resize' listener that reads the live
-  // terminal size — everything downstream reads layoutSlice.dims. This
-  // dispatch's finalizer also performs the boot instance mint (see above).
+  // Seed the model's terminal dimensions (resize-as-Msg P1). One of the
+  // three places that read the live terminal size — with the 'resize' Sub
+  // above and replay exit's re-seed (dispatch/runtime/replay-control) —
+  // everything downstream reads layoutSlice.dims. This dispatch's
+  // finalizer also performs the boot instance mint (see above).
   const tdims = require('../io/term').dims();
   require('../dispatch/runtime/loop').dispatchMsg(api.wrap('layout', {
     type: 'term_resized', cols: tdims.cols, rows: tdims.rows,
