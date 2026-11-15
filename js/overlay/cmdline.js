@@ -16,8 +16,7 @@
 
 const { getModel } = require('../model/store');
 const { richToAnsi, RESET, visibleLen, esc } = require('../leaves/text/ansi');
-const { fieldText } = require('../leaves/text/printable');
-const { fieldWindow } = require('../leaves/text/field-window');
+const { fieldTail } = require('../leaves/text/field-window');
 const { theme } = require('../leaves/infra/themes');
 const { renderPanel, viewportDims, writeOut, publishBox } = require('../leaves/render/draw');
 const { compositeRow } = require('../leaves/render/row-compositor');
@@ -165,15 +164,14 @@ function cmdlineCursor(model) {
 
 /** The prompt row's text and the cursor's place in it — ONE derivation, so
  *  what renderCmdline paints and where cmdlineCursor puts the cursor cannot
- *  disagree. The text after ` :` is a field window (leaves/text/field-window)
- *  over the text as a field shows it (printable.fieldText: a tab or line break
+ *  disagree. The text after ` :` is a field window (leaves/text/field-window
+ *  fieldTail) over the text as a field shows it (printable.fieldText: a tab or line break
  *  is a space, control sequences are gone — whatever path set it; typed and
  *  pasted text is already that), scrolled to keep its END and the cursor cell
  *  on the row: `cols - 2` columns, `…` first when the start is cut. `shown` is
  *  markup (esc'd); `caretCol` is 0-based from the text's first column. */
 function _promptView(text, cols) {
-  const t = fieldText(text || '');
-  const { clipped, before, caretCol } = fieldWindow(t, t.length, (cols | 0) - 2);
+  const { clipped, before, caretCol } = fieldTail(text, (cols | 0) - 2);
   return { shown: (clipped ? '…' : '') + esc(before), caretCol };
 }
 

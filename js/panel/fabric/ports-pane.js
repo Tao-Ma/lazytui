@@ -31,7 +31,7 @@ const route = require('../route');
 const { listPorts, portValue, listWires, componentPorts, hasOutput } = require('../../fabric/ports');
 const { inspectComponent } = require('../../fabric/inspect');
 const { fmtValue: _fmtValue, sourceLabel: _sourceLabel } = require('./format');
-const { fieldWindow } = require('../../leaves/text/field-window');
+const { fieldTail } = require('../../leaves/text/field-window');
 const { padCell } = require('../../leaves/render/draw');
 
 // ── Component-name resolution ──────────────────────────────────────────────
@@ -204,15 +204,14 @@ function render(panel, w, h, slice, opts) {
       const req = row.required && row.value === undefined ? ' *' : '';
       // Being edited → show the live buffer + a cursor block instead of the
       // resolved value/source (the editor commits it as an inject on Enter).
-      // The buffer is a field window (leaves/text/field-window) over what the
+      // The buffer is a field window (leaves/text/field-window fieldTail) over what the
       // row has left after '▸ ' + the port / type columns, scrolled to keep its
       // end and the cursor in view — painted from the start, the cursor and the
       // end of what was typed fell off the pane's edge (plain `…`, no inner
       // markup under the selected style: PRINCIPLES §8).
       if (editing && ff.addr === `${name}.${row.port}`) {
         const lead = esc(`${_pad(row.port, portW)}  ${_pad(row.type || '', typeW)}  `);
-        const text = ff.text || '';
-        const win = fieldWindow(text, text.length, (w - 2) - 2 - visibleLen(lead));
+        const win = fieldTail(ff.text, (w - 2) - 2 - visibleLen(lead));
         lines.push(`[${t.selected}]▸ ${lead}${win.clipped ? '…' : ''}${esc(win.before)}▏`);
         return;
       }

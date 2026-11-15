@@ -29,7 +29,7 @@
 
 const { stripMarkup } = require('./ansi');
 const { nextCell, withoutLastCell } = require('./char-width');
-const { fieldInput } = require('./printable');
+const { fieldInput, pressed } = require('./printable');
 // computeMatches + _displayWidthBefore moved to match-core (shared with the
 // bounded-match worker so both sides run byte-identical matching).
 const { computeMatches, _displayWidthBefore } = require('./match-core');
@@ -213,12 +213,13 @@ function keystroke(slice, seq, key) {
   // typing phase before invoking this). idx resets per edit (the match
   // list the idx points into derives from the new typing term).
   const typing = slice.search.typing == null ? '' : slice.search.typing;
-  if (seq === '\x7f') return _withSearch(slice, { typing: withoutLastCell(typing), idx: 0 });   // one glyph
-  if (seq === '\x15') return _withSearch(slice, { typing: '', idx: 0 });
+  const msg = { key, seq };                       // (a paste is text, never a key: pressed)
+  if (pressed(msg, '\x7f')) return _withSearch(slice, { typing: withoutLastCell(typing), idx: 0 });   // one glyph
+  if (pressed(msg, '\x15')) return _withSearch(slice, { typing: '', idx: 0 });
   // Typed text in any script, or a paste (`key: 'paste'`) made single-line and
   // control-free — printable.fieldInput, shared by every text field (an
   // ASCII-only gate dropped 你好 / 👍🏽 and every paste).
-  const add = fieldInput({ key, seq });
+  const add = fieldInput(msg);
   if (add) return _withSearch(slice, { typing: typing + add, idx: 0 });
   return slice;
 }

@@ -12,7 +12,7 @@
 const { withModalMode: _withModalMode, withModal: _withModal } = require('../model-ops');
 const route = require('../../../panel/route');
 const { withoutLastCell } = require('../../../leaves/text/char-width');
-const { fieldInput } = require('../../../leaves/text/printable');
+const { fieldInput, pressed } = require('../../../leaves/text/printable');
 
 const TYPES = ['filter_enter', 'filter_key', 'filter_exit'];
 
@@ -37,7 +37,7 @@ function update(model, msg) {
     case 'filter_key': {
       const f = model.modal.filter;
       let text = f.text;
-      if (msg.seq === '\x7f') {
+      if (pressed(msg, '\x7f')) {
         if (!text) return [model, []];
         text = withoutLastCell(text);                // one glyph (❤️ is two codepoints)
       } else {

@@ -465,25 +465,43 @@ function visibleLen(text) {
  */
 function stripControls(s) {
   if (typeof s !== 'string') return s;
-  // Protect SGR (\x1b[…m) by parking each match under private-use
-  // codepoints (U+E000/U+E001) so the C0 + orphan-ESC strips below
-  // don't eat the SGR's own `\x1b`. Restored at the end.
+  // Protect SGR (\x1b[…m) by parking each match under a placeholder
+  // (M i ; M) so the C0 + orphan-ESC strips below don't eat the SGR's own
+  // `\x1b`; restored at the end. M is a private-use character the string
+  // does NOT contain: a fixed U+E000/U+E001 pair matched text that merely
+  // looked like a placeholder — a paste of U+E000 `0;` U+E001 came back as
+  // the word `undefined` (U+E000 is a Nerd Font glyph). Nothing below adds a
+  // character, and every pattern either swallows a placeholder whole (an
+  // OSC / DCS around an SGR, as before) or leaves it alone, so the
+  // placeholders that remain are exactly the parked SGRs.
   const sgrs = [];
-  s = s.replace(/\x1b\[[0-9;]*m/g, (m) => {
-    const i = sgrs.length;
-    sgrs.push(m);
-    return `${i};`;
-  });
+  let M = '';
+  if (s.indexOf('\x1b[') >= 0) {
+    let c = 0xe000;
+    while (s.indexOf(String.fromCharCode(c)) >= 0) c++;
+    M = String.fromCharCode(c);
+    s = s.replace(/\x1b\[[0-9;]*m/g, (m) => {
+      sgrs.push(m);
+      return `${M}${sgrs.length - 1};${M}`;
+    });
+  }
   s = s
     // CSI (non-SGR — SGR already parked above): cursor moves, screen
     // clears, alt-buffer flips, mode toggles. Now safe to strip any
     // CSI without preserving anything.
-    .replace(/\x1b\[[0-9;?<>=!]*[@-~]/g, '')
-    // OSC: \x1b]…ST (BEL 0x07 or ESC-backslash). Catches OSC52
-    // clipboard writes, OSC8 hyperlinks, title sets, etc.
-    .replace(/\x1b\][\s\S]*?(?:\x07|\x1b\\)/g, '')
-    // DCS / SOS / PM / APC: \x1bP|\x1bX|\x1b^|\x1b_ … ST
-    .replace(/\x1b[PX^_][\s\S]*?\x1b\\/g, '')
+    .replace(/\x1b\[[0-9;?<>=!]*[@-~]/g, '');
+  // OSC: \x1b]…ST (BEL 0x07 or ESC-backslash). Catches OSC52 clipboard
+  // writes, OSC8 hyperlinks, title sets, etc. DCS / SOS / PM / APC:
+  // \x1bP|\x1bX|\x1b^|\x1b_ … ST. Each is the SHORTEST run to its
+  // terminator, matched only in the part of the string that ends with the
+  // last terminator (_beforeLast): an opener past it has none, so the lazy
+  // scan from it ran to the end of the string and failed — once per such
+  // opener, quadratic (a 64 KB paste of `ESC ]` took ~1 s, 256 KB ~30 s).
+  // The matches are the same.
+  s = _beforeLast(s, /\x1b\][\s\S]*?(?:\x07|\x1b\\)/g,
+    Math.max(s.lastIndexOf('\x07') + 1, _endOf(s, '\x1b\\')));
+  s = _beforeLast(s, /\x1b[PX^_][\s\S]*?\x1b\\/g, _endOf(s, '\x1b\\'));
+  s = s
     // 2-byte escapes: \x1b followed by a char in 0x40-0x5f EXCLUDING
     // those consumed above ([ for CSI, ] for OSC, P/X/^/_ for
     // DCS/SOS/PM/APC). Allowed finals: @, A-O, Q-W, Y-Z, backslash.
@@ -510,9 +528,24 @@ function stripControls(s) {
     // (Slice-1 pre-release review round 4 Fork 4 Finding 1 — shared
     // class, not fabric-form-specific.)
     .replace(/[‪-‮⁦-⁩]/g, '');
-  // Restore parked SGR.
-  s = s.replace(/(\d+);/g, (_, i) => sgrs[+i]);
-  return s;
+  if (!M) return s;
+  // Restore parked SGR: the placeholders split the text, `i;` between each pair.
+  const parts = s.split(M);
+  for (let k = 1; k < parts.length; k += 2) parts[k] = sgrs[parseInt(parts[k], 10)];
+  return parts.join('');
+}
+
+// End index of the last `needle` in `s` (0 when there is none).
+function _endOf(s, needle) {
+  const i = s.lastIndexOf(needle);
+  return i < 0 ? 0 : i + needle.length;
+}
+
+// `s` with the lazy opener…terminator pattern `re` removed from its first
+// `end` characters only (`end` = just past the last terminator).
+function _beforeLast(s, re, end) {
+  if (end <= 0) return s;
+  return s.slice(0, end).replace(re, '') + s.slice(end);
 }
 
 /**

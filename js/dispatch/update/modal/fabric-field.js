@@ -17,7 +17,7 @@
 const { withModalMode, withModal } = require('../model-ops');
 const { isChainActive } = require('../../../leaves/input/modes');
 const { applyInject } = require('../fabric');
-const { fieldInput } = require('../../../leaves/text/printable');
+const { fieldInput, pressed } = require('../../../leaves/text/printable');
 const { appendCapped, withoutLastCell } = require('../../../leaves/text/char-width');
 
 const TYPES = ['fabric_field_enter', 'fabric_field_key', 'fabric_field_submit', 'fabric_field_cancel'];
@@ -59,8 +59,8 @@ function update(model, msg) {
       if (!model.modes.fabricFieldMode) return [model, []];
       const f = model.modal.fabricField;
       let text = f.text;
-      if (msg.seq === '\x7f') text = withoutLastCell(text);        // backspace: one glyph
-      else if (msg.seq === '\x15') text = '';                      // Ctrl+U — clear
+      if (pressed(msg, '\x7f')) text = withoutLastCell(text);     // backspace: one glyph
+      else if (pressed(msg, '\x15')) text = '';                   // Ctrl+U — clear (a paste is text: pressed)
       else {
         // Typed text in any script (R3C-BUG1: CJK IME, Cyrillic, emoji — the
         // old ASCII gate rejected them silently), or a paste made single-line

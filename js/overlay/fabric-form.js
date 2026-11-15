@@ -36,7 +36,8 @@ const { renderOverlay, truncate, viewportDims } = require('../leaves/render/draw
 const { formatHints } = require('../leaves/render/hints');
 const { filterChoices } = require('../leaves/ports/choices-filter');
 const { windowSlice } = require('../leaves/render/window-slice');
-const { fieldWindow } = require('../leaves/text/field-window');
+const { fieldTail } = require('../leaves/text/field-window');
+const { fieldText } = require('../leaves/text/printable');
 
 // Hard max for the overlay; the dims clamp (renderOverlay → overlayBox) narrows
 // to COLS-2 on tight terminals. 78 = the widest help line (`[tab] next
@@ -103,7 +104,10 @@ function _chipMarkup(f) {
 // field window (leaves/text/field-window) over midW, scrolled to keep its end
 // and the caret in view (`…` first when the start is cut) — it was truncated
 // from the end with the caret dropped, so past midW the user typed blind. An
-// unfocused field that overflows shows its start, truncated with `…`.
+// unfocused field that overflows shows its start, truncated with `…`. Both
+// paint the text as a field shows it (printable.fieldText): a seeded value (a
+// resolved inject, the last-used value, `default:`) with a tab misaligned the
+// chip (1 column measured, up to 8 painted) and a line break split the box.
 //
 // Narrow-terminal fallback: when `midW` collapses to 0 (COLS ≈ 20 — menuW=18,
 // innerW=16, leftW ≈ 9, CHIP_SLOT+1 = 12 → midW = max(0, 16-9-12) = 0), the
@@ -122,12 +126,12 @@ function _inputRow(f, focused, name, pad, leftW, midW, chip, chipSlot) {
     mid = '';                                  // narrow-terminal fallback (below)
   } else if (focused) {
     // caretCol + 1 = the columns painted: `…`, the text, the caret cell.
-    const win = fieldWindow(text, text.length, midW);
+    const win = fieldTail(text, midW);
     mid = `${win.clipped ? '[dim]…[/]' : ''}${esc(win.before)}[reverse] [/]${' '.repeat(Math.max(0, midW - win.caretCol - 1))}`;
   } else {
     // `truncate` returns a string whose visibleLen ALREADY INCLUDES the
     // trailing `…`, so pad to midW directly.
-    const t = truncate(esc(text), midW);
+    const t = truncate(esc(fieldText(text)), midW);   // as a field shows it: one line, tabs as spaces
     mid = `${t}${' '.repeat(Math.max(0, midW - visibleLen(t)))}`;
   }
   let chipPart;
@@ -303,7 +307,7 @@ function renderFabricFormOverlay(newRows, cols) {
         // the leading left column and the '/'. A field window
         // (leaves/text/field-window) keeps the END of what is typed in view —
         // truncating from the end hid it once the filter outgrew the row.
-        const win = fieldWindow(filterStr, filterStr.length, innerW - leftW - 1);
+        const win = fieldTail(filterStr, innerW - leftW - 1);
         rows.push(`${' '.repeat(leftW)}[dim]/${win.clipped ? '…' : ''}[/][accent]${esc(win.before)}[/]`);
       }
       if (!c || c.state === 'pending') {

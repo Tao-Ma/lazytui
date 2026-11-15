@@ -33,7 +33,7 @@ const mpane = require('../leaves/wm/pane');
 const { halfProjection, visibleBoundsFor } = require('../leaves/wm/geometry');
 const route = require('../panel/route');
 const { withoutLastCell } = require('../leaves/text/char-width');
-const { fieldInput } = require('../leaves/text/printable');
+const { fieldInput, pressed } = require('../leaves/text/printable');
 
 
 /** Compare two drag drop targets for visual equality. Used by both
@@ -950,7 +950,9 @@ function update(msg, slice) {
     case 'free_config_title_key': {
       const te = slice.freeConfig && slice.freeConfig.titleEdit;
       if (!te) return slice;
-      if (msg.key === 'backspace' || msg.seq === '\x7f') {   // (^H arrives as \x7f — input ladder)
+      // ^H arrives as \x7f (the input ladder); `\b` stays for sessions recorded
+      // before it did — replay feeds their Msgs as they were.
+      if (msg.key === 'backspace' || pressed(msg, '\x7f') || pressed(msg, '\b')) {
         // One glyph: the title it starts from can carry ❤️ or 👍🏽 (several codepoints).
         return { ...slice, freeConfig: { ...slice.freeConfig, titleEdit: { ...te, text: withoutLastCell(te.text) } } };
       }

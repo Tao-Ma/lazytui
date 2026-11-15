@@ -53,8 +53,9 @@ function _leaderChordLines() {
   const items = [];
   _walkLeader(kb.rootNode(), [], items);
   if (items.length === 0) return [];
-  // The key column is esc()'d (a `[` / `]` binding was read as markup) and
-  // padded by visible width (draw.padCell — `.length` padded a CJK key one
+  // The key column is esc()'d (a `[` binding with a `]` later on the line —
+  // `Space z [ ]` — was read as a tag and painted `Space z`) and padded by
+  // visible width (draw.padCell — `.length` padded a CJK key one
   // column too far per character, so its label sat out of line).
   return items.map(({ seq, label }) => `  ${padCell(esc(`Space ${seq.join(' ')}`), 15)} ${esc(label)}`);
 }

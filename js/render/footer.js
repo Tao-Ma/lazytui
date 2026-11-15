@@ -21,7 +21,7 @@ const { RESET, richToAnsi, esc, visibleLen, wrapColor } = require('../leaves/tex
 const { multiSelCount } = require('../panel/nav-state');
 const { theme } = require('../leaves/infra/themes');
 const { truncate, viewportDims } = require('../leaves/render/draw');
-const { fieldWindow } = require('../leaves/text/field-window');
+const { fieldTail } = require('../leaves/text/field-window');
 const { focusedTerminalTitle, focusedTerminalState } = require('../panel/terminal-surfaces');
 const { getPanelDef, getInstanceSlice, getFocus, instanceKind,
         collectViewContributions, filterCurrentText, paneTypeHasBottomBar,
@@ -70,8 +70,7 @@ function _showFooterHints(model, focus) {
  *  the screen); the key hints after it are what gets cut now — one column is
  *  left for the `…` that cut puts after the caret (it took the caret's column). */
 function _fieldSeg(prefix, text, cols) {
-  const t = text || '';
-  const win = fieldWindow(t, t.length, cols - 1 - visibleLen(prefix));
+  const win = fieldTail(text, cols - 1 - visibleLen(prefix));
   return `${prefix}${win.clipped ? '…' : ''}${esc(win.before)}│`;
 }
 
@@ -203,7 +202,26 @@ function renderFooter(model = getModel()) {
     : (selectActive ? ' \\[select]' : '');
   const vm = layoutSlice.viewMode;
   const modeTag = vm !== 'normal' ? ` \\[${vm}]` : '';
-  let keys = footerKeys(model, COLS - visibleLen(selectTag) - visibleLen(modeTag));
+
+  // Component footer contributions (Phase 5 — viewContributions slots
+  // `footerLeft` / `footerRight`). Suppressed in modal footers (the
+  // message owns the row). Note the separator is the heavy pipe `│`,
+  // distinguishing contributor output from the regular `|`-separated
+  // key hints. Each contributor receives its own Component slice as the
+  // first arg + this `ctx` as the second. Collected BEFORE the keys: the
+  // right one is part of the right-hand tail a footer text field windows into
+  // (viewer search is not modal — a `footerRight` contribution pushed its caret
+  // and its text's end off the row).
+  let footerLeftExtra = '', footerRightExtra = '';
+  if (!inModal) {
+    const ctxBase = { focus: getFocus(), view: layoutSlice.viewMode };
+    const halfBudget = Math.max(0, Math.floor(COLS / 2) - 4);
+    footerLeftExtra  = collectViewContributions('footerLeft',  { ...ctxBase, width: halfBudget });
+    footerRightExtra = collectViewContributions('footerRight', { ...ctxBase, width: halfBudget });
+  }
+  // Right tail: footer:right + the visual-select / view-mode tags.
+  const rightTail = footerRightExtra ? `${footerRightExtra} │ ` : '';
+  let keys = footerKeys(model, COLS - visibleLen(rightTail) - visibleLen(selectTag) - visibleLen(modeTag));
   if (!inModal) {
     if (focusDef && focusDef.keyHints && _showFooterHints(model, focus)) keys += ` | ${esc(focusDef.keyHints)}`;
     const msCount = multiSelCount(focus);
@@ -216,20 +234,7 @@ function renderFooter(model = getModel()) {
     if (layoutSlice.dirty) keys += ` | [${t.warning}]• unsaved (:save-layout)[/]`;
   }
 
-  // Component footer contributions (Phase 5 — viewContributions slots
-  // `footerLeft` / `footerRight`). Suppressed in modal footers (the
-  // message owns the row). Note the separator is the heavy pipe `│`,
-  // distinguishing contributor output from the regular `|`-separated
-  // key hints. Each contributor receives its own Component slice as the
-  // first arg + this `ctx` as the second.
-  let footerLeftExtra = '', footerRightExtra = '';
-  if (!inModal) {
-    const ctxBase = { focus: getFocus(), view: layoutSlice.viewMode };
-    const halfBudget = Math.max(0, Math.floor(COLS / 2) - 4);
-    footerLeftExtra  = collectViewContributions('footerLeft',  { ...ctxBase, width: halfBudget });
-    footerRightExtra = collectViewContributions('footerRight', { ...ctxBase, width: halfBudget });
-    if (footerLeftExtra) keys += ` │ ${footerLeftExtra}`;
-  }
+  if (footerLeftExtra) keys += ` │ ${footerLeftExtra}`;
 
   // Layout notice — a transient hint set by layout.update when a free-
   // config / view-mode transition is refused (kind: 'error', red) OR a
@@ -260,9 +265,6 @@ function renderFooter(model = getModel()) {
     if (hv && hv.text) keys += ` | [${t.accent}]⌖ ${esc(hv.text)}[/]`;
   }
 
-  // Right tail: footer:right + the visual-select / view-mode tags (measured
-  // above, before the keys).
-  const rightTail = footerRightExtra ? `${footerRightExtra} │ ` : '';
 
   // Pad left → right tail → tags, using visible width math (esc'd
   // [ characters and double-width chars must not throw the alignment).

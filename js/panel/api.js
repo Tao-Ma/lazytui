@@ -22,7 +22,7 @@ const route = require('../panel/route');
 // still work but are not part of the contract.
 const { esc, visibleLen, stripMarkup, wrapColor } = require('../leaves/text/ansi');
 const { theme, gradient } = require('../leaves/infra/themes');
-const { renderPanel: _leafRenderPanel, setDimsProvider } = require('../leaves/render/draw');
+const { renderPanel: _leafRenderPanel, setDimsProvider, truncate: _truncate } = require('../leaves/render/draw');
 const _selectView = require('./select-view');
 
 // Selection-aware renderPanel wrapper (docs/pane-selection.md). Every pane
@@ -384,11 +384,10 @@ function collectViewContributions(slot, ctx) {
   if (slot === 'footerRight') parts = parts.reverse();
   let out = parts.join(' │ ');
 
-  if (ctx && typeof ctx.width === 'number' && ctx.width > 0) {
-    if (visibleLen(out) > ctx.width) {
-      out = out.slice(0, Math.max(0, ctx.width - 1)) + '…';
-    }
-  }
+  // Cut to the budget in COLUMNS, markup-aware (draw.truncate): a UTF-16
+  // slice left a CJK contribution twice the budget wide and cut a tag in two
+  // (`[accent]sta…` — 4 columns of a 12-column budget, the tag left open).
+  if (ctx && typeof ctx.width === 'number' && ctx.width > 0) out = _truncate(out, ctx.width);
   return out;
 }
 

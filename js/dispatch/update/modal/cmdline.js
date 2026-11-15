@@ -15,7 +15,7 @@ const { withModalMode: _withModalMode, withModal: _withModal } = require('../mod
 // dispatch/control/cmdline.js, and overlay/cmdline.js all read the same values.
 const { splitQuery: _cmdlineSplit, DROPDOWN_VIEWPORT: CMDLINE_VW } = require('../../../leaves/text/cmdline-split');
 const { withoutLastCell } = require('../../../leaves/text/char-width');
-const { fieldInput } = require('../../../leaves/text/printable');
+const { fieldInput, pressed } = require('../../../leaves/text/printable');
 
 const TYPES = ['cmdline_enter', 'cmdline_set_matches', 'cmdline_nav', 'cmdline_key', 'cmdline_submit', 'cmdline_cancel'];
 
@@ -82,7 +82,7 @@ function update(model, msg) {
     }
     case 'cmdline_key': {
       const c = model.modal.cmdline;
-      if (msg.seq === '\t' && msg.key !== 'paste') {   // (a pasted lone tab is text, not Tab)
+      if (pressed(msg, '\t')) {   // (a pasted lone tab is text, not Tab — printable.pressed)
         // Tab accepts the SELECTED match into the buffer (refine further),
         // keeping any args already typed past the matched name. argComplete
         // entries already pack the full cmdline replacement into `display`
@@ -100,7 +100,7 @@ function update(model, msg) {
         }
         return [_withModal(model, { cmdline: { ...c, text, sel: 0, scroll: 0 } }), [{ type: 'cmdline_rebuild' }]];
       }
-      if (msg.seq === '\x7f') {
+      if (pressed(msg, '\x7f')) {
         // One CELL — a pasted ❤️ or 👍🏽 is one glyph of several codepoints
         // (one codepoint left ❤ or 👍 behind; one UTF-16 unit, half a pair).
         const text = withoutLastCell(c.text);

@@ -22,6 +22,9 @@
  *       action palette filter (host screen)
  *   [4] the footer's fields — filter, search, rename (host screen)
  *   [5] widths in columns — tooltip, which-key, help, --list
+ *   [6] review round 2: tiny budgets, the suffix window, seeded values, the
+ *       footer beside a plugin segment, and the rest of the `.length` class
+ *       (help, palette, stats header, --keymap, plugin footer segments)
  *
  * Run: node js/test/test-field-window.js
  */
@@ -247,6 +250,142 @@ groups:
       eq(cols[0], cols[1], `descs start at one column: ${JSON.stringify(rows)}`);
     } finally { fs.rmSync(TMP, { recursive: true, force: true }); }
   });
+
+section('[6] review round 2');
+await step('fieldWindow never runs past a field of 1+ columns (the `…` goes first)', async () => {
+  const texts = ['abcdefgh', '中文中文中文', 'a中b文c', '❤️👍🏽❤️👍🏽', ''];
+  let worst = 0;
+  for (const t of texts) for (let avail = 1; avail <= 6; avail++) for (let cur = 0; cur <= t.length; cur++) {
+    const w = fieldWindow(t, cur, avail);
+    const at = w.at ? stringWidth(w.at) : 1;
+    const used = (w.clipped ? 1 : 0) + stringWidth(w.before) + at + stringWidth(w.after);
+    if (at <= avail) worst = Math.max(worst, used - avail);
+  }
+  eq(worst, 0, 'columns past the field, worst case');
+});
+await step('fieldTail (a suffix of a long text) = the window over the whole text', async () => {
+  const { fieldTail } = require('../leaves/text/field-window');
+  const { fieldText } = require('../leaves/text/printable');
+  const bits = ['x', '中', '❤️', '👍🏽', '\u{1F468}‍\u{1F469}', 'e\u0301', '\t', '\x1b[31m', ' '];
+  let diff = 0;
+  for (let k = 0; k < 400; k++) {
+    let t = ''; const n = 50 + (k * 37) % 900;
+    for (let i = 0; i < n; i++) t += bits[(i * 7 + k) % bits.length];
+    for (const avail of [5, 17, 40]) {
+      const ft = fieldText(t);
+      if (JSON.stringify(fieldTail(t, avail)) !== JSON.stringify(fieldWindow(ft, ft.length, avail))) diff++;
+    }
+  }
+  // A suffix that cannot fill the field: one glyph of 2000 combining marks at
+  // the end — the window must still mark the cut start (the fallback).
+  const longGlyph = 'abcdefghij'.repeat(5) + 'e' + '\u0301'.repeat(2000);
+  for (const avail of [5, 17]) {
+    if (JSON.stringify(fieldTail(longGlyph, avail)) !== JSON.stringify(fieldWindow(longGlyph, longGlyph.length, avail))) diff++;
+  }
+  eq(diff, 0, 'windows that differ');
+});
+await step('fabric form: a seeded value with a tab keeps the chips in one column', async () => {
+  boot();
+  const PA2 = { actionKey: 'greet', action: { label: 'Greet', type: 'run', script: 'echo',
+    ports: { in: { a: { type: 'string' }, b: { type: 'string' } } } } };
+  withModel((m) => runtime.update(m, { type: 'fabric_form_enter', pendingAction: PA2, fields: [
+    { port: 'a', text: 'x\ty\nz', required: false, default: 'dflt', desc: '' },
+    { port: 'b', text: 'x\ty\nz', required: false, default: 'dflt', desc: '' }] }));
+  await hs.paint();
+  const rows = screen().filter((l) => l.includes('[modified]'));
+  eq(rows.length, 2, 'both rows show their chip whole');
+  eq(new Set(rows.map((l) => stringWidth(l.slice(0, l.indexOf('[modified]'))))).size, 1, `one chip column: ${JSON.stringify(rows)}`);
+  withModel((m) => runtime.update(m, { type: 'fabric_form_cancel' }));
+});
+await step('footer search beside a plugin\'s footerRight segment keeps its caret', async () => {
+  boot();
+  sm.api.registerComponent({ name: 'fw-right-probe', init: () => ({}), update: (m, s) => s,
+    viewContributions: { footerRight: () => 'CPU 12% MEM 40%' } });
+  type('\x1b[C'); type('\x1b[C'); type('/');
+  paste(LONG);
+  await hs.paint();
+  const f = hs.line(hs.vt.rows - 1);
+  assert(f.includes('END│') && f.includes('CPU 12% MEM 40%'), JSON.stringify(f));
+  sm.api._resetViewContributions();
+});
+await step('help: a `[` key with a `]` after it; a CJK command; columns line up', async () => {
+  boot();
+  const kb = require('../leaves/input/keybindings');
+  kb.registerKeyBinding('z [ ]', { label: 'pair-help', run() {} });
+  sm.api.registerComponent({ name: 'fw-cmd-probe', init: () => ({}), update: (m, s) => s,
+    commands: [{ name: '温度表示', desc: 'cjk-cmd', run() {} }, { name: 'ab', desc: 'ascii-cmd', run() {} }] });
+  require('../panel/content/help').showHelp();
+  const lines = (sm.api.getInstanceSlice(sm.route.resolveTarget('viewer')).lines || []).map((l) => stripMarkup(l));
+  const at = (label) => { const l = lines.find((x) => x.endsWith(label)) || ''; return stringWidth(l.slice(0, l.length - label.length)); };
+  assert(lines.some((l) => l.startsWith('  Space z [ ] ')), 'the chord is shown whole');
+  eq([at('cjk-cmd'), at('ascii-cmd')], [18, 18], 'command descriptions start after the 15-column key column');
+});
+await step('palette: a long CJK label leaves no room for the description', async () => {
+  const { _formatRow } = require('../overlay/action-palette');
+  const row = _formatRow({ path: 'g:a', label: '温'.repeat(26), desc: 'DESC' }, 68);
+  assert(!stripMarkup(row).includes('DESC'), `52 columns of label: the budget is 9, under 10 (${JSON.stringify(stripMarkup(row))})`);
+});
+await step('stats header: a CJK or bracketed metric name fits the pane and shows', async () => {
+  const stats = require('../panel/monitor/stats');
+  const { visibleLen } = require('../leaves/text/ansi');
+  const now = Date.now();
+  for (const metric of ['温度', 'ディスク使用率', '[x]']) {
+    const samples = [10, 20, 30].map((v, i) => ({ ts: now - (3 - i) * 1000, [metric]: v }));
+    const head = stats._renderSection(metric, samples, { columns: { [metric]: { type: 'percent' } } }, 40, 2, 'braille', 'height', -1, false, false, null, 0)[0];
+    const shown = stripMarkup(head);
+    eq([visibleLen(head), shown.startsWith(metric.toUpperCase()) || shown.startsWith(metric.toUpperCase().slice(0, 5)), shown.endsWith('avg 20.0%')],
+      [40, true, true], `${metric}: ${JSON.stringify(shown)}`);
+  }
+});
+await step('plugin footer segments are cut to their budget in columns, never inside a tag', async () => {
+  const { visibleLen } = require('../leaves/text/ansi');
+  for (const text of ['温度传感器温度传感器温度传感器', '[accent]status ok[/] more text here']) {
+    sm.api._resetViewContributions();
+    sm.api.registerComponent({ name: 'fw-seg-' + visibleLen(text), init: () => ({}), update: (m, s) => s,
+      viewContributions: { footerRight: () => text } });
+    const out = sm.api.collectViewContributions('footerRight', { width: 12 });
+    assert(visibleLen(out) <= 12 && visibleLen(out) >= 11 && stripMarkup(out).endsWith('…'), `${JSON.stringify(text)} → ${JSON.stringify(out)}`);
+  }
+  sm.api._resetViewContributions();
+});
+await step('--keymap: a CJK key lines up its `->`; --list keeps one row per action', async () => {
+  const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'field-window-'));
+  try {
+    const cfg = path.join(TMP, 'tui.yml');
+    fs.writeFileSync(cfg, `project_dir: .
+keymap:
+  version: 1
+  normal:
+    中: show_help
+    Q: cmdline
+groups:
+  g:
+    label: G
+    actions:
+      a:
+        script: echo a
+        type: run
+        label: "two\\nlines"
+        desc: |
+          first line
+          second\tline
+`);
+    const run = (flag) => spawnSync(process.execPath, [path.resolve(__dirname, '..', 'app', 'tui.js'), cfg, flag], { encoding: 'utf8', timeout: 5000 }).stdout;
+    const km = run('--keymap').split('\n').filter((l) => /^  (中|Q) /.test(l));
+    eq(km.length, 2, 'both bindings listed');
+    eq(new Set(km.map((l) => stringWidth(l.slice(0, l.indexOf(' -> '))))).size, 1, `one -> column: ${JSON.stringify(km)}`);
+    const list = run('--list').split('\n').filter(Boolean);
+    eq(list, ['g:a  two lines  — first line second line'], 'one row, whitespace collapsed');
+  } finally { fs.rmSync(TMP, { recursive: true, force: true }); }
+});
+await step('tooltip: a label with a tab is not cut', async () => {
+  boot(100, 20);
+  const hoverRegion = require('../panel/hover-region');
+  hoverRegion.publish({ text: 'web\tworker 42%', x: 5, y: 3 });
+  const rows = Array.from({ length: 20 }, () => ' '.repeat(100));
+  require('../overlay/hover-tooltip').render(getModel(), rows, 100);
+  assert(stripMarkup(rows[4]).includes('worker 42%'), JSON.stringify(stripMarkup(rows[4]).trim()));
+});
 
 hs.restore();
 report();

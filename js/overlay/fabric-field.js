@@ -28,7 +28,7 @@ const { getModel } = require('../model/store');
 const { esc } = require('../leaves/text/ansi');
 const { renderOverlay, viewportDims } = require('../leaves/render/draw');
 const { formatHints } = require('../leaves/render/hints');
-const { fieldWindow } = require('../leaves/text/field-window');
+const { fieldTail } = require('../leaves/text/field-window');
 
 // The box's width cap (renderOverlay clamps it to the screen: COLS - 2).
 const MAX_WIDTH = 60;
@@ -76,13 +76,13 @@ function renderFabricFieldOverlay(newRows, cols) {
 
   // Caret in-buffer: inverse space right after the typed text. Keeps the
   // paint.js cursor-visibility bitmap untouched (terminalMode/cmdMode only).
-  // The text is a field window (leaves/text/field-window) over the box's
+  // The text is a field window (leaves/text/field-window fieldTail) over the box's
   // interior minus '> ', scrolled to keep its end and the caret in view — the
   // row painted from the start, so past ~56 columns the caret and the end of
   // what was typed fell off the right edge and the user typed blind.
   const text = String(f.text || '');
   const innerW = Math.min(MAX_WIDTH, viewportDims().cols - 2) - 2;
-  const win = fieldWindow(text, text.length, innerW - 2);
+  const win = fieldTail(text, innerW - 2);
   const buffer = `> ${win.clipped ? '[dim]…[/]' : ''}${esc(win.before)}[reverse] [/]`;
 
   const lines = [`[accent]${esc(addr)}[/]`];

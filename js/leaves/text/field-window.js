@@ -15,14 +15,19 @@
  *
  * Measured in CELLS (char-width `cellsOf`: ❤️, 👍🏽, a flag, a CJK glyph are one
  * cell each, 2 columns), so the window never splits a glyph and never overruns.
- * The text is expected to be field text (printable.fieldText: no tabs, no
- * control sequences) — what is measured is what esc() paints.
+ * The text must be field text (printable.fieldText: no tabs, line breaks or
+ * control sequences) — what is measured is what esc() paints. `fieldTail`
+ * (the fields whose caret is after their text: all but the agent prompt) runs
+ * it through fieldText itself, so a SEEDED value (a resolved inject, a
+ * `default:`, a pane title) with a tab or a line break neither misaligns its
+ * row (a tab is 1 column measured, up to 8 painted) nor splits it.
  *
  * Pure leaf.
  */
 'use strict';
 
-const { cellsOf, stringWidth } = require('./char-width');
+const { cellsOf, cellFloor, stringWidth } = require('./char-width');
+const { fieldText } = require('./printable');
 
 /**
  * @param {string} text    the field's text
@@ -55,17 +60,41 @@ function fieldWindow(text, cursor, avail) {
     let used = toCursor + cursorW;
     while (start < c && used > cols - 1) { used -= cw[start]; toCursor -= cw[start]; start++; }
   }
+  // The `…` only when it fits beside the caret cell: in a 1-column field (or 2
+  // with a wide glyph under the caret) it is the caret alone — `…` + caret ran
+  // a column past the field (a form field's chip moved right).
+  const mark = start > 0 && toCursor + cursorW < cols;
   let end = c + (c < chars.length ? 1 : 0), w = 0;
   for (let i = start; i < end; i++) w += cw[i];
-  const room = cols - (start > 0 ? 1 : 0);
+  const room = cols - (mark ? 1 : 0);
   while (end < chars.length && w + cw[end] <= room) w += cw[end++];
   return {
-    clipped: start > 0,
+    clipped: mark,
     before: chars.slice(start, c).join(''),
     at: c < chars.length ? chars[c] : '',
     after: chars.slice(c + 1, end).join(''),
-    caretCol: (start > 0 ? 1 : 0) + toCursor,
+    caretCol: (mark ? 1 : 0) + toCursor,
   };
 }
 
-module.exports = { fieldWindow };
+/**
+ * The window of a field whose caret is after its text, over the text as a
+ * field shows it (printable.fieldText). Only the end can show, so a long text
+ * is windowed from a suffix: the last `avail * 8 + 64` UTF-16 units, cut at a
+ * cell boundary — the cmdline repaints this every frame and on every PTY
+ * fast-path repaint, and walking a 100K-character paste cell by cell cost
+ * ~4 ms a frame. A suffix too short to fill the field (a long run of
+ * combining marks) falls back to the whole text.
+ */
+function fieldTail(text, avail) {
+  const t = fieldText(text || '');
+  const from = cellFloor(t, t.length - ((Math.max(1, avail | 0)) * 8 + 64));
+  if (from > 0) {
+    const tail = t.slice(from);
+    const w = fieldWindow(tail, tail.length, avail);
+    if (w.clipped) return w;
+  }
+  return fieldWindow(t, t.length, avail);
+}
+
+module.exports = { fieldWindow, fieldTail };

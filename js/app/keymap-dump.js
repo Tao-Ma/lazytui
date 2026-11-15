@@ -16,6 +16,7 @@ const path = require('path');
 function runKeymapDump(configPath) {
   const km = require('../leaves/input/keymap');
   const dispatch = require('../dispatch/control/dispatch');
+  const { stringWidth } = require('../leaves/text/char-width');
   const out = (s) => process.stdout.write(s + '\n');
 
   // Layer the global user config exactly as boot does (docs/global-config),
@@ -56,7 +57,9 @@ function runKeymapDump(configPath) {
     for (const e of (table[ctx] || [])) {
       const s = e.spec;
       const v = s.builtin || (s.action && `action:${s.action}`) || (s.command && `command:${s.command}`) || '?';
-      out(`  ${String(e.key).padEnd(4)} -> ${v}${ctx !== 'global' ? `   [${ctx}]` : ''}`);
+      // Padded in COLUMNS (stringWidth): `.padEnd` put a CJK key's `->` a column right.
+      const k = String(e.key);
+      out(`  ${k}${' '.repeat(Math.max(0, 4 - stringWidth(k)))} -> ${v}${ctx !== 'global' ? `   [${ctx}]` : ''}`);
     }
   }
   return 0;

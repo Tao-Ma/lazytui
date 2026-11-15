@@ -47,8 +47,9 @@ function clearBindings() { _root.children = Object.create(null); }
 
 // Keys that reach handleKey as their raw BYTE (normal-mode handlers test
 // `seq === '\x7f'`, so the byte stays the event) — named for chord matching.
-// (^H never arrives here: the input ladder turns it into \x7f.)
-const _BYTE_NAMES = Object.assign(Object.create(null), { '\t': 'tab', '\x7f': 'backspace' });
+// (^H no longer arrives live — the input ladder turns it into \x7f — but a
+// session recorded before that replays its `\b` as it was.)
+const _BYTE_NAMES = Object.assign(Object.create(null), { '\t': 'tab', '\x7f': 'backspace', '\b': 'backspace' });
 
 // `<name>` spellings people write (vim's, mostly) → the name the keyboard side
 // produces. Without these, `<cr>` / `<esc>` / `<bs>` / `<del>` parsed fine and

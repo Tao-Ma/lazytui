@@ -25,7 +25,7 @@
 
 const { withModalMode, withModal } = require('../model-ops');
 const { appendCapped, withoutLastCell } = require('../../../leaves/text/char-width');
-const { fieldInput } = require('../../../leaves/text/printable');
+const { fieldInput, pressed } = require('../../../leaves/text/printable');
 
 const TYPES = [
   'palette_open',
@@ -65,7 +65,7 @@ function update(model, msg) {
       if (!model.modes.paletteMode) return [model, []];
       const cur = model.modal.palette.filter;
       let next;
-      if (msg.seq === '\x7f') {
+      if (pressed(msg, '\x7f')) {
         // Backspace — pop one glyph (a pasted ❤️ or 👍🏽 is several
         // codepoints; one code unit left half a surrogate pair).
         next = withoutLastCell(cur);

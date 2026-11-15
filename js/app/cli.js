@@ -112,9 +112,11 @@ function formatActionList(config, filter) {
   const rows = [];
   for (const { path, action } of iterActions(config)) {
     if (f && !path.toLowerCase().includes(f)) continue;
-    const label = action.label || '';
-    const desc = action.desc || '';
-    rows.push([path, label, desc]);
+    // One table row per action: a `desc: |` block or a label with a tab / line
+    // break broke the table (a line break started a new row, a tab misaligned
+    // the columns) — whitespace runs collapse to one space.
+    const oneLine = (s) => String(s || '').replace(/\s+/g, ' ').trim();
+    rows.push([path, oneLine(action.label), oneLine(action.desc)]);
   }
   if (!rows.length) {
     return f ? `(no actions matched "${filter}")` : '(no YAML actions found)';

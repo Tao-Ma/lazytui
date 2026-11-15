@@ -731,11 +731,17 @@ function _renderSection(metric, samples, schema, width, graphHeight, style, colo
   }
 
   const t = theme();
-  const label = metric.toUpperCase();
+  // The metric name is config data: esc()'d (a `[x]` name was read as markup
+  // and vanished) and measured in columns (a CJK name ran the header past the
+  // pane — `.length` counted 中 as 1 — and the avg was cut).
+  // A name too long for the room beside the stats is cut (`…`), not the stats.
   const stats = `${fmt(latest)}  peak ${fmt(peak)}  avg ${fmt(avg)}`;
+  const room = width - visibleLen(stats) - 1;
+  let label = esc(metric.toUpperCase());
+  if (room > 0 && visibleLen(label) > room) label = truncate(label, room);
   // Header: bold label on the left, stats on the right.
-  const labelLen = label.length;
-  const statsLen = stats.length;
+  const labelLen = visibleLen(label);
+  const statsLen = visibleLen(stats);
   const padLen = Math.max(1, width - labelLen - statsLen);
   const header = `[bold]${label}[/]${' '.repeat(padLen)}[${t.dim}]${stats}[/]`;
 

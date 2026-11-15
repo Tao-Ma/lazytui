@@ -37,7 +37,7 @@
 const { withModalMode, withModal } = require('../model-ops');
 const { isChainActive } = require('../../../leaves/input/modes');
 const { applyInject } = require('../fabric');
-const { fieldInput } = require('../../../leaves/text/printable');
+const { fieldInput, pressed } = require('../../../leaves/text/printable');
 const { appendCapped, withoutLastCell } = require('../../../leaves/text/char-width');
 // Brief 3 — variadic fields tokenize `text` → argv items at submit using the
 // same leaf compileCommand uses, so form text and `run:` string templates
@@ -405,8 +405,8 @@ function update(model, msg) {
       const cur = f.fields[f.focusIdx];
       if (!cur) return [model, []];
       let text = cur.text;
-      if (msg.seq === '\x7f') text = withoutLastCell(text);                   // backspace: one glyph
-      else if (msg.seq === '\x15') text = '';                                  // Ctrl+U — clear-line
+      if (pressed(msg, '\x7f')) text = withoutLastCell(text);                // backspace: one glyph
+      else if (pressed(msg, '\x15')) text = '';                               // Ctrl+U — clear-line (a paste is text: pressed)
       else {
         // Typed text in any script (R3C-BUG1 — the old `charCodeAt(0) >= 32 &&
         // < 127` gate rejected CJK IME / emoji silently, so an author adding
@@ -1054,7 +1054,7 @@ function update(model, msg) {
       if (f.picking === null) return [model, []];
       const cur = typeof f.picking.filter === 'string' ? f.picking.filter : '';
       let next;
-      if (msg.seq === '\x7f') {
+      if (pressed(msg, '\x7f')) {
         if (cur.length === 0) return [model, []];
         next = withoutLastCell(cur);                                          // one glyph
       } else {

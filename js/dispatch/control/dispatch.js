@@ -37,7 +37,7 @@ const route = require('../../panel/route');
 const mpane = require('../../leaves/wm/pane');
 const { halfProjection } = require('../../leaves/wm/geometry');
 const { filterChoices } = require('../../leaves/ports/choices-filter');
-const { fieldInput } = require('../../leaves/text/printable');
+const { fieldInput, pressed } = require('../../leaves/text/printable');
 // getModel is the bottom-layer store (v0.6.5 §1), imported down.
 const { getModel } = require('../../model/store');
 // #D4b — the root-Msg pump (applyMsg) now lives in the runtime loop alongside
@@ -271,8 +271,9 @@ function handleFilterKey(key, seq) {
   // showSelectedInfo() — two dispatch entry points for one gesture).
   if (key === 'escape') { applyMsg({ type: 'filter_exit', keep: false }); return; }
   if (key === 'return') { applyMsg({ type: 'filter_exit', keep: true  }); return; }
-  if (key === 'up'   || seq === 'k') { handleAction('nav_up');   return; }
-  if (key === 'down' || seq === 'j') { handleAction('nav_down'); return; }
+  // (a pasted `k` / `j` is filter text, not navigation — printable.pressed)
+  if (key === 'up'   || pressed({ key, seq }, 'k')) { handleAction('nav_up');   return; }
+  if (key === 'down' || pressed({ key, seq }, 'j')) { handleAction('nav_down'); return; }
   // T26 — thread `key` through so the reducer can detect paste
   // (key='paste', seq=<content>).
   applyMsg({ type: 'filter_key', key, seq });
@@ -369,8 +370,8 @@ function handleCmdlineKey(key, seq) {
   // callers that don't pre-normalize them to 'up'/'down'.
   if (key === 'escape')                      { applyMsg({ type: 'cmdline_cancel' }); return; }
   if (key === 'return')                      { applyMsg({ type: 'cmdline_submit' }); return; }
-  if (key === 'up'   || seq === '\x1b[A')    { applyMsg({ type: 'cmdline_nav', dir: +1 }); return; }
-  if (key === 'down' || seq === '\x1b[B')    { applyMsg({ type: 'cmdline_nav', dir: -1 }); return; }
+  if (key === 'up'   || pressed({ key, seq }, '\x1b[A')) { applyMsg({ type: 'cmdline_nav', dir: +1 }); return; }
+  if (key === 'down' || pressed({ key, seq }, '\x1b[B')) { applyMsg({ type: 'cmdline_nav', dir: -1 }); return; }
   // T26 — thread `key` so the reducer detects paste (key='paste').
   applyMsg({ type: 'cmdline_key', key, seq });
 }
@@ -1021,16 +1022,16 @@ function handlePaletteKey(key, seq) {
     });
     return;
   }
-  if (key === 'up'   || seq === '\x1b[A') {
+  if (key === 'up'   || pressed({ key, seq }, '\x1b[A')) {
     applyMsg({ type: 'palette_nav', dir: -1, total: getView().rows.length });
     return;
   }
-  if (key === 'down' || seq === '\x1b[B') {
+  if (key === 'down' || pressed({ key, seq }, '\x1b[B')) {
     applyMsg({ type: 'palette_nav', dir: +1, total: getView().rows.length });
     return;
   }
   // Backspace pops the filter buffer.
-  if (seq === '\x7f') { applyMsg({ type: 'palette_filter', seq }); return; }
+  if (pressed({ key, seq }, '\x7f')) { applyMsg({ type: 'palette_filter', key, seq }); return; }
   // Typed text or a paste appends to the filter (printable.fieldInput, shared
   // by every text field: a stray control byte never lands; a paste is made
   // single-line and control-free — one with a tab or a line break was dropped
@@ -1134,7 +1135,7 @@ const _modeHandlers = {
                                    : 'fabric_form_choices_close' });
         return;
       }
-      else if (seq === ' ')                { applyMsg({ type: 'fabric_form_choices_close' }); return; }
+      else if (pressed({ key, seq }, ' ')) { applyMsg({ type: 'fabric_form_choices_close' }); return; }   // (a pasted space is filter text)
       else if (key === 'return')           {
         // Brief 2 — Enter commits the FILTERED value at picking.idx (not the
         // raw-list value). On "no match" (filtered empty), close the popover
@@ -1155,7 +1156,7 @@ const _modeHandlers = {
       // Brief 2 — backspace pops the filter; typed text / a paste appends.
       // Tab / Shift-Tab + any other control seq fall through to the regular
       // form routing after closing the popover (same semantics as pre-Brief-2).
-      else if (seq === '\x7f') { applyMsg({ type: 'fabric_form_choices_filter', seq }); return; }
+      else if (pressed({ key, seq }, '\x7f')) { applyMsg({ type: 'fabric_form_choices_filter', key, seq }); return; }
       else if (fieldInput({ key, seq }) != null) {   // typed text / a paste (printable.fieldInput)
         applyMsg({ type: 'fabric_form_choices_filter', key, seq });
         return;
@@ -1169,9 +1170,9 @@ const _modeHandlers = {
     const fFresh = m.modal && m.modal.fabricForm;
     if      (key === 'escape')             applyMsg({ type: 'fabric_form_cancel' });
     else if (key === 'return')             applyMsg({ type: 'fabric_form_submit' });
-    else if (seq === '\t')                 applyMsg({ type: 'fabric_form_focus_next' });
+    else if (pressed({ key, seq }, '\t')) applyMsg({ type: 'fabric_form_focus_next' });   // (a pasted tab is text)
     else if (key === 'backtab')            applyMsg({ type: 'fabric_form_focus_prev' });
-    else if (seq === ' ') {
+    else if (pressed({ key, seq }, ' ')) {
       // Space on a focused field with ANY choices affordance (fn / cmd /
       // literal) opens the popover; on any other field it falls through to
       // the field-key edit (= a literal space in the text), which preserves

@@ -24,7 +24,7 @@ const { getModel } = require('../model/store');
 const { renderOverlay, viewportDims } = require('../leaves/render/draw');
 const { formatHints } = require('../leaves/render/hints');
 const { esc, stringWidth } = require('../leaves/text/ansi');
-const { fieldWindow } = require('../leaves/text/field-window');
+const { fieldTail } = require('../leaves/text/field-window');
 const { filterChoices } = require('../leaves/ports/choices-filter');
 const { windowSlice } = require('../leaves/render/window-slice');
 
@@ -174,7 +174,7 @@ function renderActionPalette(newRows, cols) {
     // the '/', keeping the END of what is typed in view (painted from the
     // start, it fell off the right edge once the needle outgrew the box).
     const innerW = Math.min(PALETTE_MAX_WIDTH, viewportDims().cols - 2) - 2;
-    const win = fieldWindow(filter, filter.length, innerW - 1);
+    const win = fieldTail(filter, innerW - 1);
     lines.push(`[dim]/${win.clipped ? '…' : ''}[/]${esc(win.before)}`);
   }
 
@@ -270,6 +270,6 @@ function registerSelf(compositor) {
 }
 
 module.exports = {
-  renderActionPalette, currentView, _collectRows, filteredRows,
+  renderActionPalette, currentView, _collectRows, _formatRow, filteredRows,
   setConfigAccessors, resolve, registerSelf,
 };

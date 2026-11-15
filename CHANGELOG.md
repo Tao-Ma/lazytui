@@ -46,13 +46,19 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   form, the action palette's filter, and the filter / search / rename fields
   in the footer showed the start of their text. Past the field's width, the
   cursor and the end of what you were typing went off the edge. Each one now
-  scrolls like the agent prompt: `…`, then the end and the cursor.
+  scrolls like the agent prompt: `…`, then the end (and the cursor, in the
+  fields that draw one). A port value with a tab or a line break — pre-filled
+  from a wire, the last run or a `default:` — now shows on one line, with tabs
+  as spaces, instead of pushing the form's chip out of line or splitting the
+  form's box and the pane's border (the value itself keeps them).
 - **Text in any script, and emoji, can be typed into every text field.** The
-  command line, the filter, search, the agent prompt and the layout editor's
-  title edit took only ASCII from the keyboard: an input-method commit (你好),
-  an emoji picker or a compose key typed nothing, and the filter kept only
-  the invisible joiners of a typed 👨‍👩‍👧. Typing now works in every field,
-  the same as pasting.
+  command line, search, the agent prompt and the layout editor's title edit
+  took only ASCII from the keyboard: an input-method commit (你好), an emoji
+  picker or a compose key typed nothing. The filter took 你好 but no emoji,
+  and kept only the invisible joiners of a typed 👨‍👩‍👧. Search and the title
+  edit also dropped every paste. Typing and pasting now work in every field.
+  Control characters U+0080–U+009F are not text: typed, they are ignored (a
+  field that echoed U+009B wrote a raw control to the terminal).
 - **Ctrl+H is Backspace.** Terminals set to send ^H for Backspace (PuTTY's
   option, `stty erase ^H`, some Windows consoles) could delete only in the
   layout editor's title edit. ^H, including a kitty-protocol Ctrl+H, now
@@ -62,14 +68,30 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   while the cursor counted 1. A pasted colour code tinted the row and put the
   cursor 5 columns past the text. The action palette and the choices filter
   dropped such a paste entirely. A single-line field now turns each tab and
-  line break into a space and drops control sequences, in every field. A tab
-  pasted alone into the command line is text, not Tab completion.
+  line break into a space and drops control sequences, in every field.
+- **A paste is text, never a key.** A paste whose text was exactly a key's
+  byte acted as that key: a pasted tab moved a port form to its next field
+  (and Tab-completed the command line), a pasted space closed the choices
+  popover, a pasted `k` or `j` moved the filter's cursor, a pasted Ctrl+U
+  cleared a field. Each is now typed as text.
 - **CJK labels fit their tooltip and line up in help, which-key and
   `--list`.** The hover tooltip was sized by character count, so a CJK value
   was cut short with `…`. Help, the leader-key popup and `lazytui --list`
   padded by character count, so a CJK key, command or label pushed the text
   after it out of line. A leader binding on `[` showed in the popup without
-  its key.
+  its key. The same holds for a stats graph's header (a CJK metric name ran it
+  past the pane and cut the average; a name with `[` vanished), `lazytui
+  --keymap`, and footer segments added by plugins (cut by character count,
+  twice their space wide in CJK, or through a colour tag). A tooltip whose
+  text has a tab is no longer cut short. `--list` keeps one row per action
+  when a label or description has a line break or a tab.
+- **Output full of unterminated escape sequences no longer freezes the
+  UI.** Removing the control sequences from text took time quadratic in the
+  number of `ESC ]` / `ESC P` openers that had no terminator: 64 KB of action
+  output or command-line text took about a second per frame. It is linear now.
+- **A Nerd Font glyph followed by digits and `;` no longer shows as
+  `undefined`.** Text with U+E000 or U+E001 around `0;` collided with the
+  placeholder that protects colour codes while control sequences are removed.
 
 ## [0.6.59] — 2026-11-15
 

@@ -47,7 +47,7 @@ const tvu = require('../../leaves/text/text-view-update');
 const ms = require('../../leaves/text/search');
 const { esc } = require('../../leaves/text/ansi');
 const { cellFloor, cellCeil } = require('../../leaves/text/char-width');
-const { fieldInput } = require('../../leaves/text/printable');
+const { fieldInput, pressed } = require('../../leaves/text/printable');
 const { fieldWindow } = require('../../leaves/text/field-window');
 const { buildTextView } = require('../../leaves/text-view/render');
 const { renderPanel, theme } = require('../api');
@@ -310,7 +310,7 @@ function _input(slice, msg) {
   // and ❤️ / 👍🏽 / a flag are one glyph of several codepoints.
   const prev = (i) => (i > 0 ? cellFloor(text, i - 1) : 0);
   const next = (i) => cellCeil(text, i + 1);
-  if (key === 'backspace' || seq === '\x7f') {
+  if (key === 'backspace' || pressed(msg, '\x7f')) {      // (a paste is text, never a key: pressed)
     if (cursor > 0) { const p = prev(cursor); text = text.slice(0, p) + text.slice(cursor); cursor = p; }
   } else if (key === 'delete') {
     text = text.slice(0, cursor) + text.slice(next(cursor));
@@ -318,7 +318,7 @@ function _input(slice, msg) {
   else if (key === 'right')   { cursor = next(cursor); }
   else if (key === 'home')    { cursor = 0; }
   else if (key === 'end')     { cursor = text.length; }
-  else if (seq === '\x15')    { text = ''; cursor = 0; }                 // Ctrl+U (prompt/cmdline parity)
+  else if (pressed(msg, '\x15')) { text = ''; cursor = 0; }              // Ctrl+U (prompt/cmdline parity)
   else {
     // Typed text in any script, or a paste made single-line and control-free
     // (printable.fieldInput — the draft holds what the row shows).
