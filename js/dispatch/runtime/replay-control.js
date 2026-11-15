@@ -205,7 +205,9 @@ function _moveTo(target) {
  *  the path or null. */
 function enter(file, opts = {}) {
   let log;
-  try { log = _sessionLog().load(file); }
+  // read, not load: load replaces the recorder's buffer and seq counter — with
+  // recording on, the live WAL went on with duplicate, falling seqs.
+  try { log = _sessionLog().read(file); }
   catch (e) { _diag(`record-load: ${e.message}`); return null; }
   if (!log.length) { _diag(`record-load: empty session ${file}`); return null; }
   // Register the recorded session's external Components (peeked from the WAL) so
@@ -250,6 +252,9 @@ function enter(file, opts = {}) {
     onExit: typeof opts.onExit === 'function' ? opts.onExit : null,
   };
   S.anchorClock = S.clock; S.anchorReal = _now();
+  // From here until exit() has put the live session back, the stores hold the
+  // recording's model (replay.isReplaying() — no live IO from it).
+  _replay().setReplayFrame(true);
   // Reconstruct off the current dispatch tick (this runs inside the cmdline
   // effect; fold at depth-0 so finalizers land cleanly).
   setImmediate(() => {
@@ -270,9 +275,11 @@ function exit() {
   _stopTimer();
   const { onExit, liveSnapshot, liveGrids } = S;
   S = null;
-  if (onExit) { onExit(); return; }
-  _replay().restoreState(liveSnapshot);
-  _terminal().restoreLiveSessions(liveGrids);   // scrub replay bytes off live panes (#D14 island)
+  if (onExit) { _replay().setReplayFrame(false); onExit(); return; }
+  try {
+    _replay().restoreState(liveSnapshot);
+    _terminal().restoreLiveSessions(liveGrids);   // scrub replay bytes off live panes (#D14 island)
+  } finally { _replay().setReplayFrame(false); }
   _render();
 }
 

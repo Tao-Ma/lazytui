@@ -186,8 +186,19 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 - **A `:record-load` stops a running terminal pane's program only if the
   recording reaches that pane**, when it first does (every live terminal was
   stopped on leaving the replay, and its tab closed). The stopped pane comes
-  back showing its last screen, says `Process stopped`, and Enter restarts it;
-  a terminal the recording never touches keeps running.
+  back showing its last screen, says `Process stopped` (or its own exit code
+  if it had already exited), and Enter restarts its command; a terminal the
+  recording never touches keeps running.
+- **A `:record-load` never runs the recording's commands on this machine.**
+  Resizing the window (or any other event) while a recording was loaded
+  started the recording's `metrics:` commands and could start its terminals'
+  commands, which then kept running after the replay. Live polls now pause
+  while a recording is loaded and resume when you leave it.
+- **A recording that restarted a terminal replays as two runs**: the second
+  run on a fresh screen, not both runs on one screen ending in the first
+  run's exit.
+- **`:record-load` while `:record-save` is on leaves the live recording
+  intact** (it went on with repeated sequence numbers).
 - **`--lint` exits 1 for two new warnings**, `keys.unreachable_step` and
   `panels.nested_config`, on configs it passed before.
 

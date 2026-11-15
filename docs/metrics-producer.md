@@ -401,13 +401,13 @@ break replay:
   `metrics-poll`. And a fold is **synchronous** (the driver applies every
   entry in one loop), so a producer that was already live cannot fire a
   poll *mid-fold* either — a macrotask timer can't run until the loop
-  yields. The `isReplaying()` check inside `poll` is therefore defensive
-  (it can't observe `true` during a synchronous fold); the same pattern
-  guards the overlay-repaint sub. Caveat: during an *interactive* replay
-  session (playback driven by its own timers, live event loop running), a
-  producer live at entry is not torn down and keeps polling — a known
-  limitation shared with the other always-on polling subs, not specific
-  to metrics.
+  yields. During an *interactive* replay (`:record-load` — playback driven
+  by its own timers, live event loop running) `isReplaying()` holds between
+  folds too (`replay.setReplayFrame`), so the check inside `poll` pauses a
+  producer that was live at entry (its samples would land in the
+  recording's model) until the replay exits, and a Msg dispatched between
+  frames can't have the reconciler start the RECORDING's producers on this
+  host (round-3 review 2026-11-14 — a terminal resize did).
 
 So the producer is a pure external *source* at record time and a no-op
 at replay time; `frame = f(model)` holds throughout.

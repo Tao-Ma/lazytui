@@ -77,7 +77,9 @@ const SID = 'g1_shell';   // a deterministic group_key id — the colliding case
 
   // ---- exit → live session must be restored (model AND terminal) ----
   replayControl.exit();
-  await feedSync(SID, '');                              // flush the restore write
+  // Flush the restore's parse on the screen itself — a feedReplay now would be a
+  // replay write, taking the restored live pane over again.
+  await new Promise(res => require('../io/term-screen').writeScreen(terminal.getSession(SID).screen, '', res));
   const afterText = gridText(SID);
   const replayOnlyExistsAfter = !!terminal.getSession(REPLAY_ONLY);
 
@@ -194,11 +196,13 @@ process.stdin.on('data', d => require('fs').appendFileSync(process.argv[2], d.to
         const s = terminal.getSession(live.c.id);
         assert(s === liveC && s.pty && !s.exited, 'running');
       });
-      it('a replaced one comes back stopped, and restarts with its pane\'s command', () => {
+      it('a replaced one comes back stopped, and restarts with its own command', () => {
         const s = terminal.getSession(live.a.id);
         eq([s.exited, s.exitCode, s.pty], [true, null, null]);
-        const r = terminal.restartSession(live.a.id, 80, 24, { cmd: `${process.execPath} ${child} ${stdinLog('a2')}`, cwd: dir });
-        assert(r && r.pty, 'a live PTY again');
+        const own = `${process.execPath} ${child} ${stdinLog('a')}`;
+        eq([s.cmd, s.cwd], [own, dir], 'it keeps the live session\'s command and directory');
+        const r = terminal.restartSession(live.a.id, 80, 24, { cmd: 'not-this', cwd: '/' });
+        assert(r && r.pty && r.cmd === own, 'a live PTY again, running what it ran');
       });
       it('a recorded spawn with no size takes the default (it threw)', () => {
         const s = terminal.ensureReplaySession('g1_sizeless');
@@ -208,6 +212,74 @@ process.stdin.on('data', d => require('fs').appendFileSync(process.argv[2], d.to
     terminal.setExitHandler(null);
     terminal.destroyAll();
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+
+  // ---- [7]–[10] round-3 review 2026-11-14 ----
+  // [7] The pane a replay took over came back as a REPLAY session (stopped): the
+  // next replay found "its own" screen and fed it — its frame showed `Process
+  // stopped` on a terminal that ran in the recording. [8] One that had exited on
+  // its own came back `Process stopped` (its code lost). [9] A recorded restart
+  // (spawn, out, exit, spawn, out) replayed both runs onto one screen, exited.
+  // [10] A live program started during the replay (against a replay frame)
+  // kept running behind the live tab after exit.
+  {
+    const emu = require('../io/term-screen');
+    const replay = require('../dispatch/runtime/replay');
+    const flush = (id) => new Promise(res => emu.writeScreen(terminal.getSession(id).screen, '', res));
+    const liveOf = (o) => ({ pty: { kill() {} }, screen: emu.createScreen(40, 5), cwd: '/w', exitCode: null, exited: false, ...o });
+
+    terminal._setSessionForTest('g7', liveOf({ cmd: 'own-7' }));
+    let grids = terminal.snapshotAllSessions();
+    terminal.ensureReplaySession('g7', 40, 5);          // replay #1 takes it over
+    terminal.restoreLiveSessions(grids);
+    const back = terminal.getSession('g7');
+    const backState = [back.replay, back.exited, back.exitCode, back.cmd, back.cwd];
+    grids = terminal.snapshotAllSessions();
+    terminal.feedReplay('g7', 'REC');                   // replay #2's first touch
+    await flush('g7');
+    const second = terminal.getSession('g7');
+    const secondState = [second.replay, second.exited, second.exitCode];
+    terminal.restoreLiveSessions(grids);
+    const again = terminal.getSession('g7');
+    describe('[7] a pane a replay took over is the live pane\'s again after it', () => {
+      it('back: not a replay screen, stopped, its own command kept', () => eq(backState, [false, true, null, 'own-7', '/w']));
+      it('the next replay takes it over afresh: no stale stop on its frame', () => eq(secondState, [true, false, null]));
+      it('… and after that one, it is back stopped again', () => eq([again.replay, again.exited, again.exitCode, again.cmd], [false, true, null, 'own-7']));
+    });
+
+    terminal._setSessionForTest('g8', liveOf({ cmd: 'own-8', exited: true, exitCode: 3, pty: null }));
+    grids = terminal.snapshotAllSessions();
+    terminal.feedReplay('g8', 'REC');
+    terminal.restoreLiveSessions(grids);
+    const g8 = terminal.getSession('g8');
+    describe('[8] a pane whose program had exited on its own keeps its exit code', () => {
+      it('exited 3, not `stopped`', () => eq([g8.exited, g8.exitCode], [true, 3]));
+    });
+
+    const id9 = 'g9';
+    replay.replayTo([
+      { seq: 1, kind: 'term', id: id9, ev: 'spawn', cmd: 'x', cols: 40, rows: 5 },
+      { seq: 2, kind: 'term', id: id9, ev: 'out', d: 'FIRST-RUN\r\n' },
+      { seq: 3, kind: 'term', id: id9, ev: 'exit', code: 1 },
+      { seq: 4, kind: 'term', id: id9, ev: 'spawn', cmd: 'x', cols: 40, rows: 5 },
+      { seq: 5, kind: 'term', id: id9, ev: 'out', d: 'SECOND-RUN\r\n' },
+    ]);
+    await flush(id9);
+    const g9 = terminal.getSession(id9);
+    const g9Text = terminal.sessionViewportRows(id9, 5, 40).rows.join('|');
+    describe('[9] a recorded restart replays as a new program', () => {
+      it('running, as recorded', () => eq([g9.exited, g9.exitCode], [false, null]));
+      it('only the second run on its screen', () => assert(/SECOND-RUN/.test(g9Text) && !/FIRST-RUN/.test(g9Text), g9Text));
+    });
+
+    let killed = false;
+    grids = terminal.snapshotAllSessions();
+    terminal._setSessionForTest('g10', liveOf({ cmd: 'started-during', pty: { kill() { killed = true; } } }));
+    terminal.restoreLiveSessions(grids);
+    describe('[10] a live program started during the replay does not outlive it', () => {
+      it('gone, its program killed', () => eq([!!terminal.getSession('g10'), killed], [false, true]));
+    });
+    terminal.destroyAll();
   }
 
   try { fs.unlinkSync(wal); } catch {}

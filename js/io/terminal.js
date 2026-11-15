@@ -194,20 +194,41 @@ function sessionSize(id) {
 // the live session instead, the recorded bytes mixed with the live output, and
 // its emulator answered the RECORDED queries (DA, cursor position, OSC 10/11)
 // into the LIVE program's stdin; a recorded resize resized the live PTY.
-function _replaySession(id, cols, rows) {
+// `fresh` — a recorded spawn is a new program: a new screen, even over this
+// replay's own (a recorded restart replayed both runs onto one screen, the first
+// run's exit still on it).
+function _replaySession(id, cols, rows, fresh) {
   const s = sessions[id];
-  if (s && s.replay) return s;
+  if (s && s.replay && !fresh) return s;
   const size = (s && emu.screenSize(s.screen)) || { cols: 80, rows: 24 };   // a sizeless entry: xterm's default
-  if (s) destroySession(id);
+  _takeOver(id);
   sessions[id] = { pty: null, screen: emu.createScreen(cols || size.cols, rows || size.rows), cmd: null, cwd: null,
     exited: false, exitCode: null, _onDataSub: null, replay: true };
   return sessions[id];
 }
 
-/** Replay: create (or return) a PTY-less session backed by an emulator screen
- *  — replacing a live one with the same id. */
+// What a replay took over from the live session — id → { exited, exitCode, cmd,
+// cwd } of the session it replaced first — for restoreLiveSessions to rebuild
+// the pane as it was: a program the replay stopped reads `Process stopped`, one
+// that had already exited keeps its code, and Enter restarts its own command.
+const _replacedLive = new Map();
+
+// Make way for a replay screen under `id`: a live session (anything not built
+// by this replay) is stopped and remembered; a replay screen just goes.
+function _takeOver(id) {
+  const s = sessions[id];
+  if (!s) return;
+  if (!s.replay && !_replacedLive.has(id)) {
+    _replacedLive.set(id, { exited: s.exited, exitCode: s.exitCode, cmd: s.cmd, cwd: s.cwd });
+  }
+  destroySession(id);
+}
+
+/** Replay: a recorded spawn — a fresh PTY-less session backed by an emulator
+ *  screen, replacing whatever has the id (a live session, or this replay's
+ *  screen of an earlier run). */
 function ensureReplaySession(id, cols, rows) {
-  return _replaySession(id, cols, rows);
+  return _replaySession(id, cols, rows, true);
 }
 
 /** Replay: write a recorded PTY output chunk to the session's screen (a live
@@ -251,7 +272,7 @@ function snapshotAllSessions() {
  *  (PTY-backed) id; without this the old emulator screen (and, for a live id, its
  *  PTY + onData listener) would leak. */
 function restoreReplaySession(id, snap, cb) {
-  if (sessions[id]) destroySession(id);
+  _takeOver(id);
   sessions[id] = { pty: null, screen: emu.restoreScreen(snap, cb), cmd: null, cwd: null,
     exited: false, exitCode: null, _onDataSub: null, replay: true };
   return sessions[id];
@@ -261,22 +282,29 @@ function restoreReplaySession(id, snap, cb) {
  *  began — `grids` is the `snapshotAllSessions()` map captured then. A live
  *  session the replay never touched is still the live one: it keeps running.
  *  One the replay replaced (its id collided with a recorded one — ids are
- *  deterministic, `pane-<poolId>`) had its program stopped then; it comes back
- *  PTY-less, frozen at its live grid and marked stopped (exited, code null), so
- *  Enter restarts it with its pane's command (see docs/v0.6.6-replay.md). A
- *  replay session with no live counterpart was spawned during replay → gone. */
+ *  deterministic, `pane-<poolId>`) comes back PTY-less, frozen at its live grid,
+ *  exited: `Process stopped` (code null) if the replay stopped it, its own code
+ *  if it had exited before; Enter restarts its command (see
+ *  docs/v0.6.6-replay.md). It is the live pane's again (not a replay screen), so
+ *  a later replay takes it over afresh. Anything with no entry in `grids` was
+ *  started during the replay — a replay screen, or a program spawned against a
+ *  replay frame — and goes. */
 function restoreLiveSessions(grids) {
   grids = grids || {};
   for (const id of Object.keys(sessions)) {
-    if (!sessions[id].replay) continue;            // live, untouched: keeps running
-    if (!(id in grids)) destroySession(id);        // spawned during replay
+    if (!(id in grids)) destroySession(id);        // started during the replay
   }
   for (const id of Object.keys(grids)) {
-    if (sessions[id] && !sessions[id].replay) continue;
+    if (sessions[id] && !sessions[id].replay) continue;   // live, untouched: keeps running
+    const was = _replacedLive.get(id) || {};
     const s = restoreReplaySession(id, grids[id]);
-    s.exited = true;                               // its program was stopped
-    s.exitCode = null;
+    s.replay = false;
+    s.exited = true;
+    s.exitCode = was.exited ? was.exitCode : null;
+    s.cmd = was.cmd || null;
+    s.cwd = was.cwd || null;
   }
+  _replacedLive.clear();
 }
 
 /** Write data (keystrokes) to a session's PTY. */

@@ -24,13 +24,24 @@
  */
 'use strict';
 
-let _replaying = false;
+let _replaying = false;   // a fold is running
+let _frame = false;       // an interactive replay's reconstructed model is in the stores
 
-/** Is the runtime currently re-applying a recorded session? */
-function isReplaying() { return _replaying; }
+/** Is the runtime re-applying a recorded session — folding one, or showing a
+ *  reconstructed frame of one (`:record-load`, BETWEEN folds too)? The model in
+ *  the stores is then the recording's: a Msg dispatched between frames (a
+ *  terminal resize, an agent event, an async result) must not have the
+ *  finalizer start the recording's subscriptions or spawn its terminals, run
+ *  effects, or tear down live sessions behind its panes (round-3 review
+ *  2026-11-14: a resize ran the recording's metrics commands on this host). */
+function isReplaying() { return _replaying || _frame; }
 
 /** Enter/leave replay mode. The driver brackets a fold with set(true)/set(false). */
 function setReplaying(on) { _replaying = !!on; }
+
+/** The interactive replay controller holds this on from entering a replay until
+ *  the live session is back in the stores. */
+function setReplayFrame(on) { _frame = !!on; }
 
 // --- Checkpoint primitive (a resumable point) ----------------------------
 //
@@ -269,7 +280,7 @@ function replayTo(log, targetSeq = Infinity, opts = {}) {
 }
 
 module.exports = {
-  isReplaying, setReplaying,
+  isReplaying, setReplaying, setReplayFrame,
   snapshotState, restoreState, replayEntries, advance, foldMsgs, reverseTo,
   checkpointNow, maybeCheckpoint, replayTo,
 };

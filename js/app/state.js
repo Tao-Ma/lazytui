@@ -434,13 +434,10 @@ function _appSubscriptions(model) {
   if (_termTabOnScreen()) {
     subs.push({
       kind: 'interval', id: 'overlay-repaint', ms: 250,
-      // Skip under replay: the controller schedules a FULL render on every seek/
-      // play tick, and the live-PTY async race this poll backstops (#D14/#D15)
-      // can't occur against PTY-less replay screens — so the tick is pure
-      // redundancy during a fold. (The Sub itself stays declared; the finalizer
-      // skips sub-reconcile under replay, so this is the cheap in-tick guard.)
+      // A pure read of the screens — it runs during an interactive replay too
+      // (a tick can't land inside a fold: folds are synchronous), where the
+      // emulator's async parse of replayed bytes lands through it as well.
       onTick: () => {
-        if (_replay().isReplaying()) return;
         (_paintRef ||= require('../render/paint')).renderTerminalOverlay(getModel());
       },
     });

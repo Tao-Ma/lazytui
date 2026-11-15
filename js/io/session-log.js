@@ -183,14 +183,25 @@ function save(filepath) {
   return filepath;
 }
 
-/** Load a JSONL session file into the buffer (replacing it). Captures + inspects
- *  the header (B6 schema compat — warns, never hard-fails); restores `_seq` to
- *  the max seen so post-load appends stay monotonic. Returns the loaded entries
- *  (header excluded). */
+/** Load a JSONL session file into the buffer (replacing it) — `read`, then
+ *  `_seq` restored to the max seen so post-load appends stay monotonic. For a
+ *  process that continues the loaded session (the offline tools); an in-session
+ *  `:record-load` only reads (the live recording keeps its own buffer). */
 function load(filepath) {
+  const entries = read(filepath);
+  let maxSeq = 0;
+  for (const e of entries) if (typeof e.seq === 'number' && e.seq > maxSeq) maxSeq = e.seq;
+  _buf = entries;
+  _seq = maxSeq;
+  return entries;
+}
+
+/** Read a JSONL session file — the recorder untouched. Captures + inspects the
+ *  header (B6 schema compat — warns, never hard-fails). Returns the entries
+ *  (header excluded). */
+function read(filepath) {
   const text = fs.readFileSync(filepath, 'utf8');
   const entries = [];
-  let maxSeq = 0;
   let header = null;
   for (const line of text.split('\n')) {
     const s = line.trim();
@@ -200,12 +211,9 @@ function load(filepath) {
     if (!obj) continue;
     if (obj.kind === 'header') { header = obj; continue; }   // capture, don't fold
     entries.push(obj);
-    if (typeof obj.seq === 'number' && obj.seq > maxSeq) maxSeq = obj.seq;
   }
   const ver = header && header.schemaVersion;
   _warnSchema(ver, _schemaCompat(ver));
-  _buf = entries;
-  _seq = maxSeq;
   return entries;
 }
 
@@ -280,7 +288,7 @@ function size()             { return _buf.length; }
 module.exports = {
   record, recordMsg, recordTerm, recordCheckpoint,
   enable, isEnabled, clear, snapshot, size,
-  attachStream, detachStream, streamTo, streamPath, DEFAULT_SESSION_FILE, save, load, loadMeta,
+  attachStream, detachStream, streamTo, streamPath, DEFAULT_SESSION_FILE, save, load, read, loadMeta,
   setCheckpointCadence, checkpointDue, DEFAULT_CHECKPOINT_CADENCE,
   encodeJson, decodeJson, SCHEMA_VERSION,
 };
