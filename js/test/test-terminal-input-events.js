@@ -25,6 +25,7 @@
  *       inside a paste, a piece of the close marker waits however long
  *   [7] a paste that outlives terminal mode finishes as a paste, not as keys
  *   [8] a paste over the size cap is dropped whole — never typed as keys
+ *   [9] a paste open marker split more than 50 ms apart still opens a paste
  *
  * Run: node js/test/test-terminal-input-events.js
  */
@@ -161,6 +162,29 @@ const wait = (ms) => new Promise((res) => setTimeout(res, ms));
   applyMsg({ type: 'terminal_exit' });                      // its program exited mid-paste
   send(BIG, ':theme nord\r', CLOSE);
   eq(nothingRan(), [false, 'monokai'], 'a paste that outlived terminal mode, over the cap: nothing ran');
+  enter();
+
+  section('[9] a paste open marker split more than 50 ms apart still opens a paste');
+  // The head was flushed after the 50 ms window — dropped in normal mode, sent
+  // to the program in terminal mode — and the rest (`0~` and the text) typed as
+  // keys: a pasted `:theme nord\r` ran, a pasted Ctrl+\ left terminal mode
+  // (round-3 review).
+  eq(send('\x1b[20').join(''), '', 'terminal mode: the head is held…');
+  await wait(120);
+  eq(send(`0~hi\x1c\x1b[1~${CLOSE}`).join(''), 'hi\x1c\x1b[1~', '…past the window: the text pasted verbatim');
+  assert(inTerminal(), 'the pasted Ctrl+\\ was text, not an exit');
+  send('\x1b[200');
+  await wait(120);
+  eq(send(`~ok${CLOSE}`).join(''), 'ok', 'a cut after `ESC [ 2 0 0` too');
+  send('\x1b[20');
+  await wait(120);
+  eq(send('~').join(''), '\x1b[20~', 'F9 split the same way still arrives as F9');
+  send('\x1c');
+  assert(!inTerminal(), 'precondition: normal mode');
+  send('\x1b[20');
+  await wait(120);
+  send(`0~:theme nord\r${CLOSE}`);
+  eq(nothingRan(), [false, 'monokai'], 'normal mode: the text was pasted, nothing ran');
   enter();
 
   terminal.destroyAll();

@@ -345,7 +345,8 @@ function _flushTerminalCarry(bytes) {
 // — is closed by the tokenizer carry (2026-08-05): the trailing partial
 // CSI is carried, rejoins the next chunk, and the completed paste-open
 // token re-routes the rest of the chunk back through this accumulator
-// (see the token loop's _PASTE_OPEN re-emit).
+// (see the token loop's _PASTE_OPEN re-emit). A head of four bytes or more
+// waits for the rest however long it takes (_holdCarry).
 let _pasteBuffer = '';
 const _PASTE_MAX = 256 * 1024;   // 256 KB cap (R16)
 // null | the held piece of a close marker: a paste over the cap is being
@@ -444,10 +445,20 @@ function _clearCarryTimer() {
 
 // Hold `c` for the next chunk (it replaces any carry), flushing it after
 // _CARRY_FLUSH_MS if nothing continues it — in whichever mode is current then.
+// A paste OPEN marker cut after `ESC [ 2 0` or `ESC [ 2 0 0` is held with no
+// flush timer, like a piece of the close inside a paste: when its halves came
+// more than 50 ms apart, the head was flushed (dropped, or sent to the program)
+// and the rest — `0~` and the pasted text — was typed as keys (a pasted
+// `:theme nord\r` ran — round-3 review). The host always completes a marker it
+// started, and F9 (`ESC [ 2 0 ~`) completes the same way. The shorter `ESC [`
+// and `ESC [ 2` (Alt+[, Alt+[ then 2) still flush in the window.
+function _isPasteOpenPiece(c) {
+  return c.length >= 4 && c.length < _PASTE_OPEN.length && _PASTE_OPEN.startsWith(c);
+}
 function _holdCarry(c, { flush = true } = {}) {
   _clearCarryTimer();
   _carry = c;
-  if (!c || !flush) return;
+  if (!c || !flush || _isPasteOpenPiece(c)) return;
   _carryTimer = setTimeout(() => {
     const held = _carry;
     _carry = '';

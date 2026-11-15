@@ -31,7 +31,9 @@
  *       · Plain char    one code point (surrogate pairs stay together)
  *   - `carry` — an INCOMPLETE trailing CSI/SS3 (`\x1b[`, `\x1b[1;3`,
  *     `\x1bO`): the caller prepends it to the next chunk (and flushes it
- *     after a short timeout so a deliberate Esc-then-`[` doesn't wedge).
+ *     after a short timeout so a deliberate Esc-then-`[` doesn't wedge —
+ *     except the head of a paste open marker, which it holds until the
+ *     rest arrives: input.js _holdCarry).
  *     A bare trailing `\x1b` is NEVER carried — it tokenizes as Esc
  *     immediately, keeping modal-close latency at zero.
  *

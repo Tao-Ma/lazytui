@@ -129,7 +129,9 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   goes through untouched. Over a slow link a key,
   a mouse event or a paste marker split across two reads is put back together
   first: a split paste end no longer leaves every later key (`Ctrl+\`
-  included) going to the program as pasted text, and a split click no longer
+  included) going to the program as pasted text, a paste start split by more
+  than 50 ms is still a paste (its text was typed as keys, in lazytui too),
+  and a split click no longer
   reaches it with whole-screen coordinates. Keys typed together with a click
   are translated too.
 - **A terminal pane in terminal mode keeps the cursor where the program put

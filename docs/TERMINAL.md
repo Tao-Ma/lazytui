@@ -240,7 +240,12 @@ depends on how input was batched — with one deliberate exception, shared with
 normal mode (`leaves/input/tokenize`): a bare trailing ESC is never held, so a
 sequence cut right after its ESC byte does not rejoin. Holding it would delay
 every Esc keypress (vim's most-typed key) by the carry window; a cut exactly
-there is rare. Keys reach the PTY in one write per run, in
+there is rare. The other way round, the head of a paste OPEN marker (`ESC [ 2 0`,
+`ESC [ 2 0 0`) is held past the window, however long the rest takes, in both
+modes: flushed, the pasted text after it was typed as keys. The host always
+completes a marker it started (and F9, `ESC [ 2 0 ~`, completes the same way);
+the shorter `ESC [` and `ESC [ 2` — what Alt+[ (then 2) send — still flush in
+the window. Keys reach the PTY in one write per run, in
 stream order with the mouse reports between them. Outside terminal mode a
 focused terminal pane gets nothing: its keys are lazytui's (`Enter type here`).
 The kitty keyboard protocol is popped on entry (`kkp_suspend`), so the host
