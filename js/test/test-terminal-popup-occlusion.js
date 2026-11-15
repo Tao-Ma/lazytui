@@ -21,6 +21,7 @@
  *   [3] the palette (opened by `p`) paints over the grid intact
  *   [4] program output while it is open draws around it, not over it
  *   [5] Esc closes it and the grid comes back where it was
+ *   [6] program output under the open `:` prompt leaves the cursor on the prompt
  *
  * Run: node js/test/test-terminal-popup-occlusion.js
  */
@@ -138,6 +139,28 @@ const key = (bytes) => require('../dispatch/control/input')._dispatchToken(bytes
   }
   eq(boxRows.map(y => gridRow(y - iy0)), boxRows.map(y => want[y - iy0].trimEnd()),
     'every row the palette covered shows the program\'s text again');
+
+  section('[6] program output under the open `:` prompt leaves the cursor on the prompt');
+  {
+    // The fast path's repaint ended with the cursor at the end of the last grid
+    // row it wrote — off the prompt until the next render() (round-3 review).
+    const cur = () => ({ x: hs.vt.buffer.active.cursorX, y: hs.vt.buffer.active.cursorY });
+    key(':');
+    for (const ch of 'theme') key(ch);
+    await paintAndSync();
+    eq(getModel().modes.cmdMode, true, 'precondition: the prompt is open');
+    const atPrompt = { x: 2 + 'theme'.length, y: 39 };      // ' :theme' then the cursor
+    eq(cur(), atPrompt, 'precondition: a frame leaves it after the typed text');
+    let out = '';
+    for (let r = 0; r < surf.rows; r++) out += `\x1b[${r + 1};1HPRM${String(r).padStart(2, '0')}`;
+    await flush(terminal.getSession(fx.id).screen, out);
+    renderTerminalOverlay(getModel());                   // what the render queue runs on PTY output
+    await sync();
+    assert(gridRow(0).startsWith('PRM00'), 'precondition: the fast path painted the output');
+    eq(cur(), atPrompt, 'the cursor is back after the typed text');
+    key('\x1b');
+    await paintAndSync();
+  }
 
   terminal.destroyAll();
   fx.cleanup();

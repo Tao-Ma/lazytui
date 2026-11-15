@@ -888,6 +888,18 @@ function renderTerminalOverlay(model, arrangeOverride, forceAll, wrote) {
   for (const id of _overlayLastRows.keys()) {
     if (!nowPainted.has(id)) _overlayLastRows.delete(id);
   }
+  // Every pass ends with the frame's cursor — this pass is the last write of
+  // render() and the whole of the PTY fast path's / the poll's repaint: the
+  // focused program's cursor in terminal mode (above), the `:` prompt's while it
+  // is open. Written by render() alone, a terminal printing under the open
+  // prompt left the cursor at the end of the grid row it wrote until the next
+  // frame (round-3 review); written inside the cmdline overlay, the main frame's
+  // diff moved it on into the dropdown (round-2 review).
+  const md = model.modes || {};
+  if (!cursorOut && md.cmdMode && !md.terminalMode) {
+    const c = require('../overlay/cmdline').cmdlineCursor(model);
+    if (c) cursorOut = `\x1b[${c.row};${c.col}H`;
+  }
   _emit(out + cursorOut);
 }
 
@@ -1144,16 +1156,11 @@ function render(model) {
   // paint.js.
 
   // Cursor visibility — derived from mode state, single emission site.
-  // Cursor *position*: the terminal surfaces end their pass on the focused
-  // program's cursor (terminal mode); the cmdline's goes here, the frame's
-  // last move — written inside the overlay pass, the main frame's diff after
-  // it moved the cursor on (it ended in the dropdown — round-2 review).
-  // Here we also flip whether it's visible. Eliminates the bug class where a
-  // mode forgets to call hideCursor() / showCursor() on exit.
-  if (md.cmdMode && !md.terminalMode) {
-    const c = require('../overlay/cmdline').cmdlineCursor(model);
-    if (c) _emit(`\x1b[${c.row};${c.col}H`);
-  }
+  // Cursor *position* is the terminal-surface pass's last move (the focused
+  // program's cursor in terminal mode, the `:` prompt's in cmd mode — the same
+  // pass ends the PTY fast path's repaints). Here we only flip whether it's
+  // visible. Eliminates the bug class where a mode forgets to call
+  // hideCursor() / showCursor() on exit.
   if (md.terminalMode || md.cmdMode) showCursor();
   else hideCursor();
 }

@@ -113,9 +113,10 @@ function renderCmdline(newRows, cols) {
   const prompt = ` :${esc(_text)}`;
   const padded = prompt + ' '.repeat(Math.max(0, COLS - visibleLen(prompt)));
   const buf = `\x1b[${ROWS};1H` + richToAnsi(`[${t.footer}]${padded}[/]`) + RESET;
-  // The cursor's position is cmdlineCursor's — render() places it LAST in the
-  // frame (writing it here, mid-frame, the main frame's diff moved it on: it
-  // ended in the dropdown whenever the dropdown changed).
+  // The cursor's position is cmdlineCursor's — paint's terminal-surface pass
+  // places it LAST, on every frame and every PTY fast-path repaint (writing it
+  // here, mid-frame, the main frame's diff moved it on: it ended in the
+  // dropdown whenever the dropdown changed).
 
   // Through draw's injected writer → paint's depth funnel (P3) — never raw
   // stdout: this overlay's rows carry theme hex since the truecolor arc.
@@ -146,8 +147,9 @@ function registerSelf(compositor) {
 
 /** Where the hardware cursor goes in cmd mode: the end of the typed text on the
  *  prompt row — column 1 (leading space) + ':' + the text's WIDTH (columns, not
- *  UTF-16 units). 1-based { row, col }; null outside cmd mode. render() emits it
- *  as the frame's last move. */
+ *  UTF-16 units). 1-based { row, col }; null outside cmd mode. paint's
+ *  terminal-surface pass emits it as the last move of every frame and of every
+ *  PTY fast-path repaint. */
 function cmdlineCursor(model) {
   if (!model.modes.cmdMode) return null;
   return { row: viewportDims().rows, col: 3 + stringWidth(model.modal.cmdline.text || '') };

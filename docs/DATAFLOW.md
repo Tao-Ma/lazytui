@@ -181,9 +181,11 @@ greppable.
                                    popups' coverage `newRows.covered`;
                                    repaints rows the frame `wrote` over
                                    — docs/TERMINAL.md §Rendering; ends
-                                   on the program's cursor)
-     7. cursor                    (cmd mode: after the prompt text —
-                                   the frame's last move; visibility)
+                                   on the frame's cursor: the program's
+                                   in terminal mode, after the prompt
+                                   text in cmd mode — the PTY fast path
+                                   runs this same pass)
+     7. cursor                    (visibility only)
         │
         ▼
    stdout (ANSI, diff'd writes only)
