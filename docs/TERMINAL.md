@@ -329,6 +329,12 @@ The command sits on the entry, beside `type` and `title`, like every pane
 setting; a nested `config: { cmd: … }` is not read (the pane runs `$SHELL`) and
 the parser warns (`panels.nested_config`).
 
+A `type: spawn` action's tab (outside tmux) runs the action's body under
+`/bin/sh` in the project directory, its args as `$1…` — as an argv
+(`['/bin/sh', '-c', body, 'sh', …args]`), so your `$SHELL` never parses the body
+(fish reads `\\` and `\'` inside single quotes as escapes). The tab's command is
+that whole run: Enter restarts it.
+
 Per-group `terminals:` entries (parser normalizes to `{ cmd, label }`):
 
 ```yaml

@@ -73,8 +73,9 @@ describe('[1] spawn outside tmux → terminal PANE + viewMode=full + terminalMod
     const entry = layoutSlice().arrange.pool[vp.activeTabId];
     assert(entry && entry.type === 'terminal', 'active tab entry is a terminal');
     assert(entry.hint && entry.hint.origin === 'spawn', 'stamped a spawn-origin hint');
-    eq(entry.config.cmd.startsWith('/bin/sh -c '), true, 'cmd runs the body under /bin/sh');
-    eq(entry.config.cmd.includes('/tmp/tui-'), false, 'no temp script (it deleted itself: no restart)');
+    const cmd = entry.config.cmd;
+    eq([Array.isArray(cmd), cmd[0], cmd[1]], [true, '/bin/sh', '-c'], 'cmd: an argv running the body under /bin/sh');
+    eq(JSON.stringify(cmd).includes('/tmp/tui-'), false, 'no temp script (it deleted itself: no restart)');
   });
   it('the finalizer spawned the PTY (keyed by the tab-instance id)', () => {
     assert(terminal.getSession(mpane.newPaneId(vp.activeTabId)), 'PTY spawned');
@@ -156,9 +157,9 @@ describe('[4] the tmux temp-script shQuotes projectDir (a path with a space stil
   try { fsmod.unlinkSync(spawnCalls[spawnCalls.length - 1][1][3].split(/[ ;]/)[0]); } catch (_) {}
 });
 
-// The embedded terminal's command, run as its PTY runs it ($SHELL -c <cmd>):
-// in the project dir (a path with a space), the action's args as $1.. — quotes
-// and all.
+// The embedded terminal's command, run as its PTY runs it (the argv, no shell
+// around it): in the project dir (a path with a space), the action's args as
+// $1.. — quotes and all.
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -170,7 +171,7 @@ describe('[5] the embedded command runs in the project dir with the args', () =>
   runAction('a:args', { type: 'spawn', script: 'printf "%s|%s|%s" "$(pwd)" "$1" "$2"' }, ['a b', "it's"]);
   const entry = layoutSlice().arrange.pool[viewerPane().activeTabId];
   cleanupTerminals();
-  const r = spawnSync(process.env.SHELL || '/bin/bash', ['-c', entry.config.cmd], { encoding: 'utf8' });
+  const r = spawnSync(entry.config.cmd[0], entry.config.cmd.slice(1), { encoding: 'utf8' });
   it('cwd, $1 and $2 as given', () => eq(r.stdout, `${fs.realpathSync(dir)}|a b|it's`));
   fs.rmSync(dir, { recursive: true, force: true });
 });
@@ -195,6 +196,26 @@ describe('[5] the embedded command runs in the project dir with the args', () =>
   section('[6] a spawn tab restarts with its command');
   eq(first, [3, true], 'first run: printed, exited 3');
   eq(second, [3, true, false], 'restart: the same command ran again');
+  cleanupTerminals();
+
+  // [7] The body is the action's /bin/sh script: the user's shell never parses
+  // it (wrapped in a `$SHELL -c` string, fish read `\\` and `\'` inside the
+  // quotes as escapes — round-4 review). A $SHELL that can't run at all
+  // doesn't matter to it.
+  const savedShell = process.env.SHELL;
+  process.env.SHELL = '/nonexistent/shell';
+  sm.bootFresh();
+  getModel().projectDir = '/tmp';
+  runAction('a:noshell', { type: 'spawn', script: "printf '%s|%s\\n' 'back\\\\slash' \"$1\"" }, ['y']);
+  const id7 = mpane.newPaneId(viewerPane().activeTabId);
+  const exited7 = () => { const s = terminal.getSession(id7); return !!(s && s.exited); };
+  await settle(exited7);
+  await settle(() => /back/.test(terminal.sessionViewportRows(id7, 5, 60).rows.join('|')));
+  process.env.SHELL = savedShell;
+  const s7 = terminal.getSession(id7);
+  const text7 = terminal.sessionViewportRows(id7, 5, 60).rows.join('|');
+  section('[7] the spawn body runs under /bin/sh whatever $SHELL is');
+  eq([s7 && s7.exitCode, /back\\\\slash\|y/.test(text7)], [0, true], `ran, backslashes intact: ${JSON.stringify(text7.trim().slice(0, 60))}`);
   cleanupTerminals();
   report();
 })();

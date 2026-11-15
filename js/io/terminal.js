@@ -83,10 +83,17 @@ function setSessionRecorder(fn) { _sessionRecorder = (typeof fn === 'function') 
 // resizeSession's prevFrame truncation, and node-pty / the emulator reject it).
 const _validSize = (cols, rows) => Number.isInteger(cols) && Number.isInteger(rows) && cols >= 1 && rows >= 1;
 
+/** A session command as display text (an argv joined by spaces). */
+function cmdText(cmd) { return Array.isArray(cmd) ? cmd.join(' ') : String(cmd == null ? '' : cmd); }
+
 /**
  * Create or return existing session. Lazy — the dispatch finalizer creates it
  * the first time the terminal is a visible surface with room (an active tab
- * with an interior), sized to that interior.
+ * with an interior), sized to that interior. `cmd`: a string runs under the
+ * user's shell (`$SHELL -c cmd` — a `cmd:` written for it); an argv array runs
+ * as is, no shell parsing it (a spawn action's `/bin/sh -c <body>`: wrapped in
+ * a string, the body went through the user's shell's quoting rules first —
+ * fish reads `\\` and `\'` inside single quotes as escapes; round-4 review).
  */
 function ensureSession(id, cmd, cols, rows, cwd) {
   if (sessions[id]) return sessions[id];
@@ -97,7 +104,8 @@ function ensureSession(id, cmd, cols, rows, cwd) {
   const shell = process.env.SHELL || '/bin/bash';
   // cwd is injected by the caller (the spawn directory = model.projectDir).
   const spawnCwd = cwd || '.';
-  const p = pty.spawn(shell, ['-c', cmd], {
+  const [file, args] = Array.isArray(cmd) ? [cmd[0], cmd.slice(1)] : [shell, ['-c', cmd]];
+  const p = pty.spawn(file, args, {
     name: 'xterm-256color', cols, rows, cwd: spawnCwd, env: process.env,
   });
   // Declare `session` BEFORE registering `p.onData` so the closure's
@@ -138,7 +146,7 @@ function ensureSession(id, cmd, cols, rows, cwd) {
     _onSessionExit(id, exitCode);
   });
   session.jobId = _jobs ? _jobs.register({
-    kind: 'pty', label: cmd, pid: p.pid, owner: { ptyId: id, cmd },
+    kind: 'pty', label: cmdText(cmd), pid: p.pid, owner: { ptyId: id, cmd: cmdText(cmd) },
   }) : null;
   sessions[id] = session;
   // Replay WAL: record the session spawn (cmd + initial geometry).
@@ -422,7 +430,7 @@ function sessionScrollInfo(id) {
 
 module.exports = {
   ptyAvailable,
-  ensureSession, getSession, writeToSession,
+  ensureSession, cmdText, getSession, writeToSession,
   sessionViewportRows, sessionCursor, sessionSize,
   resizeSession, destroySession, destroyAll,
   restartSession, isSessionDead,

@@ -203,8 +203,9 @@ function doRun(actionKey, action, args = []) {
         // The terminal runs the body itself (`/bin/sh -c <body> sh <args>`), not a
         // temp script: one that deleted itself left Enter-restart — after a
         // non-zero exit, or a replay stopping it — with nothing to run (round-3
-        // review 2026-11-14). The pane's command is the whole run, every time.
-        const ptyCmd = `/bin/sh -c ${shQuote(run)} sh${argStr}`;
+        // review 2026-11-14). The pane's command is the whole run, every time —
+        // an argv (io/terminal ensureSession): no user shell parses the body.
+        const ptyCmd = ['/bin/sh', '-c', run, 'sh', ...args.map(String)];
         // Reducer-derived poolId (idPrefix `term`, NO Date.now()) → replay-
         // deterministic AND fresh per run, so two spawns of one action open two
         // distinct terminals. The hint tags origin for later tab-groups clustering;
