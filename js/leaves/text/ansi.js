@@ -224,6 +224,14 @@ function _tagSgr(tag) {
  * Convert Rich-style markup to ANSI escape sequences.
  * [bold]text[/] → \x1b[1mtext\x1b[0m
  * \[literal] → [literal]
+ * \\ → \   (a backslash elsewhere is itself: `C:\dir` → C:\dir)
+ *
+ * The grammar's two escapes — `\[` and `\\` — read left to right, so text can
+ * END in a backslash and still be followed by a tag: esc('C:\') is `C:\\`, and
+ * `C:\\[reverse]` is `C:\` + the tag. With `\[` the only escape, a field's
+ * trailing `\` took the painter's next tag (the caret's `[reverse]`, a `[/]`)
+ * as a literal bracket. `_unescape` is the one reading of both, shared by
+ * richToAnsi and stripMarkup; markupCut and sealMarkup walk the same two.
  */
 // T23 — escaped-bracket sentinel. Pre-fix used NUL (\x00), which
 // collided with literal NULs in binary content: `richToAnsi(esc('a\x00b'))`
@@ -236,6 +244,19 @@ const _BRACKET_SENTINEL = '';
 // `stripMarkup` run per visible row per panel per frame; rebuilding
 // the sentinel-restore regex on every call was real allocation churn.
 const _SENTINEL_RE = new RegExp(_BRACKET_SENTINEL, 'g');
+// The escapes, left to right: `\[` → the sentinel (a literal `[` no tag pass
+// matches), `\\` → `\`. Hot path (per visible row per frame): a row with no
+// backslash skips the pass; one with no `\\` pair — every chrome row's `\[X]`
+// — takes the plain `\[` replace; only a row holding `\\` reads both.
+const _ESCAPE_RE = /\\([\\[])/g;
+const _BRACKET_ESC_RE = /\\\[/g;
+const _unescapeOne = (_, c) => (c === '[' ? _BRACKET_SENTINEL : '\\');
+function _unescape(text) {
+  const i = text.indexOf('\\');
+  if (i < 0) return text;
+  if (text.indexOf('\\\\', i) < 0) return text.replace(_BRACKET_ESC_RE, _BRACKET_SENTINEL);
+  return text.replace(_ESCAPE_RE, _unescapeOne);
+}
 // ANY SGR embedded in CONTENT (streamed/esc'd command output keeps its own) —
 // matched at the PRE-TAG stage, where its `[` is either raw or the escaped-bracket
 // sentinel, and where markup resets are still `[/]` (uncompiled). So every
@@ -300,8 +321,8 @@ function screenColors() {
 
 function richToAnsi(text) {
   _syncTheme();
-  // Protect escaped brackets
-  let result = text.replace(/\\\[/g, _BRACKET_SENTINEL);
+  // Protect escaped brackets (and read `\\` as one backslash)
+  let result = _unescape(text);
   // GATED content-reset re-assertion (screen colours on): pure-markup rows — nearly
   // all of them — have no raw SGR in `text`, so they SKIP this entirely and rely on
   // the cached `_resetSeq()` for their `[/]` resets (zero per-row cost). Only rows
@@ -328,7 +349,7 @@ function richToAnsi(text) {
  * Strip Rich markup and escaped brackets, return plain text.
  */
 function stripMarkup(text) {
-  return text.replace(/\\\[/g, _BRACKET_SENTINEL)
+  return _unescape(text)
     .replace(/(?<!\x1b)\[[^\]\x1b]*\]/g, '')
     .replace(_SENTINEL_RE, '[')
     // SGR color/style sequences (\x1b[…m) are ZERO-width and are not "plain text". Content
@@ -351,7 +372,7 @@ const _SGR_RUN = /\x1b\\?\[[0-9;]*m/y;
  * (draw.truncate, row-compositor's split). Returns `{ cut, width }`:
  * `text.slice(0, cut)` is that part, `width` its columns.
  *
- * Tokens: `\[` is one literal `[`; an SGR run (raw or esc()'d) and a `[tag]`
+ * Tokens: `\[` is one literal `[`, `\\` one `\`; an SGR run (raw or esc()'d) and a `[tag]`
  * are zero-width and kept verbatim; anything else is a codepoint. Markup does
  * NOT end a cell: the host joins a sequence across an SGR (tmux 3.4: `❤ ESC[31m
  * VS16` is one 2-wide ❤️, `👍 ESC[31m 🏽` one 👍🏽), and markup becomes SGR — so a
@@ -372,7 +393,7 @@ function markupCut(text, cols, greedy) {
   while (i < n) {
     let cp, len;
     const c = text[i];
-    if (c === '\\' && text[i + 1] === '[') { cp = 0x5B; len = 2; }
+    if (c === '\\' && (text[i + 1] === '[' || text[i + 1] === '\\')) { cp = text.charCodeAt(i + 1); len = 2; }
     else {
       if (c === '\x1b') {
         _SGR_RUN.lastIndex = i;
@@ -414,23 +435,31 @@ function markupCut(text, cols, greedy) {
  * composed from separately-measured parts relies on (a pane's top border:
  * hotkey, title, controls, then the right-anchored [X]/[_] whose click
  * regions sit at fixed offsets). Complete tags (`[warning]`), `\[` escapes and
- * SGR (`\x1b[`) are untouched; a fragment with no `[` is returned as is.
+ * SGR (`\x1b[`) are untouched; a fragment with no `[` is returned as is. A `[`
+ * is escaped when an ODD run of backslashes precedes it — `\\[` is a literal
+ * `\` and then a real `[` — and a fragment ending in an unpaired `\` gets its
+ * pair (it would escape the next fragment's `[`).
  */
 function sealMarkup(s) {
-  if (typeof s !== 'string' || s.indexOf('[') < 0) return s;
+  if (typeof s !== 'string') return s;
+  // An unpaired trailing `\` would escape the NEXT fragment's `[`: pair it
+  // (alone, `\` and `\\` both render as one backslash).
+  let t = s.length; while (t > 0 && s[t - 1] === '\\') t--;
+  const tail = (s.length - t) % 2 === 1 ? '\\' : '';
+  if (s.indexOf('[') < 0) return s + tail;
   let out = '';
   let i = 0;
   while (i < s.length) {
     const j = s.indexOf('[', i);
     if (j < 0) { out += s.slice(i); break; }
-    const prev = j > 0 ? s[j - 1] : '';
-    if (prev === '\\' || prev === '\x1b') { out += s.slice(i, j + 1); i = j + 1; continue; }   // escape / SGR
+    let b = j; while (b > 0 && s[b - 1] === '\\') b--;
+    if ((j - b) % 2 === 1 || (j > 0 && s[j - 1] === '\x1b')) { out += s.slice(i, j + 1); i = j + 1; continue; }   // escape / SGR
     let k = j + 1;
     while (k < s.length && s[k] !== ']' && s[k] !== '\x1b') k++;
     if (k < s.length) { out += s.slice(i, s[k] === ']' ? k + 1 : j + 1); i = s[k] === ']' ? k + 1 : j + 1; continue; }   // a tag / an ESC stops it
     out += s.slice(i, j) + '\\['; i = j + 1;   // unclosed → escaped
   }
-  return out;
+  return out + tail;
 }
 
 /**
@@ -576,7 +605,21 @@ function _expandTabs(s) {
 }
 
 /**
- * Escape [ for Rich markup so literal brackets render correctly.
+ * The markup that renders as `s` exactly: every `\` and `[` escaped (`\\`,
+ * `\[`). For text that is already safe to show — plain projections of rendered
+ * lines (search highlights); untrusted text goes through esc(), which adds the
+ * control strip and tab expansion. Escaping `\` is what keeps text that ends in
+ * one from eating the tag the painter puts after it.
+ */
+const _LITERAL_RE = /[\\[]/g;
+const _OPEN_RE = /\[/g;
+function markupLiteral(s) {
+  if (s.indexOf('\\') >= 0) return s.replace(_LITERAL_RE, '\\$&');
+  return s.indexOf('[') < 0 ? s : s.replace(_OPEN_RE, '\\[');
+}
+
+/**
+ * Escape `[` and `\` for Rich markup so literal text renders as itself.
  * T22 — also strips dangerous terminal-control sequences. T31 —
  * also expands tabs to spaces against TAB_SIZE-col stops so tab-
  * containing content (postgresql.conf, Makefiles, etc.) doesn't
@@ -586,7 +629,7 @@ function _expandTabs(s) {
  * the breakout AND the tab-width class.
  */
 function esc(text) {
-  return _expandTabs(stripControls(text)).replace(/\[/g, '\\[');
+  return markupLiteral(_expandTabs(stripControls(text)));
 }
 
 /**
@@ -627,4 +670,4 @@ function wrapColor(color, content) {
 }
 
 module.exports = {
-  sealMarkup, richToAnsi, sgrRun, screenColors, stripMarkup, visibleLen, markupCut, charWidth, stringWidth, esc, wrapColor, stripControls, enableScreenColors, RESET };
+  sealMarkup, richToAnsi, sgrRun, screenColors, stripMarkup, visibleLen, markupCut, charWidth, stringWidth, esc, markupLiteral, wrapColor, stripControls, enableScreenColors, RESET };

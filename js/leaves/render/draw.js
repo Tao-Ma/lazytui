@@ -2,9 +2,10 @@
  * Panel renderer — bordered panels with scrollbar + pure chrome-glyph
  * derivation. Produces Rich-markup strings (convert to ANSI before writing
  * to terminal). A pure leaf: depends only on sibling leaves (ansi, scrollbar,
- * themes) — no io. Terminal dims + the overlay paint-write arrive via injected
- * seams (setDimsProvider / setWriter) so the leaf never reaches up into panel
- * for the model nor into io for stdout — see docs/v0.6.5-render-exit.md.
+ * themes) — no io, and no screen writes: it RETURNS markup / composes rows;
+ * paint (render/paint.js) is the one emitter. Terminal dims arrive via an
+ * injected seam (setDimsProvider) so the leaf never reaches up into panel for
+ * the model — see docs/v0.6.5-render-exit.md.
  */
 'use strict';
 
@@ -12,10 +13,9 @@ const { visibleLen, markupCut, richToAnsi, wrapColor, RESET, sealMarkup } = requ
 const { scrollbar } = require('./scrollbar');
 const { theme } = require('../infra/themes');
 const bctl = require('./border-controls');
-// No io import: terminal dims arrive via the injected _dimsProvider (below)
-// and the overlay paint write via the injected _writer (setWriter), both wired
-// at boot. Keeping this leaf free of io is what lets io/file-loader depend DOWN
-// on the pure leaves/ansi without forming an io↔leaves cycle.
+// No io import: terminal dims arrive via the injected _dimsProvider (below),
+// wired at boot. Keeping this leaf free of io is what lets io/file-loader
+// depend DOWN on the pure leaves/ansi without forming an io↔leaves cycle.
 
 const { compositeRow } = require('./row-compositor');
 const { chipSurvives } = require('./hints');
@@ -441,15 +441,6 @@ function viewportDims() {
   return (d && d.cols > 0 && d.rows > 0) ? { cols: d.cols, rows: d.rows } : { cols: 80, rows: 24 };
 }
 
-// Overlay-paint write seam. renderOverlay (below) emits the composed buffer
-// through this injected writer instead of importing io/term's stdout — same
-// reason as the dims seam: keep the leaf free of io. Wired at boot by
-// render/paint.js to `buf => stdout.write(buf)`. Unset in CLI/tests (no paint
-// path loaded) → renderOverlay no-ops the write, which is what those callers
-// want (they assert overlay geometry/state, never pixels).
-let _writer = null;
-function setWriter(fn) { _writer = fn; }
-
 // Chrome-region publish seam. renderPanel emits the pane-local x-ranges of the
 // clickable border chrome it ACTUALLY drew (glyphs — null per glyph when the
 // narrow-pane `fits` fallback dropped the whole cluster — plus border controls and
@@ -529,15 +520,6 @@ function publishBox({ x, y, w, h, scrollOffset = 0, lines = [],
     }
   }
 }
-// Direct write-through for overlays that compose their OWN screen bytes
-// (cmdline, pane-menu) instead of going through renderOverlay. Review Track
-// 1/2 HIGH (truecolor arc): those overlays wrote io/term stdout directly,
-// bypassing paint's depth-adapting _emit funnel — raw 38;2 leaked on 16/256
-// devices the moment their slots went hex (the footer-bug class, P3). Every
-// frame byte must leave through the injected writer. No-op when unset
-// (CLI/tests without the paint path), same contract as renderOverlay.
-function writeOut(buf) { if (_writer) _writer(buf); }
-
 // --- Pure chrome-glyph derivation (moved from render/decor.js in the
 // render-exit arc; clicks resolve on the per-frame hit map, panel/hit-map).
 // chromeFor decides which glyphs a pane carries; the *Markup builders emit
@@ -663,6 +645,6 @@ function renderOverlay({ lines, title, count = null, maxWidth = 44, anchor = nul
 
 module.exports = {
   renderPanel, renderOverlay, overlayBox, truncate, fitCell, padCell, viewportDims, setDimsProvider,
-  setWriter, setChromeSink, setHitSink, publishBox, HIT_Z, writeOut,
+  setChromeSink, setHitSink, publishBox, HIT_Z,
   chromeFor, leftBorderPrefix, _collapseGlyphMarkup, _closeGlyphMarkup,
 };

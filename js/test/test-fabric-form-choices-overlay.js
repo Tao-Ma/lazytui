@@ -16,7 +16,7 @@
  *   - help line flips to the picker's keys while the popover is open
  *
  * Harness mirrors test-fabric-form-overlay.js — install model via setModel,
- * capture stdout via a draw.setWriter patch, strip ANSI/OSC to assert visible
+ * capture stdout, strip ANSI/OSC to assert visible
  * substrings.
  *
  * Run: node js/test/test-fabric-form-choices-overlay.js
@@ -38,7 +38,6 @@ term.stdout.write = (chunk, ...rest) => {
   return _origWrite(chunk, ...rest);
 };
 
-draw.setWriter((s) => term.stdout.write(s));
 draw.setDimsProvider(() => ({
   cols: process.stdout.columns || 80,
   rows: process.stdout.rows || 24,

@@ -151,11 +151,24 @@ describe('[3] _safeRender error path produces h-line block', () => {
     // lines joined by \n. Asserting that property here doesn't need
     // a real Component.
     const w = 10, h = 4;
-    const fixtureError = `[red]\\[render error: x\\][/]\n${' '.repeat(w)}\n${' '.repeat(w)}\n${' '.repeat(w)}`;
+    const fixtureError = `[red]\\[render error: x][/]\n${' '.repeat(w)}\n${' '.repeat(w)}\n${' '.repeat(w)}`;
     const lines = fixtureError.split('\n');
     eq(lines.length, h, 'h lines emitted');
     for (let i = 1; i < h; i++) {
       eq(lines[i], ' '.repeat(w), `row ${i} blank`);
+    }
+  });
+  it('the error row reads `[render error: <type> — <message>]` — no stray backslash, whatever the message', () => {
+    const { stripMarkup } = require('../leaves/text/ansi');
+    const msgs = { 'boom-msg-1': 'boom-msg-1', 'C:\\': 'C:\\', 'a[b]': 'a[b]' };
+    for (const [thrown, shown] of Object.entries(msgs)) {
+      errComp.panelTypes.p2err.render = () => { throw new Error(thrown); };
+      const _err = console.error; console.error = () => {};
+      let out;
+      try { out = layout._safeRender({ type: 'p2err', paneId: null }, 60, 3, {}); } finally { console.error = _err; }
+      const rows = out.split('\n');
+      eq(rows.length, 3, 'h rows');
+      eq(stripMarkup(rows[0]), `[render error: p2err — ${shown}]`, JSON.stringify(thrown));
     }
   });
 });

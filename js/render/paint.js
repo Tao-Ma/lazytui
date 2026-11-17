@@ -34,7 +34,7 @@ const geo = require('../leaves/wm/geometry');
 const mpool = require('../leaves/wm/pool');
 const mpane = require('../leaves/wm/pane');
 const { theme, setTheme } = require('../leaves/infra/themes');
-const { truncate, setWriter: _setDrawWriter, setChromeSink: _setDrawChromeSink, setHitSink: _setDrawHitSink } = require('../leaves/render/draw');
+const { truncate, setChromeSink: _setDrawChromeSink, setHitSink: _setDrawHitSink } = require('../leaves/render/draw');
 const hoverRegion = require('../panel/hover-region');
 const hitMap = require('../panel/hit-map');
 const paneHits = require('./pane-hits');
@@ -56,13 +56,6 @@ function _emit(s) {
   stdout.write(_colorDepth === 'truecolor' ? s : downgradeAnsi(s, _colorDepth));
 }
 
-// Wire the overlay-paint write seam: draw.renderOverlay (a pure leaf) emits its
-// composed buffer through this instead of importing io/term's stdout directly.
-// Done here because paint.js is the render layer that legitimately owns stdout.
-// (CLI/tests never load paint.js, so the leaf's writer stays unset there and
-// renderOverlay no-ops its write — they assert overlay state, not pixels.)
-// Routed through _emit so overlay bytes get the same depth adaptation.
-_setDrawWriter((buf) => _emit(buf));
 const painter = require('../leaves/render/painter');
 const { visibleTerminalSurfaces } = require('../panel/terminal-surfaces');
 const { getSession, sessionScrollInfo, sessionViewportRows, sessionCursor } = require('../io/terminal');
@@ -422,15 +415,16 @@ function _safeRender(panel, w, h, opts) {
     } catch (_) {}
     // esc() the interpolated values — a thrown error whose message
     // contained a literal `[` would otherwise become embedded markup
-    // and confuse the panel renderer's parser. The OUTER brackets
-    // around "render error: …" must also be escaped — without `\[`
-    // and `\]`, richToAnsi treats the whole thing as a tag whose atoms
-    // the parser doesn't know, and emits RESET, swallowing the message.
+    // and confuse the panel renderer's parser. The OUTER `[` around
+    // "render error: …" must also be escaped — without `\[`, richToAnsi
+    // treats the whole thing as a tag whose atoms the parser doesn't
+    // know, and emits RESET, swallowing the message. (`]` needs no
+    // escape: `\]` printed its backslash.)
     //
     // v0.6.3 P2 — expand from one-line marker to h-line block. The
     // error message stays on row 0; rows 1..h-1 are blank-of-width-w
     // so the panel's vertical slot is preserved.
-    const errLine = `[${theme().error}]\\[render error: ${esc(String(panel && panel.type))} — ${esc(String(e && e.message))}\\][/]`;
+    const errLine = `[${theme().error}]\\[render error: ${esc(String(panel && panel.type))} — ${esc(String(e && e.message))}][/]`;
     const blank = ' '.repeat(w);
     const rows = [errLine];
     for (let i = 1; i < h; i++) rows.push(blank);
@@ -1136,7 +1130,7 @@ function render(model) {
   // state main paint is diff-based and leaves the PTY region untouched, so
   // each surface's own per-session diff cache is enough. The debounced
   // fast-path (PTY onData → scheduleOverlay) omits forceAll → targeted diff.
-  // 3b — footer returns its ansi (undefined in cmdline mode); paint emits it
+  // 3b — footer returns its ansi (the `:` prompt row in cmd mode); paint emits it
   // through the depth funnel like every other frame byte. BEFORE the terminal
   // surfaces: their pass ends by putting the hardware cursor on the focused
   // program's cursor (terminal mode), and a footer written after it left the
@@ -1231,4 +1225,6 @@ module.exports = {
   // can exercise both check mode (env LAZYTUI_RENDER_CHECK=1 → throws
   // on violation) and release mode (pads to h × w).
   _normalizeRender,
+  // Test seam: the per-pane render wrapper (its error block — test-rect-contract).
+  _safeRender,
 };

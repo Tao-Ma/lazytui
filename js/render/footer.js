@@ -8,8 +8,8 @@
  *
  * One public function: `renderFooter(model)` — composes left (footerKeys:
  * modal footers own the row; non-modal assembles focus-kind segments) +
- * right tail + padding and RETURNS the row's ansi (undefined in cmdline
- * mode). Called once per frame by paint.js render(), which emits it
+ * right tail + padding and RETURNS the row's ansi (the `:` prompt row in
+ * cmdline mode — overlay/cmdline cmdlinePromptRow). Called once per frame by paint.js render(), which emits it
  * through the depth-adapting _emit funnel (truecolor arc 3b / P3 — a
  * direct stdout write here bypassed the downgrade).
  *
@@ -35,6 +35,7 @@ const modes = require('../leaves/input/modes');
 const bindings = require('../leaves/input/bindings');
 const { getModel } = require('../model/store');
 const { getFreeConfigFooter } = require('../panel/free-config-view');
+const { cmdlinePromptRow } = require('../overlay/cmdline');
 
 // Memoized lazy route ref — resolveTarget is read on the per-frame
 // footer path; relative require() resolution is ~70µs/call (see the
@@ -170,10 +171,10 @@ function footerKeys(model, cols = viewportDims().cols) {
 }
 
 function renderFooter(model = getModel()) {
-  // cmdline mode replaces the footer with its own prompt — drawing the
-  // footer first would flicker on every keystroke as renderCmdline() then
-  // overwrites it.
-  if (model.modes.cmdMode) return;
+  // cmd mode: the footer row IS the `:` prompt (overlay/cmdline). One owner for
+  // the row, emitted after the main frame — a prompt written from the overlay
+  // pass (before the main frame) was erased by a resize's full repaint.
+  if (model.modes.cmdMode) return cmdlinePromptRow(model);
   const t = theme();
   const { cols: COLS, rows: ROWS } = viewportDims();
   const inModal = modes.isModal(model.modes);

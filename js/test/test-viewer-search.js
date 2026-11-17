@@ -226,6 +226,22 @@ describe('[8] decorateLines render integration', () => {
     const out = search.decorateLines(infoSlice().lines);
     eq(out, infoSlice().lines);
   });
+  it('text before a match that ends in a backslash: the match keeps its style', () => {
+    // Review round 2 (2026-11-15): the highlighter escaped only `[`, so `C:\` +
+    // `[match]` read as `C:` + a literal `[match]` — the match was not styled
+    // and the line gained the tag's text.
+    const { esc, stripMarkup } = require('../leaves/text/ansi');
+    setup([esc('dir C:\\x'), esc('a\\[b]')]);
+    search.enter();
+    'x'.split('').forEach(c => search.keystroke(c));
+    search.commit();
+    let out = search.decorateLines(infoSlice().lines);
+    eq(stripMarkup(out[0]), 'dir C:\\x', 'the text is unchanged');
+    assert(out[0].includes(`[${theme().match_current}]x[/]`), `the match is styled: ${JSON.stringify(out[0])}`);
+    search.enter(); search.keystroke('b'); search.commit();
+    out = search.decorateLines(infoSlice().lines);
+    eq(stripMarkup(out[1]), 'a\\[b]', 'a `\\[` before the match stays text');
+  });
 });
 
 describe('[8b] decorateLines decorates the RENDERED pane, not the focused one', () => {

@@ -1,7 +1,7 @@
 /**
  * Pane-menu overlay — overlay-compositor migration (Release 2 Phase 2.a #5,
  * docs/overlay-compositor-migration.md). Mirrors the earlier simple
- * overlays, with one asymmetry: pane-menu uses `renderPanel` + `writeOut`
+ * overlays, with one asymmetry: pane-menu uses `renderPanel` + `compositeRow`
  * directly (not `renderOverlay`) and ANCHORS to the target pane's bounds
  * (`g.x`, `g.y+1`), not the centered `overlayBox`. The composite pattern
  * is the same — each panel row lands in `newRows` via `compositeRow` — but

@@ -5,7 +5,8 @@
 > parity). The review found + fixed: 2 HIGH — the H1 fold emitted
 > literal `NaN` on empty extended-SGR params (row-corrupting), and
 > cmdline/pane-menu overlays bypassed the P3 depth funnel (the footer
-> bug class; both now route through draw.writeOut, smoke-pinned) — plus
+> bug class; both then routed through draw.writeOut, smoke-pinned — since
+> retired: every frame byte now leaves through paint's _emit) — plus
 > a MED depth-precedence inversion (LAZYTUI_COLOR now beats config, as
 > documented), a dead-exports scanner blind spot (single-line exporters
 > were never scanned; fixed, 16 pre-existing dead exports cleaned), the

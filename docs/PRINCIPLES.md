@@ -120,12 +120,16 @@ When you need new behavior, ask: "can this be a new action `type`?"
 | Run per-container | Add `container_action` field | `type: inspect` with `{name}` template |
 | Preview action | Add `preview` field | Add `desc` (same schema, always available) |
 
-## 7. Escape `[` in all markup text
+## 7. Escape `[` and `\` in all markup text
 
 The panel renderer uses Rich-style markup (`[bold]`, `[green]`, etc.)
 converted to ANSI escape sequences. Any literal `[` that reaches the
 renderer will be misinterpreted as a markup tag — silently vanishing
 and breaking `visibleLen()` width calculation, misaligning borders.
+The markup has two escapes: `\[` is a literal `[`, `\\` a literal `\`
+(a backslash before anything else is itself). Text that ENDS in a
+backslash must have it escaped too: `C:\` followed by the painter's
+`[reverse]` would read as `C:` + a literal `[reverse]`.
 
 **Rule: every string with literal `[` must be escaped.**
 
@@ -133,12 +137,15 @@ and breaking `visibleLen()` width calculation, misaligning borders.
   ```javascript
   setViewerContent(null, `[bold]${esc(action.label)}[/]\n${esc(text)}`);
   ```
-- **Static strings** with intentional markup: write `\[`
+- **Static strings** with intentional markup: write `\[` (`]` needs no
+  escape — `\]` shows its backslash)
   ```javascript
   `  \\[1] Containers  Status of containers in selected group`
   ```
 
-`esc()` replaces `[` → `\[`. Defined in `js/leaves/text/ansi.js` (a pure leaf).
+`esc()` replaces `\` → `\\` and `[` → `\[` (and strips control sequences,
+expands tabs); `markupLiteral()` does only the escaping, for text already safe
+to show. Both in `js/leaves/text/ansi.js` (a pure leaf).
 
 ## 8. Selected lines: plain text in the `selected` tag, no inner markup
 

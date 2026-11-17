@@ -4,8 +4,7 @@
  * painted output per [[feedback_render_test_new_overlays]]: a new overlay must
  * ship with a test that captures real stdout, not just a reducer assertion.
  *
- * Harness mirrors test-fabric-field-overlay.js: route draw.setWriter at
- * term.stdout.write, install the model via store.setModel(), patch term's
+ * Harness mirrors test-fabric-field-overlay.js: install the model via store.setModel(), patch term's
  * write to intercept, strip ANSI/OSC to assert content substrings. Markup
  * (`[default]` chip, cursor as `[reverse] [/]`) is Rich → ANSI → stripped at
  * capture, so we assert on the visible characters: the bracketed chip labels,
@@ -30,7 +29,6 @@ term.stdout.write = (chunk, ...rest) => {
   return _origWrite(chunk, ...rest);
 };
 
-draw.setWriter((s) => term.stdout.write(s));
 // Overlay clamp reads draw.viewportDims(), which is injected by paint.js at
 // boot in production. In tests we feed it from process.stdout.columns/rows so
 // a case can shrink the terminal and the overlay actually clamps.

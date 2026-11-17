@@ -6,18 +6,19 @@
  * Asymmetry vs the other Phase-2.b overlays: cmdline paints a
  * BORDERED DROPDOWN above the prompt row AND a PROMPT ROW on the very
  * bottom (row ROWS). The dropdown composites into newRows (so cell-
- * diff handles the shrink/close); the prompt row + the cursor
- * positioning stay as direct writeOut because they sit OUTSIDE newRows
- * (which spans only availH = ROWS - 1 rows) and the cursor is terminal
- * state, not a cell.
+ * diff handles the shrink/close); the prompt row is the FOOTER row in
+ * cmd mode (render/footer renderFooter → cmdlinePromptRow), emitted by
+ * paint after the main frame; the cursor is terminal state, placed by
+ * paint's terminal-surface pass.
  *
- * Four pins:
- *   1. Composite path mutates `targetRows` with the dropdown's rows.
- *   2. Composite path STILL writes the prompt row + cursor via writeOut
- *      — pins the mixed-path contract.
- *   3. Stdout fallback still fires when invoked without `targetRows`
- *      (migration-period compatibility).
+ * Pins:
+ *   1. The overlay pass composites the dropdown into `newRows` and writes
+ *      NOTHING to the screen (it wrote the prompt row mid-frame, before the
+ *      main frame — a resize's full clear then erased it).
+ *   2. The frame's cursor sits after the prompt text, by width.
+ *   3. The typed text is drawn as text, not markup.
  *   4. No `FULL_CLEAR` on `cmdline_enter` through the real paint pipeline.
+ *   5. A full repaint (resize) keeps the prompt row: it lands after the clear.
  *
  * Run: node js/test/test-cmdline-overlay-composite.js
  */
@@ -33,8 +34,8 @@ const { visibleLen } = require('../leaves/text/ansi');
 
 const FULL_CLEAR = '\x1b[2J';
 
-describe('[cmdline-overlay-composite] composites dropdown into newRows + writes prompt via writeOut', () => {
-  it('composite path puts dropdown title in newRows AND writes prompt bytes via the draw writer', () => {
+describe('[cmdline-overlay-composite] composites the dropdown into newRows; the prompt row is the footer\'s', () => {
+  it('the overlay pass puts the dropdown in newRows and writes nothing to the screen', () => {
     const COLS = 100;
     const sm = require('./smoke/_helpers/smoke');
     sm.bootFresh();
@@ -48,8 +49,6 @@ describe('[cmdline-overlay-composite] composites dropdown into newRows + writes 
     const ROWS_H = 29;   // availH = 30 - 1 (footer row)
     const newRows = new Array(ROWS_H).fill(' '.repeat(COLS));
 
-    // Capture BOTH stdout (prompt row writes land there via draw.setWriter
-    // wiring from paint.js:_setDrawWriter) and the leaf's own writer seam.
     const stdoutChunks = [];
     const origWrite = term.stdout.write;
     term.stdout.write = (s) => { stdoutChunks.push(String(s)); return true; };
@@ -60,11 +59,12 @@ describe('[cmdline-overlay-composite] composites dropdown into newRows + writes 
     }
 
     const stdoutBytes = stdoutChunks.join('');
-    // The prompt row MUST have been written through writeOut (which
-    // routes to the stdout writer wired in by paint.js / the
-    // overlay-capture test helper). Looks for the `:` prompt.
-    assert(stdoutBytes.includes(':s'),
-      `expected prompt row ":s" to land via writeOut — got: ${JSON.stringify(stdoutBytes.slice(0, 160))}`);
+    // Nothing reaches the screen from the overlay pass: it runs BEFORE the main
+    // frame, whose full repaint (a resize) clears the screen after it.
+    eq(stdoutBytes, '', 'the overlay pass wrote no bytes');
+    // The prompt row is the footer's, built from the model.
+    const row = require('../render/footer').renderFooter(require('../model/store').getModel());
+    assert(row.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '').startsWith(' :s'), JSON.stringify(row.slice(0, 80)));
 
     // The dropdown title MUST have landed in newRows.
     const joined = newRows.join('\n');
@@ -116,11 +116,8 @@ describe('[cmdline-overlay-composite] composites dropdown into newRows + writes 
     sm.resize(100, 30);
     sm.applyMsg({ type: 'cmdline_enter' });
     sm.applyMsg({ type: 'cmdline_key', key: 'paste', seq: 'open a[0].txt' });
-    const chunks = [];
-    const origWrite = term.stdout.write;
-    term.stdout.write = (s) => { chunks.push(String(s)); return true; };
-    try { renderCmdline(new Array(29).fill(' '.repeat(100)), 100); } finally { term.stdout.write = origWrite; }
-    const plain = chunks.join('').replace(/\x1b\[[0-9;]*[A-Za-z]/g, '');
+    const row = require('../overlay/cmdline').cmdlinePromptRow(require('../model/store').getModel());
+    const plain = row.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '');
     assert(plain.includes(':open a[0].txt'), JSON.stringify(plain.trim().slice(0, 40)));
   });
 });
@@ -146,6 +143,26 @@ describe('[cmdline-overlay-composite] no FULL_CLEAR on cmdline_enter through the
     // somewhere in the capture.
     assert(/:/.test(stripped),
       `expected a ":" prompt to land on-screen — got: ${JSON.stringify(stripped.slice(0, 200))}`);
+  });
+});
+
+describe('[cmdline-overlay-composite] a full repaint keeps the prompt row', () => {
+  it('a resize while `:` is open: the prompt row is written AFTER the clear', () => {
+    // Review round 2 (2026-11-15): the prompt row was written from the overlay
+    // pass, then the main frame's full repaint (\x1b[2J — a resize) erased it;
+    // the row stayed blank until the next key.
+    const sm = require('./smoke/_helpers/smoke');
+    sm.bootFresh();
+    sm.resize(100, 30);
+    sm.applyMsg({ type: 'cmdline_enter' });
+    sm.applyMsg({ type: 'cmdline_key', key: 'paste', seq: 'theme nord' });
+    sm.capture(sm.render);
+    sm.resize(90, 30);
+    const out = sm.capture(sm.render).raw;
+    const clear = out.lastIndexOf(FULL_CLEAR);
+    assert(clear >= 0, 'the resize frame is a full repaint');
+    const tail = out.slice(clear).replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
+    assert(tail.includes(' :theme nord'), `the prompt row follows the clear: ${JSON.stringify(tail.slice(-120))}`);
   });
 });
 

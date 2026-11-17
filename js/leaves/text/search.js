@@ -27,7 +27,7 @@
  */
 'use strict';
 
-const { stripMarkup } = require('./ansi');
+const { stripMarkup, markupLiteral: esc } = require('./ansi');
 const { nextCell, withoutLastCell } = require('./char-width');
 const { fieldInput, pressed } = require('./printable');
 // computeMatches + _displayWidthBefore moved to match-core (shared with the
@@ -133,7 +133,6 @@ function _multiHighlight(line, spans, activeIdx, tags) {
     .filter(s => s.col < totalCols)
     .sort((a, b) => a.col - b.col);
 
-  const esc = (s) => s.replace(/\[/g, '\\[');
   let cursor = 0;  // codepoint index
   let out = '';
   for (const sp of sorted) {

@@ -165,8 +165,8 @@ greppable.
            log, jobs, pane-menu, panel-list, register-popup, which-
            key, action-palette, menu, cmdline dropdown, fabric-form
            (+ embedded picker), fabric-field, replay-scrubber, hover
-           tooltip. Cmdline prompt row + cursor stay direct writeOut
-           (sit outside newRows).
+           tooltip. No overlay writes the screen itself; the cmdline
+           prompt row is the footer row in cmd mode (step 5).
      4. painter.composeRows + paintFrame
                                   (per-cell diff vs _frame.prevRows;
                                    now includes overlay cells from the
@@ -175,7 +175,10 @@ greppable.
                                    cell-grid.js; LAZYTUI_CELL_DIFF=0 =
                                    whole-row diff; returns `wrote`, the
                                    cells it wrote)
-     5. renderFooter              (footer row writes direct)
+     5. renderFooter              (the footer row's ansi — the `:`
+                                   prompt in cmd mode — emitted after
+                                   the main frame, so a full repaint's
+                                   clear never erases it)
      6. renderTerminalOverlay     (PTY buffer per-row diff — painted
                                    outside the frame diff, under the
                                    popups' coverage `newRows.covered`;

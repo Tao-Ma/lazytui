@@ -170,7 +170,7 @@ function renderFull(data, newRows, cols) {
   }
 
   lines.push('');
-  lines.push('[dim]j/k seek  space play  b rev  +/- speed  \\[ \\] step[/]');
+  lines.push('[dim]j/k seek  space play  b rev  +/- speed  \\[ ] step[/]');
   lines.push('[dim]n/N next-change  l lock  D diff-panel[/]');
   lines.push('[dim]m mode  i cap  d diff  g/G ends  p view  q exit[/]');
 

@@ -387,6 +387,37 @@ await step('tooltip: a label with a tab is not cut', async () => {
   assert(stripMarkup(rows[4]).includes('worker 42%'), JSON.stringify(stripMarkup(rows[4]).trim()));
 });
 
+section('[6] text that ends in `\\` keeps the tag the painter puts after it');
+  // Review round 2 (2026-11-15): esc() escaped only `[`, so a field's trailing
+  // `\` + the caret's `[reverse]` (or the filter's `[/]`) read as `\[` — a
+  // literal bracket: no caret, and the tag's text on screen.
+  for (const [label, open] of [
+    ['fabric field popup', () => withModel((m) => runtime.update(m, { type: 'fabric_field_enter', addr: 'greet.name', text: '', pendingAction: FORM_PA }))],
+    ['fabric form: the focused field', openForm]]) {
+    await step(label, async () => {
+      boot();
+      open();
+      for (const ch of 'C:\\dir\\') type(ch);
+      await hs.paint();
+      const at = hs.find('C:\\dir\\'), c = caret();
+      onScreen(at && c && c.y === at.y && c.x === at.x + 7, `the text, then the caret: ${JSON.stringify({ at, c })}`);
+      onScreen(!hs.find('[reverse]'), 'no tag text on screen');
+    });
+  }
+  for (const [label, open] of [
+    ['fabric form: the choices filter', () => { openForm(); store.setModel({ ...store.getModel(), modal: { ...store.getModel().modal,
+      fabricForm: { ...store.getModel().modal.fabricForm, picking: { port: 'name', idx: 0, filter: '' } } } }); }],
+    ['action palette filter', () => type('p')],
+    ['footer filter', () => withModel((m) => runtime.update(m, { type: 'filter_enter', panel: 'actions', text: '', route: null }))]]) {
+    await step(label, async () => {
+      boot();
+      open();
+      for (const ch of 'a\\') type(ch);
+      await hs.paint();
+      onScreen(hs.find('/a\\') && !hs.find('[/]'), 'the filter shows `/a\\`, no `[/]`');
+    });
+  }
+
 hs.restore();
 report();
 })();

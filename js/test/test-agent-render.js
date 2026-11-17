@@ -85,6 +85,17 @@ describe('[agent render] input row', () => {
     const out = String(draw({ ...s, inputDraft: { text: emo, cursor: at } }, { typing: true }));
     assert(out.includes('[reverse]🚀[/]'), `the cursor cell holds the whole emoji: ${JSON.stringify(out.slice(out.indexOf('›'), out.indexOf('›') + 40))}`);
   });
+  it('a draft ending in a backslash keeps its cursor cell', () => {
+    // Review round 2 (2026-11-15): `dir C:\` + the cursor's `[reverse]` read as
+    // `C:` + a literal `[reverse]` — no cursor, and the text gained the tag.
+    let s = agent.init('p1', null);
+    const out = String(draw({ ...s, inputDraft: { text: 'dir C:\\', cursor: 7 } }, { typing: true }));
+    const row = out.split('\n').find(l => l.includes('›'));
+    assert(row.includes('[reverse] [/]'), `the cursor cell after the text: ${JSON.stringify(row)}`);
+    assert(plain(row).includes('› dir C:\\ ') && !plain(row).includes('[reverse]'), JSON.stringify(plain(row)));
+    const mid = String(draw({ ...s, inputDraft: { text: 'a\\b', cursor: 1 } }, { typing: true }));
+    assert(mid.split('\n').find(l => l.includes('›')).includes('[reverse]\\\\[/]'), 'the cursor ON a backslash');
+  });
   it('a pane narrower than 13 columns still shows the cursor cell', () => {
     // An 8-column floor on the window ran the row past a narrow pane, and the
     // leaf truncation cut the cursor off (round-2 review 2026-11-14).

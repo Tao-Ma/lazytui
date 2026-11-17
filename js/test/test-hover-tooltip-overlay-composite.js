@@ -28,9 +28,6 @@ const { visibleLen } = require('../leaves/text/ansi');
 
 describe('[hover-tooltip-overlay-composite] composites into newRows when invoked with target buffer', () => {
   it('composite path mutates newRows and writes zero stdout bytes', () => {
-    // Install writer to the real stdout path (what paint.js does at boot).
-    draw.setWriter((s) => term.stdout.write(s));
-
     const COLS = 100;
     const ROWS_H = 24;
     const newRows = new Array(ROWS_H).fill(' '.repeat(COLS));

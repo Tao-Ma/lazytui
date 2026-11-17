@@ -251,7 +251,8 @@ describe('[seal] sealMarkup — a fragment renders as measured alone, whatever f
   // for any later fragment b — here the chrome cluster `─\[X] [_]` (escaped
   // glyphs) and a markup control `[dim]‹ x ›[/]`.
   const LATER = ['─\\[X]─\\[_]╮', '[dim]‹ x ›[/]─╮', ']'];
-  const cases = ['logs [beta', '[', 'x[a[b]c[', '[warning]ok[/]', 'a\\[b', '\x1b[31mred\x1b[0m [open', '[a\x1bb', 'plain'];
+  const cases = ['logs [beta', '[', 'x[a[b]c[', '[warning]ok[/]', 'a\\[b', '\x1b[31mred\x1b[0m [open', '[a\x1bb', 'plain',
+    'a\\\\[b', 'a\\\\\\[b', 'C:\\\\'];   // a `\\` then a real `[`; `\\` + `\[`; ends in an escaped `\`
   for (const c of cases) {
     it(`${JSON.stringify(c)}`, () => {
       const s = sealMarkup(c);
@@ -264,6 +265,67 @@ describe('[seal] sealMarkup — a fragment renders as measured alone, whatever f
     eq(sealMarkup('plain'), 'plain');
     eq(stripMarkup(sealMarkup('logs [beta')), 'logs [beta');
     eq(sealMarkup(undefined), undefined);
+  });
+});
+
+describe('[escapes] `\\[` and `\\\\` — text that ends in a backslash keeps the tag after it', () => {
+  // Review round 2 (2026-11-15): esc() escaped only `[`, so text ending in `\`
+  // + the painter's next tag read as `\[` — a literal bracket. A field holding
+  // `C:\dir\` lost its caret (`[reverse]` printed as text), a choices filter
+  // `a\` printed `[/]`.
+  const { stripMarkup, visibleLen, markupCut, sealMarkup, markupLiteral } = require('../leaves/text/ansi');
+  it('esc() / markupLiteral escape `\\` and `[`', () => {
+    eq(esc('C:\\dir\\'), 'C:\\\\dir\\\\');
+    eq(esc('a\\[b'), 'a\\\\\\[b');
+    eq(markupLiteral('x\\[y]'), 'x\\\\\\[y]');
+  });
+  it('a trailing backslash, then a tag: the tag is a tag', () => {
+    eq(stripMarkup(esc('C:\\') + '[reverse] [/]'), 'C:\\ ');
+    eq(richToAnsi(esc('C:\\') + '[bold]b[/]'), 'C:\\\x1b[1mb\x1b[0m');
+  });
+  it('a backslash anywhere else is itself; `\\\\` is one', () => {
+    eq(stripMarkup('C:\\dir'), 'C:\\dir', 'a lone `\\` before a letter');
+    eq(stripMarkup('a\\\\b'), 'a\\b');
+    eq(stripMarkup('a\\\\\\[b'), 'a\\[b', '`\\\\` then `\\[`');
+    eq(stripMarkup('a\\\\[dim]b[/]'), 'a\\b', '`\\\\` then a tag');
+  });
+  // Every string over an alphabet that stresses the escapes.
+  const ALPHA = ['\\', '[', ']', '/', 'a', '中', '[/]', '[dim]'];
+  const strings = [];
+  let seed = 7;
+  const rnd = (n) => { seed = (Math.imul(seed, 1103515245) + 12345) >>> 0; return (seed >>> 16) % n; };
+  for (let k = 0; k < 400; k++) {
+    let t = ''; const n = 1 + rnd(7);
+    for (let i = 0; i < n; i++) t += ALPHA[rnd(ALPHA.length)];
+    strings.push(t);
+  }
+  it('text round-trips: stripMarkup(esc(t)) === t, and a tag after it stays a tag', () => {
+    for (const t of strings) {
+      eq(stripMarkup(esc(t)), t, JSON.stringify(t));
+      eq(stripMarkup(esc(t) + '[bold]Z[/]'), t + 'Z', `${JSON.stringify(t)} + a tag`);
+      eq(visibleLen(esc(t)), visibleLen(markupLiteral(t)), `${JSON.stringify(t)}: esc and markupLiteral agree`);
+    }
+  });
+  it('markupCut never splits an escape: the two sides render the whole', () => {
+    for (const t of strings) {
+      const m = '[dim]' + esc(t) + '[/]' + esc(t);
+      const w = visibleLen(m);
+      for (let cols = 0; cols <= w; cols++) {
+        const { cut, width } = markupCut(m, cols);
+        eq(stripMarkup(m.slice(0, cut)) + stripMarkup(m.slice(cut)), stripMarkup(m), `${JSON.stringify(m)} @${cols}`);
+        eq(visibleLen(m.slice(0, cut)), width, `${JSON.stringify(m)} @${cols}: width`);
+      }
+    }
+  });
+  it('sealMarkup: an escaped `[` stays escaped, a `[` after `\\\\` is real', () => {
+    for (const t of strings) {
+      // Raw markup fragments (tags, escapes, unclosed brackets): sealed, they
+      // measure the same whatever follows.
+      const s = sealMarkup(t);
+      for (const b of ['─\\[X]╮', '[dim]x[/]', ']']) eq(visibleLen(s + b), visibleLen(s) + visibleLen(b), `${JSON.stringify(t)} + ${JSON.stringify(b)}`);
+    }
+    eq(sealMarkup('a\\\\[b'), 'a\\\\\\[b', 'a `\\\\` + an unclosed `[`: the `[` is escaped');
+    eq(sealMarkup('a\\\\\\[b'), 'a\\\\\\[b', '`\\\\` + `\\[`: untouched');
   });
 });
 

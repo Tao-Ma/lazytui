@@ -18,7 +18,7 @@ const { getModel } = require('../model/store');
 const { richToAnsi, RESET, visibleLen, esc } = require('../leaves/text/ansi');
 const { fieldTail } = require('../leaves/text/field-window');
 const { theme } = require('../leaves/infra/themes');
-const { renderPanel, viewportDims, writeOut, publishBox } = require('../leaves/render/draw');
+const { renderPanel, viewportDims, publishBox } = require('../leaves/render/draw');
 const { compositeRow } = require('../leaves/render/row-compositor');
 const { DROPDOWN_VIEWPORT: MAX_DROPDOWN } = require('../leaves/text/cmdline-split');
 
@@ -38,20 +38,22 @@ function _formatMatchLine(match) {
   return display;
 }
 
-// Overlay-compositor end-of-Release-2: cmdline is MIXED-PATH. The
-// dropdown composites into newRows via `row-compositor.compositeRow`
-// (cell-diff handles shrink/close/vanish from the natural row delta —
-// no sig tracker or residue tracker needed). The PROMPT ROW sits at
-// row `ROWS` (the footer row, OUTSIDE newRows which spans only availH
-// rows) and the cursor position is terminal state (not a cell to
-// composite), so both stay as a direct writeOut. The pre-cleanup
-// stdout fallback for the dropdown is retired.
+// The dropdown composites into newRows via `row-compositor.compositeRow`
+// (cell-diff handles shrink/close/vanish from the natural row delta — no sig
+// tracker or residue tracker needed). The PROMPT ROW is not part of this pass:
+// it sits on the footer row (row ROWS, outside newRows, which spans only availH
+// rows), and the footer row has one owner — render/footer.renderFooter returns
+// cmdlinePromptRow below in cmd mode, emitted after the main frame like every
+// footer. (It was a direct write from inside this pass, BEFORE the main frame:
+// a resize's full repaint cleared the screen after it, and the prompt row stayed
+// blank until the next key.) The cursor is terminal state, placed by paint's
+// terminal-surface pass (cmdlineCursor).
 function renderCmdline(newRows, cols) {
   if (!getModel().modes.cmdMode) return;
   // Buffer state lives on the model (folded onto update); the render-safe
   // match list (display/desc/kind) is enough to paint — run closures
   // stay module-held in dispatch/control/cmdline.js#_full.
-  const { text: _text, sel: _sel, matches: _matches, scroll: _scroll = 0 } = getModel().modal.cmdline;
+  const { sel: _sel, matches: _matches, scroll: _scroll = 0 } = getModel().modal.cmdline;
   const { cols: COLS, rows: ROWS } = viewportDims();
   const t = theme();
 
@@ -104,39 +106,28 @@ function renderCmdline(newRows, cols) {
     publishBox({ x: offX, y: offY, w: panelW, h: panelH, lines, lineTargets,
                  box: { 'wheel-up': { key: 'up' }, 'wheel-down': { key: 'down' } } });
   }
-
-  // Prompt row sits at row ROWS (the footer row, outside newRows which
-  // spans only availH rows), so it stays as a direct writeOut. Rich-style
-  // markup mirrors renderFooter() so the cmdline blends with the chrome
-  // it covers.
-  // The typed text is TEXT: escaped, so `a[0].txt` shows as typed instead of
-  // being read as a markup tag (it showed `a.txt`, the cursor past its end).
-  // Windowed to the row (_promptView, shared with cmdlineCursor): the row was
-  // never cut, so a command wider than the screen ran past the last column of
-  // the LAST row — the host wrapped it and the whole screen scrolled up.
-  const { shown } = _promptView(_text, COLS);
-  const prompt = ` :${shown}`;
-  const padded = prompt + ' '.repeat(Math.max(0, COLS - visibleLen(prompt)));
-  const buf = `\x1b[${ROWS};1H` + richToAnsi(`[${t.footer}]${padded}[/]`) + RESET;
-  // The cursor's position is cmdlineCursor's — paint's terminal-surface pass
-  // places it LAST, on every frame and every PTY fast-path repaint (writing it
-  // here, mid-frame, the main frame's diff moved it on: it ended in the
-  // dropdown whenever the dropdown changed).
-
-  // Through draw's injected writer → paint's depth funnel (P3) — never raw
-  // stdout: this overlay's rows carry theme hex since the truecolor arc.
-  writeOut(buf);
 }
 
-/** Reset module-local render state. Called from dispatch/cmdline#clear
- *  on cmdline_clear (submit/cancel) so the next cmd-mode open doesn't
- *  inherit residue-tracker state from the previous session. */
-// Overlay-compositor R3 descriptor. zIndex=110. cmdline is a MIXED
-// path: the dropdown panel composites into newRows (R2 Phase 2.b #3),
-// but the prompt row + cursor stay direct `writeOut` because they sit
-// on the footer row — OUTSIDE newRows. The compositor sees only the
-// newRows-side; the writeOut-side still runs inside the render fn
-// synchronously, as before (no behavior change).
+/** The `:` prompt row's ansi — the footer row in cmd mode (render/footer
+ *  renderFooter returns it; paint emits it after the main frame, through the
+ *  depth funnel). Rich-style markup mirrors renderFooter's so the prompt blends
+ *  with the chrome it replaces.
+ *  The typed text is TEXT: escaped, so `a[0].txt` shows as typed instead of
+ *  being read as a markup tag (it showed `a.txt`, the cursor past its end).
+ *  Windowed to the row (_promptView, shared with cmdlineCursor): the row was
+ *  never cut, so a command wider than the screen ran past the last column of
+ *  the LAST row — the host wrapped it and the whole screen scrolled up. */
+function cmdlinePromptRow(model) {
+  const { cols: COLS, rows: ROWS } = viewportDims();
+  const { shown } = _promptView(model.modal.cmdline.text, COLS);
+  const prompt = ` :${shown}`;
+  const padded = prompt + ' '.repeat(Math.max(0, COLS - visibleLen(prompt)));
+  return `\x1b[${ROWS};1H` + richToAnsi(`[${theme().footer}]${padded}[/]`) + RESET;
+}
+
+// Overlay-compositor R3 descriptor. zIndex=110. The compositor sees the
+// dropdown (composited into newRows); the prompt row is the footer row's
+// (cmdlinePromptRow, via renderFooter).
 function registerSelf(compositor) {
   compositor.register({
     id: 'cmdline',
@@ -175,4 +166,4 @@ function _promptView(text, cols) {
   return { shown: (clipped ? '…' : '') + esc(before), caretCol };
 }
 
-module.exports = { renderCmdline, registerSelf, cmdlineCursor };
+module.exports = { renderCmdline, registerSelf, cmdlineCursor, cmdlinePromptRow };

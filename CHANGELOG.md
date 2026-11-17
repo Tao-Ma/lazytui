@@ -92,6 +92,17 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 - **A Nerd Font glyph followed by digits and `;` no longer shows as
   `undefined`.** Text with U+E000 or U+E001 around `0;` collided with the
   placeholder that protects colour codes while control sequences are removed.
+- **The `:` command line survives a resize.** Resizing the terminal while
+  the command line was open blanked it until the next key: it was drawn before
+  the rest of the screen, and the resize's full redraw cleared it. It is now
+  drawn with the footer, after the screen.
+- **Text ending in a backslash keeps its cursor and colours.** A port field,
+  a port form's field, the agent prompt, the choices filter, a selection or a
+  search match whose text ended in `\` — a Windows path, a regex — lost what
+  was drawn after it: the cursor vanished and `[reverse]` or `[/]` showed as
+  text. Backslashes now show exactly as typed, wherever they are. The
+  render-error line and the replay pane's `[ ] step` hint no longer show a
+  stray `\` before their `]`.
 
 ## [0.6.59] — 2026-11-15
 

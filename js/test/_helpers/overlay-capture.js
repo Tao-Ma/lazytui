@@ -29,10 +29,8 @@ const term = require('../../io/term');
 const draw = require('../../leaves/render/draw');
 const { stripMarkup } = require('../../leaves/text/ansi');
 
-// --- One-time install: mute OSC-52 noise, point draw.setWriter at
-// term.stdout.write so overlays that still write to stdout directly
-// (pane-menu, cmdline — their non-compositor cell-boundary writes) find
-// their writer at boot (same path production uses). ---
+// --- One-time install: mute OSC-52 noise. (No overlay writes the screen
+// itself: they composite into the frame's rows, and paint emits.) ---
 let _installed = false;
 function _install() {
   if (_installed) return;
@@ -43,7 +41,6 @@ function _install() {
     if (s.startsWith('\x1b]52;')) return true;        // OSC-52 clipboard noise
     return _origWrite(chunk, ...rest);
   };
-  draw.setWriter((s) => term.stdout.write(s));
 }
 
 /**

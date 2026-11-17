@@ -27,7 +27,7 @@ const state = require('../app/state');
 const api = require('../panel/api');
 const loop = require('../dispatch/runtime/loop');
 const dispatch = require('../dispatch/control/dispatch');
-require('../render/paint');   // sets the overlay draw writer so render() emits
+require('../render/paint');   // the renderer (registers the overlays)
 
 const TMP = process.env.SCRATCH_DIR || '/tmp';
 const wal = path.join(TMP, `replay-pane-${process.pid}.jsonl`);
@@ -165,6 +165,7 @@ function boot() {
       assert(/Replay/.test(overlayFrame), 'title');
       assert(/\d\d:\d\d:\d\d/.test(overlayFrame), 'a HH:MM:SS timestamp');
       assert(/seek/.test(overlayFrame), 'hint line');
+      assert(overlayFrame.includes('[ ] step'), `the step keys are \`[ ]\` (a stray \`\\\` showed before the \`]\`): ${JSON.stringify(overlayFrame.split('\n').find(l => l.includes('step')))}`);
     });
   });
   describe('[4b] pane view cycles full → mini → hidden', () => {

@@ -25,7 +25,6 @@ term.stdout.write = (chunk, ...rest) => {
   if (s.startsWith('\x1b]52;')) return true;
   return _origWrite(chunk, ...rest);
 };
-draw.setWriter((s) => term.stdout.write(s));
 draw.setDimsProvider(() => ({
   cols: process.stdout.columns || 80,
   rows: process.stdout.rows || 24,

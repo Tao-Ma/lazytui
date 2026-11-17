@@ -31,6 +31,7 @@ term.stdout.write = (chunk, ...rest) => {
 
 const reg = require('./_helpers/register');
 const { describe, it, eq, assert, report } = require('./test-runner');
+const { esc, stripMarkup } = require('../leaves/text/ansi');
 const { getModel } = require('../app/runtime');
 const { getInstanceSlice } = require('../panel/api');
 const { dispatchKeyToFocused } = require('../dispatch/runtime/loop');
@@ -227,8 +228,18 @@ describe('[9] highlightLine — visual transform', () => {
     // projection. After highlighting, we MUST re-escape so the output
     // can be re-fed into richToAnsi without those brackets being
     // mis-parsed as markup tags.
-    const out = sel.highlightLine('a \\[escaped\\] b', 0, 99);
-    eq(out, '[reverse]a \\[escaped\\] b[/]');
+    const out = sel.highlightLine('a \\[escaped] b', 0, 99);
+    eq(out, '[reverse]a \\[escaped] b[/]');
+  });
+  it('a selection ending in a backslash keeps its closing tag', () => {
+    // `\` is escaped too (`\\`): with only `[` escaped, `C:\` + `[/]` read as
+    // `C:` + a literal `[/]` — the highlight ran on and the text gained `[/]`.
+    const src = esc('dir C:\\');
+    for (const [a, b] of [[0, 99], [4, 6]]) {
+      const out = sel.highlightLine(src, a, b);
+      eq(stripMarkup(out), 'dir C:\\', `[${a}, ${b}]: the text is unchanged`);
+      assert(out.endsWith('[/]'), `[${a}, ${b}]: ends with the closing tag: ${JSON.stringify(out)}`);
+    }
   });
 });
 
