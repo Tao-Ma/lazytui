@@ -553,6 +553,13 @@ function bootInteractive(opts) {
   // components are registered so the handler's slice reads land.
   require('../panel/content/pty-lifecycle').install(require('../dispatch/runtime/effects').effectHost());
 
+  // From here a warning goes to the diagnostics log (`leader e`): the first
+  // frame clears the screen, so a config warning printed now (an unknown key, a
+  // bad keymap binding) was wiped before anyone read it (io/console-capture). A
+  // fatal config error below replays them with its own message.
+  const consoleCapture = require('../io/console-capture');
+  consoleCapture.install();
+
   // Phase 6 — the runtime Plugin API retired. External authors write
   // Components and register them the same way the built-ins above do.
   // The `plugins:` block still has a parser-level role though: entries
@@ -575,6 +582,7 @@ function bootInteractive(opts) {
   try {
     require('../dispatch/control/dispatch').loadKeyBindings(getModel().config);
   } catch (e) {
+    consoleCapture.restore({ replay: true });   // the warnings before it, then the error
     console.error(`keys: ${e.message}`);
     process.exit(1);
   }
@@ -607,10 +615,9 @@ function bootInteractive(opts) {
   // thunk fetches at paint time); scheduleRender goes through render-queue.
   // Anything that needs current model state reads it AT the read site, not
   // from a frozen-at-boot snapshot.
-  // From here the screen is ours: a console.error / warn / log would write into
-  // the frame (and scroll it) — route them to the diagnostics log (`leader e`)
-  // until cleanup hands the terminal back (io/console-capture).
-  require('../io/console-capture').install();
+  // The screen is ours: console output stays routed to the diagnostics log
+  // (installed above, before the config warnings) until cleanup hands the
+  // terminal back (io/console-capture).
   hideCursor();
   installSuspendHandlers();   // Ctrl+Z: restore terminal → suspend → resume
   // Initial refresh broadcasts a `{type:'refresh'}` Msg to every

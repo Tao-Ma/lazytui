@@ -28,14 +28,20 @@ function isRecording() { return sessionLog.isEnabled() && !!sessionLog.streamPat
  *  a checkpoint of the full current state first, so the file replays from here
  *  even mid-session, then streams subsequent Msgs + auto-cadence checkpoints.
  *  A repeated record-save while already recording is SKIPPED (returns the
- *  in-progress path). Returns `{ path, skipped }`. */
+ *  in-progress path). Returns `{ path, skipped }`, plus `error` (the reason)
+ *  when the file can't be opened — nothing is recording then, and the session
+ *  log is left as it was. */
 function save(file) {
   if (isRecording()) return { path: sessionLog.streamPath(), skipped: true };
   const path = file || sessionLog.DEFAULT_SESSION_FILE;
+  const wasEnabled = sessionLog.isEnabled();
   sessionLog.enable(true);
   sessionLog.setCheckpointCadence(sessionLog.DEFAULT_CHECKPOINT_CADENCE);
   replay.checkpointNow();        // full current state → self-contained from here
-  sessionLog.streamTo(path);     // seed the file with the buffer (incl. checkpoint) + stream
+  if (!sessionLog.streamTo(path)) {   // seed the file with the buffer (incl. checkpoint) + stream
+    if (!wasEnabled) sessionLog.enable(false);
+    return { path, skipped: false, error: sessionLog.streamError() || 'cannot open the file' };
+  }
   return { path, skipped: false };
 }
 

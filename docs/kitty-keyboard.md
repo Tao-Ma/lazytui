@@ -73,7 +73,9 @@ but can now carry a modifier param (`\x1b[1;5A` = Ctrl+Up). Modifiers =
 `1 + bitmask` (shift 1, alt 2, ctrl 4, super 8, …). The keypad's non-text keys
 come as their own Private Use numbers (KP_ENTER = `\x1b[57414u`, the keypad
 arrows 57417–57420, Page / Home / End / Insert / Delete 57421–57426):
-`kkp-decode` maps those, bare or with Shift, to the main keys' legacy bytes, so
+`kkp-decode` turns each into what its MAIN key sends under the protocol, with
+the same modifiers (Shift+keypad-Down = `\x1b[1;2B`), and ignores the lock bits
+kitty sets on them (keypad Enter with NumLock on is `\x1b[57414;129u`) — so
 keypad Enter runs and the keypad arrows move as they do without the protocol.
 
 ## Integration map (grounded in current code, 2026-08-05)

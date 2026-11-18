@@ -160,11 +160,21 @@ function streamTo(filepath) {
     fs.writeFileSync(filepath, lines.join('\n') + '\n');
     _streamPath = filepath;
   } catch (e) {
-    process.stderr.write(`session-log: cannot open ${filepath}: ${e.message}\n`);
+    // console (not process.stderr): while the TUI owns the screen, console output
+    // goes to the diagnostics log (io/console-capture) — a raw stderr write landed
+    // in the frame and scrolled it. The caller reports the failure too (streamError).
+    _streamError = e.message;
+    console.error(`[session-log] cannot open ${filepath}: ${e.message}`);
     _streamPath = null;
+    return null;
   }
+  _streamError = null;
   return _streamPath;
 }
+
+/** Why the last streamTo failed (the error message), or null. */
+let _streamError = null;
+function streamError() { return _streamError; }
 
 /** The file currently being streamed to, or null. */
 function streamPath() { return _streamPath; }
@@ -286,6 +296,7 @@ function snapshot()         { return _buf.slice(); }
 function size()             { return _buf.length; }
 
 module.exports = {
+  streamError,
   record, recordMsg, recordTerm, recordCheckpoint,
   enable, isEnabled, clear, snapshot, size,
   attachStream, detachStream, streamTo, streamPath, DEFAULT_SESSION_FILE, save, load, read, loadMeta,

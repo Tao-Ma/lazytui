@@ -82,6 +82,13 @@ describe('[2] modifier + codepoint handling', () => {
     eq(kkpToLegacy(csu(57414)), '\r');       // KP_ENTER
     eq(kkpToLegacy(csu(57426)), '\x1b[3~');  // KP_DELETE
     eq(kkpToLegacy(csu(57417)), '\x1b[D');   // KP_LEFT
+    // Lock bits (caps 64, num 128) are state, not modifiers — kitty sets them on
+    // these keys: keypad Enter with NumLock on is `CSI 57414;129u`.
+    eq(kkpToLegacy('\x1b[57414;129u'), '\r');
+    eq(kkpToLegacy('\x1b[57417;65u'), '\x1b[D');
+    // A modifier: the main key's sequence with it (Shift+Left = CSI 1;2D).
+    eq(kkpToLegacy('\x1b[57417;2u'), '\x1b[1;2D');
+    eq(kkpToLegacy('\x1b[57422;3u'), '\x1b[6;3~');
   });
 });
 

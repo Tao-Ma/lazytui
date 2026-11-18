@@ -9,7 +9,9 @@
  *   for (const [name, f] of Object.entries(tf.FIELDS)) { f.open(); type('ab'); f.read(); }
  *
  * FIELDS: each field's `open()` (a fresh boot, then the field opened) and
- * `read()` (its text). The free-config rename starts from the pane's title, so
+ * `read()` (its text). open() types with the CAPTURING keys (frames muted) — a
+ * test that reads the host screen opens its fields itself, or the frames it
+ * needs never reach the screen and paint's diff runs ahead of it. The free-config rename starts from the pane's title, so
  * its read() is what follows that title; `titleText()` reads all of it.
  *
  * Require `../test-runner` (or the smoke helper) BEFORE this — component

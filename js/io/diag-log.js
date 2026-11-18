@@ -120,7 +120,12 @@ function yankText(ev) {
   return `[${ev.level}] ${ev.code}: ${ev.message}`;
 }
 
-function clear() { _buf = []; _pending = []; _notify(); }
+// How many times the log was cleared — a producer that records a message once
+// (io/console-capture) records it again after a clear: the user cleared the
+// window, the problem didn't go away.
+let _clears = 0;
+function clear() { _buf = []; _pending = []; _clears++; _notify(); }
+function clears() { return _clears; }
 
 function setCap(n) {
   _cap = Math.max(1, n | 0);
@@ -146,5 +151,5 @@ function save(filepath) {
 module.exports = {
   record, warn, error, info, snapshot, size, counts, clear, setCap, save,
   yankText, DEFAULT_CAP, setOnChange,
-  recordDeferred, warnDeferred, flushDeferred,
+  recordDeferred, warnDeferred, flushDeferred, clears,
 };

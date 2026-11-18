@@ -368,14 +368,23 @@ layout:
     const errWrite = process.stderr.write;
     let errBytes = 0;
     process.stderr.write = (chunk) => { errBytes += String(chunk).length; return true; };
+    // Plain-text writes bypass the host screen (it takes only frames), so count
+    // what reaches stdout outside a frame too: console.log goes there.
+    const outWrite = process.stdout.write;
+    let plainBytes = 0;
+    process.stdout.write = (chunk, ...rest) => { if (!String(chunk).includes('\x1b')) plainBytes += String(chunk).length; return outWrite.call(process.stdout, chunk, ...rest); };
     diag.clear();
     capture.install();
     def.render = () => { throw new Error('boom-render'); };
     try {
       for (let i = 0; i < 3; i++) await hs.paint();
+      console.log('a stray console.log while the TUI draws');
+      console.warn('a stray console.warn');
       diag.flushDeferred();   // what the dispatch finalizer does after the frame
-    } finally { def.render = real; capture.restore(); process.stderr.write = errWrite; }
+    } finally { def.render = real; capture.restore(); process.stderr.write = errWrite; process.stdout.write = outWrite; }
     eq(errBytes, 0, 'nothing reached stderr (the screen) while three frames threw');
+    eq(plainBytes, 0, 'console.log / warn wrote nothing to stdout (the screen) either');
+    assert(diag.snapshot().some((e) => e.level === 'info' && e.message.includes('stray console.log')), 'console.log is in diagnostics');
     eq(hs.scrolled(), 0, 'the screen did not scroll');
     onScreen(hs.line(ROWS - 1).startsWith(' :quit') && !hs.line(ROWS - 1).includes('boom'), 'the prompt row is clean');
     const hits = diag.snapshot().filter((e) => e.message.includes('boom-render'));
@@ -386,6 +395,63 @@ layout:
     const before = console.error;
     require('../dispatch/runtime/cleanup').cleanup();
     assert(console.error !== before && !capture.installed(), 'cleanup hands console back to the terminal');
+  });
+
+  await step('console capture: after a clear, while the window is open, a fatal boot', async () => {
+    // Round 2 (2026-11-18): the once-per-message memory outlived a cleared log
+    // (a pane still throwing never showed again); a captured line waited for the
+    // dispatch finalizer, which the diagnostics window's own ticks never run.
+    const capture = require('../io/console-capture');
+    const diag = require('../io/diag-log');
+    const turn = () => new Promise((res) => setImmediate(res));
+    const hits = (re) => diag.snapshot().filter((e) => re.test(e.message)).length;
+    sm.bootFresh(); sm.resize(COLS, ROWS);
+    diag.clear();
+    capture.install();
+    try {
+      console.error('[render:x] still-throwing');
+      await turn();
+      eq(hits(/still-throwing/), 1, 'recorded once, drained on the next turn — no dispatch needed');
+      console.error('[render:x] still-throwing');
+      await turn();
+      eq(hits(/still-throwing/), 1, 'the same message again: not recorded twice');
+      diag.clear();
+      console.error('[render:x] still-throwing');
+      await turn();
+      eq(hits(/still-throwing/), 1, 'after the user clears the window, a message that keeps happening shows again');
+
+      sm.applyMsg({ type: 'diag_log_open' });
+      console.error('[sub:interval:poll] tick-threw');   // a Sub's onTick threw, between frames
+      for (let i = 0; i < 3; i++) { await turn(); sm.applyMsg({ type: 'clock_tick', now: Date.now() + i * 1000 }); }
+      await turn();
+      eq(store.getModel().modes.diagLogMode, true, 'the diagnostics window is open');
+      assert((store.getModel().diagLog || []).some((e) => /tick-threw/.test(e.message)),
+        `an error captured while the diagnostics window is open shows in it: ${JSON.stringify((store.getModel().diagLog || []).map((e) => e.message))}`);
+      sm.applyMsg({ type: 'diag_log_close' });
+
+      // :record-save to a path that can't be opened says so (it claimed success,
+      // and its stderr line landed in the frame).
+      const errWrite = process.stderr.write; let errBytes = 0;
+      process.stderr.write = (c) => { errBytes += String(c).length; return true; };
+      const transcript = () => { const id = sm.route.resolveTarget('viewer_transcript'); const sl = id && sm.api.getInstanceSlice(id); return ((sl && sl.lines) || []).map(stripMarkup).join('\n'); };
+      try { sm.capture(() => { type(':'); type('record-save /nonexistent-dir/x.jsonl'); type('\r'); }); }
+      finally { process.stderr.write = errWrite; }
+      eq(errBytes, 0, 'nothing written to the screen');
+      assert(/Cannot record to \/nonexistent-dir\/x\.jsonl: .*ENOENT/.test(transcript()), `the transcript says it failed: ${JSON.stringify(transcript().split('\n').slice(-1))}`);
+      assert(!/Recording session/.test(transcript()), 'and does not claim it is recording');
+      eq(require('../io/session-log').streamPath(), null, 'nothing is recording');
+    } finally { capture.restore(); }
+
+    // A boot that exits on a fatal config error replays what it captured.
+    const printed = [];
+    const realErr = console.error;
+    console.error = (m) => printed.push(String(m));
+    try {
+      capture.install();
+      console.error('[keymap] bad binding "zz"');
+      capture.restore({ replay: true });
+    } finally { console.error = realErr; }
+    eq(printed, ['[keymap] bad binding "zz"'], 'restore({ replay }) prints the warnings captured before the screen was drawn');
   });
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -406,12 +472,18 @@ layout:
   section('[8] kitty keypad keys');
   await step('keypad', async () => {
     const { kkpToLegacy } = require('../leaves/input/kkp-decode');
-    eq([kkpToLegacy('\x1b[57414u'), kkpToLegacy('\x1b[57419u'), kkpToLegacy('\x1b[57420;2u'), kkpToLegacy('\x1b[57423u')],
-      ['\r', '\x1b[A', '\x1b[B', '\x1b[H'], 'keypad Enter / Up / Shift+Down / Home → the main keys\' bytes');
-    eq([kkpToLegacy('\x1b[57420;5u'), kkpToLegacy('\x1b[57376u')], [null, null], 'Ctrl+keypad and F13 stay unbound');
-    sm.bootFresh(); sm.resize(COLS, ROWS);
-    sm.capture(() => { type(':'); type('help'); type('\x1b[57414u'); });
-    eq(store.getModel().modes.cmdMode, false, 'keypad Enter runs the command line');
+    eq([kkpToLegacy('\x1b[57414u'), kkpToLegacy('\x1b[57419u'), kkpToLegacy('\x1b[57423u'), kkpToLegacy('\x1b[57421u')],
+      ['\r', '\x1b[A', '\x1b[H', '\x1b[5~'], 'keypad Enter / Up / Home / Page Up → the main keys\' bytes');
+    eq([kkpToLegacy('\x1b[57414;129u'), kkpToLegacy('\x1b[57414;65u'), kkpToLegacy('\x1b[57419;65u'), kkpToLegacy('\x1b[57426;129u')],
+      ['\r', '\r', '\x1b[A', '\x1b[3~'], 'NumLock / CapsLock on (kitty sets them on these keys): the same');
+    eq([kkpToLegacy('\x1b[57420;2u'), kkpToLegacy('\x1b[57421;5u'), kkpToLegacy('\x1b[57414;2u')],
+      ['\x1b[1;2B', '\x1b[5;5~', '\r'], 'with a modifier: what the MAIN key sends with it (Shift+Down, Ctrl+PgUp, Shift+Enter)');
+    eq([kkpToLegacy('\x1b[57414;5u'), kkpToLegacy('\x1b[57376u'), kkpToLegacy('\x1b[57399u')], [null, null, null], 'Ctrl+keypad Enter (as Ctrl+Enter), F13 and a keypad digit stay unbound');
+    for (const [label, seq] of [['bare', '\x1b[57414u'], ['NumLock on', '\x1b[57414;129u']]) {
+      sm.bootFresh(); sm.resize(COLS, ROWS);
+      sm.capture(() => { type(':'); type('help'); type(seq); });
+      eq(store.getModel().modes.cmdMode, false, `keypad Enter (${label}) runs the command line`);
+    }
   });
 
   hs.restore();

@@ -275,9 +275,11 @@ const FRAMEWORK_COMMANDS = [
       const { appendViewerLines } = require('./nav-state');
       const file = (args && args.join(' ').trim().replace(/^(['"])(.*)\1$/, '$2')) || undefined;
       const r = _host.recordSave(file);
-      appendViewerLines(r.skipped
-        ? `[warning]Already recording →[/] ${esc(r.path)}`
-        : `[success]Recording session →[/] ${esc(r.path)}`);
+      appendViewerLines(r.error
+        ? `[error]Cannot record to[/] ${esc(r.path)}[error]:[/] ${esc(r.error)}`
+        : r.skipped
+          ? `[warning]Already recording →[/] ${esc(r.path)}`
+          : `[success]Recording session →[/] ${esc(r.path)}`);
     },
   },
   {

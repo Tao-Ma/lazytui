@@ -22,11 +22,11 @@
  *   - null when `tok` is not a CSI-u key event, or has no legacy equivalent
  *     lazytui binds (Alt-chords, super/hyper/meta combos, PUA functional keys
  *     other than the keypad's Enter / arrows / Home / End / Page / Insert /
- *     Delete) — the caller drops it exactly as legacy mode dropped the
- *     matching escape sequence.
+ *     Delete, which become their main keys' sequences) — the caller drops it
+ *     exactly as legacy mode dropped the matching escape sequence.
  *
  * Values are DERIVED, never a hand-typed table (the keypad's PUA numbers are the
- * one table — `_KEYPAD`, from the spec's functional-key list): the key number is the Unicode
+ * one table — `_KEYPAD_NAV`, from the spec's functional-key list): the key number is the Unicode
  * codepoint (spec: always the unshifted form) and the modifier is `value - 1`
  * (spec: value = 1 + bitmask). This is why the oracle differential test exists
  * — hand-computed CSI-u numbers are error-prone (the spec review caught two).
@@ -40,16 +40,21 @@ const MOD_ALT   = 2;
 const MOD_CTRL  = 4;
 // super | hyper | meta — combos lazytui does not bind.
 const MOD_OTHER = 8 | 16 | 32;
+// caps lock | num lock — state, not a modifier: kitty sets them on non-text keys
+// (keypad Enter with NumLock on is `CSI 57414;129u`). The main-key paths below
+// already ignore them (no test reads 64/128); the keypad branch masks them.
+const MOD_LOCKS = 64 | 128;
 
-// kitty's keypad codes (the protocol's functional-key table) → the legacy bytes
-// the same keys send without the protocol.
-const _KEYPAD = {
-  57414: '\r',                                                        // KP_ENTER
-  57417: '\x1b[D', 57418: '\x1b[C', 57419: '\x1b[A', 57420: '\x1b[B',  // KP_LEFT/RIGHT/UP/DOWN
-  57421: '\x1b[5~', 57422: '\x1b[6~',                                 // KP_PAGE_UP/DOWN
-  57423: '\x1b[H', 57424: '\x1b[F',                                   // KP_HOME/END
-  57425: '\x1b[2~', 57426: '\x1b[3~',                                // KP_INSERT/DELETE
+// kitty's keypad navigation codes (the protocol's functional-key table) → the
+// main key's legacy final: a letter (`CSI A`, with a modifier `CSI 1;<m>A`) or a
+// `~` number (`CSI 5~` / `CSI 5;<m>~`). KP_ENTER (57414) is the main Enter (13).
+const _KEYPAD_NAV = {
+  57417: 'D', 57418: 'C', 57419: 'A', 57420: 'B',   // KP_LEFT/RIGHT/UP/DOWN
+  57421: 5, 57422: 6,                                // KP_PAGE_UP/DOWN
+  57423: 'H', 57424: 'F',                            // KP_HOME/END
+  57425: 2, 57426: 3,                                // KP_INSERT/DELETE
 };
+const KP_ENTER = 57414;
 
 function kkpToLegacy(tok) {
   // Shape: `\x1b[` <params> `u`. Reject private-prefix CSIs (`?`/`>`/`<`/`=`);
@@ -67,12 +72,19 @@ function kkpToLegacy(tok) {
   // Keypad / function keys live in the Unicode Private Use Area (57344–63743).
   // Under the disambiguate flag lazytui pushes, kitty reports the keypad's
   // NON-text keys there too — keypad Enter and the keypad arrows / Home / End /
-  // Page keys, which legacy mode sent as `\r` / `CSI A`… and lazytui acts on. Map
-  // those (bare or Shift, as the main keys) to the legacy bytes; the rest
-  // (F13+, media, lone modifiers) lazytui binds none of → drop like a legacy
-  // unknown escape.
+  // Page / Insert / Delete, which legacy mode sent as the main keys' bytes and
+  // lazytui acts on. Each becomes exactly what its MAIN key sends under the
+  // protocol, modifiers included (Enter → the main Enter's event; an arrow →
+  // `CSI A` or `CSI 1;<m>A`), so it does whatever the main key does with the
+  // same modifiers. The rest (F13+, media, lone modifiers, the keypad's text
+  // keys) lazytui binds none of → drop like a legacy unknown escape.
   if (code >= 57344 && code <= 63743) {
-    return (mods & ~MOD_SHIFT) === 0 && _KEYPAD[code] !== undefined ? _KEYPAD[code] : null;
+    const m = mods & ~MOD_LOCKS;
+    if (code === KP_ENTER) return kkpToLegacy(`\x1b[13${m ? `;${m + 1}` : ''}u`);
+    const nav = _KEYPAD_NAV[code];
+    if (nav === undefined) return null;
+    if (typeof nav === 'number') return m ? `\x1b[${nav};${m + 1}~` : `\x1b[${nav}~`;
+    return m ? `\x1b[1;${m + 1}${nav}` : `\x1b[${nav}`;
   }
 
   // Alt / super / hyper / meta: legacy dropped these (alt-chords were logged +

@@ -131,7 +131,13 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   printed to the terminal in the middle of the frame — after the `:` prompt or
   over a border — and the line break scrolled the whole screen up one row,
   every frame. Anything printed while lazytui owns the screen now goes to the
-  diagnostics window (`leader e`), once per message.
+  diagnostics window (`leader e`), once per message (again after you clear the
+  window, if it is still happening) — and so do the warnings about `keys:`,
+  `keymap:` and `context-menu:` printed at startup, which the first frame used
+  to wipe before anyone read them.
+- **`:record-save` to a path it cannot write says so.** It printed the error
+  into the frame (scrolling the screen) and then reported `Recording session →
+  <path>` although nothing was recording.
 - **Menus opened near the bottom keep their bottom border.** A right-click
   menu anchored near the last row, and the replay scrubber's mini bar, reached
   into the footer row, which popups cannot draw on: their bottom border was
@@ -143,7 +149,8 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 - **Keypad Enter and the keypad arrows work with the kitty keyboard
   protocol.** Under the protocol, kitty reports them as their own keys, which
   lazytui dropped; they now act as Enter, the arrows, Home, End and the Page
-  keys, as they do without it.
+  keys, as they do without it — with NumLock or CapsLock on too, and with a
+  modifier as the main key with that modifier.
 
 ### Changed
 
@@ -162,8 +169,10 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   (`:record-load`) where a field now takes what it used to drop: a paste into
   search or the layout editor's title edit, non-ASCII typed into the command
   line, search, the agent prompt or the title edit, and a paste holding a tab
-  or a line break in the action palette or a port form's choices filter. ^H in
-  such a recording replays as it did.
+  or a line break in the action palette or a port form's choices filter — and
+  Ctrl+U in the command line, the `/` filter or the title edit, which did
+  nothing then and clears the field now. ^H in such a recording replays as it
+  did.
 
 ### For plugin / pane authors
 

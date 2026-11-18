@@ -39,11 +39,13 @@ const hs = require('./_helpers/host-screen').install({ cols: 160, rows: 40 });
 const { vt, feed: flush, paint: paintAndSync } = hs;
 const _origErr = console.error;
 const _cell = vt.buffer.active.getNullCell();
-function cellAt(x, y) { vt.buffer.active.getLine(y).getCell(x, _cell); return _cell; }
+// The VISIBLE row y (baseY: rows scrolled off the top), as host-screen's line().
+const _row = (y) => { const b = vt.buffer.active; return b.getLine(b.baseY + y); };
+function cellAt(x, y) { _row(y).getCell(x, _cell); return _cell; }
 // The screen position of the first character of `needle`.
 function find(needle) {
   for (let y = 0; y < vt.rows; y++) {
-    const x = vt.buffer.active.getLine(y).translateToString(false).indexOf(needle);
+    const x = _row(y).translateToString(false).indexOf(needle);
     if (x >= 0) return { x, y };
   }
   return null;

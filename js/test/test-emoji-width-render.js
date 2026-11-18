@@ -82,12 +82,12 @@ const hs = require('./_helpers/host-screen').install({ cols: COLS, rows: ROWS, u
 const { vt, paint: paintAndSync } = hs;
 const _cell = vt.buffer.active.getNullCell();
 function cellAt(x, y) {
-  const ln = vt.buffer.active.getLine(y);
+  const b = vt.buffer.active; const ln = b.getLine(b.baseY + y);   // the VISIBLE row y
   if (!ln) return '';
   ln.getCell(x, _cell);
   return _cell.getChars();
 }
-function rowText(y) { const ln = vt.buffer.active.getLine(y); return ln ? ln.translateToString(true) : ''; }
+function rowText(y) { const b = vt.buffer.active; const ln = b.getLine(b.baseY + y); return ln ? ln.translateToString(true) : ''; }
 function rowOf(needle) {
   for (let y = 0; y < ROWS; y++) if (rowText(y).includes(needle)) return y;
   return -1;
