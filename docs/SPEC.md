@@ -135,8 +135,8 @@ suite (`js/test/test-parser-*.js`).
   excerpting.
 - "Producer" / "consumer" refer to hub roles. "Component author" /
   "user" refer to the human writing config.
-- All Rich markup examples follow PRINCIPLES §7–8 — `[` always escaped
-  in dynamic strings; selected rows open with the theme's `selected`
+- All Rich markup examples follow PRINCIPLES §7–8 — `[` and `\` always
+  escaped (`esc()`) in dynamic strings; selected rows open with the theme's `selected`
   slot and carry no inner markup.
 
 ---

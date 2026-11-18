@@ -16,7 +16,7 @@ the config; you run it. Node.js, MIT-licensed.
 ```sh
 git clone https://github.com/Tao-Ma/lazytui.git && cd lazytui
 npm install --omit=dev          # deps: node-pty, @xterm/headless, js-yaml, eastasianwidth, wcwidth
-node js/scripts/run-tests.js     # the full suite (~200 files) — this is the gate
+node js/scripts/run-tests.js     # the full suite (~325 files) — this is the gate
 cd demo/postgres && ./run        # a worked demo (needs Docker)
 ```
 
@@ -92,7 +92,7 @@ The release also ships prebuilt per-platform `lazytui` CLI binaries. Full recipe
 - **Gate every commit on the FULL green suite** (`node js/scripts/run-tests.js`,
   joined with `&&`). Test-stats don't full-render, so `render()` bugs surface
   only in the full run. CI runs the same on every push.
-- **`esc()` every dynamic `[` in renderer markup.** The Rich-style markup pipeline
+- **`esc()` every dynamic string in renderer markup** (it escapes `[` and `\`). The Rich-style markup pipeline
   swallows an unescaped `[` as a tag open and breaks width calc → misaligned
   borders. For colored content emitted into a buffer, use the semantic theme
   tokens (`[warning]`/`[error]`/`[accent]`).

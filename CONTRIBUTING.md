@@ -59,9 +59,10 @@ The codebase is small and self-describing. Two non-obvious rules
 that surface often (both from
 [docs/PRINCIPLES.md](docs/PRINCIPLES.md)):
 
-- **`esc()` every dynamic `[` in renderer markup.** The Rich-style
-  markup pipeline silently swallows unescaped `[` as tag opens and
-  breaks visible-width calculation, misaligning borders.
+- **`esc()` every dynamic string in renderer markup** (it escapes `[`
+  and `\`). The Rich-style markup pipeline silently swallows an
+  unescaped `[` as a tag open and breaks visible-width calculation,
+  misaligning borders; a trailing `\` escapes the tag after it.
 - **No inner markup inside `[reverse]` selected lines.** Any `[/]`
   or color escape resets the reverse mid-line. Selected rows are
   plain text; colors belong on unselected rows.

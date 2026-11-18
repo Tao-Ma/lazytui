@@ -182,8 +182,12 @@ Out of scope for v1 (deferred until a real use case shows up):
 │  rebuild(text)                — fuzzy score + sort     │
 │  runAt(sel, args, expectedDisplay) — dispatch to source │
 ├─ overlay/cmdline.js ───────────────────────────────────┤
-│  renderCmdline()              — bottom-row prompt +    │
-│                                  matches dropdown      │
+│  renderCmdline()              — matches dropdown       │
+│                                  (composited)          │
+│  cmdlinePromptRow()           — the `:` row (returned  │
+│                                  by renderFooter)      │
+│  cmdlineCursor()              — hardware cursor after  │
+│                                  the shown text        │
 ├─ panel/commands.js ────────────────────────────────────┤
 │  collectCommands() → [{name,desc,run,_source}]         │
 │    walks FRAMEWORK_COMMANDS +                          │
@@ -194,14 +198,14 @@ Out of scope for v1 (deferred until a real use case shows up):
 
 ### Render integration
 
-Render path mirrors the existing menu/copy/design overlays:
-
-1. `model.modes.cmdMode` flag flips on `:` (cmdline_enter Msg).
-2. `layout.render()` paints main columns, then footer; if cmdMode,
-   `renderCmdline()` overwrites the bottom row and paints the dropdown
-   directly above it.
-3. `_wasOverlayActive` already drives a force-full repaint on overlay
-   close — cmdMode is included so the dropdown wipe is clean.
+1. `model.modes.cmdMode` flips on `:` (the `cmdline_enter` Msg).
+2. `paint.render()`: the overlay pass composites the dropdown into the
+   frame's rows, directly above the bottom row (the cell diff closes or
+   shrinks it — no forced repaint). After the main frame, `renderFooter`
+   returns the `:` row (`cmdlinePromptRow`: `…` plus the end of a long
+   command), so a resize's full repaint never erases it.
+3. The terminal-surface pass puts the hardware cursor after the prompt
+   text (`cmdlineCursor`), last.
 
 ### State (root model)
 

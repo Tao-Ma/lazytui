@@ -11,27 +11,28 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 - **Emoji made of several codepoints no longer shift pane borders.** ❤️ (a
   heart with its emoji selector), 👍🏽 (a skin tone), 👨‍👩‍👧 (a joined family),
   🇺🇸 (a flag), 1️⃣ (a keycap) and 🏴󠁧󠁢󠁥󠁮󠁧󠁿 are each drawn by terminals as ONE
-  2-column glyph, but lazytui added up their parts — ❤️ measured 1, 👨‍👩‍👧 6 —
-  so the rest of the row, border included, landed a column late or several
-  early. They now measure what tmux draws (measured on tmux 3.4), in panes,
+  2-column glyph, but lazytui added up their parts — ❤️ measured 1, 👍🏽 4,
+  👨‍👩‍👧 6, 1️⃣ 1 — so the rest of the row, border included, landed a column
+  late or several early (a flag already measured 2, but could be cut in half). They now measure what tmux draws (measured on tmux 3.4), in panes,
   labels, popups and terminal panes alike — also when a program colours each
   character separately (a colour change between ❤ and its selector still makes
   one ❤️) — and truncation, selection, search highlights and popup edges never
   cut one in half. A skin tone makes any hand 2 columns (☝🏽 ✌🏽 ✍🏽). Text
   that terminals do NOT join keeps adding up: Devanagari, Thai and Korean jamo
   measure as before. Where tmux joins more than Unicode does — two flags side
-  by side, a skin tone after a non-emoji — lazytui follows Unicode, so tmux
-  draws those 2 columns narrower. A bare ☝ ✌ ✍ ⛹ 🖐 🕴 🕵 🏋 🏌 stays 1
+  by side, a skin tone after a CJK character (中🏽), a zero-width joiner
+  between non-emoji (a‍👨, 中‍中) — lazytui follows Unicode, so tmux draws
+  those 2 columns narrower. A bare ☝ ✌ ✍ ⛹ 🖐 🕴 🕵 🏋 🏌 stays 1
   column, as Unicode has it (tmux draws it 2). A lone flag letter (🇦) is now 2
   columns, as tmux draws it.
 - **Backspace deletes a whole emoji in every text field.** In the filter,
   the action palette, port fields and forms, the choices filter, search and
   the layout editor's title edit, Backspace after a pasted emoji left half
   of it behind as a broken character; in the command line and the agent
-  prompt, it turned ❤️ into ❤ and 👍🏽 into 👍. Backspace, Delete, ← and →
-  now step over one glyph (❤️, 👍🏽, a flag, an accented letter typed as two
-  codepoints), and a paste longer than a field's limit is cut before an
-  emoji rather than through it.
+  prompt, it turned ❤️ into ❤ and 👍🏽 into 👍. Backspace now takes one glyph
+  in every field (❤️, 👍🏽, a flag, an accented letter typed as two
+  codepoints), the agent prompt's Delete, ← and → step over one, and a paste
+  longer than a field's limit is cut before an emoji rather than through it.
 - **A wide character under a popup's edge no longer widens its row.** A CJK
   character or emoji cut by the left or right edge of a popup (palette, menu,
   which-key, tooltip) pushed the rest of the row — the pane border included —
@@ -56,24 +57,28 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   took only ASCII from the keyboard: an input-method commit (你好), an emoji
   picker or a compose key typed nothing. The filter took 你好 but no emoji,
   and kept only the invisible joiners of a typed 👨‍👩‍👧. Search and the title
-  edit also dropped every paste. Typing and pasting now work in every field.
+  edit also dropped every paste. Typing and pasting now work in every field
+  (in the `/` filter, a typed `j` or `k` still moves the list — paste them).
   Control characters U+0080–U+009F are not text: typed, they are ignored (a
   field that echoed U+009B wrote a raw control to the terminal).
 - **Ctrl+H is Backspace.** Terminals set to send ^H for Backspace (PuTTY's
   option, `stty erase ^H`, some Windows consoles) could delete only in the
   layout editor's title edit. ^H, including a kitty-protocol Ctrl+H, now
   deletes in every text field and goes up a level in menus, as Backspace does.
+  A `keymap: normal:` binding on `"\b"` still fires on Ctrl+H outside a field.
 - **A paste with tabs or colour codes lands as the field shows it.** A tab
   pasted into the command line or the agent prompt showed as up to 8 columns
   while the cursor counted 1. A pasted colour code tinted the row and put the
   cursor 5 columns past the text. The action palette and the choices filter
-  dropped such a paste entirely. A single-line field now turns each tab and
-  line break into a space and drops control sequences, in every field.
-- **A paste is text, never a key.** A paste whose text was exactly a key's
-  byte acted as that key: a pasted tab moved a port form to its next field
-  (and Tab-completed the command line), a pasted space closed the choices
-  popover, a pasted `k` or `j` moved the filter's cursor, a pasted Ctrl+U
-  cleared a field. Each is now typed as text.
+  dropped such a paste entirely. A single-line field now turns each tab into
+  a space and each run of line breaks into one space, and drops control
+  sequences, in every field.
+- **In a text field, a paste is text, never a key.** A paste whose text was
+  exactly a key's byte acted as that key: a pasted tab moved a port form to
+  its next field (and Tab-completed the command line), a pasted space closed
+  the choices popover, a pasted `k` or `j` moved the filter's cursor, a pasted
+  Ctrl+U cleared a field. Each now goes in as text (a tab as a space; Ctrl+U,
+  a control character, not at all).
 - **CJK labels fit their tooltip and line up in help, which-key and
   `--list`.** The hover tooltip was sized by character count, so a CJK value
   was cut short with `…`. Help, the leader-key popup and `lazytui --list`
@@ -100,7 +105,7 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   a port form's field, the agent prompt, the choices filter, a selection or a
   search match whose text ended in `\` — a Windows path, a regex — lost what
   was drawn after it: the cursor vanished and `[reverse]` or `[/]` showed as
-  text. Backslashes now show exactly as typed, wherever they are. The
+  text. These now keep every backslash as typed. The
   render-error line and the replay pane's `[ ] step` hint no longer show a
   stray `\` before their `]`.
 - **Titles, names and messages show what you wrote.** A pane title with two
@@ -133,6 +138,40 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   protocol.** Under the protocol, kitty reports them as their own keys, which
   lazytui dropped; they now act as Enter, the arrows, Home, End and the Page
   keys, as they do without it.
+
+### Changed
+
+- **Two backslashes in a row are one in markup.** The Rich-style markup that
+  plugin panes, footer segments and lazytui itself draw with now has two
+  escapes: `\[` for `[` and `\\` for `\` (a `\` before anything else, or at
+  the end, is itself). Markup a plugin writes by hand that holds `\\` now
+  shows one backslash; write `\\\\` for two, or build it with `esc()`. Text
+  lazytui shows — titles, names, values, output — is escaped and shows as
+  written. Grammar: docs/PRINCIPLES.md §7.
+- **A recording made before this release can replay differently**
+  (`:record-load`) where a field now takes what it used to drop: a paste into
+  search or the layout editor's title edit, non-ASCII typed into the command
+  line, search, the agent prompt or the title edit, and a paste holding a tab
+  or a line break in the action palette or a port form's choices filter. ^H in
+  such a recording replays as it did.
+
+### For plugin / pane authors
+
+- **`esc()` escapes `\` too** (`\` → `\\`, `[` → `\[`). Text that ends in a
+  backslash no longer swallows the tag you put after it
+  (`` `${esc('C:\\')}[/]` ``). It renders the same; the string it returns is
+  longer when the text has backslashes. An escaper of your own that escapes
+  only `[` keeps the trailing-backslash bug — use `esc()`.
+- **`renderPanel`'s `title` is text.** It is escaped for you, so a title holding
+  `[prod]` or `C:\\share` shows as written. A pane that drew markup in its
+  title (a colour, a dim chip) passes it as `titleMarkup` instead, with its text
+  parts `esc()`'d.
+- **Ctrl+H arrives as Backspace.** A Component's `key` Msg for ^H (and a
+  kitty-protocol Ctrl+H) is `{ key: '\x7f', seq: '\x7f' }` — unless the user
+  bound `"\b"` in `keymap: normal:`, outside a field. Key filters see the same.
+- **Console output while lazytui draws goes to the diagnostics window**
+  (`leader e`), once per message, instead of the terminal (it was written into
+  the frame and could scroll the screen).
 
 ## [0.6.59] — 2026-11-15
 
