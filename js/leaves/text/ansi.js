@@ -515,7 +515,7 @@ function visibleLen(text) {
  * SGR sequences (\x1b[…m) — the only ANSI codes legitimate action
  * output emits into the viewer for color/style — and strips every
  * other CSI / OSC / SS3 / single-byte escape, plus C0 controls except
- * \t (tab) and \n (newline).
+ * \t (tab) and \n (newline), DEL, and C1 controls (U+0080-U+009F).
  *
  * T22 SEVERE — pre-fix esc() only escaped `[`, leaving raw \x1b, \r,
  * \b, \x07 to pass through. A streamed command emitting \x1b[2J\x1b[H
@@ -580,10 +580,15 @@ function stripControls(s) {
     // class we're defending against.
     .replace(/\x1b/g, '')
     // C0 controls (0x00-0x1f) except \t (0x09), \n (0x0a), and ESC
-    // (already swept above); DEL (0x7f). This sweeps \r (would reset
-    // cursor to col 0, wiping panel borders), \b (corrupts preceding
-    // cell), \x07 (BEL — beeps the host), stray NULs, etc.
-    .replace(/[\x00-\x08\x0b-\x1a\x1c-\x1f\x7f]/g, '')
+    // (already swept above); DEL (0x7f); C1 controls (U+0080-U+009F).
+    // This sweeps \r (would reset cursor to col 0, wiping panel borders),
+    // \b (corrupts preceding cell), \x07 (BEL — beeps the host), stray
+    // NULs, etc. C1 is the one-character form of the escapes above: U+009B
+    // is CSI, U+009D OSC, U+0090 DCS — a host that reads C1 in UTF-8
+    // (xterm.js, so VS Code's terminal) ran `U+009B 2J` from a command's
+    // output as a screen clear. Removing a character never forms a new
+    // sequence here: every ESC is already gone.
+    .replace(/[\x00-\x08\x0b-\x1a\x1c-\x1f\x7f-\x9f]/g, '')
     // Unicode bidi overrides (U+202A LRE, U+202B RLE, U+202C PDF,
     // U+202D LRO, U+202E RLO) + isolates (U+2066 LRI, U+2067 RLI,
     // U+2068 FSI, U+2069 PDI). CVE-2021-42574 "trojan source" class —

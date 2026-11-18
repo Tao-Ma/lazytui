@@ -13,7 +13,7 @@
 'use strict';
 
 const { describe, it, eq, assert, report } = require('./test-runner');
-const { parseChoicesStdout } = require('../leaves/text/choices-lines');
+const { parseChoicesStdout, flattenControls } = require('../leaves/text/choices-lines');
 
 describe('[choices-lines] unlabeled — plain newline split', () => {
   it('three items', () => {
@@ -129,6 +129,23 @@ describe('[choices-lines] labeled — first-\\t split', () => {
     const r = parseChoicesStdout('a\tb', undefined);
     eq(r.items, ['a b']);                     // flattened in the unlabeled path
     eq(r.labels, null);
+  });
+});
+
+// C1 (U+0080–U+009F) is the one-character spelling of ESC [ / ESC ] — U+009B
+// is CSI, U+009D OSC. The completion helper prints these items to the shell
+// raw, and a host that reads C1 in UTF-8 runs them (triage 2026-11-18).
+describe('[choices-lines] control characters — C0, DEL and C1 become one space', () => {
+  it('a C1 CSI / OSC in a value or a label is flattened', () => {
+    const r = parseChoicesStdout('a\u009b2Jb\tL\u009d0;OWNED\u009c\n', { labeled: true });
+    eq(r.items, ['a 2Jb']);
+    eq(r.labels, ['L 0;OWNED ']);
+  });
+  it('every C1 control, alone or in a run, is one space; U+00A0 stays', () => {
+    let all = '';
+    for (let c = 0x80; c <= 0x9f; c++) all += String.fromCharCode(c);
+    eq(flattenControls(`x${all}y`), 'x y', 'the whole C1 range is one run');
+    eq(flattenControls('x\u0085y\u00a0z'), 'x y\u00a0z', 'NEL flattened, NBSP kept');
   });
 });
 

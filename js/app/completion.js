@@ -52,7 +52,7 @@ const { getModel } = require('../model/store');
 const {
   iterActions, resolveAction, mergeForGroup, projectDirFor,
 } = require('./cli');
-const { parseChoicesStdout } = require('../leaves/text/choices-lines');
+const { parseChoicesStdout, flattenControls } = require('../leaves/text/choices-lines');
 const { filterShadowedPortValues } = require('../dispatch/runtime/action-runner');
 const { cacheKey } = require('../leaves/ports/choices-cache-key');
 const diskCache = require('../leaves/ports/choices-disk-cache');
@@ -296,18 +296,18 @@ async function _completePositionalArg(configPath, config, cword, words) {
       // Cap at READ too — a future cap raise must not resurrect longer
       // cached lists written by an older version.
       //
-      // Pre-release round-2 security review — strip C0 + DEL from every
+      // Pre-release round-2 security review — strip C0 + DEL + C1 from every
       // cached item before printing. An attacker able to tamper with the
       // on-disk cache (XDG hijack on a shared system, or any pre-fix
       // writer that didn't sanitize) could seed items containing OSC/CSI
       // escapes that execute on display in the TAB menu (title spoof,
-      // cursor-position-report → keystroke injection). The spawn path's
-      // `_flatten` now strips the full C0 range, but a cache written by
-      // an older version does not — defense-in-depth on READ closes that
-      // window. Items are non-string / null-ish defensive drop.
+      // cursor-position-report → keystroke injection). The spawn path
+      // flattens every item (choices-lines `flattenControls`), but a cache
+      // written by an older version did not — defense-in-depth on READ, with
+      // the SAME rule. Items are non-string / null-ish defensive drop.
       return hit.items
         .filter((c) => typeof c === 'string')
-        .map((c) => c.replace(/[\x00-\x1f\x7f]+/g, ' '))
+        .map(flattenControls)
         .slice(0, MAX_COMPLETION_ITEMS);
     }
   }

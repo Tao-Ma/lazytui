@@ -54,7 +54,7 @@ function isPrintableSeq(seq) {
 function fieldText(s) {
   if (typeof s !== 'string') return '';
   return stripControls(s.replace(/[\r\n]+/g, ' ').replace(/\t/g, ' '))
-    .replace(/\x1b\[[0-9;]*m/g, '').replace(/[\x1b\x80-\x9f]/g, '');
+    .replace(/\x1b\[[0-9;]*m/g, '').replace(/\x1b/g, '');
 }
 
 /** The text one keystroke Msg adds to a single-line text field, or null when

@@ -746,12 +746,13 @@ groups:
       'corrupt file must be rewritten with valid JSON');
   });
 
-  it('tampered cache file with ESC/CSI/NUL items is sanitized on HIT (round-2 security)', () => {
+  it('tampered cache file with ESC/CSI/NUL/C1 items is sanitized on HIT (round-2 security)', () => {
     // Prime the cache the normal way, then overwrite each item's string in
     // place with hostile control-char payloads (so the key stays canonical).
-    // The HIT path must strip all C0 + DEL so the user's terminal doesn't
+    // The HIT path must strip all C0 + DEL + C1 so the user's terminal doesn't
     // execute the escape sequences on the TAB-menu display, and so the shell
-    // can't trip on an embedded NUL.
+    // can't trip on an embedded NUL. C1 (U+009B CSI, U+009D OSC) is the same
+    // escape in one character — a host reading C1 in UTF-8 runs it.
     const c = newCase('sanitize');
     fs.writeFileSync(c.cfg, buildFixture(c.counter, ['safe']));
     // 1) Prime — real spawn, real key, real file.
@@ -762,20 +763,30 @@ groups:
     const file = cacheFileFor(c.xdg, c.cfg);
     const state = JSON.parse(fs.readFileSync(file, 'utf8'));
     const key = Object.keys(state.entries)[0];
-    state.entries[key].items = ['\x1b]0;OWNED\x07', '\x1b[2Jclear', 'ok\x00bad', 'plain'];
+    state.entries[key].items = ['\x1b]0;OWNED\x07', '\x1b[2Jclear', 'ok\x00bad', '\u009b2Jc1', '\u009d0;OWNED\u009c', 'plain'];
     fs.writeFileSync(file, JSON.stringify(state));
-    // 3) Hit — must not spawn, and every emitted line must be C0+DEL-free.
+    // 3) Hit — must not spawn, and every emitted line must be C0+DEL+C1-free.
     const r = runCompleteEnv({ cfg: c.cfg, env: { XDG_CACHE_HOME: c.xdg }, cword: 3, words: ['do', 'g', 'a', ''] });
     eq(r.status, 0, `rc=${r.status} stderr=${r.stderr}`);
     eq(spawns(c.counter), 1, 'cache hit — must NOT re-spawn');
     const out = lines(r.stdout);
-    assert(out.length === 4, `expected 4 sanitized rows, got ${out.length}: ${JSON.stringify(out)}`);
+    assert(out.length === 6, `expected 6 sanitized rows, got ${out.length}: ${JSON.stringify(out)}`);
     for (const line of out) {
-      assert(!/[\x00-\x1f\x7f]/.test(line),
+      assert(!/[\x00-\x1f\x7f-\x9f]/.test(line),
         `item still carries a control char: ${JSON.stringify(line)}`);
     }
     // "plain" was never hostile and must survive unchanged.
     assert(out.includes('plain'), `benign item must survive, got ${JSON.stringify(out)}`);
+  });
+
+  it('a choices_cmd printing C1 controls: --complete prints none (spawn path)', () => {
+    // printf's octal \302\233 is the UTF-8 for U+009B (CSI); \302\235 U+009D (OSC).
+    const c = newCase('c1spawn');
+    fs.writeFileSync(c.cfg, buildFixture(c.counter, ['c1\\302\\2332J', 'osc\\302\\2350;T', 'plain']));
+    const r = runCompleteEnv({ cfg: c.cfg, env: { XDG_CACHE_HOME: c.xdg }, cword: 3, words: ['do', 'g', 'a', ''] });
+    eq(r.status, 0, `rc=${r.status} stderr=${r.stderr}`);
+    eq(spawns(c.counter), 1, 'the choices_cmd ran');
+    eq(lines(r.stdout), ['c1 2J', 'osc 0;T', 'plain'], 'each C1 control printed as one space');
   });
 
   it('timeout → empty + exit 0, NOT cached (next call respawns)', () => {

@@ -28,18 +28,20 @@
  */
 'use strict';
 
-// Replace any C0 control character or DEL (0x00–0x1f, 0x7f) with a single
-// space. The LF split above has already consumed line-terminators, but a
-// label may legitimately contain a tab (opt-in splitting consumes only the
-// FIRST tab) — the paint path would misalign on a literal \t. The wider
-// C0 strip (pre-release round-2 security review) hardens the TUI and the
-// completion helper against ESC/CSI/OSC injection via a hostile `choices_cmd:`
-// (or a tampered on-disk completion cache file): a cached item containing
-// `\x1b]0;OWNED\x07` would otherwise spoof the terminal title on display
-// of the next TAB menu. Items are already single-line (post-LF split), so
-// C0 is never load-bearing content.
-function _flatten(s) {
-  return typeof s === 'string' ? s.replace(/[\x00-\x1f\x7f]+/g, ' ') : s;
+// Replace each run of control characters — C0 (0x00–0x1f), DEL (0x7f) and
+// C1 (U+0080–U+009F) — with a single space. The LF split above has already
+// consumed line-terminators, but a label may legitimately contain a tab
+// (opt-in splitting consumes only the FIRST tab) — the paint path would
+// misalign on a literal \t. The wider strip (pre-release round-2 security
+// review) hardens the TUI and the completion helper against ESC/CSI/OSC
+// injection via a hostile `choices_cmd:` (or a tampered on-disk completion
+// cache file): a cached item containing `\x1b]0;OWNED\x07` would otherwise
+// spoof the terminal title on display of the next TAB menu. C1 is the same
+// attack spelt with one character (U+009B is CSI, U+009D OSC). Items are
+// already single-line (post-LF split), so no control is load-bearing content.
+// The completion helper's cache-hit path runs every item through this too.
+function flattenControls(s) {
+  return typeof s === 'string' ? s.replace(/[\x00-\x1f\x7f-\x9f]+/g, ' ') : s;
 }
 
 /**
@@ -66,9 +68,9 @@ function parseChoicesStdout(stdout, opts) {
   for (const raw of lines) {
     if (raw === '') continue;                            // drop empty rows
     if (!labeled) {
-      // _flatten here collapses an interior \t to space (unlikely but
+      // flattenControls here collapses an interior \t to space (unlikely but
       // defensive — the item would otherwise paint a stray HT escape).
-      items.push(_flatten(raw));
+      items.push(flattenControls(raw));
       continue;
     }
     const tabIdx = raw.indexOf('\t');
@@ -76,15 +78,15 @@ function parseChoicesStdout(stdout, opts) {
       // Labeled line without a tab — label falls back to value. Authors
       // building mixed lists aren't punished for occasionally skipping
       // the label.
-      const v = _flatten(raw);
+      const v = flattenControls(raw);
       items.push(v);
       labels.push(v);
       continue;
     }
     const value = raw.slice(0, tabIdx);
     const label = raw.slice(tabIdx + 1);
-    items.push(_flatten(value));
-    labels.push(_flatten(label));
+    items.push(flattenControls(value));
+    labels.push(flattenControls(label));
   }
   // Normalize labeled-but-empty → labels:null so the WAL/replay shape matches
   // the fn-channel's empty-return convention (one state → one shape).
@@ -92,4 +94,4 @@ function parseChoicesStdout(stdout, opts) {
   return { items, labels };
 }
 
-module.exports = { parseChoicesStdout };
+module.exports = { parseChoicesStdout, flattenControls };

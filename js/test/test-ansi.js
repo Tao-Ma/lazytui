@@ -11,7 +11,7 @@
  */
 'use strict';
 
-const { describe, it, eq, assert, report } = require('./test-runner');
+const { describe, it, eq, assert, section, report } = require('./test-runner');
 const { esc, richToAnsi, stripControls } = require('../leaves/text/ansi');
 const themes = require('../leaves/infra/themes');
 
@@ -359,4 +359,47 @@ describe('[tokens] the hand-written walkers read a tag as the regexes do — raw
   });
 });
 
-report();
+// C1 controls (U+0080–U+009F) are the one-character spellings of the escapes
+// [1] strips: U+009B is CSI, U+009D OSC, U+009C ST, U+0090 DCS, U+0085 NEL. A
+// host that reads C1 in UTF-8 runs them — xterm.js (VS Code's terminal) ran
+// `U+009B 2J` from a command's output as a screen clear (triage 2026-11-18).
+describe('[C1] stripControls drops every C1 control, keeps the text around it', () => {
+  it('each of U+0080..U+009F is removed', () => {
+    const left = [];
+    for (let c = 0x80; c <= 0x9f; c++) {
+      const out = stripControls(`a${String.fromCharCode(c)}b`);
+      if (out !== 'ab') left.push(`U+${c.toString(16).padStart(4, '0')} → ${JSON.stringify(out)}`);
+    }
+    eq(left, [], 'no C1 control survives');
+  });
+  it('U+00A0 (first character past C1) and Latin-1 letters stay', () => {
+    eq(stripControls('a é ÿ'), 'a é ÿ');
+  });
+  it('SGR beside C1 survives; the C1 does not', () => {
+    eq(stripControls('\x1b[31mred\u009b2J\x1b[0m'), '\x1b[31mred2J\x1b[0m');
+  });
+});
+
+// What the HOST does with a line of command output — the stream path writes
+// esc(line) (dispatch/runtime/stream.js), paint turns the markup into bytes.
+function hostScreen(bytes) {
+  const { Terminal } = require('@xterm/headless');
+  const t = new Terminal({ cols: 30, rows: 3, allowProposedApi: true });
+  let title = null;
+  t.onTitleChange((s) => { title = s; });
+  return new Promise((resolve) => t.write(bytes, () => {
+    const rows = [];
+    for (let y = 0; y < 3; y++) rows.push(t.buffer.active.getLine(y).translateToString(true));
+    resolve({ rows, title });
+  }));
+}
+
+(async () => {
+  section('[C1] a command\'s output never runs a C1 control on the host (xterm.js)');
+  const clear = await hostScreen('before\r\n' + richToAnsi(esc('hello\u009b2J\u009bHX')));
+  eq(clear.rows, ['before', 'hello2JHX', ''], 'U+009B 2J / U+009B H: no clear, no cursor home — the row reads as text');
+  const osc = await hostScreen(richToAnsi(esc('a\u009d0;OWNED\u009cb')));
+  eq(osc.title, null, 'U+009D 0;… U+009C: the host title is not set');
+  eq(osc.rows[0], 'a0;OWNEDb', 'the OSC body stays visible text');
+  report();
+})();

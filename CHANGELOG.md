@@ -6,6 +6,20 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security
+
+- **A command's output can no longer run terminal control sequences spelt
+  with C1 characters.** lazytui strips escape sequences from everything it
+  shows (action output, names, values, previews) except colours, but it
+  missed the C1 controls U+0080–U+009F, the one-character forms of the same
+  sequences: U+009B is CSI, U+009D starts an OSC. A terminal that reads C1
+  in UTF-8 — xterm.js, so VS Code's terminal — ran them, so a command printing
+  `U+009B 2J` cleared the screen and `U+009D 0;…` set the window title. They
+  are now removed like the rest. Shell completion had the same gap: a
+  `choices_cmd:` item (or a tampered completion cache file) printed C1 to
+  the shell's TAB menu; each run of control characters there is now one
+  space.
+
 ## [0.6.60] — 2026-11-18
 
 Width and text: an emoji the terminal draws as one glyph (❤️, 👍🏽, a family, a

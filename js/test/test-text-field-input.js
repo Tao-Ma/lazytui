@@ -177,6 +177,9 @@ describe('[7] what no field takes in, and what it keeps', () => {
         eq(f.read(), 'ab', 'typed C1 controls add nothing (U+009B is CSI)');
       }
       f.open();
+      paste('p\u009b2Jq\u009d0;T\u009cr');      // pasted: fieldText → ansi.stripControls drops C1
+      eq(f.read(), 'p2Jq0;Tr', 'pasted C1 controls add nothing');
+      f.open();
       paste('x\ue0000;\ue001y');                 // looks like the strip's old SGR placeholder
       eq(f.read(), 'x\ue0000;\ue001y', 'kept as typed (it came back as "undefined")');
     });
