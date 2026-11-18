@@ -426,9 +426,9 @@ function render(panel, w, h, slice, opts) {
   const hdrCells = [cell('', idW, false)];
   cols.forEach((c, i) => {
     const mark = sort && sort.key === c ? (sort.dir < 0 ? DESC : ASC) : '';
-    hdrCells.push(cell(c + mark, colW[i], _typeOf(metric, c) !== 'string'));
+    hdrCells.push(cell(esc(c + mark), colW[i], _typeOf(metric, c) !== 'string'));   // esc FIRST: cell() measures markup
   });
-  const header = `[${t.dim}]${esc(hdrCells.join(' '))}[/]`;
+  const header = `[${t.dim}]${hdrCells.join(' ')}[/]`;
 
   // windowed: we slice the data rows to [scroll, scroll+dataH) ourselves and pin
   // the header at line 0, so renderPanel must NOT re-slice.
@@ -485,7 +485,7 @@ function render(panel, w, h, slice, opts) {
   const m = getModel();
   const ctl = borderControlsFor({ paneId: panel.paneId, type: 'table', focused, innerW }, m);
   const filterText = getFilter(panel.paneId);
-  const title = filterText ? `${panel.title} /${esc(filterText)}` : panel.title;
+  const title = filterText ? `${panel.title} /${filterText}` : panel.title;   // text (api.renderPanel escapes)
 
   return renderPanel({
     width: w, height: h, lines,

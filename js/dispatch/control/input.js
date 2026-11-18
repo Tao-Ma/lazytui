@@ -34,7 +34,7 @@ const { toXtermKey, decodeKey } = require('../../leaves/input/key-decode');
 // window. Dependency-free leaf, so this top-level require is cycle-safe.
 const mouseBindings = require('./mouse-bindings');
 
-const { handleKey, applyMsg } = require('./dispatch');
+const { handleKey, applyMsg, ctrlHKey } = require('./dispatch');
 // Require-free at top level, so this edge can't cycle (see _terminalOwnsInput).
 const replayControl = require('../runtime/replay-control');
 // Hit-map router (docs/mouse-hit-map.md).
@@ -754,10 +754,11 @@ function _dispatchToken(tok) {
   // ^H (BS) is Backspace: terminals set to send it (PuTTY, `stty erase ^H`,
   // some Windows consoles) and readline's Ctrl+H. Normalized ONCE here, so every
   // handler that reads Backspace as `seq === '\x7f'` (each text field, menu
-  // back) takes it — only the free-config rename knew it before. A KKP Ctrl+H /
-  // BS event decodes to \x08 and re-enters this ladder. (Terminal mode never
-  // gets here: an embedded program gets its bytes raw.)
-  if (tok === '\b') return handleKey('\x7f', '\x7f');
+  // back) takes it — only the free-config rename knew it before. A user's
+  // `keymap: normal:` binding on "\b" still fires in normal mode (dispatch
+  // ctrlHKey). A KKP Ctrl+H / BS event decodes to \x08 and re-enters this
+  // ladder. (Terminal mode never gets here: an embedded program gets its bytes raw.)
+  if (tok === '\b') { const k = ctrlHKey(); return handleKey(k, k); }
 
   // Kitty-keyboard CSI-u key event (`\x1b[<code>;<mods>u`, only arrives once
   // the protocol is enabled). Normalize back to the legacy byte and re-run the

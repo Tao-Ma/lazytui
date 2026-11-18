@@ -9,7 +9,9 @@
  *   // optional `unicode`: an xterm Unicode provider for the HOST's widths
  *   await hs.paint();          // render(getModel()), then feed the bytes
  *   await hs.sync();           // feed what was written since (PTY fast path…)
- *   hs.line(y)                 // screen row y as text (trailing blanks trimmed)
+ *   hs.line(y)                 // VISIBLE screen row y as text (trailing blanks trimmed)
+ *   hs.scrolled()              // rows scrolled off the top (0 unless something scrolled)
+ *   hs.reset(cols, rows)       // blank screen, no scrollback; next paint is full
  *   hs.find('needle')          // { x, y } of its first occurrence, or null
  *   hs.vt                      // the @xterm/headless Terminal
  *   hs.write(text)             // to the REAL stdout (skip notes, debugging)
@@ -47,13 +49,25 @@ function install({ cols = 160, rows = 40, unicode = null } = {}) {
     render(getModel());
     await sync();
   }
-  const line = (y) => vt.buffer.active.getLine(y).translateToString(true);
+  // Row y of the VISIBLE screen (baseY: the rows that scrolled off the top). An
+  // absolute buffer line would read the old top row after a scroll, so a "the
+  // screen did not scroll" check could never fail — assert `scrolled()` is 0.
+  const line = (y) => { const b = vt.buffer.active; return b.getLine(b.baseY + y).translateToString(true); };
+  const scrolled = () => vt.buffer.active.baseY;
+  // A blank screen of cols × rows with no scrollback, and the next paint full
+  // (paint's diff otherwise assumes its last frame is still on screen).
+  function reset(cols = vt.cols, rows = vt.rows) {
+    vt.reset();
+    vt.resize(cols, rows);
+    frames = '';
+    require('../../render/paint').forceFullRepaint();
+  }
   function find(needle) {
     for (let y = 0; y < vt.rows; y++) { const x = line(y).indexOf(needle); if (x >= 0) return { x, y }; }
     return null;
   }
   return {
-    vt, sync, paint, line, find, feed,
+    vt, sync, paint, line, find, feed, scrolled, reset,
     write: (text) => origWrite(text),
     restore: () => { process.stdout.write = origWrite; },
   };

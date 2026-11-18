@@ -131,17 +131,31 @@ The markup has two escapes: `\[` is a literal `[`, `\\` a literal `\`
 backslash must have it escaped too: `C:\` followed by the painter's
 `[reverse]` would read as `C:` + a literal `[reverse]`.
 
-**Rule: every string with literal `[` must be escaped.**
+**Rule: every literal `[` and `\` must be escaped — dynamic text always
+through `esc()`.**
 
-- **Dynamic text** (user data, command output, YAML values): use `esc()`
+- **Dynamic text** (user data, command output, YAML values, titles, names,
+  paths, error messages): use `esc()`
   ```javascript
   setViewerContent(null, `[bold]${esc(action.label)}[/]\n${esc(text)}`);
   ```
 - **Static strings** with intentional markup: write `\[` (`]` needs no
-  escape — `\]` shows its backslash)
+  escape — `\]` shows its backslash); a literal `\` is `\\` in the markup
+  (`\\\\` in a JS string)
   ```javascript
   `  \\[1] Containers  Status of containers in selected group`
   ```
+- **Measure what you draw.** Pad or measure text BEFORE it becomes markup
+  with a text measure (`draw.padText`, char-width `stringWidth`), or escape
+  first and then use the markup measure (`draw.padCell`, `visibleLen`).
+  `padCell` on raw text measures `[x]` as a tag and `\\` as one backslash,
+  so the column comes out wrong once the text is escaped.
+- **A pane's title is text.** `api.renderPanel` escapes `title`; a pane that
+  draws a styled title (the slot's tab strip, the files pane's source chip)
+  passes `titleMarkup` instead. Overlay titles (`renderOverlay`) are markup.
+- **Code that appends markup to a fragment it didn't write** (a splice, a
+  row close) pairs a trailing lone `\` first — `pairTrailingBackslash` /
+  `sealMarkup` — or the `\` escapes the appended `[`.
 
 `esc()` replaces `\` → `\\` and `[` → `\[` (and strips control sequences,
 expands tabs); `markupLiteral()` does only the escaping, for text already safe

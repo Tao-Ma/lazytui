@@ -440,12 +440,23 @@ function markupCut(text, cols, greedy) {
  * `\` and then a real `[` — and a fragment ending in an unpaired `\` gets its
  * pair (it would escape the next fragment's `[`).
  */
+/**
+ * A markup fragment that ends in an unpaired `\` would escape whatever `[` is
+ * appended after it — a closing `[/]` turns into the text `[/]`. Pair it:
+ * alone, `\` and `\\` both render as one backslash, so the fragment shows
+ * the same and the next tag stays a tag. For every seam where code appends
+ * markup to a fragment it didn't write (sealMarkup, the compositor's splice,
+ * renderPanel's row close). O(1) when the fragment doesn't end in `\`.
+ */
+function pairTrailingBackslash(s) {
+  if (typeof s !== 'string' || s.charCodeAt(s.length - 1) !== 92) return s;
+  let t = s.length - 1; while (t > 0 && s.charCodeAt(t - 1) === 92) t--;
+  return (s.length - t) % 2 === 1 ? s + '\\' : s;
+}
+
 function sealMarkup(s) {
   if (typeof s !== 'string') return s;
-  // An unpaired trailing `\` would escape the NEXT fragment's `[`: pair it
-  // (alone, `\` and `\\` both render as one backslash).
-  let t = s.length; while (t > 0 && s[t - 1] === '\\') t--;
-  const tail = (s.length - t) % 2 === 1 ? '\\' : '';
+  const tail = pairTrailingBackslash(s) === s ? '' : '\\';
   if (s.indexOf('[') < 0) return s + tail;
   let out = '';
   let i = 0;
@@ -670,4 +681,4 @@ function wrapColor(color, content) {
 }
 
 module.exports = {
-  sealMarkup, richToAnsi, sgrRun, screenColors, stripMarkup, visibleLen, markupCut, charWidth, stringWidth, esc, markupLiteral, wrapColor, stripControls, enableScreenColors, RESET };
+  sealMarkup, pairTrailingBackslash, richToAnsi, sgrRun, screenColors, stripMarkup, visibleLen, markupCut, charWidth, stringWidth, esc, markupLiteral, wrapColor, stripControls, enableScreenColors, RESET };

@@ -69,6 +69,11 @@ Direct imports from `../ansi`, `../panel`, etc. still work but are not
 part of the contract — `panel/api.js` is the documented surface,
 and the only place an API change shows up.
 
+Markup rules for what a pane returns (PRINCIPLES §7): `esc()` every piece of
+text you put into markup — it escapes `[` and `\`. `renderPanel`'s `title` is
+TEXT (it is escaped for you, so `C:\\share` or `[prod]` shows as written); to
+draw a styled title pass `titleMarkup` instead, with the text parts `esc()`'d.
+
 ### Framework default `:` commands
 
 Three commands are available without any Component contribution:
@@ -256,7 +261,7 @@ data, different consumer.
 
 | Msg `type` | When fired | Payload fields |
 |---|---|---|
-| `'key'` | Every key event after key-filter middleware (focused panel's Component only) | `key` (string, e.g. `'up'`, `'q'`, `'a'`), `seq` (raw bytes for paste etc.) |
+| `'key'` | Every key event after key-filter middleware (focused panel's Component only) | `key` (string, e.g. `'up'`, `'q'`, `'a'`; `'paste'` for a bracketed paste), `seq` (raw bytes — a paste's text, so test `key` before treating `seq === 'j'` as a key; Ctrl+H arrives as Backspace, `'\x7f'`, unless the user bound `"\b"` in `keymap: normal:`) |
 | `'refresh'` | Boot, `r`, `:refresh` | (none) |
 | `'action'` | Every action invocation, before confirm gating | `actionKey`, `args`, `actionType` (`'run'` / `'spawn'` / `'background'`) |
 | _Wrapped Msgs_ | Routed via `api.dispatchMsg(api.wrap('name', innerMsg))` | inner msg's payload — the wrapper is unwrapped by the framework |

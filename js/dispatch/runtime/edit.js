@@ -25,6 +25,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { getModel } = require('../../model/store');
 const { shQuote } = require('./action-runner');
+const { esc } = require('../../leaves/text/ansi');
 
 /** The editor command string — merged config editor: → $VISUAL → $EDITOR → vi. */
 function resolveEditor(config, env) {
@@ -67,7 +68,7 @@ function editFile(filepath, opts) {
 
   const { appendViewerLines } = require('../../panel/nav-state');
   if (require('./action-runner')._spawnUsesTmux()) {
-    appendViewerLines(`[dim]$ ${cmd}[/]\n[warning]Editor opened in a new tmux window.[/]`
+    appendViewerLines(`[dim]$ ${esc(cmd)}[/]\n[warning]Editor opened in a new tmux window.[/]`
       + (isConfig ? `\n[warning]Config changes apply on the next lazytui start.[/]` : ''));
     spawn('tmux', ['new-window', '-n', `edit:${name}`, cmd], { detached: true, stdio: 'ignore' });
     return;

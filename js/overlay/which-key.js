@@ -61,7 +61,7 @@ function renderWhichKey(newRows, cols) {
   // keys.unreachable_step) still fires by clicking its row.
   const lineTargets = kb.continuations(node).map(([tok]) =>
     ({ press: { msg: { type: 'prefix_key', key: tok, seq: tok, picked: true } } }));
-  renderOverlay({ lines: whichKeyLines(node), title: `\\[${seq}]`, count: null,
+  renderOverlay({ lines: whichKeyLines(node), title: `\\[${esc(seq)}]`, count: null,   // a `[` / `\\` step is text
                   targetRows: newRows || null, targetCols: cols || 0,
                   hit: { lineTargets, box: {} } });
 }

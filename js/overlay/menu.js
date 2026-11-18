@@ -77,7 +77,7 @@ function renderMenu(newRows, cols) {
     const act = { msg: { type: 'menu_activate', idx: i } };
     return { press: act, right: act, middle: act };
   });
-  renderOverlay({ lines, title: title || 'Menu', count: [selPos, selCount], anchor,
+  renderOverlay({ lines, title: esc(title || 'Menu'), count: [selPos, selCount], anchor,
                   maxWidth: MENU_MAX_WIDTH, scrollOffset,
                   targetRows: newRows || null, targetCols: cols || 0,
                   hit: { lineTargets, box: { 'wheel-up': { key: 'up' }, 'wheel-down': { key: 'down' } } } });

@@ -73,10 +73,15 @@ describe('[2] modifier + codepoint handling', () => {
   it('ctrl+shift keeps the ctrl C0 byte (shift ignored)', () => {
     eq(kkpToLegacy(csu('c'.codePointAt(0), mv(CTRL, SHIFT))), '\x03');
   });
-  it('keypad / PUA functional codes (57344–63743) → dropped', () => {
-    eq(kkpToLegacy(csu(57399)), null);   // KP_0
-    eq(kkpToLegacy(csu(57426)), null);   // KP_DELETE-ish
+  it('PUA functional codes (57344–63743) → dropped, except the keypad\'s non-text keys', () => {
+    eq(kkpToLegacy(csu(57399)), null);   // KP_0 (a text key: numlock decides, legacy-equivalent unknown)
+    eq(kkpToLegacy(csu(57376)), null);   // F13
     eq(kkpToLegacy(csu(63743)), null);   // PUA end
+    // The keypad's Enter / arrows / Page / Home / End / Insert / Delete act as the
+    // main keys (legacy mode sent the main keys' bytes for them).
+    eq(kkpToLegacy(csu(57414)), '\r');       // KP_ENTER
+    eq(kkpToLegacy(csu(57426)), '\x1b[3~');  // KP_DELETE
+    eq(kkpToLegacy(csu(57417)), '\x1b[D');   // KP_LEFT
   });
 });
 

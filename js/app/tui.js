@@ -468,6 +468,7 @@ function bootInteractive(opts) {
   // in the pane quits. v0.6.6 replay arc.
   if (recordLoadFile) {
     require('./replay-cli')._installRuntime();
+    require('../io/console-capture').install();   // the screen is ours: console → diagnostics
     hideCursor();
     installSuspendHandlers();
     require('../dispatch/runtime/replay-control').enter(recordLoadFile, {
@@ -606,6 +607,10 @@ function bootInteractive(opts) {
   // thunk fetches at paint time); scheduleRender goes through render-queue.
   // Anything that needs current model state reads it AT the read site, not
   // from a frozen-at-boot snapshot.
+  // From here the screen is ours: a console.error / warn / log would write into
+  // the frame (and scroll it) — route them to the diagnostics log (`leader e`)
+  // until cleanup hands the terminal back (io/console-capture).
+  require('../io/console-capture').install();
   hideCursor();
   installSuspendHandlers();   // Ctrl+Z: restore terminal → suspend → resume
   // Initial refresh broadcasts a `{type:'refresh'}` Msg to every

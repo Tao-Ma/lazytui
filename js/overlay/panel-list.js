@@ -86,7 +86,7 @@ function _buildListLines(items, cursor, w) {
   }
 
   if (items.length === 0) {
-    lines.push('  [dim]\\(pool is empty)[/]');
+    lines.push('  [dim](pool is empty)[/]');
   }
 
   // Footer hint

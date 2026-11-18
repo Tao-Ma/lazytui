@@ -30,6 +30,7 @@
 const route = require('../panel/route');
 const { wrap } = route;
 const { getModel } = require('../model/store');
+const { esc } = require('../leaves/text/ansi');
 // Eager-require open-target scheme modules so their schemes register on
 // the registry before the first `:open` invocation (or first cmdline
 // rebuild that consults argComplete).
@@ -73,10 +74,10 @@ const FRAMEWORK_COMMANDS = [
       const m = getModel();
       const { error } = writeLayoutToFile(route.getInstanceSlice('layout').arrange, m.configPath);
       if (error) {
-        appendViewerLines(`[error]Layout save failed:[/] ${error.message}`);
+        appendViewerLines(`[error]Layout save failed:[/] ${esc(error.message)}`);
       } else {
         _host.dispatchMsg(wrap('layout', { type: 'set_arrange', dirty: false }));
-        appendViewerLines(`[success]Layout saved to[/] ${m.configPath}`);
+        appendViewerLines(`[success]Layout saved to[/] ${esc(m.configPath)}`);
       }
     },
   },
@@ -120,7 +121,7 @@ const FRAMEWORK_COMMANDS = [
       const cleaned = input.replace(/^(['"])(.*)\1$/, '$2');
       if (/^[a-z][a-z0-9+.-]*:\/\//i.test(cleaned)) {
         const { appendViewerLines } = require('./nav-state');
-        appendViewerLines(`[error]:edit is host-only[/] — a ${cleaned.split('://')[0]}:// URI has no local file to hand an editor`);
+        appendViewerLines(`[error]:edit is host-only[/] — a ${esc(cleaned.split('://')[0])}:// URI has no local file to hand an editor`);
         return;
       }
       _host.editFile(cleaned);
@@ -152,7 +153,7 @@ const FRAMEWORK_COMMANDS = [
       // The runtime layout the user was working with is gone; the
       // undo/redo history pointed at it is no longer meaningful.
       _host.dispatchMsg(wrap('layout', { type: 'free_config_clear_undo' }));
-      appendViewerLines(`[success]Layout restored from[/] ${m.configPath}`);
+      appendViewerLines(`[success]Layout restored from[/] ${esc(m.configPath)}`);
     },
   },
   {
@@ -275,8 +276,8 @@ const FRAMEWORK_COMMANDS = [
       const file = (args && args.join(' ').trim().replace(/^(['"])(.*)\1$/, '$2')) || undefined;
       const r = _host.recordSave(file);
       appendViewerLines(r.skipped
-        ? `[warning]Already recording →[/] ${r.path}`
-        : `[success]Recording session →[/] ${r.path}`);
+        ? `[warning]Already recording →[/] ${esc(r.path)}`
+        : `[success]Recording session →[/] ${esc(r.path)}`);
     },
   },
   {
@@ -287,7 +288,7 @@ const FRAMEWORK_COMMANDS = [
       const file = (args && args.join(' ').trim().replace(/^(['"])(.*)\1$/, '$2')) || undefined;
       const path = _host.recordLoad(file);
       appendViewerLines(path
-        ? `[success]Replaying[/] ${path}  [dim]— j/k seek · space play · b reverse · q exit[/]`
+        ? `[success]Replaying[/] ${esc(path)}  [dim]— j/k seek · space play · b reverse · q exit[/]`
         : `[error]:record-load — no session file[/]`);
     },
   },

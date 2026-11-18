@@ -9,7 +9,8 @@
  */
 'use strict';
 
-const { visibleLen, markupCut, richToAnsi, wrapColor, RESET, sealMarkup } = require('../text/ansi');
+const { visibleLen, markupCut, wrapColor, sealMarkup, pairTrailingBackslash } = require('../text/ansi');
+const { stringWidth } = require('../text/char-width');
 const { scrollbar } = require('./scrollbar');
 const { theme } = require('../infra/themes');
 const bctl = require('./border-controls');
@@ -105,13 +106,28 @@ function padCell(s, width) {
 }
 
 /**
+ * padCell for TEXT (not markup): pads to `width` terminal columns measured with
+ * char-width stringWidth, so a `[x]` or `\\` in a name counts as what it shows.
+ * esc() the result when it goes into markup — escaping never changes the width
+ * it shows, so the column holds. (padCell on raw text measured `[x]` as a tag
+ * and `\\` as one backslash: the name drew wider than its column.)
+ */
+function padText(s, width) {
+  const str = s == null ? '' : String(s);
+  const vis = stringWidth(str);
+  return vis >= width ? str : str + ' '.repeat(width - vis);
+}
+
+/**
  * Render a bordered panel as Rich markup.
  *
  * @param {object} opts
  * @param {number} opts.width - total width including borders
  * @param {number} opts.height - total height including borders
  * @param {string[]} opts.lines - content lines (Rich markup)
- * @param {string} [opts.title] - panel title
+ * @param {string} [opts.title] - title MARKUP (sealed: an unclosed `[` or a
+ *   trailing `\` can't reach the chrome after it). A pane's text title is
+ *   escaped before it gets here (panel/api renderPanel); overlays pass markup.
  * @param {string} [opts.hotkey] - hotkey label
  * @param {boolean} [opts.focused] - focus state
  * @param {[number,number]} [opts.count] - [current, total] for bottom border
@@ -399,6 +415,9 @@ function renderPanel({
     }
     const pad = Math.max(0, innerW - vl);
     const rightChar = (sb && i >= sb.pos && i < sb.pos + sb.size) ? THUMB : b.v;
+    // A line that fills the row and ends in a lone `\` would escape the `[/]`
+    // closing it (ansi pairTrailingBackslash).
+    if (pad === 0) line = pairTrailingBackslash(line);
     rows.push(`[${fc}]${b.v}[/]${line}${' '.repeat(pad)}[/][${fc}]${rightChar}[/]`);
   }
 
@@ -603,8 +622,12 @@ function overlayBox({ linesLen, anchor = null, maxWidth = 44 }) {
   const menuH = Math.min(linesLen + 2, ROWS - 2);
   let offY, offX;
   if (anchor && Number.isFinite(anchor.x) && Number.isFinite(anchor.y)) {
+    // The last row is the footer's — an overlay composites into the frame's rows
+    // above it, so a box reaching it lost its bottom border while its hit
+    // region still covered the footer. Clamp the box ABOVE it. (Centered boxes
+    // already end above it: menuH ≤ ROWS - 2 leaves a row under them.)
     offX = Math.max(0, Math.min(anchor.x - 1, COLS - menuW));
-    offY = Math.max(0, Math.min(anchor.y - 1, ROWS - menuH));
+    offY = Math.max(0, Math.min(anchor.y - 1, ROWS - 1 - menuH));
   } else {
     offY = Math.max(0, Math.floor((ROWS - menuH) / 2));
     offX = Math.max(0, Math.floor((COLS - menuW) / 2));
@@ -644,7 +667,7 @@ function renderOverlay({ lines, title, count = null, maxWidth = 44, anchor = nul
 }
 
 module.exports = {
-  renderPanel, renderOverlay, overlayBox, truncate, fitCell, padCell, viewportDims, setDimsProvider,
+  renderPanel, renderOverlay, overlayBox, truncate, fitCell, padCell, padText, viewportDims, setDimsProvider,
   setChromeSink, setHitSink, publishBox, HIT_Z,
   chromeFor, leftBorderPrefix, _collapseGlyphMarkup, _closeGlyphMarkup,
 };

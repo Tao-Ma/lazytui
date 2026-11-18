@@ -20,11 +20,13 @@
  * kkpToLegacy(tok):
  *   - returns the legacy byte string to re-dispatch, or
  *   - null when `tok` is not a CSI-u key event, or has no legacy equivalent
- *     lazytui binds (Alt-chords, super/hyper/meta combos, keypad/PUA functional
- *     keys) — the caller drops it exactly as legacy mode dropped the matching
- *     escape sequence.
+ *     lazytui binds (Alt-chords, super/hyper/meta combos, PUA functional keys
+ *     other than the keypad's Enter / arrows / Home / End / Page / Insert /
+ *     Delete) — the caller drops it exactly as legacy mode dropped the
+ *     matching escape sequence.
  *
- * Values are DERIVED, never a hand-typed table: the key number is the Unicode
+ * Values are DERIVED, never a hand-typed table (the keypad's PUA numbers are the
+ * one table — `_KEYPAD`, from the spec's functional-key list): the key number is the Unicode
  * codepoint (spec: always the unshifted form) and the modifier is `value - 1`
  * (spec: value = 1 + bitmask). This is why the oracle differential test exists
  * — hand-computed CSI-u numbers are error-prone (the spec review caught two).
@@ -38,6 +40,16 @@ const MOD_ALT   = 2;
 const MOD_CTRL  = 4;
 // super | hyper | meta — combos lazytui does not bind.
 const MOD_OTHER = 8 | 16 | 32;
+
+// kitty's keypad codes (the protocol's functional-key table) → the legacy bytes
+// the same keys send without the protocol.
+const _KEYPAD = {
+  57414: '\r',                                                        // KP_ENTER
+  57417: '\x1b[D', 57418: '\x1b[C', 57419: '\x1b[A', 57420: '\x1b[B',  // KP_LEFT/RIGHT/UP/DOWN
+  57421: '\x1b[5~', 57422: '\x1b[6~',                                 // KP_PAGE_UP/DOWN
+  57423: '\x1b[H', 57424: '\x1b[F',                                   // KP_HOME/END
+  57425: '\x1b[2~', 57426: '\x1b[3~',                                // KP_INSERT/DELETE
+};
 
 function kkpToLegacy(tok) {
   // Shape: `\x1b[` <params> `u`. Reject private-prefix CSIs (`?`/`>`/`<`/`=`);
@@ -53,8 +65,15 @@ function kkpToLegacy(tok) {
   if (!Number.isFinite(code) || !Number.isFinite(mods) || mods < 0) return null;
 
   // Keypad / function keys live in the Unicode Private Use Area (57344–63743).
-  // lazytui binds none of them → drop like a legacy unknown escape.
-  if (code >= 57344 && code <= 63743) return null;
+  // Under the disambiguate flag lazytui pushes, kitty reports the keypad's
+  // NON-text keys there too — keypad Enter and the keypad arrows / Home / End /
+  // Page keys, which legacy mode sent as `\r` / `CSI A`… and lazytui acts on. Map
+  // those (bare or Shift, as the main keys) to the legacy bytes; the rest
+  // (F13+, media, lone modifiers) lazytui binds none of → drop like a legacy
+  // unknown escape.
+  if (code >= 57344 && code <= 63743) {
+    return (mods & ~MOD_SHIFT) === 0 && _KEYPAD[code] !== undefined ? _KEYPAD[code] : null;
+  }
 
   // Alt / super / hyper / meta: legacy dropped these (alt-chords were logged +
   // dropped; the rest were never bound). Preserve that.

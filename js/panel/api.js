@@ -34,7 +34,16 @@ const _selectView = require('./select-view');
 // applies to them. The paneId comes from the ambient pane set by paint (or an
 // explicit opts.paneId for direct callers/tests); absent it, this is a pure
 // pass-through to the leaf, so overlays and unit tests are unaffected.
+//
+// A pane's `title` is TEXT — config `title:`, a typed rename, `<title> /<filter>`
+// — escaped here, once, so a `\` or `[` in it reads as itself on the border, as
+// it does in the tab strip, menus and lists (PRINCIPLES §7). A pane drawing a
+// STYLED title (the slot's tab strip, panel/slot-strip) passes `titleMarkup`.
 function renderPanel(opts) {
+  if (opts && (opts.titleMarkup != null || opts.title)) {
+    const { titleMarkup, ...rest } = opts;
+    opts = { ...rest, title: titleMarkup != null ? titleMarkup : esc(String(opts.title)) };
+  }
   const paneId = (opts && opts.paneId) || _selectView.currentPaneId();
   if (paneId && opts) {
     _selectView.recordContent(paneId, opts.lines, opts.scrollOffset || 0, opts.windowed,

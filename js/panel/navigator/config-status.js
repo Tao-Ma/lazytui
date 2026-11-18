@@ -350,7 +350,7 @@ function diffFor(item, branch, projectDir) {
   const header = [`[bold]${esc(item.path)}[/]`, ''];
 
   if (item.status === STATUS_MATCHES) {
-    return [...header, `[${t.success}]${item.status} matches branch "${branch}" — no diff[/]`];
+    return [...header, `[${t.success}]${item.status} matches branch "${esc(branch)}" — no diff[/]`];
   }
   if (item.status === STATUS_UNKNOWN) {
     return [...header, `[dim]${item.status} declared but absent on both sides[/]`];
@@ -370,7 +370,7 @@ function diffFor(item, branch, projectDir) {
   if (item.status === STATUS_BRANCH_ONLY) {
     const r = spawnSync('git', ['show', `${branch}:${item.path}`], { cwd: projectDir, encoding: 'utf8' });
     if (r.status !== 0) {
-      return [...header, `[${t.error}](git show "${branch}:${item.path}" failed)[/]`, ...(r.stderr || '').split('\n').map(esc)];
+      return [...header, `[${t.error}](git show "${esc(`${branch}:${item.path}`)}" failed)[/]`, ...(r.stderr || '').split('\n').map(esc)];
     }
     const lines = r.stdout.split('\n').slice(0, 200).map(esc);
     return [...header, `[bold]${item.status} branch-only — local missing[/]`, '', ...lines];
@@ -527,7 +527,7 @@ function installEffects(registerEffect) {
         // setImmediate as an uncaught exception that exits the process.
         let body;
         try { body = diffFor(eff.item, eff.branch, eff.projectDir || '.').join('\n'); }
-        catch (e) { body = `[dim]diff failed:[/] ${e.message}`; }
+        catch (e) { body = `[dim]diff failed:[/] ${esc(e.message)}`; }
         if (host.signal && host.signal.aborted) return;   // drop stale
         setViewerContent(body, { key: 'config-diff', label: 'Diff' });
       } finally {

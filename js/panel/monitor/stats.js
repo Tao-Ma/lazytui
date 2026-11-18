@@ -1165,7 +1165,7 @@ function render(panel, w, h, _slice, opts) {
     // Single-stream topics use the sentinel rowKey '_' (no entity to name) — show
     // the bare title; a drill-down row (select_from) appends the selected row. Any
     // empty state resolves rowKey '_' too, so its box keeps the plain title.
-    title: rowKey === '_' ? panel.title : `${panel.title}: ${esc(rowKey)}`,
+    title: rowKey === '_' ? panel.title : `${panel.title}: ${rowKey}`,   // text (api.renderPanel escapes)
     hotkey: panel.hotkey,
     panelType: 'stats',
     focused,

@@ -19,6 +19,7 @@
 'use strict';
 
 const { renderOverlay, overlayBox, viewportDims } = require('../leaves/render/draw');
+const { esc } = require('../leaves/text/ansi');
 const { theme } = require('../leaves/infra/themes');
 const hitMap = require('../panel/hit-map');
 
@@ -162,7 +163,7 @@ function renderFull(data, newRows, cols) {
       for (const c of data.diff.changes.slice(0, DH)) {
         const mark = c.kind === 'add' ? `[${t.success}]+[/]` : c.kind === 'remove' ? `[${t.error}]-[/]` : `[${t.warning}]~[/]`;
         const val = c.kind === 'add' ? c.after : c.kind === 'remove' ? c.before : `${c.before} → ${c.after}`;
-        lines.push(`${mark} ${c.path}  ${val}`);
+        lines.push(`${mark} ${esc(c.path)}  ${esc(val)}`);   // JSON text: `\\` and `[` are literal
       }
       const extra = data.diff.changes.length - Math.min(DH, data.diff.changes.length);
       if (extra > 0 || data.diff.truncated) lines.push(`[dim](… +${extra}${data.diff.truncated ? '+' : ''} more)[/]`);

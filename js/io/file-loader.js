@@ -176,7 +176,7 @@ async function loadFile(path, opts = {}) {
   } catch (err) {
     return {
       kind: 'error',
-      lines: [`[${theme().error}]Failed to read ${path}[/]`, '', `[dim]${err.message}[/]`],
+      lines: [`[${theme().error}]Failed to read ${esc(path)}[/]`, '', `[dim]${esc(err.message)}[/]`],
       totalSize: 0, truncated: false, path,
       error: err.message,
     };

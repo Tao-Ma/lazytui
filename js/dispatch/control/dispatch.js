@@ -1297,6 +1297,19 @@ function handleKey(key, seq) {
 }
 
 /**
+ * The key ^H dispatches as. ^H is Backspace (input.js normalizes it, so every
+ * field and menu that reads Backspace as `\x7f` takes it) — UNLESS the user
+ * bound it: a `keymap: normal:` entry on "\b" (the one way to name Ctrl+H
+ * there) fires in normal mode, where no modal field owns the key. The choice is
+ * made BEFORE handleKey so the event log records the key that ran (replay
+ * re-dispatches it as recorded).
+ */
+function ctrlHKey() {
+  if (_replayControl().active() || modeChain.some((m) => m.active())) return '\x7f';
+  return keymap.resolveNormalSpec('\b', [instanceKind(getFocus()), 'global'], _normalTable) ? '\b' : '\x7f';
+}
+
+/**
  * Run the first active mode's handler, if any. Returns true when a mode
  * claimed the key (caller should paint and stop), false to fall through
  * to normal-mode dispatch.
@@ -1344,7 +1357,7 @@ function _dispatchActiveMode(key, seq) {
 // established control/test API.
 
 module.exports = {
-  handleKey, handleAction, applyMsg, navSelect,
+  handleKey, handleAction, applyMsg, navSelect, ctrlHKey,
   showSelectedInfo, redraw,
   // v0.6.4 #1 Step 2 — pane-menu pick resolution (tab vs pane routing).
   // Exported for tests; a mouse pick reaches it through the paneMenuMode key

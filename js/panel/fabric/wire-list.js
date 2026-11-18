@@ -15,13 +15,14 @@
 
 const mnav = require('../../leaves/wm/nav');
 const {
-  esc, theme, renderPanel, getSel, getScroll, visibleLen,
+  esc, theme, renderPanel, getSel, getScroll,
 } = require('../api');
 const route = require('../route');
 const { listWires, portValue } = require('../../fabric/ports');
 const { inspectWires } = require('../../fabric/inspect');
 const { fmtValue } = require('./format');
-const { padCell } = require('../../leaves/render/draw');
+const { padText } = require('../../leaves/render/draw');
+const { stringWidth } = require('../../leaves/text/char-width');
 
 // Rows = every merged wire, annotated with its current value + validity.
 function getItems() {
@@ -44,7 +45,7 @@ function render(panel, w, h, _slice, opts) {
   }
 
   const sel = getSel(panel.paneId);
-  const edgeW = Math.min(48, Math.max(8, ...rows.map((r) => visibleLen(`${r.from} → ${r.to}`))));
+  const edgeW = Math.min(48, Math.max(8, ...rows.map((r) => stringWidth(`${r.from} → ${r.to}`))));   // TEXT width
   const lines = rows.map((r, i) => {
     const edge = `${r.from} → ${r.to}`;
     const val = fmtValue(r.value);
@@ -68,9 +69,9 @@ function render(panel, w, h, _slice, opts) {
   });
 }
 
-// Visible-width pad (draw.padCell, not char count), so a wide-char edge label
-// aligns (B4 class).
-const _pad = padCell;
+// Pad the TEXT edge label to terminal columns (draw.padText, then esc() it), so a
+// wide-char, `[x]` or `\\` edge label aligns (B4 class).
+const _pad = padText;
 
 // d/x on a wire → delete it (runtime only; a config wire lives in the YAML). The
 // row address needs model access, so a fabric_wire_delete effect resolves it.

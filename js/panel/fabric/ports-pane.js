@@ -32,7 +32,8 @@ const { listPorts, portValue, listWires, componentPorts, hasOutput } = require('
 const { inspectComponent } = require('../../fabric/inspect');
 const { fmtValue: _fmtValue, sourceLabel: _sourceLabel } = require('./format');
 const { fieldTail } = require('../../leaves/text/field-window');
-const { padCell } = require('../../leaves/render/draw');
+const { stringWidth } = require('../../leaves/text/char-width');
+const { padText } = require('../../leaves/render/draw');
 
 // ── Component-name resolution ──────────────────────────────────────────────
 // Precedence: runtime pin → config-pinned → configured source pane's selection
@@ -112,11 +113,11 @@ function getItems(slice) {
 // ── Rendering ────────────────────────────────────────────────────────────────
 const PLACEHOLDER = '▏';
 
-// Pad to `n` VISIBLE columns (draw.padCell, not char count) so a wide (CJK) port
-// name/type or a bracketed literal doesn't over/under-pad and misalign the column
-// (B4 class). Pads short, leaves long as-is (renderPanel truncates the whole row
-// by visible width).
-const _pad = padCell;
+// Pad the TEXT to `n` terminal columns (draw.padText, not char count — then esc()
+// it) so a wide (CJK) port name/type, a `[x]` or a `\\` doesn't over/under-pad and
+// misalign the column (B4 class). Pads short, leaves long as-is (renderPanel
+// truncates the whole row by visible width).
+const _pad = padText;
 
 // The component's dataflow ROLE, from its port surface: only outputs = a
 // producer (a source), only inputs = a consumer (a sink), both = a transform
@@ -172,8 +173,8 @@ function render(panel, w, h, slice, opts) {
   // Column widths for the input/output tables (bounded so a long value doesn't
   // shove the annotation off-screen — renderPanel truncates the row anyway).
   const allPorts = [...data.inputs, ...data.outputs];
-  const portW = Math.min(16, Math.max(4, ...allPorts.map((r) => visibleLen(r.port))));
-  const typeW = Math.min(14, Math.max(4, ...allPorts.map((r) => visibleLen(r.type || ''))));
+  const portW = Math.min(16, Math.max(4, ...allPorts.map((r) => stringWidth(String(r.port)))));   // TEXT widths
+  const typeW = Math.min(14, Math.max(4, ...allPorts.map((r) => stringWidth(String(r.type || '')))));
 
   const lines = [];
   // Header: component name + readiness badge (right-aligned).
@@ -264,7 +265,7 @@ function render(panel, w, h, slice, opts) {
 
   return renderPanel({
     width: w, height: h, lines,
-    title: `${panel.title || 'Ports'}: ${esc(name)}${slice && slice.pinned ? ' (pinned)' : ''}`,
+    title: `${panel.title || 'Ports'}: ${name}${slice && slice.pinned ? ' (pinned)' : ''}`,   // text (api.renderPanel escapes)
     hotkey: panel.hotkey,
     panelType: 'component-ports',
     focused,

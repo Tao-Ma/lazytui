@@ -409,8 +409,8 @@ function _groupsTitle(panelTitle, slice) {
   const hasQuick = Object.values(all).some(g => g.quick);
   if (!hasQuick) return panelTitle;
   const active = (slice && slice.tab) || 'all';
-  const allTab   = active === 'all'   ? '\\[All]'   : 'All';
-  const quickTab = active === 'quick' ? '\\[Quick]' : 'Quick';
+  const allTab   = active === 'all'   ? '[All]'   : 'All';     // text (api.renderPanel escapes)
+  const quickTab = active === 'quick' ? '[Quick]' : 'Quick';
   return `${panelTitle}─${allTab}─${quickTab}`;
 }
 

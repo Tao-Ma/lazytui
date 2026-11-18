@@ -39,6 +39,9 @@ function cleanup() {
   stdout.write(RESET);
   clearScreen();
   moveTo(1, 1);
+  // The terminal is the shell's again: console writes go to it (a fatal's
+  // stack, an exit message) — io/console-capture held them while the TUI drew.
+  require('../../io/console-capture').restore();
 }
 
 // The signals that terminate the process WITHOUT running its

@@ -80,11 +80,10 @@ function info(code, message)  { record('info', code, message); }
 let _pending = [];
 
 /** Queue a diagnostic detected on a render/read path. No notify, no Date.now();
- *  drained by flushDeferred() from the dispatch finalizer. Module-local — the
- *  only deferred producer today warns; an `errorDeferred` would wrap this the
- *  same way (warn/error symmetry) if a render-path error ever needs deferring. */
+ *  drained by flushDeferred() from the dispatch finalizer. Levels as record()
+ *  (io/console-capture defers every console line the TUI would have printed). */
 function recordDeferred(level, code, message) {
-  _pending.push({ level: level === 'error' ? 'error' : 'warn', code, message });
+  _pending.push({ level: (level === 'error' || level === 'info') ? level : 'warn', code, message });
 }
 function warnDeferred(code, message) { recordDeferred('warn', code, message); }
 
@@ -147,5 +146,5 @@ function save(filepath) {
 module.exports = {
   record, warn, error, info, snapshot, size, counts, clear, setCap, save,
   yankText, DEFAULT_CAP, setOnChange,
-  warnDeferred, flushDeferred,
+  recordDeferred, warnDeferred, flushDeferred,
 };

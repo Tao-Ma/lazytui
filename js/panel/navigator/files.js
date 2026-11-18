@@ -387,7 +387,9 @@ function _renderFor(panel, w, h, slice, panelType, hardcoded, opts) {
   });
 
   const filterText = getFilter(panel.paneId);
-  let title = panel.title;
+  // A styled title (the dim source chip) — so the pane's text title and the
+  // filter are escaped here and the whole passes as `titleMarkup` (panel/api).
+  let title = esc(String(panel.title || ''));
   if (filterText) title += ` /${esc(filterText)}`;
   if (source === 'both') title += ' [dim]\\[both][/]';
   else if (source === 'declared' && panelType === 'files') title += ' [dim]\\[declared][/]';
@@ -397,7 +399,7 @@ function _renderFor(panel, w, h, slice, panelType, hardcoded, opts) {
   }
   return renderPanel({
     width: w, height: h, lines,
-    title, hotkey: panel.hotkey,
+    titleMarkup: title, hotkey: panel.hotkey,
     panelType,
     focused: isFocused,
     count: items.length ? [sel + 1, items.length] : null,

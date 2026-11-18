@@ -70,7 +70,11 @@ Key events (with disambiguate on): `CSI <unicode-code> ; <modifiers> u`
 for most keys (Esc = `\x1b[27u`, Enter = `\x1b[13u`, Tab = `\x1b[9u`,
 Backspace = `\x1b[127u`); functional keys keep their legacy final byte
 but can now carry a modifier param (`\x1b[1;5A` = Ctrl+Up). Modifiers =
-`1 + bitmask` (shift 1, alt 2, ctrl 4, super 8, …).
+`1 + bitmask` (shift 1, alt 2, ctrl 4, super 8, …). The keypad's non-text keys
+come as their own Private Use numbers (KP_ENTER = `\x1b[57414u`, the keypad
+arrows 57417–57420, Page / Home / End / Insert / Delete 57421–57426):
+`kkp-decode` maps those, bare or with Shift, to the main keys' legacy bytes, so
+keypad Enter runs and the keypad arrows move as they do without the protocol.
 
 ## Integration map (grounded in current code, 2026-08-05)
 

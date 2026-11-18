@@ -187,9 +187,11 @@ function _renderCollapsed(p, w, chrome) {
   const focused = !!(layoutSlice && mpane.paneMatchesFocus(p, layoutSlice.focus));
   const fc = focused ? t.focus : t.dim;
   const innerW = Math.max(0, w - 2);
-  let titleText = '';   // sealed parts (ansi sealMarkup) — see renderPanel
+  // The hotkey is sealed (ansi sealMarkup — see renderPanel); the title is TEXT,
+  // escaped as panel/api renderPanel escapes it on the expanded pane's border.
+  let titleText = '';
   if (p.hotkey) titleText += `(${sealMarkup(p.hotkey)})`;
-  if (p.title)  titleText += `─${sealMarkup(p.title)}`;
+  if (p.title)  titleText += `─${esc(String(p.title))}`;
   titleText = truncate(titleText, innerW - 2);
 
   // v0.6.3 P4.2 — chrome glyphs compose inline. For a collapsed pane,

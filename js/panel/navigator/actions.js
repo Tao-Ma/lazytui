@@ -87,7 +87,7 @@ function render(panel, w, h, _slice, opts) {
   const sel = getSel(panel.paneId);
   const lines = actions.map((item, i) => actionRow(item, i, panel.paneId, isFocused));
   const filterText = getFilter(panel.paneId);
-  const title = filterText ? `${panel.title} /${esc(filterText)}` : panel.title;
+  const title = filterText ? `${panel.title} /${filterText}` : panel.title;   // text (api.renderPanel escapes)
   return renderPanel({
     width: w, height: h, lines,
     title, hotkey: panel.hotkey,

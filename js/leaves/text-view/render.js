@@ -36,6 +36,7 @@ const search = require('../text/search');
  *   searchTags       { match, current } markup tags for search highlights
  *                    (theme().match / theme().match_current)
  *   width, height, title, hotkey, focused, chrome, panelType   renderPanel chrome
+ *   titleMarkup      a styled title (the slot's tab strip) in place of the text `title`
  *   titleTargets     the title's click targets (a slot's tab strip) — passed through
  * @returns renderPanel argument object
  */
@@ -69,6 +70,7 @@ function buildTextView(o) {
     // slice.lines fallback, unchanged.
     fullLines: o.selectLines,
     title: o.title,
+    titleMarkup: o.titleMarkup,
     titleTargets: o.titleTargets,
     hotkey: o.hotkey,
     panelType: o.panelType,

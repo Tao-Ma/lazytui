@@ -610,7 +610,7 @@ function render(panel, width, height, _slice, opts) {
     return `${gutter}${lhead}${esc(name)}`;
   });
   const filterText = getFilter(panel.paneId);
-  const title = filterText ? `${panel.title} /${esc(filterText)}` : panel.title;
+  const title = filterText ? `${panel.title} /${filterText}` : panel.title;   // text (api.renderPanel escapes)
   return renderPanel({
     width, height, lines,
     title, hotkey: panel.hotkey,

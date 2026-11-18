@@ -127,7 +127,7 @@ function footerKeys(model, cols = viewportDims().cols) {
   if (md.freeConfigMode) {
     const layoutSlice = getInstanceSlice('layout');
     const dirty = (layoutSlice && layoutSlice.dirty) ? ` | [${theme().warning}]• unsaved (:save-layout)[/]` : '';
-    return ` Free Config | drag/resize | J/K reorder | ←→ swap col | +/- col/detail · [/] panel h | space collapse | t rename | w panel list | u undo | C-r redo | :save-layout | q exit${getFreeConfigFooter()}${dirty}`;
+    return ` Free Config | drag/resize | J/K reorder | ←→ swap col | +/- col/detail · \\[/] panel h | space collapse | t rename | w panel list | u undo | C-r redo | :save-layout | q exit${getFreeConfigFooter()}${dirty}`;
   }
   if (md.menuOpen)   return bindings.footerFor('menuOpen');
 

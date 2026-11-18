@@ -103,6 +103,36 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   text. Backslashes now show exactly as typed, wherever they are. The
   render-error line and the replay pane's `[ ] step` hint no longer show a
   stray `\` before their `]`.
+- **Titles, names and messages show what you wrote.** A pane title with two
+  backslashes (`C:\\share`, from `title:` or a rename) lost one on the pane's
+  border while its tab, the menus and the lists showed both; the `x` menu
+  showed every backslash in a title twice and `[prod]` as `\[prod]`. A table
+  column, port or wire name with `\\` or `[x]` in it drew wider or narrower
+  than its column and pushed the rest of the row out of line. A `[` step in a
+  leader chord vanished from the which-key popup's title. A path or error
+  message with `[…]` in it (`pages/[id].tsx`) lost that part in the error line,
+  `:save-layout` and `:record-save`. The replay pane's change list showed JSON
+  values with half their backslashes. The layout editor's footer showed
+  `·  panel h` where it meant `[/] panel h`, and an empty panel pool read
+  `\(pool is empty)`.
+- **A popup opened right after a `\` no longer breaks the row.** A menu whose
+  left edge fell just after a backslash — a right-click on a title like
+  `Logs C:\tmp`, a menu over help's `Ctrl+\` line — printed `[/]` as text,
+  dropped the backslash and pushed the row two columns wide, wrapping it into
+  the next row.
+- **A pane that fails to draw no longer scrolls the screen.** Its error was
+  printed to the terminal in the middle of the frame — after the `:` prompt or
+  over a border — and the line break scrolled the whole screen up one row,
+  every frame. Anything printed while lazytui owns the screen now goes to the
+  diagnostics window (`leader e`), once per message.
+- **Menus opened near the bottom keep their bottom border.** A right-click
+  menu anchored near the last row, and the replay scrubber's mini bar, reached
+  into the footer row, which popups cannot draw on: their bottom border was
+  missing and a click on the footer went to the menu.
+- **Keypad Enter and the keypad arrows work with the kitty keyboard
+  protocol.** Under the protocol, kitty reports them as their own keys, which
+  lazytui dropped; they now act as Enter, the arrows, Home, End and the Page
+  keys, as they do without it.
 
 ## [0.6.59] — 2026-11-15
 

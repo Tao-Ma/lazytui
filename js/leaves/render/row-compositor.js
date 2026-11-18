@@ -38,7 +38,7 @@
  */
 'use strict';
 
-const { visibleLen, markupCut } = require('../text/ansi');
+const { visibleLen, markupCut, pairTrailingBackslash } = require('../text/ansi');
 
 /**
  * Split `text` after the most whole cells that fit in `col` visible columns
@@ -139,10 +139,13 @@ function compositeRow(rows, cols, overlayText, x, y, w) {
   const bodyVis = visibleLen(otext);
   const bodyPad = ow - bodyVis;         // >0 iff overlay was short of its promised width
 
+  // The cut ends wherever the overlay's edge falls — after a lone `\` too (a
+  // pane title `C:\tmp`, help's `Ctrl+\`), and a `\` before the `[/]` appended
+  // here would escape it into the text `[/]`: pair it (ansi pairTrailingBackslash).
   rows[y] =
-    left.prefix +
+    pairTrailingBackslash(left.prefix) +
     (leftPad > 0 ? ' '.repeat(leftPad) : '') +
-    '[/]' + otext + (bodyPad > 0 ? ' '.repeat(bodyPad) : '') + '[/]' +
+    '[/]' + pairTrailingBackslash(otext) + (bodyPad > 0 ? ' '.repeat(bodyPad) : '') + '[/]' +
     (rightPad > 0 ? ' '.repeat(rightPad) : '') +
     right.suffix;
   // The overlay body is [ox, ox + ow); leftPad/rightPad are blanks standing in

@@ -1,7 +1,8 @@
 /**
  * Pure builder for the command-menu item list (the menu's sub-model).
  *
- * Dependency-free leaf (only imports `leaves/ansi` for `esc`). Caller
+ * Dependency-free leaf (only imports the pool leaf). Labels are TEXT —
+ * overlay/menu escapes them when it draws. Caller
  * (runtime.update's menu_open branch) threads the layout slice in —
  * the menu needs the current panel arrangement (for hotkeys). No
  * `panel/api` reach-around.
@@ -13,7 +14,6 @@
  */
 'use strict';
 
-const { esc } = require('../text/ansi');
 const mpool = require('../wm/pool');
 
 function buildItems(layoutSlice) {
@@ -27,7 +27,7 @@ function buildItems(layoutSlice) {
   ];
   const panels = mpool.allPanesInColumns(arrange);
   for (const p of panels) {
-    if (p.hotkey) items.push([`[${p.hotkey}]       ${esc(p.title)}`, `focus_panel:${p.hotkey}`]);
+    if (p.hotkey) items.push([`[${p.hotkey}]       ${p.title}`, `focus_panel:${p.hotkey}`]);   // text: overlay/menu escapes
   }
   items.push(
     null,

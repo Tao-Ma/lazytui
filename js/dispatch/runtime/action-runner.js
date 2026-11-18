@@ -295,7 +295,7 @@ function doRun(actionKey, action, args = []) {
       if (_promptMissing(actionKey, action, resolved)) return;
       // No required missing (only optional) and still not ready → nothing to prompt.
       appendViewerLines(`[dim]$ ${esc(actionKey)}[/]\n` +
-        resolved.missing.map((m) => `[warning]not ready: ${m.reason}[/]`).join('\n'));
+        resolved.missing.map((m) => `[warning]not ready: ${esc(m.reason)}[/]`).join('\n'));
       return;
     }
     // Brief 3 — split scalars (→ child env) from the variadic port (→ argv
@@ -689,7 +689,7 @@ function doRunFabric(actionKey, action) {
     // the shell doRun arm; the two run surfaces share the invoke-time prompt).
     if (_promptMissing(actionKey, action, resolved)) return;
     appendViewerLines(`[dim]$ ${esc(actionKey)}[/]\n` +
-      missing.map(m => `[warning]not ready: ${m.reason}[/]`).join('\n'));
+      missing.map(m => `[warning]not ready: ${esc(m.reason)}[/]`).join('\n'));
     return;
   }
 

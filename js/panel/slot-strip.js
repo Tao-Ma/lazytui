@@ -55,12 +55,12 @@ function unifiedSlotStrip(pane) {
   return { ...strip, entries, activeIdx, titleTargets };
 }
 
-/** renderPanel title opts for a slot pane: the unified strip + its click targets
- *  for a multi-tab slot, else the pane's own title (no targets). */
+/** renderPanel title opts for a slot pane: the unified strip (markup) + its click
+ *  targets for a multi-tab slot, else the pane's own title (text; no targets). */
 function slotTitleOpts(pane) {
   const strip = unifiedSlotStrip(pane);
   return strip
-    ? { title: strip.title, titleTargets: strip.titleTargets }
+    ? { titleMarkup: strip.title, titleTargets: strip.titleTargets }
     : { title: pane && pane.title, titleTargets: null };
 }
 

@@ -20,7 +20,8 @@
  */
 'use strict';
 
-const { visibleLen } = require('../text/ansi');
+const { esc } = require('../text/ansi');
+const { stringWidth } = require('../text/char-width');
 const { theme } = require('../infra/themes');
 const bctl = require('./border-controls');
 const { isChainActive } = require('../input/modes');
@@ -28,7 +29,7 @@ const { bottomOps } = require('./item-ops');
 
 const SEP = ' ';   // one space between actions (also the inter-key gap when compact)
 
-function _fullW(actions)    { return actions.reduce((a, x) => a + visibleLen(x.label), 0) + (actions.length - 1) * SEP.length; }
+function _fullW(actions)    { return actions.reduce((a, x) => a + stringWidth(x.label), 0) + (actions.length - 1) * SEP.length; }   // labels are TEXT (escaped when drawn)
 function _compactW(actions) { return actions.length + (actions.length - 1) * SEP.length; }   // 1 cell per key
 
 /** full | compact | null — the widest form that fits `innerW` (bottomFits is the
@@ -47,9 +48,9 @@ function actionLegendRender(actions, innerW) {
   const t = theme();
   const kh = t.key_hint || t.error || t.chrome_close || 'red';   // affordance color (theme red; key_hint tunes it)
   if (form === 'compact') {
-    return { text: actions.map(a => `[${kh}]${a.key}[/]`).join(SEP), visibleW: _compactW(actions) };
+    return { text: actions.map(a => `[${kh}]${esc(a.key)}[/]`).join(SEP), visibleW: _compactW(actions) };
   }
-  const text = actions.map(a => `[${kh}]${a.label[0]}[/]${a.label.slice(1)}`).join(SEP);
+  const text = actions.map(a => `[${kh}]${esc(a.label[0])}[/]${esc(a.label.slice(1))}`).join(SEP);
   return { text, visibleW: _fullW(actions) };
 }
 
@@ -61,7 +62,7 @@ function actionLegendRegions(x0, y, actions, innerW) {
   const regions = [];
   let cx = x0;
   for (const a of actions) {
-    const w = form === 'compact' ? 1 : visibleLen(a.label);
+    const w = form === 'compact' ? 1 : stringWidth(a.label);
     regions.push({ x0: cx, x1: cx + w - 1, y, action: a.id });
     cx += w + SEP.length;
   }
