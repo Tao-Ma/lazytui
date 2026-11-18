@@ -28,7 +28,6 @@ process.stdout.columns = 100; process.stdout.rows = 30;
 
 const { describe, it, assert, eq, report } = require('./test-runner');
 const term = require('../io/term');
-const draw = require('../leaves/render/draw');
 const { renderCmdline } = require('../overlay/cmdline');
 const { visibleLen } = require('../leaves/text/ansi');
 

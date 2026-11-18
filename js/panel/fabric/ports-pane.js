@@ -32,8 +32,7 @@ const { listPorts, portValue, listWires, componentPorts, hasOutput } = require('
 const { inspectComponent } = require('../../fabric/inspect');
 const { fmtValue: _fmtValue, sourceLabel: _sourceLabel } = require('./format');
 const { fieldTail } = require('../../leaves/text/field-window');
-const { stringWidth } = require('../../leaves/text/char-width');
-const { padText } = require('../../leaves/render/draw');
+const { stringWidth, padText } = require('../../leaves/text/char-width');
 
 // ── Component-name resolution ──────────────────────────────────────────────
 // Precedence: runtime pin → config-pinned → configured source pane's selection
@@ -113,11 +112,10 @@ function getItems(slice) {
 // ── Rendering ────────────────────────────────────────────────────────────────
 const PLACEHOLDER = '▏';
 
-// Pad the TEXT to `n` terminal columns (draw.padText, not char count — then esc()
-// it) so a wide (CJK) port name/type, a `[x]` or a `\\` doesn't over/under-pad and
-// misalign the column (B4 class). Pads short, leaves long as-is (renderPanel
-// truncates the whole row by visible width).
-const _pad = padText;
+// Port / type columns: the TEXT padded to terminal columns (char-width padText —
+// not char count — then esc()), so a wide (CJK) name, a `[x]` or a `\\` doesn't
+// over/under-pad and misalign the column (B4 class). Long names are left as
+// they are (renderPanel truncates the whole row by visible width).
 
 // The component's dataflow ROLE, from its port surface: only outputs = a
 // producer (a source), only inputs = a consumer (a sink), both = a transform
@@ -211,19 +209,19 @@ function render(panel, w, h, slice, opts) {
       // end of what was typed fell off the pane's edge (plain `…`, no inner
       // markup under the selected style: PRINCIPLES §8).
       if (editing && ff.addr === `${name}.${row.port}`) {
-        const lead = esc(`${_pad(row.port, portW)}  ${_pad(row.type || '', typeW)}  `);
+        const lead = esc(`${padText(row.port, portW)}  ${padText(row.type || '', typeW)}  `);
         const win = fieldTail(ff.text, (w - 2) - 2 - visibleLen(lead));
         lines.push(`[${t.selected}]▸ ${lead}${win.clipped ? '…' : ''}${esc(win.before)}▏`);
         return;
       }
-      const body = `${_pad(row.port, portW)}  ${_pad(row.type || '', typeW)}  ${val !== '' ? val : PLACEHOLDER}  ${ann}${req}`;
+      const body = `${padText(row.port, portW)}  ${padText(row.type || '', typeW)}  ${val !== '' ? val : PLACEHOLDER}  ${ann}${req}`;
       if (focused && i === sel) {
         // Selected row: plain text under [reverse]/selected, no inner markup
         // (PRINCIPLES §8).
         lines.push(`[${t.selected}]▸ ${esc(body)}`);
       } else {
         const shown = val !== '' ? esc(val) : `[${t.dim}]${PLACEHOLDER}[/]`;
-        lines.push(`  ${esc(_pad(row.port, portW))}  [${t.dim}]${esc(_pad(row.type || '', typeW))}[/]  ${shown}  [${t.dim}]${esc(ann)}${req}[/]`);
+        lines.push(`  ${esc(padText(row.port, portW))}  [${t.dim}]${esc(padText(row.type || '', typeW))}[/]  ${shown}  [${t.dim}]${esc(ann)}${req}[/]`);
       }
     });
   }
@@ -259,7 +257,7 @@ function render(panel, w, h, slice, opts) {
         mark = `[${t.dim}]—[/]`;
         shown = `[${t.dim}]${esc('no value')}[/]`;
       }
-      lines.push(`  ${esc(_pad(row.port, portW))}  [${t.dim}]${esc(_pad(row.type || '', typeW))}[/]  ${mark} ${shown}`);
+      lines.push(`  ${esc(padText(row.port, portW))}  [${t.dim}]${esc(padText(row.type || '', typeW))}[/]  ${mark} ${shown}`);
     }
   }
 

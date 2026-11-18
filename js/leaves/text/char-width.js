@@ -286,4 +286,15 @@ function cellCeil(s, i) {
   return at;
 }
 
-module.exports = { charWidth, stringWidth, nextCell, cellsOf, cellFloor, cellCeil, joinStep };
+/** TEXT (not markup) padded with spaces to at least `width` terminal columns —
+ *  a column of names in a pane, `--list`, `--keymap`. esc() the result when it
+ *  goes into markup: escaping never changes the width it shows, so the column
+ *  holds (draw.padCell measures MARKUP — on raw text it read `[x]` as a tag and
+ *  `\\` as one backslash, and the name drew wider than its column). */
+function padText(s, width) {
+  const str = s == null ? '' : String(s);
+  const w = stringWidth(str);
+  return w >= width ? str : str + ' '.repeat(width - w);
+}
+
+module.exports = { charWidth, stringWidth, padText, nextCell, cellsOf, cellFloor, cellCeil, joinStep };

@@ -48,7 +48,7 @@
  */
 'use strict';
 
-const { charWidth, stringWidth, joinStep } = require('./char-width');
+const { stringWidth, joinStep } = require('./char-width');
 // Semantic theme tokens resolve against the LIVE palette at paint (below). themes
 // is a dependency-free infra leaf, so this is an acyclic leaf→leaf edge.
 const { theme } = require('../infra/themes');
@@ -245,6 +245,16 @@ const _BRACKET_SENTINEL = '';
 // `stripMarkup` run per visible row per panel per frame; rebuilding
 // the sentinel-restore regex on every call was real allocation churn.
 const _SENTINEL_RE = new RegExp(_BRACKET_SENTINEL, 'g');
+
+// Text that HOLDS U+E002 itself (a Nerd Font icon is one) would come back as
+// `[`. Rare: such text is converted with its U+E002s standing in as another
+// private-use character the text doesn't hold, and put back after.
+function _withLiteralSentinel(text, fn) {
+  let p = 0xE003;
+  while (p < 0xF8FF && text.indexOf(String.fromCharCode(p)) !== -1) p++;
+  const stand = String.fromCharCode(p);
+  return fn(text.split(_BRACKET_SENTINEL).join(stand)).split(stand).join(_BRACKET_SENTINEL);
+}
 // The escapes, left to right: `\[` → the sentinel (a literal `[` no tag pass
 // matches), `\\` → `\`. Hot path (per visible row per frame): a row with no
 // backslash skips the pass; one with no `\\` pair — every chrome row's `\[X]`
@@ -321,6 +331,7 @@ function screenColors() {
 }
 
 function richToAnsi(text) {
+  if (text.indexOf(_BRACKET_SENTINEL) !== -1) return _withLiteralSentinel(text, richToAnsi);
   _syncTheme();
   // Protect escaped brackets (and read `\\` as one backslash)
   let result = _unescape(text);
@@ -350,6 +361,7 @@ function richToAnsi(text) {
  * Strip Rich markup and escaped brackets, return plain text.
  */
 function stripMarkup(text) {
+  if (text.indexOf(_BRACKET_SENTINEL) !== -1) return _withLiteralSentinel(text, stripMarkup);
   return _unescape(text)
     .replace(/(?<!\x1b)\[[^\]\x1b]*\]/g, '')
     .replace(_SENTINEL_RE, '[')

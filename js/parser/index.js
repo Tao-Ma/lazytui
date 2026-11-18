@@ -17,7 +17,7 @@ const { ParseError } = require('./errors');
 const { validate } = require('./schema');
 const { passthroughCmd, resolveScript, resolveVarsOnly } = require('./resolver');
 
-const { LEFT_HOTKEY_POOL, hotkeyPoolForColumn } = require('../leaves/input/hotkeys');
+const { hotkeyPoolForColumn } = require('../leaves/input/hotkeys');
 const mpane = require('../leaves/wm/pane');
 const mpool = require('../leaves/wm/pool');
 

@@ -21,3 +21,8 @@ core.[0-9]*
 
 # Bun compile artifacts (in-repo `bun build --compile` scratch)
 *.bun-build
+
+# Personal, per-machine files — never shipped: Claude Code's local permission
+# allowlist (holds absolute local paths) and a personal git-diff pager script.
+.claude/settings.local.json
+x.sh

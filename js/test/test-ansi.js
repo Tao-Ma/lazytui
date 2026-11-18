@@ -292,8 +292,7 @@ describe('[escapes] `\\[` and `\\\\` — text that ends in a backslash keeps the
   // Every string over an alphabet that stresses the escapes.
   const ALPHA = ['\\', '[', ']', '/', 'a', '中', '[/]', '[dim]'];
   const strings = [];
-  let seed = 7;
-  const rnd = (n) => { seed = (Math.imul(seed, 1103515245) + 12345) >>> 0; return (seed >>> 16) % n; };
+  const rnd = require('./_helpers/rng').seeded(7);
   for (let k = 0; k < 400; k++) {
     let t = ''; const n = 1 + rnd(7);
     for (let i = 0; i < n; i++) t += ALPHA[rnd(ALPHA.length)];
@@ -329,13 +328,22 @@ describe('[escapes] `\\[` and `\\\\` — text that ends in a backslash keeps the
   });
 });
 
+describe('[sentinel] text holding U+E002 (the escaped-bracket placeholder) keeps it', () => {
+  // A Nerd Font icon is U+E002; it came back as `[` (v0.6.60 review).
+  const { stripMarkup, visibleLen } = require('../leaves/text/ansi');
+  it('richToAnsi / stripMarkup / visibleLen', () => {
+    eq(richToAnsi(esc('x\uE002y')), 'x\uE002y');
+    eq(stripMarkup('a\uE002b \\[c] [dim]d[/] \uE003'), 'a\uE002b [c] d \uE003', 'escapes and tags still work around it');
+    eq(visibleLen('a\uE002b'), 3);
+  });
+});
+
 describe('[tokens] the hand-written walkers read a tag as the regexes do — raw `[` and ESC too', () => {
   // markupCut took `[` … `]` across an ESC as a tag (visibleLen didn't): a row
   // holding `[` + an SGR + `]` measured narrower than it drew (v0.6.60 review).
   const { markupCut, sealMarkup, visibleLen } = require('../leaves/text/ansi');
   const ALPHA = ['[', ']', '\x1b', '\x1b[31m', '\x1b[2J', '\\', 'a', '中', '[/]', '[dim]', '[x'];
-  let seed = 7;
-  const rnd = (n) => { seed = (Math.imul(seed, 1103515245) + 12345) >>> 0; return (seed >>> 16) % n; };
+  const rnd = require('./_helpers/rng').seeded(7);
   const gen = () => { let t = ''; const n = 1 + rnd(8); for (let i = 0; i < n; i++) t += ALPHA[rnd(ALPHA.length)]; return t; };
   it('markupCut measures what visibleLen measures; a cut never lands inside a tag; sealing keeps the width', () => {
     for (let r = 0; r < 600; r++) {

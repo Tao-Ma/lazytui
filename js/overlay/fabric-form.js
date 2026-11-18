@@ -32,7 +32,7 @@
 
 const { getModel } = require('../model/store');
 const { esc, visibleLen } = require('../leaves/text/ansi');
-const { renderOverlay, truncate, viewportDims, overlayInnerW } = require('../leaves/render/draw');
+const { renderOverlay, truncate, viewportDims, overlayInnerW, padCell } = require('../leaves/render/draw');
 const { formatHints } = require('../leaves/render/hints');
 const { filterChoices } = require('../leaves/ports/choices-filter');
 const { windowSlice } = require('../leaves/render/window-slice');
@@ -132,7 +132,7 @@ function _inputRow(f, focused, name, pad, leftW, midW, chip, chipSlot) {
     // `truncate` returns a string whose visibleLen ALREADY INCLUDES the
     // trailing `…`, so pad to midW directly.
     const t = truncate(esc(fieldText(text)), midW);   // as a field shows it: one line, tabs as spaces
-    mid = `${t}${' '.repeat(Math.max(0, midW - visibleLen(t)))}`;
+    mid = padCell(t, midW);
   }
   let chipPart;
   if (midW <= 0) {

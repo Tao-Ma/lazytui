@@ -101,7 +101,8 @@ backtab ctrl-r f1`…`f12`, case-insensitive, with the spellings `<cr>`/`<enter>
 (return), `<bs>`, `<del>`, `<ins>`, `<s-tab>`, `<pgup>`, `<pgdn>`/`<pgdown>`
 (`<esc>` names Escape, which a chord can't take — below). Each is recognized in
 whichever form your terminal sends it (xterm, tmux/screen, rxvt, the linux
-console — `leaves/input/key-decode`). Esc and Space **cancel** a chord, so
+console — `leaves/input/key-decode`); `<backspace>` / `<bs>` also fires on ^H
+(a terminal set to send it for Backspace). Esc and Space **cancel** a chord, so
 `<esc>` / a space step can't be typed; neither can a name outside the list
 (`<ctrl-a>`, `<f13>`, a typo). Such a binding still registers — its which-key row
 answers a click — and config load (and `--lint`) warns

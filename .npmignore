@@ -1,6 +1,9 @@
 # Test code — not part of the runtime that ships in the published package.
 js/test/
-js/run-tests.js
+js/scripts/run-tests.js
+js/scripts/run-smoke.js
+js/scripts/dead-exports.js
+js/scripts/dep-walker.js
 tests/
 
 # Demos: large (hundreds of KB) and not needed at runtime. Users who
@@ -12,7 +15,8 @@ test/
 .github/
 .git/
 
-# Dev-time artifacts.
+# Dev-time artifacts (and a personal script that was once committed).
+x.sh
 .venv/
 .tmp/
 dist/

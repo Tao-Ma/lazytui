@@ -50,7 +50,7 @@ const { spawn } = require('child_process');
 const { loadConfig } = require('./state');
 const { getModel } = require('../model/store');
 const {
-  listActions, iterActions, resolveAction, mergeForGroup, projectDirFor,
+  iterActions, resolveAction, mergeForGroup, projectDirFor,
 } = require('./cli');
 const { parseChoicesStdout } = require('../leaves/text/choices-lines');
 const { filterShadowedPortValues } = require('../dispatch/runtime/action-runner');

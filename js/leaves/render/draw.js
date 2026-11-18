@@ -10,7 +10,6 @@
 'use strict';
 
 const { visibleLen, markupCut, wrapColor, sealMarkup, pairTrailingBackslash } = require('../text/ansi');
-const { stringWidth } = require('../text/char-width');
 const { scrollbar } = require('./scrollbar');
 const { theme } = require('../infra/themes');
 const bctl = require('./border-controls');
@@ -98,24 +97,11 @@ function fitCell(s, width) {
  * on (help's key column, which-key's key tokens). Measured with visibleLen, so
  * 中 or 👍 pads to the same column as an ASCII key (`.length` / `.padEnd` padded
  * a CJK key one column too far per character). As with fitCell, esc() a plain string that may hold a `[` or a `\`
- * first — or pad the text with padText and esc() after.
+ * first — or pad the text with char-width padText and esc() after.
  */
 function padCell(s, width) {
   const str = s == null ? '' : String(s);
   const vis = visibleLen(str);
-  return vis >= width ? str : str + ' '.repeat(width - vis);
-}
-
-/**
- * padCell for TEXT (not markup): pads to `width` terminal columns measured with
- * char-width stringWidth, so a `[x]` or `\\` in a name counts as what it shows.
- * esc() the result when it goes into markup — escaping never changes the width
- * it shows, so the column holds. (padCell on raw text measured `[x]` as a tag
- * and `\\` as one backslash: the name drew wider than its column.)
- */
-function padText(s, width) {
-  const str = s == null ? '' : String(s);
-  const vis = stringWidth(str);
   return vis >= width ? str : str + ' '.repeat(width - vis);
 }
 
@@ -676,7 +662,7 @@ function renderOverlay({ lines, title, count = null, maxWidth = 44, anchor = nul
 }
 
 module.exports = {
-  renderPanel, renderOverlay, overlayBox, overlayInnerW, truncate, fitCell, padCell, padText, viewportDims, setDimsProvider,
+  renderPanel, renderOverlay, overlayBox, overlayInnerW, truncate, fitCell, padCell, viewportDims, setDimsProvider,
   setChromeSink, setHitSink, publishBox, HIT_Z,
   chromeFor, leftBorderPrefix, _collapseGlyphMarkup, _closeGlyphMarkup,
 };

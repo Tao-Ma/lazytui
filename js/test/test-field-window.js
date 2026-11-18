@@ -36,24 +36,20 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { EventEmitter } = require('events');
 const { describe, it, section, eq, assert, report } = require('./test-runner');
 const sm = require('./smoke/_helpers/smoke');
 const runtime = require('../app/runtime');
 const store = require('../model/store');
 const { getModel } = runtime;
-const { _makeDataHandler } = require('../dispatch/control/input');
 const { fieldWindow } = require('../leaves/text/field-window');
 const { stringWidth } = require('../leaves/text/char-width');
 const { stripMarkup } = require('../leaves/text/ansi');
 const hs = require('./_helpers/host-screen').install({ cols: 60, rows: 16 });
 
-const stdin = new EventEmitter();
-stdin.on('data', _makeDataHandler(stdin));
-const type = (bytes) => stdin.emit('data', bytes);
-const paste = (text) => type(`\x1b[200~${text}\x1b[201~`);
+const tf = require('./_helpers/text-fields');
+const { type, paste } = tf.keys({ capture: false });   // (the host screen reads the frames)
+const { withModel, FORM_PA, openFormOver: openForm } = tf;
 const boot = (cols = 60, rows = 16) => { sm.bootFresh(); sm.resize(cols, rows); hs.vt.resize(cols, rows); };
-const withModel = (fn) => { let m = store.getModel(); [m] = fn(m); store.setModel(m); };
 const LONG = 'word '.repeat(30) + 'END';                     // 153 columns
 const LONG_CAPPED = 'word '.repeat(19) + 'END';              // 98: under the filters' 128 cap
 const screen = () => Array.from({ length: hs.vt.rows }, (_, y) => hs.line(y));
@@ -68,10 +64,6 @@ function caret() {
   }
   return null;
 }
-const FORM_PA = { actionKey: 'greet', action: { label: 'Greet', type: 'run', script: 'echo "$name"',
-  ports: { in: { name: { type: 'string' } } } } };
-const openForm = () => withModel((m) => runtime.update(m, { type: 'fabric_form_enter', pendingAction: FORM_PA,
-  fields: [{ port: 'name', text: '', required: false, default: null, desc: 'name' }] }));
 
 // The runner is synchronous: a host-screen case (it awaits the paint) runs as a
 // step under section(); a throw is recorded, not lost.

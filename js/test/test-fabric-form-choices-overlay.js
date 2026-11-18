@@ -23,7 +23,7 @@
  */
 'use strict';
 
-const { describe, it, assert, eq, report } = require('./test-runner');
+const { describe, it, assert, report } = require('./test-runner');
 const runtime = require('../app/runtime');
 const store = require('../model/store');
 const term = require('../io/term');

@@ -43,7 +43,6 @@ const { editTail } = require('../../../leaves/text/field-window');
 // agree on quoting semantics (no second splitter).
 const { tokenize } = require('../../../fabric/command');
 const sharedKey = require('../../../leaves/ports/choices-cache-key');
-const { declHasChoices } = require('../../../leaves/ports/has-choices');
 const { filterChoices } = require('../../../leaves/ports/choices-filter');
 
 const TYPES = [

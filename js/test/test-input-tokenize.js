@@ -167,8 +167,7 @@ describe('invariants', () => {
   it('seeded fuzz: 2000 adversarial chunks — invariant holds, nothing throws', () => {
     // Deterministic LCG; the alphabet is escape-heavy on purpose — the
     // review findings all lived in ESC-interrupted / legacy shapes.
-    let seed = 0x2f6e2b1;
-    const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x80000000;
+    const rnd = require('./_helpers/rng').seeded(0x2f6e2b1).float;
     const abc = ['\x1b', '[', 'O', 'M', '~', ';', '1', '<', '2', '0', 'j', 'A',
                  'あ', '😀', '\x03', '\r', '\x7f', ' ', 'q'];
     let bad = null;

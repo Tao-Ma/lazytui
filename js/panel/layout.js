@@ -30,8 +30,7 @@ const mfcMouse = require('../leaves/free-config/free-config-mouse');
 const mpoolDrag = require('../leaves/free-config/free-config-pool-drag');
 const mpool = require('../leaves/wm/pool');
 const mpane = require('../leaves/wm/pane');
-const { halfProjection, visibleBoundsFor } = require('../leaves/wm/geometry');
-const route = require('../panel/route');
+const { halfProjection } = require('../leaves/wm/geometry');
 const { editTail } = require('../leaves/text/field-window');
 const { pressed } = require('../leaves/text/printable');
 

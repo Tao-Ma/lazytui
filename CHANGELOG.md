@@ -97,6 +97,8 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 - **A Nerd Font glyph followed by digits and `;` no longer shows as
   `undefined`.** Text with U+E000 or U+E001 around `0;` collided with the
   placeholder that protects colour codes while control sequences are removed.
+  Likewise U+E002 — another Nerd Font icon, and the placeholder for an escaped
+  `[` — showed as `[`; it now shows as itself.
 - **The `:` command line survives a resize.** Resizing the terminal while
   the command line was open blanked it until the next key: it was drawn before
   the rest of the screen, and the resize's full redraw cleared it. It is now

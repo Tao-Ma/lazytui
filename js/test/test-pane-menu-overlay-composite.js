@@ -26,8 +26,6 @@ process.stdout.columns = 100; process.stdout.rows = 30;
 
 const { describe, it, assert, report } = require('./test-runner');
 const paneMenu = require('../overlay/pane-menu');
-const term = require('../io/term');
-const draw = require('../leaves/render/draw');
 const api = require('../panel/api');
 const { dispatchMsg } = require('../dispatch/runtime/loop');
 

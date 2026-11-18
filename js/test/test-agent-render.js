@@ -9,7 +9,7 @@
  */
 'use strict';
 
-const { describe, it, eq, assert, report } = require('./test-runner');
+const { describe, it, assert, report } = require('./test-runner');
 const agent = require('../panel/agent/agent');
 const { stripMarkup } = require('../leaves/text/ansi');
 const { getModel } = require('../app/runtime');

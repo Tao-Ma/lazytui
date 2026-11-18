@@ -28,10 +28,9 @@
 'use strict';
 
 const { allPanels, setViewerContent } = require('../nav-state');
-const { getModel } = require('../../model/store');
 const { esc } = require('../../leaves/text/ansi');
 const { padCell } = require('../../leaves/render/draw');
-const {getCommands, getPanelDef, getInstanceSlice, getFocus } = require('../api');
+const { getCommands, getPanelDef, getFocus } = require('../api');
 const kb = require('../../leaves/input/keybindings');
 const mpane = require('../../leaves/wm/pane');
 const route = require('../route');
@@ -173,7 +172,7 @@ function helpLines() {
     '  Tab / Shift-Tab    Move focus between fields',
     '  Enter              Submit (runs the action with the current values)',
     '  Esc                Cancel the whole form',
-    '  Backspace          Delete char in focused field',
+    '  Backspace          Delete the last glyph (Ctrl+H too)',
     `  ${esc('Ctrl+U')}             Clear focused field`,
     '',
     '[dim]Invoke-time form — computed choices (fields with `choices_fn:`)[/]',

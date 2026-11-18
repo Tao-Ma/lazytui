@@ -31,13 +31,10 @@
  */
 'use strict';
 
-const { EventEmitter } = require('events');
 const { describe, it, eq, assert, report } = require('./test-runner');
 const sm = require('./smoke/_helpers/smoke');
 const runtime = require('../app/runtime');
-const store = require('../model/store');
 const { getModel } = runtime;
-const { _makeDataHandler } = require('../dispatch/control/input');
 const { fieldText, fieldInput } = require('../leaves/text/printable');
 if (!sm.api.getComponent('agent')) sm.api.registerComponent(require('../panel/agent/agent'));
 
@@ -47,75 +44,9 @@ const TYPED = `你好${THUMB}${FAMILY}`;
 const DIRTY = 'a\tb\r\nc\x1b[31md\x1b[0m\x07e';           // a tab, CRLF, SGR, BEL
 const CLEAN = 'a b cde';
 
-const stdin = new EventEmitter();
-stdin.on('data', _makeDataHandler(stdin));
-const type = (bytes) => sm.capture(() => stdin.emit('data', bytes));
-const paste = (text) => type(`\x1b[200~${text}\x1b[201~`);
-
-// Each field: open it (fresh boot) and read its text. Every one is driven by
-// raw bytes through the real stdin handler and the mode's dispatch handler.
-const boot = () => { sm.bootFresh(); sm.resize(120, 30); };
-const withModel = (fn) => { let m = store.getModel(); [m] = fn(m); store.setModel(m); };
-const FORM_PA = { actionKey: 'greet', action: { label: 'Greet', type: 'run', script: 'echo "$name"',
-  ports: { in: { name: { type: 'string' } } } } };
-const openForm = () => {
-  boot();
-  withModel((m) => runtime.update(m, { type: 'fabric_form_enter', pendingAction: FORM_PA,
-    fields: [{ port: 'name', text: '', required: false, default: null, desc: 'name' }] }));
-};
-const titleText = () => sm.api.getInstanceSlice('layout').freeConfig.titleEdit.text;
-const viewer = () => sm.api.getInstanceSlice(sm.route.resolveTarget('viewer'));
-const FIELDS = {
-  cmdline: { open: () => { boot(); type(':'); }, read: () => getModel().modal.cmdline.text },
-  filter: {
-    open: () => { boot(); withModel((m) => runtime.update(m, { type: 'filter_enter', panel: 'actions', text: '', route: null })); },
-    read: () => getModel().modal.filter.text,
-  },
-  palette: { open: () => { boot(); type('p'); }, read: () => getModel().modal.palette.filter },
-  'fabric field': {
-    open: () => { boot(); withModel((m) => runtime.update(m, { type: 'fabric_field_enter', addr: 'greet.name', text: '', pendingAction: FORM_PA })); },
-    read: () => getModel().modal.fabricField.text,
-  },
-  'fabric form field': { open: openForm, read: () => getModel().modal.fabricForm.fields[0].text },
-  'fabric form choices filter': {
-    open: () => {
-      openForm();
-      store.setModel({ ...store.getModel(), modal: { ...store.getModel().modal, fabricForm: {
-        ...store.getModel().modal.fabricForm, picking: { port: 'name', idx: 0, filter: '' } } } });
-    },
-    read: () => (getModel().modal.fabricForm.picking || {}).filter,   // (null: the popover closed)
-  },
-  'viewer search': {
-    // ←→ to the detail viewer, `/` opens its search (the default demo layout).
-    open: () => { boot(); type('\x1b[C'); type('\x1b[C'); type('/'); },
-    read: () => (viewer().search || {}).typing,
-  },
-  // The agent prompt: `:agent` mints the pane (focused), agent_enter turns its
-  // mode on (no session starts — none is needed to edit the draft).
-  'agent prompt': {
-    open: () => {
-      boot();
-      type(':'); type('agent'); type('\r');
-      sm.applyMsg({ type: 'agent_enter' });
-    },
-    read: () => {
-      let d = null;
-      sm.route.eachInstance((i) => { if (i.kind === 'agent') d = i.slice.inputDraft; });
-      return d ? d.text : undefined;
-    },
-  },
-  'free-config rename': {
-    // The rename starts from the pane's title: read what follows it.
-    open: () => {
-      boot();
-      const layout = (msg) => sm.api.dispatchMsg(sm.api.wrap('layout', msg));
-      layout({ type: 'free_config_enter' });
-      layout({ type: 'free_config_title_enter' });
-      FIELDS['free-config rename'].base = titleText();
-    },
-    read: () => titleText().slice(FIELDS['free-config rename'].base.length),
-  },
-};
+const tf = require('./_helpers/text-fields');
+const { type, paste } = tf.keys();
+const { FIELDS, titleText, openForm, withModel, FORM_PA } = tf;
 
 describe('[1] fieldText: a paste as a one-line field holds it', () => {
   it('line breaks and tabs become one space each', () => {

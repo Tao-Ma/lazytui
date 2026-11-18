@@ -54,7 +54,7 @@ function freshModel() {
 // position tests below; they synthesize a MoveTo stream from the
 // composited buffer so decodeRows's sticky cursor-move splitter still
 // works.
-const { stripMarkup, visibleLen: _vl, richToAnsi } = require('../leaves/text/ansi');
+const { stripMarkup, richToAnsi } = require('../leaves/text/ansi');
 function _composeToRows(m, fn) {
   store.setModel(m);
   const vp = draw.viewportDims();

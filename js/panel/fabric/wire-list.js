@@ -17,12 +17,10 @@ const mnav = require('../../leaves/wm/nav');
 const {
   esc, theme, renderPanel, getSel, getScroll,
 } = require('../api');
-const route = require('../route');
 const { listWires, portValue } = require('../../fabric/ports');
 const { inspectWires } = require('../../fabric/inspect');
 const { fmtValue } = require('./format');
-const { padText } = require('../../leaves/render/draw');
-const { stringWidth } = require('../../leaves/text/char-width');
+const { stringWidth, padText } = require('../../leaves/text/char-width');
 
 // Rows = every merged wire, annotated with its current value + validity.
 function getItems() {
@@ -51,10 +49,10 @@ function render(panel, w, h, _slice, opts) {
     const val = fmtValue(r.value);
     const mark = r.present ? '✓' : '✗';   // width-1 text glyphs (not emoji ⚠ U+26A0, terminal-width-ambiguous)
     const tag = r.source === 'runtime' ? '' : ' [cfg]';
-    const body = `${_pad(edge, edgeW)}  ${mark} ${val || (r.present ? '' : 'upstream unset')}${tag}`;
+    const body = `${padText(edge, edgeW)}  ${mark} ${val || (r.present ? '' : 'upstream unset')}${tag}`;
     if (focused && i === sel) return `[${t.selected}]▸ ${esc(body)}`;
     const markCol = r.present ? `[${t.accent || t.selected}]✓[/]` : `[${t.dim}]✗[/]`;
-    return `  ${esc(_pad(edge, edgeW))}  ${markCol} [${t.dim}]${esc(val || (r.present ? '' : 'upstream unset'))}${esc(tag)}[/]`;
+    return `  ${esc(padText(edge, edgeW))}  ${markCol} [${t.dim}]${esc(val || (r.present ? '' : 'upstream unset'))}${esc(tag)}[/]`;
   });
   lines.push('');
   lines.push(`  [${t.dim}]${esc('d delete (runtime wires)')}[/]`);
@@ -69,9 +67,6 @@ function render(panel, w, h, _slice, opts) {
   });
 }
 
-// Pad the TEXT edge label to terminal columns (draw.padText, then esc() it), so a
-// wide-char, `[x]` or `\\` edge label aligns (B4 class).
-const _pad = padText;
 
 // d/x on a wire → delete it (runtime only; a config wire lives in the YAML). The
 // row address needs model access, so a fabric_wire_delete effect resolves it.

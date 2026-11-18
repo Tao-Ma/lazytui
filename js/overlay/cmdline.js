@@ -15,10 +15,10 @@
 'use strict';
 
 const { getModel } = require('../model/store');
-const { richToAnsi, RESET, visibleLen, esc } = require('../leaves/text/ansi');
+const { richToAnsi, RESET, esc } = require('../leaves/text/ansi');
 const { fieldTail } = require('../leaves/text/field-window');
 const { theme } = require('../leaves/infra/themes');
-const { renderPanel, viewportDims, publishBox } = require('../leaves/render/draw');
+const { renderPanel, viewportDims, publishBox, padCell } = require('../leaves/render/draw');
 const { compositeRow } = require('../leaves/render/row-compositor');
 const { DROPDOWN_VIEWPORT: MAX_DROPDOWN } = require('../leaves/text/cmdline-split');
 
@@ -121,7 +121,7 @@ function cmdlinePromptRow(model) {
   const { cols: COLS, rows: ROWS } = viewportDims();
   const { shown } = _promptView(model.modal.cmdline.text, COLS);
   const prompt = ` :${shown}`;
-  const padded = prompt + ' '.repeat(Math.max(0, COLS - visibleLen(prompt)));
+  const padded = padCell(prompt, COLS);
   return `\x1b[${ROWS};1H` + richToAnsi(`[${theme().footer}]${padded}[/]`) + RESET;
 }
 

@@ -13,7 +13,6 @@
 
 const { allPanels } = require('../../panel/nav-state');
 const { getModel } = require('../../model/store');
-const { esc } = require('../../leaves/text/ansi');
 const { getCommands, getItems: apiGetItems, wrap } = require('../../panel/api');
 const { dispatchMsg } = require('../runtime/loop');
 

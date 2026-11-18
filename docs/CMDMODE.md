@@ -15,8 +15,8 @@ Replaces multi-step navigation with one fuzzy-matched name.
 
 - `:` (in normal mode) enters cmdline mode. Bottom screen row becomes the
   prompt. A dropdown of up-to-N best matches floats above it.
-- Type to filter. Backspace edits. `Tab` accepts the top match into the
-  buffer (lets you keep refining).
+- Type to filter. Backspace takes the last glyph; Ctrl+U clears the line.
+  `Tab` accepts the top match into the buffer (lets you keep refining).
 - `↑` / `↓` move the dropdown selection.
 - `Enter` runs the highlighted match.
 - `Esc` cancels — leaves state unchanged.

@@ -341,8 +341,7 @@ describe('[7] cells: a sequence the host draws as one glyph is one cell', () => 
     // Math.imul: a plain `seed * 1103515245` loses precision past 2^53 and the
     // sequence collapses (2987 of 3000 strings were one codepoint); the HIGH
     // bits: an LCG's low bits cycle with a tiny period (every length was 7).
-    let seed = 12345;
-    const rnd = (n) => { seed = (Math.imul(seed, 1103515245) + 12345) >>> 0; return (seed >>> 16) % n; };
+    const rnd = require('./_helpers/rng').seeded(12345);
     const out = { end: 0 };
     const wrong = [];
     for (let k = 0; k < 3000 && wrong.length < 5; k++) {

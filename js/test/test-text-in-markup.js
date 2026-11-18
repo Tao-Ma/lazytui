@@ -34,12 +34,10 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { EventEmitter } = require('events');
 const { section, eq, assert, report } = require('./test-runner');
 const sm = require('./smoke/_helpers/smoke');
 const store = require('../model/store');
 const { parse } = require('../parser');
-const { _makeDataHandler } = require('../dispatch/control/input');
 const ansi = require('../leaves/text/ansi');
 const { stripMarkup, visibleLen, esc } = ansi;
 const hsMod = require('./_helpers/host-screen');
@@ -50,9 +48,7 @@ for (const comp of require('../app/components').BUILTIN_COMPONENTS) {
 
 const COLS = 100, ROWS = 24;
 const hs = hsMod.install({ cols: COLS, rows: ROWS });
-const stdin = new EventEmitter();
-stdin.on('data', _makeDataHandler(stdin));
-const type = (bytes) => stdin.emit('data', bytes);
+const { type } = require('./_helpers/text-fields').keys({ capture: false });   // (the host screen reads the frames)
 const screen = () => Array.from({ length: hs.vt.rows }, (_, y) => hs.line(y));
 const onScreen = (ok, label) => { if (!ok) hs.write(`${screen().join('\n')}\n`); assert(ok, label); };
 const rowWith = (re) => screen().find((l) => re.test(l)) || '';
