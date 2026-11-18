@@ -6,6 +6,17 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.60] — 2026-11-18
+
+Width and text: an emoji the terminal draws as one glyph (❤️, 👍🏽, a family, a
+flag) is one cell everywhere; every text field edits, scrolls and pastes by
+whole glyphs in any script; and text — titles, names, paths, values — shows
+exactly as written, with `\\` now an escape in markup. 12 commits
+(`5bdc89e6..e5874c2b`): the width and field fixes with two review rounds, the
+`:` prompt and trailing-backslash fixes, then a 4-track pre-release review
+(architecture / file layout / code / doc parity) and a review of its fixes.
+Every reproduced finding is fixed here.
+
 ### Fixed
 
 - **Emoji made of several codepoints no longer shift pane borders.** ❤️ (a
@@ -5995,7 +6006,8 @@ release tarballs. Full pre-squash development history is preserved
 on the internal gitea mirror under the `backup/main-history` branch
 and the `v0.1.0-pre-squash` tag.
 
-[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.59...HEAD
+[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.60...HEAD
+[0.6.60]: https://github.com/Tao-Ma/lazytui/compare/v0.6.59...v0.6.60
 [0.6.59]: https://github.com/Tao-Ma/lazytui/compare/v0.6.58...v0.6.59
 [0.6.58]: https://github.com/Tao-Ma/lazytui/compare/v0.6.57...v0.6.58
 [0.6.57]: https://github.com/Tao-Ma/lazytui/compare/v0.6.56...v0.6.57
