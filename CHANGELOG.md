@@ -6,6 +6,12 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.61] — 2026-11-18
+
+Security patch: text lazytui shows, and the items shell completion prints,
+no longer carry C1 control characters a terminal would run. 1 commit
+(`20166d1c`).
+
 ### Security
 
 - **A command's output can no longer run terminal control sequences spelt
@@ -6020,7 +6026,8 @@ release tarballs. Full pre-squash development history is preserved
 on the internal gitea mirror under the `backup/main-history` branch
 and the `v0.1.0-pre-squash` tag.
 
-[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.60...HEAD
+[Unreleased]: https://github.com/Tao-Ma/lazytui/compare/v0.6.61...HEAD
+[0.6.61]: https://github.com/Tao-Ma/lazytui/compare/v0.6.60...v0.6.61
 [0.6.60]: https://github.com/Tao-Ma/lazytui/compare/v0.6.59...v0.6.60
 [0.6.59]: https://github.com/Tao-Ma/lazytui/compare/v0.6.58...v0.6.59
 [0.6.58]: https://github.com/Tao-Ma/lazytui/compare/v0.6.57...v0.6.58
