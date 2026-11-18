@@ -34,7 +34,8 @@ const runtime = require('../app/runtime');
 const store = require('../model/store');
 const { getModel } = runtime;
 const { _makeDataHandler } = require('../dispatch/control/input');
-const { cellFloor, cellCeil, withoutLastCell, appendCapped } = require('../leaves/text/char-width');
+const { cellFloor, cellCeil } = require('../leaves/text/char-width');
+const { withoutLastCell, appendCapped } = require('../leaves/text/field-window');
 
 const HEART = '❤️';               // ❤ + VS16
 const THUMB = '\u{1F44D}\u{1F3FD}';         // 👍 + skin tone

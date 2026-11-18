@@ -636,6 +636,14 @@ function overlayBox({ linesLen, anchor = null, maxWidth = 44 }) {
   return { offX, offY, menuW, menuH };
 }
 
+/** The columns INSIDE the box overlayBox gives a popup of `maxWidth` (its
+ *  borders off) — what a popup's row content must fit. Derived from overlayBox
+ *  itself, so a popup sizing a field window or a column to its box can't drift
+ *  from the box that is drawn. */
+function overlayInnerW(maxWidth) {
+  return Math.max(0, overlayBox({ linesLen: 0, maxWidth }).menuW - 2);
+}
+
 // Overlay-compositor migration (Release 2, docs/overlay-compositor-migration.md).
 // Composites each overlay row into the main-frame row buffer the paint
 // pass is about to diff, via `row-compositor.compositeRow`. The cell-diff
@@ -668,7 +676,7 @@ function renderOverlay({ lines, title, count = null, maxWidth = 44, anchor = nul
 }
 
 module.exports = {
-  renderPanel, renderOverlay, overlayBox, truncate, fitCell, padCell, padText, viewportDims, setDimsProvider,
+  renderPanel, renderOverlay, overlayBox, overlayInnerW, truncate, fitCell, padCell, padText, viewportDims, setDimsProvider,
   setChromeSink, setHitSink, publishBox, HIT_Z,
   chromeFor, leftBorderPrefix, _collapseGlyphMarkup, _closeGlyphMarkup,
 };

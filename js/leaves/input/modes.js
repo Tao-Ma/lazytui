@@ -61,7 +61,8 @@ const MODES = [
   { flag: 'detailSearchMode',        chain: true,  overlay: false, modal: false, reset: true, suppressChrome: false },
   { flag: 'registerPopupMode',       chain: true,  overlay: true,  modal: false, reset: true, suppressChrome: true  },
   { flag: 'prefixMode',              chain: true,  overlay: true,  modal: true,  reset: true, suppressChrome: false },
-  { flag: 'cmdMode',                 chain: true,  overlay: true,  modal: false, reset: true, suppressChrome: true  },
+  // modal: the footer row IS the `:` prompt (render/footer returns cmdlinePromptRow).
+  { flag: 'cmdMode',                 chain: true,  overlay: true,  modal: true,  reset: true, suppressChrome: true  },
   // Fabric field-edit — one flag covers TWO renderers: the P1.5 ports-pane in-grid
   // editor (ports-pane renders its own cell), AND the args→ports P2 (v0.6.30)
   // invoke-time centered popup (overlay/fabric-field.js, gated on paneId==null).

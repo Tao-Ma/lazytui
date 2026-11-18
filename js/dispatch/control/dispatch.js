@@ -1030,8 +1030,8 @@ function handlePaletteKey(key, seq) {
     applyMsg({ type: 'palette_nav', dir: +1, total: getView().rows.length });
     return;
   }
-  // Backspace pops the filter buffer.
-  if (pressed({ key, seq }, '\x7f')) { applyMsg({ type: 'palette_filter', key, seq }); return; }
+  // Backspace pops the filter buffer; Ctrl+U clears it (as in every text field).
+  if (pressed({ key, seq }, '\x7f') || pressed({ key, seq }, '\x15')) { applyMsg({ type: 'palette_filter', key, seq }); return; }
   // Typed text or a paste appends to the filter (printable.fieldInput, shared
   // by every text field: a stray control byte never lands; a paste is made
   // single-line and control-free — one with a tab or a line break was dropped
@@ -1156,7 +1156,7 @@ const _modeHandlers = {
       // Brief 2 — backspace pops the filter; typed text / a paste appends.
       // Tab / Shift-Tab + any other control seq fall through to the regular
       // form routing after closing the popover (same semantics as pre-Brief-2).
-      else if (pressed({ key, seq }, '\x7f')) { applyMsg({ type: 'fabric_form_choices_filter', key, seq }); return; }
+      else if (pressed({ key, seq }, '\x7f') || pressed({ key, seq }, '\x15')) { applyMsg({ type: 'fabric_form_choices_filter', key, seq }); return; }   // Backspace / Ctrl+U
       else if (fieldInput({ key, seq }) != null) {   // typed text / a paste (printable.fieldInput)
         applyMsg({ type: 'fabric_form_choices_filter', key, seq });
         return;

@@ -14,8 +14,8 @@ const { withModalMode: _withModalMode, withModal: _withModal } = require('../mod
 // cmdline split + viewport size live in a zero-dep leaf so this file,
 // dispatch/control/cmdline.js, and overlay/cmdline.js all read the same values.
 const { splitQuery: _cmdlineSplit, DROPDOWN_VIEWPORT: CMDLINE_VW } = require('../../../leaves/text/cmdline-split');
-const { withoutLastCell } = require('../../../leaves/text/char-width');
-const { fieldInput, pressed } = require('../../../leaves/text/printable');
+const { editTail } = require('../../../leaves/text/field-window');
+const { pressed } = require('../../../leaves/text/printable');
 
 const TYPES = ['cmdline_enter', 'cmdline_set_matches', 'cmdline_nav', 'cmdline_key', 'cmdline_submit', 'cmdline_cancel'];
 
@@ -100,20 +100,12 @@ function update(model, msg) {
         }
         return [_withModal(model, { cmdline: { ...c, text, sel: 0, scroll: 0 } }), [{ type: 'cmdline_rebuild' }]];
       }
-      if (pressed(msg, '\x7f')) {
-        // One CELL — a pasted ❤️ or 👍🏽 is one glyph of several codepoints
-        // (one codepoint left ❤ or 👍 behind; one UTF-16 unit, half a pair).
-        const text = withoutLastCell(c.text);
-        return [_withModal(model, { cmdline: { ...c, text, sel: 0 } }), [{ type: 'cmdline_rebuild' }]];
-      }
-      // Typed text in any script (an IME commit, an emoji picker), or a paste
-      // (T26: key='paste', seq=<content>) made single-line and control-free —
-      // printable.fieldInput, shared by every text field. A pasted tab or SGR
-      // kept raw showed as up to 8 columns / a colour change while the cursor
-      // counted 1 / 5.
-      const add = fieldInput(msg);
-      if (add) return [_withModal(model, { cmdline: { ...c, text: c.text + add, sel: 0 } }), [{ type: 'cmdline_rebuild' }]];
-      return [model, []];
+      // Backspace (one glyph), Ctrl+U, typed text in any script or a paste made
+      // single-line and control-free — field-window editTail, the edit every
+      // end-edited field shares.
+      const text = editTail(c.text, msg);
+      if (text === c.text) return [model, []];
+      return [_withModal(model, { cmdline: { ...c, text, sel: 0 } }), [{ type: 'cmdline_rebuild' }]];
     }
     case 'cmdline_submit': {
       if (!model.modes.cmdMode) return [model, []];

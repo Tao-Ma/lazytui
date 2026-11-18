@@ -574,7 +574,7 @@ dataflow mechanics.
 | `fabric_form_choices_open{port}` | sets `picking={port, idx:0, filter:''}` — resets the filter on every open (Brief 2 of v0.6.43). Guarded: field must stamp `hasChoices` (ANY of the three channels: fn/cmd/literal — Brief 1 of v0.6.43 single-sources this via `declHasChoices`); idempotent on same-port. | — | ✓ |
 | `fabric_form_choices_close` | clears `picking` (identity-preserve when already closed) | — | ✓ |
 | `fabric_form_choices_nav{dir:-1|1}` | moves `picking.idx` within the FILTERED view (Brief 2 of v0.6.43 — clamp uses `filterChoices(computed.items, computed.labels, picking.filter).items.length` so Up/Down walks only the rows the user sees); no wrap; identity-preserve at edges or when `state !== 'ok'`. | — | ✓ |
-| `fabric_form_choices_filter{key,seq}` | appends typed text / a paste to `picking.filter` (`printable.fieldInput` — the input every text field shares: any script typed; a paste made single-line and control-free), or pops the last glyph on Backspace (`printable.pressed(msg, '\x7f')` — a pasted DEL is text, not a key). Hard cap `MAX_FILTER_LEN=128` applied POST-concat at a cell boundary (char-width `appendCapped`: a paste can't bypass the cap, it never leaves half a surrogate pair or half a sequence, and a keystroke that would join the last glyph across the cap adds nothing). `picking.idx` resets to 0 on every filter change. Guarded on fabricFormMode + non-null picking; control chars no-op; cap-hit returns the same model ref. (Brief 2 of v0.6.43) | — | ✓ |
+| `fabric_form_choices_filter{key,seq}` | appends typed text / a paste to `picking.filter` (`printable.fieldInput` — the input every text field shares: any script typed; a paste made single-line and control-free), or pops the last glyph on Backspace (`printable.pressed(msg, '\x7f')` — a pasted DEL is text, not a key). Hard cap `MAX_FILTER_LEN=128` applied POST-concat at a cell boundary (field-window `appendCapped`: a paste can't bypass the cap, it never leaves half a surrogate pair or half a sequence, and a keystroke that would join the last glyph across the cap adds nothing). `picking.idx` resets to 0 on every filter change. Guarded on fabricFormMode + non-null picking; control chars no-op; cap-hit returns the same model ref. (Brief 2 of v0.6.43) | — | ✓ |
 | `fabric_form_choices_filter_clear` | resets `picking.filter→''` and `picking.idx→0` (identity-preserve when filter already empty). Fired by first-Esc when the filter is non-empty; a second Esc then dispatches `fabric_form_choices_close`. (Brief 2 of v0.6.43 — Esc two-step; the decision between clear-vs-close is made in dispatch.js by peeking at `picking.filter.length`, matching the existing peek pattern at the Enter branch.) | — | ✓ |
 
 ¹ Won't open over a live modal (`isChainActive` guard). Opens only via
@@ -637,7 +637,7 @@ dispatches `palette_close`. **Enter on `(no match)`** dispatches
 `palette_close` without an emit — never commits an empty pick.
 
 **Paste cap**: `palette_filter` clamps POST-concat at `MAX_FILTER_LEN=128`
-at a cell boundary (char-width `appendCapped`), the same as
+at a cell boundary (field-window `appendCapped`), the same as
 `fabric_form_choices_filter`.
 
 **`palette_run_action`** effect handler (`dispatch/runtime/effects.js`)

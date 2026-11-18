@@ -21,9 +21,10 @@
 'use strict';
 
 const { getModel } = require('../model/store');
-const { renderOverlay, viewportDims } = require('../leaves/render/draw');
+const { renderOverlay, viewportDims, overlayInnerW } = require('../leaves/render/draw');
 const { formatHints } = require('../leaves/render/hints');
-const { esc, stringWidth } = require('../leaves/text/ansi');
+const { esc } = require('../leaves/text/ansi');
+const { stringWidth } = require('../leaves/text/char-width');
 const { fieldTail } = require('../leaves/text/field-window');
 const { filterChoices } = require('../leaves/ports/choices-filter');
 const { windowSlice } = require('../leaves/render/window-slice');
@@ -173,7 +174,7 @@ function renderActionPalette(newRows, cols) {
     // A field window (leaves/text/field-window) over the box's interior past
     // the '/', keeping the END of what is typed in view (painted from the
     // start, it fell off the right edge once the needle outgrew the box).
-    const innerW = Math.min(PALETTE_MAX_WIDTH, viewportDims().cols - 2) - 2;
+    const innerW = overlayInnerW(PALETTE_MAX_WIDTH);
     const win = fieldTail(filter, innerW - 1);
     lines.push(`[dim]/${win.clipped ? '…' : ''}[/]${esc(win.before)}`);
   }
@@ -210,7 +211,7 @@ function renderActionPalette(newRows, cols) {
     const fixedChrome = 2 + filterChromeRows;   // blank + help + filter-when-shown
     const budget = Math.max(3, (vpRows || 24) - 4 - fixedChrome);
     const win = windowSlice({ idx: clamped, total, budget });
-    const cols = PALETTE_MAX_WIDTH - 4; // minus borders (2) + indent (2)
+    const cols = overlayInnerW(PALETTE_MAX_WIDTH) - 2; // the box's interior minus the indent (2)
     for (let i = win.start; i < win.end; i++) {
       const row = _formatRow(rows[i], cols);
       // Hit map (docs/mouse-hit-map.md): the row carries its own target, so a

@@ -286,20 +286,4 @@ function cellCeil(s, i) {
   return at;
 }
 
-/** `s` without its last cell — Backspace at the end of a text field: one
- *  glyph goes, however many codepoints it is (❤️, 👍🏽, a flag, é as e + ́). */
-const withoutLastCell = (s) => s.slice(0, cellFloor(s, s.length - 1));
-
-/** `cur + add`, kept to at most `max` UTF-16 units — a text field's length cap.
- *  The cut lands on a cell boundary (never half a surrogate pair, nor ❤ without
- *  its VS16) and never inside `cur`: when what is added JOINS `cur`'s last
- *  glyph (a skin tone after 👍, a VS16, a combining mark) and the joined glyph
- *  would cross `max`, nothing is added — the text already there stays. */
-function appendCapped(cur, add, max) {
-  const next = cur + add;
-  if (next.length <= max) return next;
-  const cut = cellFloor(next, max);
-  return cut < cur.length ? cur : next.slice(0, cut);
-}
-
-module.exports = { charWidth, stringWidth, nextCell, cellsOf, cellFloor, cellCeil, withoutLastCell, appendCapped, joinStep };
+module.exports = { charWidth, stringWidth, nextCell, cellsOf, cellFloor, cellCeil, joinStep };

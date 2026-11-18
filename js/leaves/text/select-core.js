@@ -15,8 +15,8 @@
  */
 'use strict';
 
-const { stripMarkup, stringWidth, esc } = require('./ansi');
-const { nextCell } = require('./char-width');
+const { stripMarkup, esc } = require('./ansi');
+const { nextCell, stringWidth } = require('./char-width');
 
 /** Plain (markup-stripped) projection of content line `i`. */
 function plainLineAt(lines, i) {

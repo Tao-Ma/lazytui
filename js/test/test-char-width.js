@@ -28,7 +28,8 @@
 'use strict';
 
 const { describe, it, eq, assert, report } = require('./test-runner');
-const { charWidth, visibleLen } = require('../leaves/text/ansi');
+const { visibleLen } = require('../leaves/text/ansi');
+const { charWidth } = require('../leaves/text/char-width');
 const { stringWidth, nextCell } = require('../leaves/text/char-width');
 const { createScreen, readViewport } = require('../io/term-screen');
 
@@ -362,6 +363,25 @@ describe('[7] cells: a sequence the host draws as one glyph is one cell', () => 
       const c0 = s.buffer.active.getLine(0).getCell(0);
       eq([c0.getWidth(), s.buffer.active.cursorX], [2, 3], `${label}: one 2-wide cell, x after it`);
     }
+  });
+  it('an @xterm build that locks the parser join state: the pane still opens, one diagnostics warning', () => {
+    // The hook reaches into xterm internals (pinned to an exact version); if a
+    // build ever refuses the property, the emulator falls back to resetting at
+    // every CSI — it must not throw out of createScreen (no terminal pane).
+    const diag = require('../io/diag-log');
+    const real = Object.defineProperty;
+    Object.defineProperty = function (o, k, d) {
+      if (k === 'precedingJoinState') throw new TypeError('Cannot redefine property: precedingJoinState');
+      return real.call(this, o, k, d);
+    };
+    let screens;
+    diag.clear();
+    try { screens = [createScreen(10, 2), createScreen(10, 2)]; } finally { Object.defineProperty = real; }
+    diag.flushDeferred();
+    eq(screens.every(Boolean), true, 'both screens were created');
+    eq(diag.snapshot().filter((e) => e.code === 'term-screen').length, 1, 'one warning, not one per pane');
+    screens[0]._core._inputHandler.parse('ab');
+    eq(screens[0].buffer.active.cursorX, 2, 'the screen still emulates');
   });
   it('parts the emulator keeps apart (a cursor move between them) paint as a row of exact width', () => {
     // 🇺, cursor forward + back, 🇸: two cells in the emulator, one flag on the

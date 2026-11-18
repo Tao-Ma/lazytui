@@ -35,9 +35,9 @@
  * convert through here, and the cell-diff path inherits it for free — it folds
  * richToAnsi's SGR per channel, so the re-asserted pair rides into each cell.
  *
- * `charWidth` (the width truth function) lives in `./char-width` — it is shared
- * with the embedded terminal emulator (io/term-screen) — and is re-exported here
- * for the frame's callers. Otherwise pure string transforms.
+ * Widths come from `./char-width` (charWidth / stringWidth — the width truth,
+ * shared with the embedded terminal emulator, io/term-screen); a caller that
+ * measures text imports them from there. Otherwise pure string transforms.
  *
  * Lives in `leaves/` (not `io/`): every export here is a pure string
  * transform — it builds ANSI/markup strings but performs no I/O (no
@@ -386,6 +386,23 @@ const _SGR_RUN = /\x1b\\?\[[0-9;]*m/y;
  * the boundary goes with the rest — and before that, markup preceding a cell
  * that doesn't fit stays before the cut.
  */
+/**
+ * Where the tag a `[` at `j` opens ends, by the rule richToAnsi and stripMarkup
+ * match tags with (`(?<!\x1b)\[([^\]\x1b]*)\]`): the index of the first `]`
+ * or ESC after it, or -1 when the text ends first. A tag only when that is a
+ * `]` and the `[` doesn't follow an ESC (an SGR's own `[`). The two hand-written
+ * walkers — markupCut and sealMarkup — read tags through this, so they cannot
+ * disagree with the regexes about what is a tag (markupCut once took `[` … `]`
+ * across an ESC, measuring a row narrower than it drew).
+ */
+function _tagScan(text, j) {
+  for (let k = j + 1; k < text.length; k++) {
+    const c = text.charCodeAt(k);
+    if (c === 93 || c === 27) return k;   // `]` closes it; an ESC means it is no tag
+  }
+  return -1;
+}
+
 function markupCut(text, cols, greedy) {
   const n = text.length;
   let fitW = 0, fitEnd = 0;                 // the cells that fit: their width; the index past their last character
@@ -401,9 +418,9 @@ function markupCut(text, cols, greedy) {
         const m = _SGR_RUN.exec(text);
         if (m) { i += m[0].length; continue; }
       }
-      if (c === '[') {
-        const close = text.indexOf(']', i);
-        if (close !== -1) { i = close + 1; continue; }
+      if (c === '[' && !(i > 0 && text.charCodeAt(i - 1) === 27)) {
+        const k = _tagScan(text, i);
+        if (k !== -1 && text.charCodeAt(k) === 93) { i = k + 1; continue; }   // a tag: zero width
       }
       cp = text.codePointAt(i);
       len = cp > 0xFFFF ? 2 : 1;
@@ -425,7 +442,6 @@ function markupCut(text, cols, greedy) {
   return { cut: greedy || fitW < cols ? n : fitEnd, width: fitW };
 }
 
-// charWidth — see ./char-width (re-exported below).
 
 /**
  * Seal a markup FRAGMENT that will be concatenated with more markup: escape
@@ -466,9 +482,8 @@ function sealMarkup(s) {
     if (j < 0) { out += s.slice(i); break; }
     let b = j; while (b > 0 && s[b - 1] === '\\') b--;
     if ((j - b) % 2 === 1 || (j > 0 && s[j - 1] === '\x1b')) { out += s.slice(i, j + 1); i = j + 1; continue; }   // escape / SGR
-    let k = j + 1;
-    while (k < s.length && s[k] !== ']' && s[k] !== '\x1b') k++;
-    if (k < s.length) { out += s.slice(i, s[k] === ']' ? k + 1 : j + 1); i = s[k] === ']' ? k + 1 : j + 1; continue; }   // a tag / an ESC stops it
+    const k = _tagScan(s, j);
+    if (k !== -1) { const e = s[k] === ']' ? k + 1 : j + 1; out += s.slice(i, e); i = e; continue; }   // a tag / an ESC stops it (no tag, can't pair)
     out += s.slice(i, j) + '\\['; i = j + 1;   // unclosed → escaped
   }
   return out + tail;
@@ -682,4 +697,4 @@ function wrapColor(color, content) {
 }
 
 module.exports = {
-  sealMarkup, pairTrailingBackslash, richToAnsi, sgrRun, screenColors, stripMarkup, visibleLen, markupCut, charWidth, stringWidth, esc, markupLiteral, wrapColor, stripControls, enableScreenColors, RESET };
+  sealMarkup, pairTrailingBackslash, richToAnsi, sgrRun, screenColors, stripMarkup, visibleLen, markupCut, esc, markupLiteral, wrapColor, stripControls, enableScreenColors, RESET };

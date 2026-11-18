@@ -17,8 +17,7 @@
 const { withModalMode, withModal } = require('../model-ops');
 const { isChainActive } = require('../../../leaves/input/modes');
 const { applyInject } = require('../fabric');
-const { fieldInput, pressed } = require('../../../leaves/text/printable');
-const { appendCapped, withoutLastCell } = require('../../../leaves/text/char-width');
+const { editTail } = require('../../../leaves/text/field-window');
 
 const TYPES = ['fabric_field_enter', 'fabric_field_key', 'fabric_field_submit', 'fabric_field_cancel'];
 
@@ -58,18 +57,11 @@ function update(model, msg) {
     case 'fabric_field_key': {
       if (!model.modes.fabricFieldMode) return [model, []];
       const f = model.modal.fabricField;
-      let text = f.text;
-      if (pressed(msg, '\x7f')) text = withoutLastCell(text);     // backspace: one glyph
-      else if (pressed(msg, '\x15')) text = '';                   // Ctrl+U — clear (a paste is text: pressed)
-      else {
-        // Typed text in any script (R3C-BUG1: CJK IME, Cyrillic, emoji — the
-        // old ASCII gate rejected them silently), or a paste made single-line
-        // and control-free — printable.fieldInput, shared by every text field.
-        // Capped at a cell boundary, never into the text already there — see
-        // fabric-form.js's cap comment.
-        const add = fieldInput(msg);
-        if (add) text = appendCapped(text, add, MAX_FIELD_TEXT);
-      }
+      // Backspace (one glyph), Ctrl+U, typed text in any script (R3C-BUG1: the
+      // old ASCII gate rejected CJK IME / emoji silently) or a paste made
+      // single-line and control-free, capped at a cell boundary, never into the
+      // text already there (see fabric-form.js's cap comment) — field-window editTail.
+      const text = editTail(f.text, msg, { cap: MAX_FIELD_TEXT });
       if (text === f.text) return [model, []];
       return [withModal(model, { fabricField: { ...f, text } }), []];
     }

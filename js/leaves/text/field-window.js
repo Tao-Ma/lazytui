@@ -22,12 +22,50 @@
  * `default:`, a pane title) with a tab or a line break neither misaligns its
  * row (a tab is 1 column measured, up to 8 painted) nor splits it.
  *
+ * Editing one, too: `editTail(text, msg, { cap })` is the one edit every field
+ * that edits at its end shares (cmdline, filter, action palette, viewer search,
+ * the layout editor's rename, the fabric field, the fabric form's field and
+ * choices filter) — Backspace takes the last glyph, Ctrl+U clears, typed text
+ * or a paste is appended, capped at a cell boundary. Each field once composed
+ * these itself; the copies drifted (Ctrl+U cleared four fields of eight). The
+ * agent prompt edits at its cursor with the cell helpers in char-width.
+ *
  * Pure leaf.
  */
 'use strict';
 
 const { cellsOf, cellFloor, stringWidth } = require('./char-width');
-const { fieldText } = require('./printable');
+const { fieldText, fieldInput, pressed } = require('./printable');
+
+/** `s` without its last cell — Backspace at the end of a text field: one
+ *  glyph goes, however many codepoints it is (❤️, 👍🏽, a flag, é as e + ́). */
+const withoutLastCell = (s) => s.slice(0, cellFloor(s, s.length - 1));
+
+/** `cur + add`, kept to at most `max` UTF-16 units — a text field's length cap.
+ *  The cut lands on a cell boundary (never half a surrogate pair, nor ❤ without
+ *  its VS16) and never inside `cur`: when what is added JOINS `cur`'s last
+ *  glyph (a skin tone after 👍, a VS16, a combining mark) and the joined glyph
+ *  would cross `max`, nothing is added — the text already there stays. */
+function appendCapped(cur, add, max) {
+  const next = cur + add;
+  if (next.length <= max) return next;
+  const cut = cellFloor(next, max);
+  return cut < cur.length ? cur : next.slice(0, cut);
+}
+
+/** The text of a one-line field after a key Msg (`{ key, seq }`) that edits at
+ *  its end: Backspace (`\x7f`) takes the last glyph, Ctrl+U clears, typed text
+ *  or a paste (printable.fieldInput) is appended — kept to `cap` UTF-16 units
+ *  at a cell boundary when one is given. A paste is text, never a key
+ *  (printable.pressed). Returns `text` itself when the Msg changes nothing, so
+ *  a caller can hand its model back unchanged. */
+function editTail(text, msg, { cap = Infinity } = {}) {
+  if (pressed(msg, '\x7f')) return text ? withoutLastCell(text) : text;
+  if (pressed(msg, '\x15')) return text ? '' : text;
+  const add = fieldInput(msg);
+  if (!add) return text;
+  return cap === Infinity ? text + add : appendCapped(text, add, cap);
+}
 
 /**
  * @param {string} text    the field's text
@@ -97,4 +135,4 @@ function fieldTail(text, avail) {
   return fieldWindow(t, t.length, avail);
 }
 
-module.exports = { fieldWindow, fieldTail };
+module.exports = { fieldWindow, fieldTail, editTail, withoutLastCell, appendCapped };

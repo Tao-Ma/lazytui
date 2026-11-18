@@ -17,7 +17,8 @@ const sm = require('../smoke/_helpers/smoke');
 const input = require('../../dispatch/control/input');
 const hm = require('../../panel/hit-map');
 const { compositeOverlays } = require('./overlay-capture');
-const { stripMarkup, charWidth } = require('../../leaves/text/ansi');
+const { stripMarkup } = require('../../leaves/text/ansi');
+const { charWidth } = require('../../leaves/text/char-width');
 const { getModel } = require('../../app/runtime');
 
 // Reset the parser's double-click triple to a far-off cell WITHOUT dispatching

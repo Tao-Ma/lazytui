@@ -29,8 +29,10 @@ describe('[1] registry derivations', () => {
       eq(modes.isOverlayActive(s), overlay.includes(f), `${f} overlay`);
     }
   });
-  it('isModal matches the pre-registry hardcoded list', () => {
-    const modal = ['terminalMode','filterMode','copyMode','freeConfigMode','freeConfigTitleEditMode','menuOpen','prefixMode','fabricFieldMode','fabricFormMode','paletteMode','agentMode'];
+  it('isModal: the modes whose footer row is theirs', () => {
+    // cmdMode joined 2026-11-18: its footer row is the `:` prompt (renderFooter
+    // returns cmdlinePromptRow) — the registry said otherwise and nothing read it.
+    const modal = ['terminalMode','filterMode','copyMode','freeConfigMode','freeConfigTitleEditMode','menuOpen','prefixMode','cmdMode','fabricFieldMode','fabricFormMode','paletteMode','agentMode'];
     for (const f of modes.MODES.map(m => m.flag)) {
       const s = {}; s[f] = true;
       eq(modes.isModal(s), modal.includes(f), `${f} modal`);

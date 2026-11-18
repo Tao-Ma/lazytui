@@ -32,7 +32,7 @@
 
 const { getModel } = require('../model/store');
 const { esc, visibleLen } = require('../leaves/text/ansi');
-const { renderOverlay, truncate, viewportDims } = require('../leaves/render/draw');
+const { renderOverlay, truncate, viewportDims, overlayInnerW } = require('../leaves/render/draw');
 const { formatHints } = require('../leaves/render/hints');
 const { filterChoices } = require('../leaves/ports/choices-filter');
 const { windowSlice } = require('../leaves/render/window-slice');
@@ -217,11 +217,10 @@ function renderFabricFormOverlay(newRows, cols) {
   const GUTTER = 1;      // space between name col and prefix
   const leftW = INDENT + maxNameVis + GUTTER + PREFIX;
 
-  // overlayBox will clamp menuW to min(MAX_WIDTH, COLS-2); mirror that here so
-  // the midW budget matches what the panel actually paints. +2 is the border.
+  // The box's interior (draw.overlayInnerW — derived from overlayBox), so the
+  // midW budget matches what the panel actually paints.
   const vp = viewportDims();
-  const menuW = Math.min(MAX_WIDTH, Math.max(0, vp.cols - 2));
-  const innerW = Math.max(0, menuW - 2);
+  const innerW = overlayInnerW(MAX_WIDTH);
   // Dynamic chip reserve: scan every field's chip once up front and take the
   // widest. Slice 1's fixed CHIP_SLOT=11 was tuned for [modified]; slice 2's
   // [fetching…] / [N choices] / [1024 choices] overran at N≥10 (R1D-BUG1).

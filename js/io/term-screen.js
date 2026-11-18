@@ -110,25 +110,45 @@ function createScreen(cols, rows) {
 // SGR, and the parser's reset right after it is skipped. Every other control,
 // CSI, ESC, OSC and DCS still resets it (a cursor move between the parts: the
 // parts stay apart, and _readRow keeps the row exact). Internal API
-// (`_inputHandler._parser.precedingJoinState`): absent → the emulator just
-// keeps resetting, and _readRow still keeps every row exact
+// (`_inputHandler._parser.precedingJoinState`), so @xterm/headless is pinned to
+// an exact version (package.json). If a build moves or locks it, the hook is
+// skipped with one diagnostics warning: the emulator just keeps resetting (a
+// glyph a program colours part by part shows as its parts), and _readRow still
+// keeps every row exact — a terminal pane never crashes over it
 // (test-char-width [7] pins the hook).
+let _joinHookWarned = false;
+function _joinHookMissing(why) {
+  if (_joinHookWarned) return;
+  _joinHookWarned = true;
+  try {
+    require('./diag-log').warnDeferred('term-screen',
+      `@xterm/headless ${why}: a glyph a program colours part by part shows as its parts in terminal panes`);
+  } catch (_) { /* diagnostics unavailable */ }
+}
 function _joinAcrossSgr(screen) {
   const ih = screen._core && screen._core._inputHandler;
   const parser = ih && ih._parser;
-  if (!parser || !Object.prototype.hasOwnProperty.call(parser, 'precedingJoinState')) return;
+  if (!parser || !Object.prototype.hasOwnProperty.call(parser, 'precedingJoinState')) {
+    _joinHookMissing('has no parser join state');
+    return;
+  }
   let state = parser.precedingJoinState;
   let sgr = false;
-  Object.defineProperty(parser, 'precedingJoinState', {
-    configurable: true,
-    enumerable: true,
-    get() { return state; },
-    set(v) {
-      const skip = v === 0 && sgr;
-      sgr = false;
-      if (!skip) state = v;
-    },
-  });
+  try {
+    Object.defineProperty(parser, 'precedingJoinState', {
+      configurable: true,
+      enumerable: true,
+      get() { return state; },
+      set(v) {
+        const skip = v === 0 && sgr;
+        sgr = false;
+        if (!skip) state = v;
+      },
+    });
+  } catch (e) {
+    _joinHookMissing(`locks its parser join state (${e && e.message})`);
+    return;
+  }
   screen.parser.registerCsiHandler({ final: 'm' }, () => { sgr = true; return false; });
 }
 

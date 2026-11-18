@@ -26,7 +26,7 @@
 
 const { getModel } = require('../model/store');
 const { esc } = require('../leaves/text/ansi');
-const { renderOverlay, viewportDims } = require('../leaves/render/draw');
+const { renderOverlay, overlayInnerW } = require('../leaves/render/draw');
 const { formatHints } = require('../leaves/render/hints');
 const { fieldTail } = require('../leaves/text/field-window');
 
@@ -81,7 +81,7 @@ function renderFabricFieldOverlay(newRows, cols) {
   // row painted from the start, so past ~56 columns the caret and the end of
   // what was typed fell off the right edge and the user typed blind.
   const text = String(f.text || '');
-  const innerW = Math.min(MAX_WIDTH, viewportDims().cols - 2) - 2;
+  const innerW = overlayInnerW(MAX_WIDTH);
   const win = fieldTail(text, innerW - 2);
   const buffer = `> ${win.clipped ? '[dim]…[/]' : ''}${esc(win.before)}[reverse] [/]`;
 

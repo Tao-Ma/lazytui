@@ -24,8 +24,7 @@
 'use strict';
 
 const { withModalMode, withModal } = require('../model-ops');
-const { appendCapped, withoutLastCell } = require('../../../leaves/text/char-width');
-const { fieldInput, pressed } = require('../../../leaves/text/printable');
+const { editTail } = require('../../../leaves/text/field-window');
 
 const TYPES = [
   'palette_open',
@@ -45,11 +44,6 @@ const CLOSED = { filter: '', idx: 0 };
 // path filter needle.
 const MAX_FILTER_LEN = 128;
 
-function _appendClamp(cur, add) {
-  if (!add) return cur;
-  return appendCapped(cur, add, MAX_FILTER_LEN);   // a cell boundary, never into `cur`
-}
-
 function update(model, msg) {
   switch (msg.type) {
     case 'palette_open': {
@@ -64,14 +58,9 @@ function update(model, msg) {
     case 'palette_filter': {
       if (!model.modes.paletteMode) return [model, []];
       const cur = model.modal.palette.filter;
-      let next;
-      if (pressed(msg, '\x7f')) {
-        // Backspace — pop one glyph (a pasted ❤️ or 👍🏽 is several
-        // codepoints; one code unit left half a surrogate pair).
-        next = withoutLastCell(cur);
-      } else {
-        next = _appendClamp(cur, fieldInput(msg));   // typed text / a paste made single-line + control-free
-      }
+      // Backspace (one glyph), Ctrl+U, typed text / a paste made single-line and
+      // control-free, capped at a cell boundary — field-window editTail.
+      const next = editTail(cur, msg, { cap: MAX_FILTER_LEN });
       if (next === cur) return [model, []];
       // Reset idx to 0 on every filter change — the narrowed view can
       // be shorter than the previous one, and 0 is the user's "best

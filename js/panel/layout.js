@@ -32,8 +32,8 @@ const mpool = require('../leaves/wm/pool');
 const mpane = require('../leaves/wm/pane');
 const { halfProjection, visibleBoundsFor } = require('../leaves/wm/geometry');
 const route = require('../panel/route');
-const { withoutLastCell } = require('../leaves/text/char-width');
-const { fieldInput, pressed } = require('../leaves/text/printable');
+const { editTail } = require('../leaves/text/field-window');
+const { pressed } = require('../leaves/text/printable');
 
 
 /** Compare two drag drop targets for visual equality. Used by both
@@ -952,15 +952,12 @@ function update(msg, slice) {
       if (!te) return slice;
       // ^H arrives as \x7f (the input ladder); `\b` stays for sessions recorded
       // before it did — replay feeds their Msgs as they were.
-      if (msg.key === 'backspace' || pressed(msg, '\x7f') || pressed(msg, '\b')) {
-        // One glyph: the title it starts from can carry ❤️ or 👍🏽 (several codepoints).
-        return { ...slice, freeConfig: { ...slice.freeConfig, titleEdit: { ...te, text: withoutLastCell(te.text) } } };
-      }
-      // Typed text in any script, or a paste made single-line and control-free
-      // (printable.fieldInput — the ASCII gate dropped 你好 / 👍🏽 and pastes).
-      const add = fieldInput(msg);
-      if (add) return { ...slice, freeConfig: { ...slice.freeConfig, titleEdit: { ...te, text: te.text + add } } };
-      return slice;
+      const back = msg.key === 'backspace' || pressed(msg, '\b');
+      // Backspace (one glyph — the title it starts from can carry ❤️ or 👍🏽),
+      // Ctrl+U, typed text in any script or a paste made single-line and
+      // control-free — field-window editTail.
+      const text = editTail(te.text, back ? { key: '\x7f', seq: '\x7f' } : msg);
+      return text === te.text ? slice : { ...slice, freeConfig: { ...slice.freeConfig, titleEdit: { ...te, text } } };
     }
     case 'free_config_title_cancel': {
       const next = slice.freeConfig

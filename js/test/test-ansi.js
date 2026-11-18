@@ -329,4 +329,26 @@ describe('[escapes] `\\[` and `\\\\` — text that ends in a backslash keeps the
   });
 });
 
+describe('[tokens] the hand-written walkers read a tag as the regexes do — raw `[` and ESC too', () => {
+  // markupCut took `[` … `]` across an ESC as a tag (visibleLen didn't): a row
+  // holding `[` + an SGR + `]` measured narrower than it drew (v0.6.60 review).
+  const { markupCut, sealMarkup, visibleLen } = require('../leaves/text/ansi');
+  const ALPHA = ['[', ']', '\x1b', '\x1b[31m', '\x1b[2J', '\\', 'a', '中', '[/]', '[dim]', '[x'];
+  let seed = 7;
+  const rnd = (n) => { seed = (Math.imul(seed, 1103515245) + 12345) >>> 0; return (seed >>> 16) % n; };
+  const gen = () => { let t = ''; const n = 1 + rnd(8); for (let i = 0; i < n; i++) t += ALPHA[rnd(ALPHA.length)]; return t; };
+  it('markupCut measures what visibleLen measures; a cut never lands inside a tag; sealing keeps the width', () => {
+    for (let r = 0; r < 600; r++) {
+      const s = gen();
+      const w = visibleLen(s);
+      eq(markupCut(s, 1e9).width, w, `width of ${JSON.stringify(s)}`);
+      for (let c = 0; c <= w; c++) {
+        const { cut, width } = markupCut(s, c);
+        eq(visibleLen(s.slice(0, cut)), width, `cut ${c} of ${JSON.stringify(s)}: the prefix is what it reports`);
+      }
+      eq(visibleLen(sealMarkup(s)), w, `sealMarkup keeps the width of ${JSON.stringify(s)}`);
+    }
+  });
+});
+
 report();

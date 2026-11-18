@@ -11,8 +11,7 @@
 
 const { withModalMode: _withModalMode, withModal: _withModal } = require('../model-ops');
 const route = require('../../../panel/route');
-const { withoutLastCell } = require('../../../leaves/text/char-width');
-const { fieldInput, pressed } = require('../../../leaves/text/printable');
+const { editTail } = require('../../../leaves/text/field-window');
 
 const TYPES = ['filter_enter', 'filter_key', 'filter_exit'];
 
@@ -36,19 +35,12 @@ function update(model, msg) {
     }
     case 'filter_key': {
       const f = model.modal.filter;
-      let text = f.text;
-      if (pressed(msg, '\x7f')) {
-        if (!text) return [model, []];
-        text = withoutLastCell(text);                // one glyph (❤️ is two codepoints)
-      } else {
-        // Typed text in any script, or a paste (T26: key='paste') made
-        // single-line and control-free — printable.fieldInput. The old
-        // `length === 1` gate dropped every astral glyph (emoji are two UTF-16
-        // units) and kept only the ZWJs of a typed 👨‍👩‍👧.
-        const add = fieldInput(msg);
-        if (!add) return [model, []];
-        text = text + add;
-      }
+      // Backspace (one glyph), Ctrl+U, typed text in any script or a paste
+      // (T26: key='paste') made single-line and control-free — field-window
+      // editTail. The old `length === 1` gate dropped every astral glyph and
+      // kept only the ZWJs of a typed 👨‍👩‍👧.
+      const text = editTail(f.text, msg);
+      if (text === f.text) return [model, []];
       const next = _withModal(model, { filter: { ...f, text } });
       // Re-home the cursor as the filter narrows; the panel's nav slice
       // is the writer. v0.6.5 blessed-A — reuse the session route bundle

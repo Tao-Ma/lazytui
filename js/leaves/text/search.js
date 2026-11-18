@@ -28,8 +28,8 @@
 'use strict';
 
 const { stripMarkup, markupLiteral: esc } = require('./ansi');
-const { nextCell, withoutLastCell } = require('./char-width');
-const { fieldInput, pressed } = require('./printable');
+const { nextCell } = require('./char-width');
+const { editTail } = require('./field-window');
 // computeMatches lives in match-core (shared with the bounded-match worker so
 // both sides run byte-identical matching).
 const { computeMatches } = require('./match-core');
@@ -212,15 +212,11 @@ function keystroke(slice, seq, key) {
   // typing phase before invoking this). idx resets per edit (the match
   // list the idx points into derives from the new typing term).
   const typing = slice.search.typing == null ? '' : slice.search.typing;
-  const msg = { key, seq };                       // (a paste is text, never a key: pressed)
-  if (pressed(msg, '\x7f')) return _withSearch(slice, { typing: withoutLastCell(typing), idx: 0 });   // one glyph
-  if (pressed(msg, '\x15')) return _withSearch(slice, { typing: '', idx: 0 });
-  // Typed text in any script, or a paste (`key: 'paste'`) made single-line and
-  // control-free — printable.fieldInput, shared by every text field (an
-  // ASCII-only gate dropped 你好 / 👍🏽 and every paste).
-  const add = fieldInput(msg);
-  if (add) return _withSearch(slice, { typing: typing + add, idx: 0 });
-  return slice;
+  // Backspace (one glyph), Ctrl+U, typed text in any script or a paste
+  // (`key: 'paste'`) made single-line and control-free — field-window editTail,
+  // shared by every text field (an ASCII-only gate dropped 你好 / 👍🏽 and every paste).
+  const next = editTail(typing, { key, seq });
+  return next === typing ? slice : _withSearch(slice, { typing: next, idx: 0 });
 }
 
 // next/prev take `lines` + the phase-correct `term` explicitly: the

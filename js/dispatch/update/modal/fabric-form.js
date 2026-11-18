@@ -37,8 +37,7 @@
 const { withModalMode, withModal } = require('../model-ops');
 const { isChainActive } = require('../../../leaves/input/modes');
 const { applyInject } = require('../fabric');
-const { fieldInput, pressed } = require('../../../leaves/text/printable');
-const { appendCapped, withoutLastCell } = require('../../../leaves/text/char-width');
+const { editTail } = require('../../../leaves/text/field-window');
 // Brief 3 — variadic fields tokenize `text` → argv items at submit using the
 // same leaf compileCommand uses, so form text and `run:` string templates
 // agree on quoting semantics (no second splitter).
@@ -404,21 +403,14 @@ function update(model, msg) {
       const f = model.modal.fabricForm;
       const cur = f.fields[f.focusIdx];
       if (!cur) return [model, []];
-      let text = cur.text;
-      if (pressed(msg, '\x7f')) text = withoutLastCell(text);                // backspace: one glyph
-      else if (pressed(msg, '\x15')) text = '';                               // Ctrl+U — clear-line (a paste is text: pressed)
-      else {
-        // Typed text in any script (R3C-BUG1 — the old `charCodeAt(0) >= 32 &&
-        // < 127` gate rejected CJK IME / emoji silently, so an author adding
-        // `choices_fn:` on a port that holds Japanese section names couldn't
-        // free-type), or a paste made single-line and control-free —
-        // printable.fieldInput, shared by every text field.
-        const add = fieldInput(msg);
-        if (add == null) return [model, []];
-        text = appendCapped(text, add, MAX_FIELD_TEXT);
-      }
+      // Backspace (one glyph), Ctrl+U, typed text in any script (R3C-BUG1 — the
+      // old `charCodeAt(0) >= 32 && < 127` gate rejected CJK IME / emoji
+      // silently, so an author adding `choices_fn:` on a port that holds
+      // Japanese section names couldn't free-type) or a paste made single-line
+      // and control-free — field-window editTail, shared by every text field.
+      const text = editTail(cur.text, msg, { cap: MAX_FIELD_TEXT });
       // Both growing paths cap the field (paste or sustained typing can't bloat
-      // the WAL past MAX_FIELD_TEXT) through char-width appendCapped: the cut
+      // the WAL past MAX_FIELD_TEXT) through field-window appendCapped: the cut
       // lands on a cell boundary — never on the HIGH surrogate of a
       // supplementary-plane char (a lone surrogate trips `visibleLen` and renders
       // as a replacement glyph, which drifts one column against the painted midW
@@ -1053,23 +1045,14 @@ function update(model, msg) {
       const f = model.modal.fabricForm;
       if (f.picking === null) return [model, []];
       const cur = typeof f.picking.filter === 'string' ? f.picking.filter : '';
-      let next;
-      if (pressed(msg, '\x7f')) {
-        if (cur.length === 0) return [model, []];
-        next = withoutLastCell(cur);                                          // one glyph
-      } else {
-        const add = fieldInput(msg);
-        if (!add) return [model, []];
-        // Cap the filter at MAX_FILTER_LEN code units — anything past that
-        // is a stuck key or an accidental paste, not a reasonable needle.
-        // Pre-release review (code fork): the pre-concat guard was bypassable
-        // by a long paste (seq is a multi-char string on `key:'paste'`), so
-        // cur=127 + a 100-char paste yielded next=227. CLAMP POST-CONCAT so
-        // the cap is enforced regardless of per-event seq length, and cut at a
-        // cell boundary as the field-key arm does (fabric_form_key — never half
-        // a surrogate pair or a sequence).
-        next = appendCapped(cur, add, MAX_FILTER_LEN);
-      }
+      // Backspace (one glyph), Ctrl+U, typed text / a paste — field-window
+      // editTail. Capped at MAX_FILTER_LEN code units — anything past that is a
+      // stuck key or an accidental paste, not a reasonable needle. Pre-release
+      // review (code fork): a pre-concat guard was bypassable by a long paste
+      // (seq is a multi-char string on `key:'paste'`), so cur=127 + a 100-char
+      // paste yielded next=227; the cap applies POST-concat, at a cell boundary
+      // as the field-key arm's (never half a surrogate pair or a sequence).
+      const next = editTail(cur, msg, { cap: MAX_FILTER_LEN });
       if (next === cur) return [model, []];
       return [withModal(model, { fabricForm: {
         ...f, picking: { ...f.picking, filter: next, idx: 0 },

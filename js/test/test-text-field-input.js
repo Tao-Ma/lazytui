@@ -23,6 +23,8 @@
  *       controls, a typed bidi override — and a placeholder-like text it keeps
  *   [8] a 256 KB paste of unterminated escape openers is not quadratic
  *   [9] sessions recorded before ^H was normalized replay as they did
+ *  [10] every field edits its end the same way: Ctrl+U clears, Backspace takes
+ *       one glyph, a pasted Ctrl+U is no key (field-window editTail)
  *
  * Review round 2 (2026-11-15) added [6]–[9] and the agent's raw-byte path.
  * Run: node js/test/test-text-field-input.js
@@ -273,6 +275,38 @@ describe('[9] sessions recorded before ^H was normalized replay as they did', ()
     for (const k of ['a', 'b', '\b']) layout({ type: 'free_config_title_key', key: k, seq: k });
     eq(FIELDS['free-config rename'].read(), 'a');
     eq(require('../leaves/input/keybindings').tokenForEvent('\b', '\b'), 'backspace');
+  });
+});
+
+describe('[10] every field edits its end the same way (field-window editTail)', () => {
+  // v0.6.60 pre-release review: eight fields composed Backspace / Ctrl+U / text
+  // themselves, and the copies drifted — Ctrl+U cleared the fabric field and
+  // form, search and the agent prompt, but not the command line, the filter,
+  // the palette, the choices filter or the rename.
+  it('Ctrl+U clears every field', () => {
+    for (const [name, f] of Object.entries(FIELDS)) {
+      f.open();
+      type('ab');
+      type('\x15');
+      if (name === 'free-config rename') eq(titleText(), '', `${name}: the whole title is cleared`);
+      else eq(f.read(), '', `${name}: Ctrl+U cleared it`);
+    }
+  });
+  it('Backspace takes one glyph in every field (raw DEL)', () => {
+    for (const [name, f] of Object.entries(FIELDS)) {
+      f.open();
+      type(`x${THUMB}`);
+      type('\x7f');
+      eq(f.read(), 'x', `${name}: 👍🏽 went whole`);
+    }
+  });
+  it('a pasted Ctrl+U is not a key in any field', () => {
+    for (const [name, f] of Object.entries(FIELDS)) {
+      f.open();
+      type('ab');
+      paste('\x15');
+      eq(f.read(), 'ab', `${name}: the paste (a control, so nothing) left the text`);
+    }
   });
 });
 

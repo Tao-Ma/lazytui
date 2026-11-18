@@ -134,6 +134,10 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   menu anchored near the last row, and the replay scrubber's mini bar, reached
   into the footer row, which popups cannot draw on: their bottom border was
   missing and a click on the footer went to the menu.
+- **Ctrl+U clears every text field.** It cleared a port field or form, search
+  and the agent prompt, but not the command line, the filter, the action
+  palette's filter, a port form's choices filter or the layout editor's title
+  edit; there it did nothing (in the choices filter it closed the popover).
 - **Keypad Enter and the keypad arrows work with the kitty keyboard
   protocol.** Under the protocol, kitty reports them as their own keys, which
   lazytui dropped; they now act as Enter, the arrows, Home, End and the Page
@@ -148,6 +152,10 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   shows one backslash; write `\\\\` for two, or build it with `esc()`. Text
   lazytui shows — titles, names, values, output — is escaped and shows as
   written. Grammar: docs/PRINCIPLES.md §7.
+- **`@xterm/headless` is pinned to exactly 5.5.0.** Terminal panes rely on its
+  internals to keep a glyph whole when a program colours it part by part; an
+  install from the release tarball resolved any 5.x. If a build ever lacks
+  what they rely on, the pane still opens and the diagnostics window says so.
 - **A recording made before this release can replay differently**
   (`:record-load`) where a field now takes what it used to drop: a paste into
   search or the layout editor's title edit, non-ASCII typed into the command

@@ -23,7 +23,8 @@
 
 const ms = require('./search');
 const sc = require('./select-core');
-const { stripMarkup, stringWidth } = require('./ansi');
+const { stripMarkup } = require('./ansi');
+const { stringWidth } = require('./char-width');
 
 // Effective viewport rows; pre-first-render fallback is 1 (see viewer.js FIX-2).
 function _innerH(slice) { return slice.innerH > 0 ? slice.innerH : 1; }

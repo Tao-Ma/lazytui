@@ -14,7 +14,8 @@
 
 const { describe, it, assert, eq, report } = require('./test-runner');
 const { rowToCells, diffRowToAnsi } = require('../leaves/render/cell-grid');
-const { richToAnsi, charWidth } = require('../leaves/text/ansi');
+const { richToAnsi } = require('../leaves/text/ansi');
+const { charWidth } = require('../leaves/text/char-width');
 
 // Simulate applying a single-row patch to a terminal row pre-loaded with the
 // prev-rendered cells. Mirrors a real terminal: MoveTo sets the column, SGR
