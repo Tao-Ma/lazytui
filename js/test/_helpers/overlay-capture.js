@@ -103,8 +103,9 @@ function captureOverlay(m, fn, opts) {
  * Composite the ACTIVE overlays (the compositor, exactly as paint.render runs
  * it) into a blank viewport-sized buffer and publish their hit map under the
  * model's current frame stamp — the bracket every hit-map test needs without a
- * full render (docs/mouse-hit-map.md). Overlays that write their own bytes
- * (cmdline's prompt row) are captured, not printed. Returns the newRows buffer.
+ * full render (docs/mouse-hit-map.md). No overlay writes the screen itself
+ * (the `:` prompt row is the footer's), so nothing is printed. Returns the
+ * newRows buffer.
  */
 function compositeOverlays(m) {
   require('../../render/paint');   // wires the draw → hit-map sink (as at boot)
@@ -115,9 +116,7 @@ function compositeOverlays(m) {
   const { cols, rows } = draw.viewportDims();
   const newRows = new Array(rows).fill(' '.repeat(cols));
   hm.clear(hm.stampOf(model, getInstanceSlice('layout')));
-  const orig = process.stdout.write;
-  process.stdout.write = () => true;
-  try { compositor.paintActive(model, newRows, cols); } finally { process.stdout.write = orig; }
+  compositor.paintActive(model, newRows, cols);
   return newRows;
 }
 

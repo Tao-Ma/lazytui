@@ -58,9 +58,11 @@
  * Everything else starts a new cell. Text clusters are NOT joined: tmux (and
  * glibc's `wcswidth`) give Devanagari क्षि 3 columns, Thai and conjoining jamo
  * their sums — so this is deliberately not UAX #29's extended grapheme cluster
- * (`Intl.Segmenter` would make क्षि one cell). Measured 2026-11-15 on tmux 3.4,
- * 45 sequences: this rule agrees on 38. The 7 others are tmux joining what
- * Unicode doesn't — two adjacent flags 🇺🇸🇫🇷 in 2 columns, `中🏽` `a‍👨` `中‍中`.
+ * (`Intl.Segmenter` would make क्षि one cell). Measured on tmux 3.4 (the
+ * fixtures of test-char-width [7]), 49 sequences: this rule agrees on 44. The
+ * 5 others are tmux joining what Unicode doesn't — adjacent flags 🇺🇸🇫🇷 and
+ * 🇺🇸🇦, `中🏽`, `a‍👨`, `中‍中`; tmux also draws the 9 bare text-default
+ * modifier bases (☝ ✌ ✍ ⛹ 🖐 🕴 🕵 🏋 🏌) 2 wide, where Unicode has 1.
  *
  * A cell spans an SGR: the host joins across one (tmux 3.4: `❤ ESC[31m VS16`
  * is one 2-wide ❤️, `👍 ESC[31m 🏽` one 👍🏽 — a per-character colourizer writes

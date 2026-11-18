@@ -74,7 +74,8 @@ function truncate(text, maxWidth) {
  * fixed-width cell helper — use it instead of `.slice()`/`.padEnd()` on CHARACTER
  * counts, which miscount SGR runs, `\[` escapes, and wide (CJK/emoji) chars and so
  * break column alignment (or leave a stray `\`). For a PLAIN string that may hold a
- * literal `[`, esc() it first so the bracket is a 1-col literal, not a tag start.
+ * literal `[` or `\`, esc() it first so each is a 1-col literal, not a tag start
+ * or an escape.
  */
 function fitCell(s, width) {
   const str = s == null ? '' : String(s);
@@ -94,10 +95,10 @@ function fitCell(s, width) {
 /**
  * Pad a markup string with spaces to at least `width` visible columns, never
  * cutting it — fitCell's sibling for a label column whose long entries may run
- * on (help's key column, which-key's key tokens, the fabric tables' port / type
- * columns). Measured with visibleLen, so 中 or 👍 pads to the same column as an
- * ASCII key (`.length` / `.padEnd` padded a CJK key one column too far per
- * character). As with fitCell, esc() a plain string that may hold a `[` first.
+ * on (help's key column, which-key's key tokens). Measured with visibleLen, so
+ * 中 or 👍 pads to the same column as an ASCII key (`.length` / `.padEnd` padded
+ * a CJK key one column too far per character). As with fitCell, esc() a plain string that may hold a `[` or a `\`
+ * first — or pad the text with padText and esc() after.
  */
 function padCell(s, width) {
   const str = s == null ? '' : String(s);

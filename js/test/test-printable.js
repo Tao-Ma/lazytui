@@ -1,8 +1,9 @@
 /**
- * `isPrintableSeq` — the shared text-input gate used by fabric-field +
- * fabric-form key arms. Pins the predicate directly so a future tightening
- * (e.g. "reject C1 range too") lands behind a visible test, not a silent
- * character-set regression. R3C-BUG1 (slice-2 R3 review).
+ * `isPrintableSeq` — the keystroke gate under printable.fieldInput, which every
+ * text field's key arm asks what a keystroke adds. Pins the predicate directly
+ * so a change to the accepted character set lands behind a visible test, not a
+ * silent regression. R3C-BUG1 (slice-2 R3 review); C1 rejected since
+ * 2026-11-17 (review round 2 of the text-field arc).
  *
  * Run: node js/test/test-printable.js
  */
@@ -28,6 +29,13 @@ describe('[printable] C0 + DEL rejected', () => {
   });
   it('rejects DEL (0x7f)', () => {
     assert(!isPrintableSeq('\x7f'));
+  });
+  it('rejects every C1 control (U+0080..U+009F) — U+009B is CSI, U+0085 NEL', () => {
+    for (let i = 0x80; i <= 0x9f; i++) {
+      assert(!isPrintableSeq(String.fromCharCode(i)), `C1 U+${i.toString(16).padStart(4, '0')} must be rejected`);
+      assert(!isPrintableSeq(`a${String.fromCharCode(i)}b`), `C1 U+${i.toString(16)} inside text rejects the whole seq`);
+    }
+    assert(isPrintableSeq('\u00a0'), 'U+00A0 (first past C1) is text');
   });
   it('rejects null / undefined / empty / non-string', () => {
     assert(!isPrintableSeq(null));

@@ -11,7 +11,7 @@
  * DISPLAY column (so it stays anchored to content as a pane scrolls, and CJK /
  * wide glyphs map correctly). Everything here is pure — lines are threaded in,
  * no model/global reads — so it sits at the bottom of the layer graph
- * (depends only on leaves/text/ansi).
+ * (depends only on leaves/text/ansi and leaves/text/char-width).
  */
 'use strict';
 

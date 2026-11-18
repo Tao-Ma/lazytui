@@ -132,6 +132,4 @@ module.exports = {
   // caller) is gone; info/text-view render resolve their own search decoration.
   // Still used INTERNALLY by decorateLines below.
   decorateLines,
-  // exposed for tests
-  _displayWidthBefore: ms._displayWidthBefore,
 };

@@ -63,7 +63,7 @@ const TYPES = [
   'fabric_form_choices_pick', 'fabric_form_choices_open',
   'fabric_form_choices_close', 'fabric_form_choices_nav',
   // Brief 2 (v0.6.43) — type-to-filter in the popover. `_filter` appends
-  // one printable `seq` (or pops the last char when `seq === '\x7f'`);
+  // typed text or a paste (printable.fieldInput), or pops the last glyph;
   // `_filter_clear` resets to '' (first Esc press when the filter is
   // non-empty, so a second Esc still closes). Both reset picking.idx to 0
   // (filter change → highlight resets to the first filtered row).

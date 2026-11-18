@@ -5,7 +5,8 @@
  * within a wall-clock budget, then the main thread recomputes the real result
  * with this same code — so a "safe" verdict and the produced matches can't drift.
  *
- * Pure — no model/api/I/O. Depends only on the regex guard + the ansi width leaf.
+ * Pure — no model/api/I/O. Depends only on the regex guard, ansi (stripMarkup)
+ * and char-width (nextCell).
  */
 'use strict';
 
@@ -28,12 +29,6 @@ function _cellSpan(plain, a, b) {
   }
   if (start < 0) start = col;
   return { col: start, len: col - start };
-}
-
-/** Display-column count of plain text before the cell holding UTF-16 index
- *  `charIdx` (all of the text when past its end). */
-function _displayWidthBefore(plain, charIdx) {
-  return _cellSpan(plain, charIdx, charIdx).col;
 }
 
 /** Run `term` (regex, gi) against `lines` → [{line, col, len}] in display
@@ -65,4 +60,4 @@ function computeMatches(lines, term) {
   return matches;
 }
 
-module.exports = { computeMatches, _displayWidthBefore };
+module.exports = { computeMatches };

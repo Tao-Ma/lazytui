@@ -25,8 +25,8 @@
  * terminal lingua franca, so callers stay emulator-agnostic. The render resolves
  * the default colours against the theme (ansi.sgrRun); the snapshot writes the
  * same runs back as SGR. A read row is EXACTLY the requested width in columns
- * (charWidth): it pads, and it stops before a glyph that would cross the edge,
- * so a painted row can never run past its pane's border.
+ * (cells — char-width joinStep): it pads, and it stops before a glyph that would
+ * cross the edge, so a painted row can never run past its pane's border.
  *
  * Grid snapshot fidelity: the snapshot captures the buffer's text AND
  * attributes (scrollback + visible) as SGR-encoded lines + the viewport

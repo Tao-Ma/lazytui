@@ -69,7 +69,8 @@ captured (display) columns onto the glyphs actually shown, not the stored
 left-aligned bytes at shifted columns. Panes with no transform pass no
 `fullLines` and keep the `slice.lines` fallback described above.
 
-`select-core` is a pure bottom leaf (depends only on `leaves/text/ansi`) and the
+`select-core` is a pure bottom leaf (depends only on `leaves/text/ansi` and
+`leaves/text/char-width`) and the
 **single source of truth for selection geometry and state transitions** — the
 content panes' reducer and the loop's generic fallback both drive
 `reduceSelect`, and every consumer resolves display-col ↔ codepoint mapping,

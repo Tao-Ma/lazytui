@@ -25,6 +25,8 @@
  *   [6] review round 2: tiny budgets, the suffix window, seeded values, the
  *       footer beside a plugin segment, and the rest of the `.length` class
  *       (help, palette, stats header, --keymap, plugin footer segments)
+ *   [7] text that ends in `\` keeps the tag the painter puts after it (a
+ *       field's caret, the filter's `[/]`)
  *
  * Run: node js/test/test-field-window.js
  */
@@ -109,11 +111,12 @@ section('[2] cmdline: a long command never scrolls the screen');
     await step(label, async () => {
       boot(41, 10);
       await hs.paint();
-      const top = hs.line(0);
+      const top = hs.line(0), scrolled = hs.scrolled();
       type(':');
       paste(text);
       await hs.paint();
-      eq(hs.line(0), top, `${label}: the top row did not move (the screen did not scroll)`);
+      eq(hs.scrolled(), scrolled, `${label}: the screen did not scroll`);
+      eq(hs.line(0), top, `${label}: the top row did not move`);
       const row = hs.line(9).trimEnd();            // (the row is padded to the screen with spaces)
       assert(row.startsWith(' :…') && row.endsWith('END'), `${label}: the prompt row shows \`…\` + the tail: ${JSON.stringify(row)}`);
       const cur = require('../overlay/cmdline').cmdlineCursor(getModel());
@@ -387,7 +390,7 @@ await step('tooltip: a label with a tab is not cut', async () => {
   assert(stripMarkup(rows[4]).includes('worker 42%'), JSON.stringify(stripMarkup(rows[4]).trim()));
 });
 
-section('[6] text that ends in `\\` keeps the tag the painter puts after it');
+section('[7] text that ends in `\\` keeps the tag the painter puts after it');
   // Review round 2 (2026-11-15): esc() escaped only `[`, so a field's trailing
   // `\` + the caret's `[reverse]` (or the filter's `[/]`) read as `\[` — a
   // literal bracket: no caret, and the tag's text on screen.

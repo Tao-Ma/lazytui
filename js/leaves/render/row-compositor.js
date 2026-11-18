@@ -14,7 +14,7 @@
  * terminal-state isolation without re-implementing the walker.
  *
  * The split is ansi `markupCut` — the walk `draw.truncate` cuts with: `\[` →
- * one literal `[`; `\x1b[…m` → zero-width SGR run; `[tag]` → zero-width markup;
+ * one literal `[`; `\\` → one `\`; `\x1b[…m` → zero-width SGR run; `[tag]` → zero-width markup;
  * otherwise the advance is one CELL's width (a sequence like ❤️ or a flag is one
  * cell, never cut — even with markup inside it, which the host joins across).
  * The SAME walk both halves of the split rely on, so visible-column accounting

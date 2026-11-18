@@ -30,9 +30,9 @@
 const { stripMarkup, markupLiteral: esc } = require('./ansi');
 const { nextCell, withoutLastCell } = require('./char-width');
 const { fieldInput, pressed } = require('./printable');
-// computeMatches + _displayWidthBefore moved to match-core (shared with the
-// bounded-match worker so both sides run byte-identical matching).
-const { computeMatches, _displayWidthBefore } = require('./match-core');
+// computeMatches lives in match-core (shared with the bounded-match worker so
+// both sides run byte-identical matching).
+const { computeMatches } = require('./match-core');
 const bounded = require('./bounded-match');
 
 // --- the chained selector (P1, viewer-lines selector arc) ---
@@ -264,7 +264,7 @@ function scrollToActive(slice, innerH, lines, term) {
 }
 
 module.exports = {
-  matchesFor, decorateWindow, _displayWidthBefore,
+  matchesFor, decorateWindow,
   enter, cancel, commit, clearCommitted, keystroke,
   next, prev,
 };

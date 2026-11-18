@@ -344,8 +344,9 @@ guaranteed contrast against the forced bg — it went invisible on light termina
 (`minimal` worst-hit). The `screen` slot MUST carry both (guarded in
 test-themes.js).
 
-Screen CLEARS carry the bg too: `painter.js`'s `\x1b[2J` and the cmdline
-dropdown's `\x1b[K` emit the `screen` SGR *before* erasing, so they clear to the
+Screen CLEARS carry the bg too: `painter.js`'s `\x1b[2J` emits the `screen`
+SGR *before* erasing (the cmdline dropdown composites into the frame since
+Release 2 — no `\x1b[K` of its own), so it clears to the
 theme background (via background-color-erase) rather than the terminal's own —
 otherwise a full repaint flashes the terminal bg (white on a light terminal)
 before the themed rows paint. On a terminal without bce the fix is a no-op (never

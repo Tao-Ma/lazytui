@@ -7,7 +7,8 @@
  *   bg          on <named|dark_blue|#rrggbb>
  *   theme slots warning · error · accent · running · … (any THEMES palette key)
  *   reset       [/] (also [/bold], [/dim])
- * plus escaped brackets \[text]. Examples: [bold cyan], [#rrggbb],
+ * plus two escapes — `\[` a literal `[`, `\\` a literal `\` (any other `\` is
+ * itself). Examples: [bold cyan], [#rrggbb],
  * [#rrggbb on #rrggbb], [warning]. Hex atoms ALWAYS emit 38;2/48;2 — the
  * pipeline is canonically truecolor; device depth adapts at the WRITE boundary,
  * never here (docs/truecolor.md P3). A tag containing any unknown atom compiles
